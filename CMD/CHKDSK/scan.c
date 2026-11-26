@@ -28,37 +28,37 @@
 #define NOTE_SKIP   2           /* pass 2: do not descend                  */
 
 typedef struct {
-    u32 count;                  /* clusters claimed                        */
-    int cross;                  /* ran into a cluster claimed earlier      */
-    int badlink;                /* an invalid link was cut off             */
+    uint32_t count;             /* clusters claimed                        */
+    int      cross;             /* ran into a cluster claimed earlier      */
+    int      badlink;           /* an invalid link was cut off             */
 } CHAIN;
 
 /* what pass 1 decided about a subdirectory, keyed by (parent, entry) */
 typedef struct {
-    u32 dir;
-    u32 idx;
-    int kind;
-    u32 limit;
+    uint32_t     dir;
+    unsigned int idx;
+    int          kind;
+    uint32_t     limit;
 } DIRNOTE;
 
-static DIRNOTE *notes;
-static u32      nnotes, capnotes;
-static int      pass;
-static int      depth;
-static int      fixmes_done;
-static char     rootpath[4];
+static DIRNOTE     *notes;
+static unsigned int nnotes, capnotes;
+static int          pass;
+static int          depth;
+static int          fixmes_done;
+static char         rootpath[4];
 
-static int  process_dir( DIRBUF *dir, u32 self, u32 parent, const char *path,
+static int  process_dir( DIRBUF *dir, uint32_t self, uint32_t parent, const char *path,
                          int is_root );
 
 /* ------------------------------------------------------------------ */
 /* small helpers                                                       */
 /* ------------------------------------------------------------------ */
 
-static void note_add( u32 dir, u32 idx, int kind, u32 limit )
+static void note_add( uint32_t dir, unsigned int idx, int kind, uint32_t limit )
 {
     DIRNOTE *nn;
-    u32 i;
+    unsigned int i;
 
     for ( i = 0; i < nnotes; i++ ) {
         if ( notes[i].dir == dir && notes[i].idx == idx ) {
@@ -85,9 +85,9 @@ static void note_add( u32 dir, u32 idx, int kind, u32 limit )
     nnotes++;
 }
 
-static DIRNOTE *note_find( u32 dir, u32 idx )
+static DIRNOTE *note_find( uint32_t dir, unsigned int idx )
 {
-    u32 i;
+    unsigned int i;
 
     for ( i = 0; i < nnotes; i++ ) {
         if ( notes[i].dir == dir && notes[i].idx == idx ) {
@@ -155,17 +155,17 @@ int prompt_yn( const char *text )
     }
 }
 
-u32 entry_first( const u8 *ent )
+uint32_t entry_first( const uint8_t *ent )
 {
-    u32 clus = RD16( ent + DE_CLUSLO );
+    uint32_t clus = RD16( ent + DE_CLUSLO );
 
     if ( vol.fattype == 32 ) {
-        clus |= (u32)RD16( ent + DE_CLUSHI ) << 16;
+        clus |= (uint32_t)RD16( ent + DE_CLUSHI ) << 16;
     }
     return clus;
 }
 
-void entry_set_first( u8 *ent, u32 clus )
+void entry_set_first( uint8_t *ent, uint32_t clus )
 {
     WR16( ent + DE_CLUSLO, clus );
     if ( vol.fattype == 32 ) {
@@ -173,9 +173,9 @@ void entry_set_first( u8 *ent, u32 clus )
     }
 }
 
-void entry_stamp( u8 *ent )
+void entry_stamp( uint8_t *ent )
 {
-    u16 date, time;
+    uint16_t date, time;
 
     sys_get_datetime( &date, &time );
     WR16( ent + DE_TIME, time );
@@ -186,7 +186,7 @@ void entry_stamp( u8 *ent )
     ent[DE_CTENTH] = 0;
 }
 
-int dir_fix( DIRBUF *dir, u32 idx )
+int dir_fix( DIRBUF *dir, unsigned int idx )
 {
     return dir_write_entry( dir, idx );
 }
@@ -201,9 +201,10 @@ int dir_fix( DIRBUF *dir, u32 idx )
  * mark.  Running into a cluster some earlier chain owns marks it crossed
  * and stops, as MARKFAT does.
  */
-static void claim_chain( u32 first, U32LIST *list, CHAIN *ch )
+static void claim_chain( uint32_t first, U32LIST *list, CHAIN *ch )
 {
-    u32 clus = first, prev = 0, next, i;
+    uint32_t clus = first, prev = 0, next;
+    unsigned int i;
 
     ch->count = 0;
     ch->cross = 0;
@@ -247,12 +248,12 @@ static void claim_chain( u32 first, U32LIST *list, CHAIN *ch )
 }
 
 /* pass 1 checks of one entry's chain and size (DOS MARKFAT) */
-static int check_entry( DIRBUF *dir, u32 idx, const char *path, int is_dir,
+static int check_entry( DIRBUF *dir, unsigned int idx, const char *path, int is_dir,
                         U32LIST *list, CHAIN *ch )
 {
-    u8 *ent = dir->data + idx * DE_LEN;
-    u32 first = entry_first( ent ), size = RD32( ent + DE_SIZE );
-    u64 alloc;
+    uint8_t *ent = dir->data + idx * DE_LEN;
+    uint32_t first = entry_first( ent ), size = RD32( ent + DE_SIZE );
+    uint64_t alloc;
 
     ch->count = 0;
     ch->cross = 0;
@@ -282,7 +283,7 @@ static int check_entry( DIRBUF *dir, u32 idx, const char *path, int is_dir,
 
     /* size must fall inside the last allocation unit of the chain */
     alloc = mul32( ch->count, vol.bpc );
-    if ( (u64)size > alloc || alloc - size >= (u64)vol.bpc ) {
+    if ( (uint64_t)size > alloc || alloc - size >= (uint64_t)vol.bpc ) {
         if ( !ch->badlink ) {
             report_error( path, M_BADCLUS );
         }
@@ -293,9 +294,10 @@ static int check_entry( DIRBUF *dir, u32 idx, const char *path, int is_dir,
 }
 
 /* pass 2: name the object if its chain touches a crossed cluster */
-static void cross_chain( u32 clus, const char *path )
+static void cross_chain( uint32_t clus, const char *path )
 {
-    u32 count = 0, next;
+    unsigned int count = 0;
+    uint32_t next;
     char num[12];
 
     while ( CLUS_OK( clus ) && count++ <= vol.nclus ) {
@@ -336,11 +338,11 @@ static void dot_error( const char *dotpath, const char *path,
     }
 }
 
-static void dot_fields( DIRBUF *dir, u32 idx, u32 expect, const char *path,
+static void dot_fields( DIRBUF *dir, unsigned int idx, uint32_t expect, const char *path,
                         int which, int *errsub )
 {
-    u8 *ent = dir->data + idx * DE_LEN;
-    u32 clus = entry_first( ent );
+    uint8_t *ent = dir->data + idx * DE_LEN;
+    uint32_t clus = entry_first( ent );
     char *dotpath = path_join( path, which == 1 ? "." : ".." );
 
     if ( !(ent[DE_ATTR] & A_DIR) ) {
@@ -364,9 +366,9 @@ static void dot_fields( DIRBUF *dir, u32 idx, u32 expect, const char *path,
     xfree( dotpath );
 }
 
-static void make_dot( DIRBUF *dir, u32 idx, int which, u32 clus )
+static void make_dot( DIRBUF *dir, unsigned int idx, int which, uint32_t clus )
 {
-    u8 *ent = dir->data + idx * DE_LEN;
+    uint8_t *ent = dir->data + idx * DE_LEN;
 
     mem_set( ent, 0, DE_LEN );
     mem_set( ent, ' ', 11 );
@@ -380,11 +382,11 @@ static void make_dot( DIRBUF *dir, u32 idx, int which, u32 clus )
     dir_fix( dir, idx );
 }
 
-static int check_dots( DIRBUF *dir, u32 self, u32 parent, const char *path,
-                       u32 *di, u32 *ddi )
+static int check_dots( DIRBUF *dir, uint32_t self, uint32_t parent, const char *path,
+                       unsigned int *di, unsigned int *ddi )
 {
-    u8 *e0 = dir->data, *e1 = dir->nent > 1 ? dir->data + DE_LEN : NULL;
-    u32 i, idx;
+    uint8_t *e0 = dir->data, *e1 = dir->nent > 1 ? dir->data + DE_LEN : NULL;
+    unsigned int i, idx;
     int errsub = 0, status = DIR_OK, any = 0;
     char *dotpath;
 
@@ -462,13 +464,13 @@ static int check_dots( DIRBUF *dir, u32 self, u32 parent, const char *path,
 /* ------------------------------------------------------------------ */
 
 /* pass 1: a run of LFN entries that belongs to nothing is removed */
-static void lfn_broken( DIRBUF *dir, LFNRUN *run, u32 end, const u8 *sfn,
+static void lfn_broken( DIRBUF *dir, LFNRUN *run, unsigned int end, const uint8_t *sfn,
                         const char *path )
 {
     char nm[13];
     char *objpath;
-    u8 *ent;
-    u32 i;
+    uint8_t *ent;
+    unsigned int i;
 
     if ( pass != 1 || !run->active ) {
         return;
@@ -490,10 +492,10 @@ static void lfn_broken( DIRBUF *dir, LFNRUN *run, u32 end, const u8 *sfn,
     xfree( objpath );
 }
 
-static void ask_convert( DIRBUF *pd, u32 idx, u32 nclus )
+static void ask_convert( DIRBUF *pd, unsigned int idx, uint32_t nclus )
 {
-    u8 *ent = pd->data + idx * DE_LEN;
-    u64 sz;
+    uint8_t *ent = pd->data + idx * DE_LEN;
+    uint64_t sz;
 
     if ( !opt.dofix ) {
         return;
@@ -521,9 +523,9 @@ static void do_label( const char *path )
     st.hid_cnt++;               /* DOS counts the label as a hidden file */
 }
 
-static void do_file( DIRBUF *dir, u32 idx, const char *path )
+static void do_file( DIRBUF *dir, unsigned int idx, const char *path )
 {
-    u8 *ent = dir->data + idx * DE_LEN;
+    uint8_t *ent = dir->data + idx * DE_LEN;
     CHAIN ch;
 
     if ( pass == 2 ) {
@@ -543,10 +545,10 @@ static void do_file( DIRBUF *dir, u32 idx, const char *path )
     }
 }
 
-static void do_subdir( DIRBUF *pd, u32 pself, u32 idx, const char *path )
+static void do_subdir( DIRBUF *pd, uint32_t pself, unsigned int idx, const char *path )
 {
-    u8 *ent = pd->data + idx * DE_LEN;
-    u32 first = entry_first( ent );
+    uint8_t *ent = pd->data + idx * DE_LEN;
+    uint32_t first = entry_first( ent );
     DIRBUF dir;
     DIRNOTE *note;
     U32LIST list;
@@ -624,14 +626,14 @@ typedef struct {
  * Process one directory held in dir.  self is its first cluster (0 for
  * the root), parent the first cluster its ".." should hold.
  */
-static int process_dir( DIRBUF *dir, u32 self, u32 parent, const char *path,
+static int process_dir( DIRBUF *dir, uint32_t self, uint32_t parent, const char *path,
                         int is_root )
 {
     WALKBUF *walk = (WALKBUF *)xalloc( sizeof( WALKBUF ) );
-    u32 i, di = NONE, ddi = NONE;
+    unsigned int i, di = NONE, ddi = NONE;
     int status = DIR_OK;
     char *child;
-    u8 *ent;
+    uint8_t *ent;
 
     if ( pass == 1 && opt.noisy ) {
         out_msg( H_OUT, M_DIREC, path, NULL, NULL );

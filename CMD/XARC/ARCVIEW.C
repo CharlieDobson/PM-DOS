@@ -47,7 +47,7 @@ static int is_sep( int ch )
 /* a stored name as the folders see it: "/DOCS/X" is in DOCS, like "DOCS/X" */
 static const char *past_seps( const char *name )
 {
-    while ( is_sep( (u8)*name ) ) {
+    while ( is_sep( (unsigned char)*name ) ) {
         name++;
     }
     return name;
@@ -58,7 +58,7 @@ static int has_prefix( const char *name, const char *prefix, int len )
     int at;
 
     for ( at = 0; at < len; at++ ) {
-        if ( !name[at] || fold( (u8)name[at] ) != fold( (u8)prefix[at] ) ) {
+        if ( !name[at] || fold( (unsigned char)name[at] ) != fold( (unsigned char)prefix[at] ) ) {
             return 0;
         }
     }
@@ -70,8 +70,8 @@ static int leaf_cmp( const char *one, int one_len, const char *two, int two_len 
     int at, len = one_len < two_len ? one_len : two_len, lhs, rhs;
 
     for ( at = 0; at < len; at++ ) {
-        lhs = fold( (u8)one[at] );
-        rhs = fold( (u8)two[at] );
+        lhs = fold( (unsigned char)one[at] );
+        rhs = fold( (unsigned char)two[at] );
         if ( lhs != rhs ) {
             return lhs - rhs;
         }
@@ -172,7 +172,7 @@ int view_rebuild( void )
         if ( !*rest ) {
             continue;                   /* the current folder's own entry */
         }
-        for ( k = 0; rest[k] && !is_sep( (u8)rest[k] ); k++ ) {
+        for ( k = 0; rest[k] && !is_sep( (unsigned char)rest[k] ); k++ ) {
         }
         rest_len = (int)strlen( rest );
         if ( rest[k] == 0 ) {
@@ -301,7 +301,7 @@ void view_set_cwd( const char *path )
         return;
     }
     memcpy( cwd, path, (size_t)len );
-    if ( !is_sep( (u8)cwd[len - 1] ) ) {
+    if ( !is_sep( (unsigned char)cwd[len - 1] ) ) {
         cwd[len++] = '\\';
     }
     cwd[len] = 0;
@@ -314,7 +314,7 @@ int view_max_expanded( void )
 }
 
 /* one entry into the list, unless "seen" says it is in it already */
-static int take( int index, int *out, int *got, int max, u8 *seen )
+static int take( int index, int *out, int *got, int max, uint8_t *seen )
 {
     if ( *got >= max ) {
         return 0;
@@ -330,7 +330,7 @@ static int take( int index, int *out, int *got, int max, u8 *seen )
 }
 
 /* a row as entries: a folder means everything under it */
-static int expand_row( int row, int *out, int max, u8 *seen )
+static int expand_row( int row, int *out, int max, uint8_t *seen )
 {
     char prefix[SZ_MAX_NAME];
     const char *name;
@@ -377,12 +377,12 @@ int view_expand_one( int row, int *out, int max )
 int view_expand( const int *vrows, int count, int *out, int max )
 {
     int at, got = 0, entries = arc ? ArcNumEntries( arc ) : 0;
-    u8 *seen;
+    uint8_t *seen;
 
     if ( entries <= 0 ) {
         return 0;
     }
-    seen = (u8 *)calloc( (size_t)entries, 1 );
+    seen = (uint8_t *)calloc( (size_t)entries, 1 );
     if ( seen == NULL ) {
         return -1;
     }

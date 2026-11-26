@@ -99,6 +99,11 @@ ENDIF
         call    find_init               ; and the 71h find handles, likewise
         call    fps_boot                ; and somewhere to keep a waiting
                                         ; program's floating-point state
+        call    vdm_ivtinit             ; ...and the vector table each DOS
+                                        ; program started with
+        call    vdm_txtkeep             ; ...and the text screen the machine
+                                        ; started on, until a DOS program
+                                        ; starts on another (vdm_scrtext)
         call    cache_init             ; ...and the disk cache, before the
                                         ; first sector is read: CONFIG.SYS
                                         ; is itself a file on the disk, and
@@ -257,6 +262,8 @@ ENDIF
         mov     dword ptr ds:[GV_BRGENTRY],OFFSET brg_entry
         mov     dword ptr ds:[GV_BRGSIG],BRG_SIGVAL
         call    config_run
+        mov     al,[undel_on]           ; for UNDELETE.386, under Windows
+        mov     byte ptr ds:[GV_UNDEL],al
         call    scsi_start              ; the SCSI cards, now that a DEVICE=
                                         ; line may have loaded a manager
                                         ; that owns one (ASPI.INC)
@@ -643,6 +650,27 @@ df_cook:
         add     ebx,SFT_LEN
         loop    df_cook
 
+        ; A SCREEN THE REPORT CAN BE READ ON.  PMIO printed it from inside
+        ; the exception handler, which cannot call the BIOS, so on a
+        ; graphics screen it went into the text page under the picture.
+        ; Here the BIOS can be called - 4Ch and the box's unwind call it
+        ; next anyway - unless the fault came in the middle of a call to
+        ; it, which EXR_ASK says.  If the screen had to be put back, the
+        ; report is printed again on it.  A ring-3 fault comes here too,
+        ; already reported on a screen put back first (r3_fault): PMIO
+        ; keeps no report for it, and EXR_ASK says so.
+        ;
+        ; Before IOS_EXCCLEAR, on purpose: a fault in this is a fault in
+        ; the recovery, and stops the machine rather than going round.
+        mov     al,EXR_ASK
+        call    dword ptr ds:[IOS_EXCREP]
+        jc      df_shown
+        call    df_screen
+        jnc     df_shown
+        mov     al,EXR_SAY
+        call    dword ptr ds:[IOS_EXCREP]
+df_shown:
+
         call    dword ptr ds:[IOS_EXCCLEAR]     ; the next one is catchable
 
         ; WITH A DOS BOX RUNNING, THE THING THAT DIED IS THE BOX.  A
@@ -678,6 +706,29 @@ df_notbox:
         mov     ebp,OFFSET fault_frame
         mov     dword ptr [ebp+F_EAX],255
         jmp     fn4C
+
+;---------------------------------------------------------------------
+; df_screen - for dos_fault: CF if the screen was in a graphics mode
+;             and has been put back to text, so that PMIO's report has
+;             to be printed again.  Everything else preserved.
+;
+; A box running is the box ending: the text mode its program started
+; on (vdm_scrtext, which leaves alone a handler an excursion ran).
+; Otherwise a native program is ending, and the screen goes back to
+; what it found if it set a mode (vbe_exit) - as r3_fault does for a
+; ring-3 fault, and as 4Ch would a moment later, which then finds
+; nothing left to do.
+;---------------------------------------------------------------------
+df_screen:
+        cmp     dword ptr ds:[vdm_busy],0
+        je      dfs_native
+        jmp     vdm_scrtext
+dfs_native:
+        push    eax
+        mov     eax,dword ptr ds:[exec_depth]
+        call    vbe_exit
+        pop     eax                     ; (POP leaves the carry alone)
+        ret
 
 ;---------------------------------------------------------------------
 ; kbss_lost - the link and PMDOS.INC disagree about where _KBSS is.

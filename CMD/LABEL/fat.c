@@ -18,28 +18,28 @@ VOLUME vol;
 #define FAT32_EOC      0x0FFFFFFFul
 
 /* FAT32: a window onto the FAT in use (see fat_window()) */
-static u8  *fwin;
-static u32  fwin_sec = 0xFFFFFFFFul;   /* first FAT sector in the window */
-static u32  fwin_n;
+static uint8_t *fwin;
+static uint32_t fwin_sec = 0xFFFFFFFFul; /* first FAT sector in the window */
+static uint32_t fwin_n;
 
 /* ------------------------------------------------------------------ */
 /* boot sector                                                         */
 /* ------------------------------------------------------------------ */
 
 /* offset of the extended boot signature (29h: serial, label, type) */
-static u32 ext_sig_off( const u8 *boot )
+static uint32_t ext_sig_off( const uint8_t *boot )
 {
     return RD16( boot + 22 ) == 0 ? 66 : 38;
 }
 
-static int parse_bpb( const u8 *boot )
+static int parse_bpb( const uint8_t *boot )
 {
-    u32 bps = RD16( boot + 11 ), spc = boot[13], rsvd = RD16( boot + 14 );
-    u32 nfats = boot[16], rootents = RD16( boot + 17 );
-    u32 tot16 = RD16( boot + 19 ), fatsz16 = RD16( boot + 22 ),
+    uint32_t bps = RD16( boot + 11 ), spc = boot[13], rsvd = RD16( boot + 14 );
+    uint32_t nfats = boot[16], rootents = RD16( boot + 17 );
+    uint32_t tot16 = RD16( boot + 19 ), fatsz16 = RD16( boot + 22 ),
         tot32 = RD32( boot + 32 );
-    u32 fatsz, fats, tot, rootsecs, data, nclus, cap, maxv, ext, sig;
-    u64 fatbytes;
+    uint32_t fatsz, fats, tot, rootsecs, data, nclus, cap, maxv, ext, sig;
+    uint64_t fatbytes;
 
     if ( bps < 128 || bps > 4096 || (bps & (bps - 1)) ) {
         return -1;
@@ -88,7 +88,7 @@ static int parse_bpb( const u8 *boot )
     } else if ( vol.fattype == 12 ) {
         cap = lo32( fatbytes ) / 3 * 2;
     } else {
-        cap = lo32( fatbytes ) / (u32)(vol.fattype / 8);
+        cap = lo32( fatbytes ) / (uint32_t)(vol.fattype / 8);
     }
     if ( nclus + 1 > maxv ) {
         nclus = maxv - 1;
@@ -140,10 +140,10 @@ static int parse_bpb( const u8 *boot )
  * proper, past the buffer's length word).  Used only when the boot
  * sector itself carries no usable BPB.
  */
-void bpb_from_dpb( const u8 *dpb, u8 *sector )
+void bpb_from_dpb( const uint8_t *dpb, uint8_t *sector )
 {
-    u32 spc = (u32)dpb[0x04] + 1, fat16 = RD16( dpb + 0x0F );
-    u32 first_data, maxclus, tot;
+    uint32_t spc = (uint32_t)dpb[0x04] + 1, fat16 = RD16( dpb + 0x0F );
+    uint32_t first_data, maxclus, tot;
 
     mem_set( sector, 0, 512 );
     if ( fat16 ) {
@@ -155,7 +155,7 @@ void bpb_from_dpb( const u8 *dpb, u8 *sector )
     }
     tot = first_data + (maxclus - 1) * spc;
     WR16( sector + 11, RD16( dpb + 0x02 ) );
-    sector[13] = (u8)spc;
+    sector[13] = (uint8_t)spc;
     WR16( sector + 14, RD16( dpb + 0x06 ) );
     sector[16] = dpb[0x08];
     WR16( sector + 17, RD16( dpb + 0x09 ) );
@@ -176,7 +176,7 @@ void bpb_from_dpb( const u8 *dpb, u8 *sector )
 }
 
 /* exFAT's boot sector names the file system where a BPB would begin */
-static int is_exfat( const u8 *boot )
+static int is_exfat( const uint8_t *boot )
 {
     return mem_cmp( boot + 3, "EXFAT   ", 8 ) == 0;
 }
@@ -186,13 +186,13 @@ static int is_exfat( const u8 *boot )
  * would let a sector number pass 32 bits or a cluster fall outside the
  * FAT, since every root sector LABEL reads is found through both.
  */
-static int parse_exfat( const u8 *boot )
+static int parse_exfat( const uint8_t *boot )
 {
-    u32 bshift = boot[0x6C], cshift = boot[0x6D], nfats = boot[0x6E];
-    u32 fatoff = RD32( boot + 0x50 ), fatlen = RD32( boot + 0x54 );
-    u32 heap = RD32( boot + 0x58 ), nclus = RD32( boot + 0x5C );
-    u32 root = RD32( boot + 0x60 );
-    u64 span;
+    uint32_t bshift = boot[0x6C], cshift = boot[0x6D], nfats = boot[0x6E];
+    uint32_t fatoff = RD32( boot + 0x50 ), fatlen = RD32( boot + 0x54 );
+    uint32_t heap = RD32( boot + 0x58 ), nclus = RD32( boot + 0x5C );
+    uint32_t root = RD32( boot + 0x60 );
+    uint64_t span;
 
     if ( bshift < 9 || bshift > 12 || cshift > 25 - bshift ) {
         return -1;
@@ -244,10 +244,10 @@ static int parse_exfat( const u8 *boot )
 /* 0 = ok; a read error; or DE_MEDIA when no usable FAT BPB is found */
 int vol_open( int drive )
 {
-    u8 *boot = (u8 *)xzalloc( 4096 );
-    u8 *dpb_bpb = (u8 *)xzalloc( 512 );
+    uint8_t *boot = (uint8_t *)xzalloc( 4096 );
+    uint8_t *dpb_bpb = (uint8_t *)xzalloc( 512 );
     int rc = 0, have_dpb, has_serial, err;
-    u32 serial;
+    uint32_t serial;
 
     /* a FAT window sized and read for an earlier disk is no use */
     xfree( fwin );
@@ -300,21 +300,21 @@ int vol_open( int drive )
 /* sector and cluster I/O                                              */
 /* ------------------------------------------------------------------ */
 
-u32 clus_lba( u32 clus )
+uint32_t clus_lba( uint32_t clus )
 {
     return vol.data_sec + (clus - 2) * vol.spc;
 }
 
-static u32 per_xfer( void )
+static uint32_t per_xfer( void )
 {
-    u32 per = SYS_MAX_XFER / vol.bps;
+    uint32_t per = SYS_MAX_XFER / vol.bps;
     return per ? per : 1;
 }
 
-void read_secs( u32 lba, u32 count, void *buf )
+void read_secs( uint32_t lba, uint32_t count, void *buf )
 {
-    u32 per = per_xfer(), nsec;
-    u8 *dst = (u8 *)buf;
+    uint32_t per = per_xfer(), nsec;
+    uint8_t *dst = (uint8_t *)buf;
     int err;
 
     while ( count ) {
@@ -329,10 +329,10 @@ void read_secs( u32 lba, u32 count, void *buf )
     }
 }
 
-void write_secs( u32 lba, u32 count, const void *buf, int kind )
+void write_secs( uint32_t lba, uint32_t count, const void *buf, int kind )
 {
-    u32 per = per_xfer(), nsec;
-    const u8 *src = (const u8 *)buf;
+    uint32_t per = per_xfer(), nsec;
+    const uint8_t *src = (const uint8_t *)buf;
     int err;
 
     while ( count ) {
@@ -354,12 +354,12 @@ void write_secs( u32 lba, u32 count, const void *buf, int kind )
 /* window holding entry clus; *off = its byte offset in the window.
    exFAT's FAT is read through this too, where clus * 4 can pass 32
    bits, so the sector is found by dividing first */
-static u8 *fat_window( u32 clus, u32 *off )
+static uint8_t *fat_window( uint32_t clus, uint32_t *off )
 {
-    u32 per = per_xfer(), eps = vol.bps / 4, sec = clus / eps, first;
+    uint32_t per = per_xfer(), eps = vol.bps / 4, sec = clus / eps, first;
 
     if ( fwin == NULL ) {
-        fwin = (u8 *)xalloc( per * vol.bps );
+        fwin = (uint8_t *)xalloc( per * vol.bps );
     }
     if ( fwin_sec == 0xFFFFFFFFul || sec < fwin_sec ||
          sec >= fwin_sec + fwin_n ) {
@@ -374,19 +374,20 @@ static u8 *fat_window( u32 clus, u32 *off )
     return fwin;
 }
 
-static u32 fat_get( u32 clus )
+static uint32_t fat_get( uint32_t clus )
 {
-    u32 off;
-    u8 *win = fat_window( clus, &off );
+    uint32_t off;
+    uint8_t *win = fat_window( clus, &off );
 
     return RD32( win + off ) & 0x0FFFFFFFul;
 }
 
 /* set entry clus in every FAT in use; the top four bits are preserved */
-static void fat_set( u32 clus, u32 val )
+static void fat_set( uint32_t clus, uint32_t val )
 {
-    u32 off, i, sec;
-    u8 *win = fat_window( clus, &off ), *sec_buf;
+    uint32_t off, sec;
+    unsigned int i;
+    uint8_t *win = fat_window( clus, &off ), *sec_buf;
 
     WR32( win + off,
           (RD32( win + off ) & 0xF0000000ul) | (val & 0x0FFFFFFFul) );
@@ -403,16 +404,17 @@ static void fat_set( u32 clus, u32 val )
 /* the root directory                                                  */
 /* ------------------------------------------------------------------ */
 
-static void root_alloc( ROOTDIR *root, u32 nsec )
+static void root_alloc( ROOTDIR *root, uint32_t nsec )
 {
     root->nsec = nsec;
-    root->data = (u8 *)xzalloc( nsec ? nsec * vol.bps : 32 );
-    root->dirty = (u8 *)xzalloc( nsec ? nsec : 1 );
+    root->data = (uint8_t *)xzalloc( nsec ? nsec * vol.bps : 32 );
+    root->dirty = (uint8_t *)xzalloc( nsec ? nsec : 1 );
 }
 
 void root_load( ROOTDIR *root )
 {
-    u32 clus, next, i;
+    uint32_t clus, next;
+    unsigned int i;
 
     mem_set( root, 0, sizeof( *root ) );
     fwin_sec = 0xFFFFFFFFul;            /* read the FAT afresh as well */
@@ -460,10 +462,10 @@ void root_free( ROOTDIR *root )
 }
 
 /* the volume label entries, in directory order, up to the end mark */
-int root_next_label( ROOTDIR *root, u32 from )
+int root_next_label( ROOTDIR *root, unsigned int from )
 {
-    u32 i;
-    const u8 *ent;
+    unsigned int i;
+    const uint8_t *ent;
 
     for ( i = from; i < root->nent; i++ ) {
         ent = root->data + i * DE_LEN;
@@ -484,8 +486,8 @@ int root_next_label( ROOTDIR *root, u32 from )
    when it is the end mark, the entry after it becomes the end mark */
 int root_free_slot( ROOTDIR *root )
 {
-    u32 i;
-    u8 ch;
+    unsigned int i;
+    uint8_t ch;
 
     for ( i = 0; i < root->nent; i++ ) {
         ch = root->data[i * DE_LEN];
@@ -509,14 +511,15 @@ int root_free_slot( ROOTDIR *root )
     return -1;
 }
 
-void root_touch( ROOTDIR *root, u32 idx )
+void root_touch( ROOTDIR *root, unsigned int idx )
 {
     root->dirty[idx * DE_LEN / vol.bps] = 1;
 }
 
 void root_write( ROOTDIR *root )
 {
-    u32 i, lba;
+    unsigned int i;
+    uint32_t lba;
 
     /* last sector first, so an end mark root_free_slot moved down is on
        disk before the entry that takes its old place */
@@ -542,16 +545,16 @@ void root_write( ROOTDIR *root )
  */
 int root_grow( ROOTDIR *root )
 {
-    u8 *fsi = NULL, *nd, *ny;
+    uint8_t *fsi = NULL, *nd, *ny;
     int fsi_ok = 0, found = 0;
-    u32 hint = 0, start, clus, nsec, fc;
+    uint32_t hint = 0, start, clus, nsec, fc;
 
     if ( vol.fattype != 32 || !root->can_grow || root->clus.count == 0 ||
          (root->clus.count + 1) * vol.bpc > MAX_ROOT_BYTES ) {
         return -1;
     }
     if ( vol.fsinfo_sec && vol.bps >= 512 ) {
-        fsi = (u8 *)xalloc( vol.bps );
+        fsi = (uint8_t *)xalloc( vol.bps );
         read_secs( vol.fsinfo_sec, 1, fsi );
         fsi_ok = RD32( fsi ) == 0x41615252ul &&
                  RD32( fsi + 484 ) == 0x61417272ul;
@@ -574,8 +577,8 @@ int root_grow( ROOTDIR *root )
     }
 
     nsec = root->nsec;
-    nd = (u8 *)xzalloc( (nsec + vol.spc) * vol.bps );
-    ny = (u8 *)xzalloc( nsec + vol.spc );
+    nd = (uint8_t *)xzalloc( (nsec + vol.spc) * vol.bps );
+    ny = (uint8_t *)xzalloc( nsec + vol.spc );
     mem_cpy( nd, root->data, nsec * vol.bps );
     mem_cpy( ny, root->dirty, nsec );
 
@@ -613,15 +616,15 @@ int root_grow( ROOTDIR *root )
  * backup boot sector is updated too, but only while it is still a true
  * copy of the primary.
  */
-void boot_set_label( const u8 *label )
+void boot_set_label( const uint8_t *label )
 {
-    u8 *boot, *backup, orig[90];
-    u32 off, bk;
+    uint8_t *boot, *backup, orig[90];
+    uint32_t off, bk;
 
     if ( !vol.boot_ok ) {
         return;
     }
-    boot = (u8 *)xalloc( vol.bps );
+    boot = (uint8_t *)xalloc( vol.bps );
     read_secs( 0, 1, boot );
     off = ext_sig_off( boot );
     if ( boot[off] != 0x29 ||
@@ -637,7 +640,7 @@ void boot_set_label( const u8 *label )
         bk = RD16( boot + 50 );
         if ( bk != 0 && bk != 0xFFFF && bk < vol.rsvd &&
              bk != vol.fsinfo_sec ) {
-            backup = (u8 *)xalloc( vol.bps );
+            backup = (uint8_t *)xalloc( vol.bps );
             read_secs( bk, 1, backup );
             if ( mem_cmp( backup, orig, sizeof( orig ) ) == 0 ) {
                 mem_cpy( backup + off + 5, label, LABEL_LEN );
@@ -671,16 +674,16 @@ void boot_set_label( const u8 *label )
 #define XF_MAXENTS  65536ul     /* as far into the root as the kernel looks */
 
 typedef struct {
-    u32 lba;                    /* sector holding the entry, 0 = none */
-    u32 off;                    /* the entry's offset in that sector  */
+    uint32_t lba;               /* sector holding the entry, 0 = none */
+    uint32_t off;               /* the entry's offset in that sector  */
 } XFSLOT;
 
 /* the next cluster of a chain, or 0 at its end or at a link that is no
    cluster (free, bad, or past the heap) */
-static u32 xf_next( u32 clus )
+static uint32_t xf_next( uint32_t clus )
 {
-    u32 off, next;
-    u8 *win = fat_window( clus, &off );
+    uint32_t off, next;
+    uint8_t *win = fat_window( clus, &off );
 
     next = RD32( win + off );
     return CLUS_OK( next ) ? next : 0;
@@ -691,10 +694,11 @@ static u32 xf_next( u32 clus )
  * entry, and the first unused entry for a label to go in when there is
  * none.  When a label is found buf holds its sector.
  */
-static void xf_scan( XFSLOT *label, XFSLOT *spare, u8 *buf )
+static void xf_scan( XFSLOT *label, XFSLOT *spare, uint8_t *buf )
 {
-    u32 clus = vol.root_clus, sec, off, lba, nents = 0, nclus = 0;
-    u8 type;
+    uint32_t clus = vol.root_clus, lba;
+    unsigned int sec, off, nents = 0, nclus = 0;
+    uint8_t type;
 
     label->lba = 0;
     spare->lba = 0;
@@ -725,9 +729,10 @@ static void xf_scan( XFSLOT *label, XFSLOT *spare, u8 *buf )
 
 int xf_get_label( char *name )
 {
-    u8 *buf = (u8 *)xalloc( vol.bps ), *ent;
+    uint8_t *buf = (uint8_t *)xalloc( vol.bps ), *ent;
     XFSLOT label, spare;
-    u32 count = 0, i, ch;
+    unsigned int count = 0, i;
+    uint32_t ch;
 
     xf_scan( &label, &spare, buf );
     if ( label.lba ) {
@@ -743,11 +748,11 @@ int xf_get_label( char *name )
     return count > 0;
 }
 
-int xf_set_label( const u8 *label )
+int xf_set_label( const uint8_t *label )
 {
-    u8 *buf = (u8 *)xalloc( vol.bps ), *ent;
+    uint8_t *buf = (uint8_t *)xalloc( vol.bps ), *ent;
     XFSLOT found, spare, *where;
-    u32 count = 0, i;
+    unsigned int count = 0, i;
 
     xf_scan( &found, &spare, buf );
     where = found.lba ? &found : &spare;
@@ -768,7 +773,7 @@ int xf_set_label( const u8 *label )
     ent = buf + where->off;
     mem_set( ent, 0, DE_LEN );
     ent[0] = XF_LABEL;
-    ent[1] = (u8)count;
+    ent[1] = (uint8_t)count;
     for ( i = 0; i < count; i++ ) {
         WR16( ent + 2 + i * 2, label[i] );
     }

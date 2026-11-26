@@ -28,15 +28,15 @@ static FINDREC rec;
 /* the picks                                                           */
 /* ------------------------------------------------------------------ */
 
-static void pick_add( PICKS *picks, const char *path, u32 size, u16 date, u16 time,
-                      u8 attr, int is_dir )
+static void pick_add( PICKS *picks, const char *path, uint32_t size, uint16_t date, uint16_t time,
+                      uint8_t attr, int is_dir )
 {
     PICK *bigger, *pick;
 
     if ( (picks->count & 31) == 0 ) {
-        bigger = (PICK *)xalloc( (u32)(picks->count + 32) * sizeof( PICK ) );
+        bigger = (PICK *)xalloc( (unsigned int)(picks->count + 32) * sizeof( PICK ) );
         if ( picks->count ) {
-            mem_cpy( bigger, picks->item, (u32)picks->count * sizeof( PICK ) );
+            mem_cpy( bigger, picks->item, (unsigned int)picks->count * sizeof( PICK ) );
         }
         xfree( picks->item );
         picks->item = bigger;
@@ -47,7 +47,7 @@ static void pick_add( PICKS *picks, const char *path, u32 size, u16 date, u16 ti
     pick->date = date;
     pick->time = time;
     pick->attr = attr;
-    pick->is_dir = (u8)is_dir;
+    pick->is_dir = (uint8_t)is_dir;
 }
 
 int picks_take( PICKS *picks )
@@ -55,7 +55,7 @@ int picks_take( PICKS *picks )
     FWIN *win = app_win();
     char path[PATH_MAX];
     FENT *ent;
-    u32 handle;
+    uint32_t handle;
     int index;
 
     picks->item = NULL;
@@ -107,7 +107,7 @@ void picks_free( PICKS *picks )
 }
 
 /* their names in a row, for a dialog to show: as many as fit */
-static void picks_names( PICKS *picks, char *buf, u32 max )
+static void picks_names( PICKS *picks, char *buf, unsigned int max )
 {
     int index;
 
@@ -147,9 +147,9 @@ static void progress( const char *doing, PICKS *picks, int index )
     str_fit( line, path_name( picks->item[index].path ), 48 );
     if ( picks->count > 1 ) {
         str_catn( line, "   (", sizeof( line ) );
-        str_catn( line, fmt_dec( (u32)index + 1, 0, num ), sizeof( line ) );
+        str_catn( line, fmt_dec( (unsigned int)index + 1, 0, num ), sizeof( line ) );
         str_catn( line, " of ", sizeof( line ) );
-        str_catn( line, fmt_dec( (u32)picks->count, 0, num ), sizeof( line ) );
+        str_catn( line, fmt_dec( (unsigned int)picks->count, 0, num ), sizeof( line ) );
         str_catn( line, ")", sizeof( line ) );
     }
     busy_show( doing, line );
@@ -159,15 +159,16 @@ static void progress( const char *doing, PICKS *picks, int index )
 /* copy and move                                                       */
 /* ------------------------------------------------------------------ */
 
-int copy_file( const char *from, const char *to, u16 attr )
+int copy_file( const char *from, const char *to, uint16_t attr )
 {
-    static u8 *buf;
-    u32 in, out, got, put;
-    u16 time, date;
+    static uint8_t *buf;
+    uint32_t in, out;
+    unsigned int got, put;
+    uint16_t time, date;
     int rc;
 
     if ( buf == NULL ) {
-        buf = (u8 *)try_alloc( COPY_BUF );
+        buf = (uint8_t *)try_alloc( COPY_BUF );
         if ( buf == NULL ) {
             return -1;
         }
@@ -205,15 +206,15 @@ int copy_file( const char *from, const char *to, u16 attr )
     if ( rc ) {
         sys_delete( to );
     } else {
-        sys_set_attr( to, (u16)(attr & 0x27) );
+        sys_set_attr( to, (uint16_t)(attr & 0x27) );
     }
     return rc;
 }
 
 static int is_dir_path( const char *path )
 {
-    u32 len = str_len( path );
-    u16 attr;
+    unsigned int len = str_len( path );
+    uint16_t attr;
 
     if ( len == 0 ) {
         return 0;
@@ -235,7 +236,7 @@ static int same_file( const char *one, const char *other )
 }
 
 /* "C:\DIR\NAME.EXT   10-09-26   1,234" */
-static void describe( const char *path, u32 size, u16 date, char *buf, u32 max )
+static void describe( const char *path, uint32_t size, uint16_t date, char *buf, unsigned int max )
 {
     char num[20], day[12];
     const char *shown = path;
@@ -254,7 +255,7 @@ static void describe( const char *path, u32 size, u16 date, char *buf, u32 max )
 static int replace_ask( PICK *pick, const char *target )
 {
     char text[400], line[160];
-    u32 handle;
+    uint32_t handle;
 
     str_cpy( text, "Replace file:\n  " );
     if ( sys_find_first( target, 0x27, &rec, &handle ) == 0 ) {
@@ -277,7 +278,7 @@ static void transfer( PICKS *picks, const char *dest, int move )
     char target[PATH_MAX], full[PATH_MAX];
     PICK *pick;
     int index, into_dir, rc, answer, exists;
-    u16 attr;
+    uint16_t attr;
 
     if ( sys_truename( dest, full, 0 ) != 0 || full[0] == 0 ) {
         str_fit( full, dest, sizeof( full ) );
@@ -534,7 +535,7 @@ void op_attrib( void )
     DLG dlg;
     char num[12];
     int hidden, system, archive, readonly, index, rc;
-    u16 attr;
+    uint16_t attr;
 
     if ( !picks_take( &picks ) ) {
         return;
@@ -552,7 +553,7 @@ void op_attrib( void )
         str_cpy( what, "File:  " );
         str_catn( what, path_name( picks.item[0].path ), 60 );
     } else {
-        fmt_dec( (u32)picks.count, 0, num );
+        fmt_dec( (unsigned int)picks.count, 0, num );
         str_cpy( what, num );
         str_catn( what, " files: the marks below go on every one.", sizeof( what ) );
     }
@@ -573,8 +574,8 @@ void op_attrib( void )
     dlg.focus = 1;
     dlg.help = HELP_FILES;
     if ( dlg_run( &dlg ) == ID_OK ) {
-        attr = (u16)((hidden ? ATTR_HIDDEN : 0) | (system ? ATTR_SYSTEM : 0)
-                     | (archive ? ATTR_ARCHIVE : 0) | (readonly ? ATTR_READONLY : 0));
+        attr = (uint16_t)((hidden ? ATTR_HIDDEN : 0) | (system ? ATTR_SYSTEM : 0)
+                          | (archive ? ATTR_ARCHIVE : 0) | (readonly ? ATTR_READONLY : 0));
         for ( index = 0; index < picks.count; index++ ) {
             rc = sys_set_attr( picks.item[index].path, attr );
             if ( rc ) {
@@ -640,9 +641,10 @@ void op_mkdir( void )
    form feed after each. */
 void op_print( void )
 {
-    static u8 buf[2048];
+    static uint8_t buf[2048];
     PICKS picks;
-    u32 in, out, got, put;
+    uint32_t in, out;
+    unsigned int got, put;
     int index, rc = 0;
 
     if ( !picks_take( &picks ) ) {

@@ -22,8 +22,8 @@
 #include "sys.h"
 
 typedef struct {
-    u32 eax, ebx, ecx, edx, esi, edi;
-    u32 flags;                  /* in: bit 0 = CF before the INT */
+    uint32_t eax, ebx, ecx, edx, esi, edi;
+    uint32_t flags;             /* in: bit 0 = CF before the INT */
 } REGS;
 
 void __cdecl int21( REGS *regs );
@@ -35,17 +35,17 @@ void deltree_main( void );
 #define TAIL_LEN    300
 #define FIND_LEN    320
 
-static u8   *psp;
-static char *tail;              /* TAIL_LEN; from 48h, as MAIN.C's buffers */
-static int   lfn_ok = 1;
-static u8   *find_rec;          /* FIND_LEN: 714Eh's record, or 4Eh's DTA */
+static uint8_t *psp;
+static char    *tail;           /* TAIL_LEN; from 48h, as MAIN.C's buffers */
+static int      lfn_ok = 1;
+static uint8_t *find_rec;       /* FIND_LEN: 714Eh's record, or 4Eh's DTA */
 
 void __cdecl dos_entry( void )
 {
     deltree_main();
 }
 
-static void call21( REGS *regs, u32 eax )
+static void call21( REGS *regs, uint32_t eax )
 {
     regs->eax = eax;
     regs->flags = 0;
@@ -80,18 +80,18 @@ int sys_init( void )
 {
     REGS regs;
     const char *full;
-    u32 len;
+    unsigned int len;
     int quoted;
 
     tail = (char *)sys_mem_alloc( TAIL_LEN + FIND_LEN );
     if ( tail == NULL ) {
         return 1;
     }
-    find_rec = (u8 *)tail + TAIL_LEN;
+    find_rec = (uint8_t *)tail + TAIL_LEN;
 
     clear( &regs );
     call21( &regs, 0x6200 );
-    psp = (u8 *)regs.ebx;
+    psp = (uint8_t *)regs.ebx;
     len = psp[0x80];
     if ( len > 126 ) {
         len = 126;
@@ -122,7 +122,7 @@ int sys_init( void )
         char probe[PATH_MAX];
 
         clear( &regs );
-        regs.esi = (u32)probe;
+        regs.esi = (uint32_t)probe;
         call21( &regs, 0x7147 );
         lfn_missing( &regs );
     }
@@ -137,9 +137,9 @@ const char *sys_cmdline( void )
 const char *sys_getenv( const char *name )
 {
     const char *env;
-    u32 len = str_len( name );
+    unsigned int len = str_len( name );
 
-    env = (const char *)*(u32 *)(psp + 0x2C);
+    env = (const char *)*(uint32_t *)(psp + 0x2C);
     if ( env == NULL ) {
         return NULL;
     }
@@ -152,14 +152,14 @@ const char *sys_getenv( const char *name )
     return NULL;
 }
 
-void sys_write( int handle, const char *buf, u32 len )
+void sys_write( int handle, const char *buf, unsigned int len )
 {
     REGS regs;
 
     clear( &regs );
-    regs.ebx = (u32)handle;
+    regs.ebx = (uint32_t)handle;
     regs.ecx = len;
-    regs.edx = (u32)buf;
+    regs.edx = (uint32_t)buf;
     call21( &regs, 0x4000 );
 }
 
@@ -198,12 +198,12 @@ void sys_key_flush( void )
 static int read_byte( void )
 {
     REGS regs;
-    u8 ch;
+    uint8_t ch;
 
     clear( &regs );
     regs.ebx = H_IN;
     regs.ecx = 1;
-    regs.edx = (u32)&ch;
+    regs.edx = (uint32_t)&ch;
     call21( &regs, 0x3F00 );
     if ( CF( regs ) || regs.eax == 0 ) {
         return -1;
@@ -238,7 +238,7 @@ void sys_exit( int code )
     REGS regs;
 
     clear( &regs );
-    call21( &regs, 0x4C00 | ((u32)code & 0xFF) );
+    call21( &regs, 0x4C00 | ((uint32_t)code & 0xFF) );
 }
 
 /* ------------------------------------------------------------------ */
@@ -252,22 +252,22 @@ int sys_truename( const char *path, char *out, int form )
     out[0] = 0;
     if ( lfn_ok ) {
         clear( &regs );
-        regs.ecx = (u32)form;
-        regs.esi = (u32)path;
-        regs.edi = (u32)out;
+        regs.ecx = (uint32_t)form;
+        regs.esi = (uint32_t)path;
+        regs.edi = (uint32_t)out;
         call21( &regs, 0x7160 );
         if ( !lfn_missing( &regs ) ) {
             return result( &regs );
         }
     }
     clear( &regs );
-    regs.esi = (u32)path;
-    regs.edi = (u32)out;
+    regs.esi = (uint32_t)path;
+    regs.edi = (uint32_t)out;
     call21( &regs, 0x6000 );
     return result( &regs );
 }
 
-int sys_set_attr( const char *path, u16 attr )
+int sys_set_attr( const char *path, uint16_t attr )
 {
     REGS regs;
 
@@ -275,7 +275,7 @@ int sys_set_attr( const char *path, u16 attr )
         clear( &regs );
         regs.ebx = 1;
         regs.ecx = attr;
-        regs.edx = (u32)path;
+        regs.edx = (uint32_t)path;
         call21( &regs, 0x7143 );
         if ( !lfn_missing( &regs ) ) {
             return result( &regs );
@@ -283,7 +283,7 @@ int sys_set_attr( const char *path, u16 attr )
     }
     clear( &regs );
     regs.ecx = attr;
-    regs.edx = (u32)path;
+    regs.edx = (uint32_t)path;
     call21( &regs, 0x4301 );
     return result( &regs );
 }
@@ -294,7 +294,7 @@ int sys_delete( const char *path )
 
     if ( lfn_ok ) {
         clear( &regs );
-        regs.edx = (u32)path;
+        regs.edx = (uint32_t)path;
         regs.esi = 0;                       /* the name, not a pattern */
         call21( &regs, 0x7141 );
         if ( !lfn_missing( &regs ) ) {
@@ -302,7 +302,7 @@ int sys_delete( const char *path )
         }
     }
     clear( &regs );
-    regs.edx = (u32)path;
+    regs.edx = (uint32_t)path;
     call21( &regs, 0x4100 );
     return result( &regs );
 }
@@ -313,14 +313,14 @@ int sys_rmdir( const char *path )
 
     if ( lfn_ok ) {
         clear( &regs );
-        regs.edx = (u32)path;
+        regs.edx = (uint32_t)path;
         call21( &regs, 0x713A );
         if ( !lfn_missing( &regs ) ) {
             return result( &regs );
         }
     }
     clear( &regs );
-    regs.edx = (u32)path;
+    regs.edx = (uint32_t)path;
     call21( &regs, 0x3A00 );
     return result( &regs );
 }
@@ -351,22 +351,22 @@ static void rec_from_dta( FINDREC *rec )
 
 /* The classic search cannot ask for a REQUIRED attribute, so the
    directory-only searches filter here, as 714Eh would have. */
-static u8 dta_required;
+static uint8_t dta_required;
 
 static int dta_skip( void )
 {
     return (find_rec[0x15] & dta_required) != dta_required;
 }
 
-int sys_find_first( const char *pattern, u16 attrs, FINDREC *rec, u32 *handle )
+int sys_find_first( const char *pattern, uint16_t attrs, FINDREC *rec, uint32_t *handle )
 {
     REGS regs;
 
     if ( lfn_ok ) {
         clear( &regs );
         regs.ecx = attrs;                   /* CL allowed, CH required */
-        regs.edx = (u32)pattern;
-        regs.edi = (u32)find_rec;
+        regs.edx = (uint32_t)pattern;
+        regs.edi = (uint32_t)find_rec;
         regs.esi = 1;                       /* times in DOS form */
         call21( &regs, 0x714E );
         if ( !lfn_missing( &regs ) ) {
@@ -379,12 +379,12 @@ int sys_find_first( const char *pattern, u16 attrs, FINDREC *rec, u32 *handle )
         }
     }
     clear( &regs );
-    regs.edx = (u32)find_rec;
+    regs.edx = (uint32_t)find_rec;
     call21( &regs, 0x1A00 );
-    dta_required = (u8)(attrs >> 8);
+    dta_required = (uint8_t)(attrs >> 8);
     clear( &regs );
     regs.ecx = attrs & 0xFF;
-    regs.edx = (u32)pattern;
+    regs.edx = (uint32_t)pattern;
     call21( &regs, 0x4E00 );
     if ( CF( regs ) ) {
         return (int)AX( regs );
@@ -397,14 +397,14 @@ int sys_find_first( const char *pattern, u16 attrs, FINDREC *rec, u32 *handle )
     return 0;
 }
 
-int sys_find_next( u32 handle, FINDREC *rec )
+int sys_find_next( uint32_t handle, FINDREC *rec )
 {
     REGS regs;
 
     if ( lfn_ok ) {
         clear( &regs );
         regs.ebx = handle;
-        regs.edi = (u32)find_rec;
+        regs.edi = (uint32_t)find_rec;
         regs.esi = 1;
         call21( &regs, 0x714F );
         if ( CF( regs ) ) {
@@ -424,7 +424,7 @@ int sys_find_next( u32 handle, FINDREC *rec )
     return 0;
 }
 
-void sys_find_close( u32 handle )
+void sys_find_close( uint32_t handle )
 {
     REGS regs;
 
@@ -439,7 +439,7 @@ void sys_find_close( u32 handle )
 /* memory                                                              */
 /* ------------------------------------------------------------------ */
 
-void *sys_mem_alloc( u32 size )
+void *sys_mem_alloc( unsigned int size )
 {
     REGS regs;
 

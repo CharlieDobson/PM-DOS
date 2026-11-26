@@ -102,7 +102,7 @@ static void find_self( void )
         }
     }
     xa_clear( &regs );
-    regs.edx = (u32)shell;
+    regs.edx = (uint32_t)shell;
     shell[0] = 0;
     if ( xa_dos( &regs, 0xF103 ) == 0 && shell[0] ) {
         shell[sizeof( shell ) - 1] = 0;

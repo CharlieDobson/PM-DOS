@@ -29,22 +29,19 @@
 #ifndef X87EMU_H
 #define X87EMU_H
 
-typedef unsigned int    u32;
-typedef int             s32;
-typedef unsigned short  u16;
-typedef unsigned char   u8;
+#include <stdint.h>
 
 /*---------------------------------------------------------------------
  * The working number
  *-------------------------------------------------------------------*/
 typedef struct {
-    u32 m[4];           /* the significand, m[3] the most significant */
-    s32 e;              /* value = m * 2^(e - 127); normalized, bit 127
-                           is set and 2^e <= |value| < 2^(e + 1) */
-    u8  sign;           /* 1: negative */
-    u8  kind;           /* K_* */
-    u8  denorm;         /* it was a denormal when it was read */
-    u8  pad;
+    uint32_t m[4];        /* the significand, m[3] the most significant */
+    int32_t  e;           /* value = m * 2^(e - 127); normalized, bit 127
+                             is set and 2^e <= |value| < 2^(e + 1) */
+    unsigned char sign;   /* 1: negative */
+    unsigned char kind;   /* K_* */
+    unsigned char denorm; /* it was a denormal when it was read */
+    uint8_t  pad;
 } wide;
 
 #define K_ZERO          0
@@ -70,19 +67,19 @@ typedef struct {
  * The coprocessor's own state, kept by PMIO (FPU.INC, fpu_emst)
  *-------------------------------------------------------------------*/
 typedef struct {
-    u32 lo, hi;         /* the significand; bit 31 of hi is the units bit */
-    u16 se;             /* the sign and the biased exponent */
-    u16 pad;
+    uint32_t lo, hi;    /* the significand; bit 31 of hi is the units bit */
+    uint16_t se;        /* the sign and the biased exponent */
+    uint16_t pad;
 } xreg;
 
 typedef struct {
-    xreg st[8];         /* by physical number, not by stack position */
-    u16  cw, sw;        /* the top of the stack is in sw, bits 11-13 */
-    u16  fop, fcs;      /* the last instruction that was not a control */
-    u16  fds;           /* instruction, and its memory operand */
-    u8   empty;         /* bit n set: physical register n is empty */
-    u8   pad;
-    u32  fip, fdp;
+    xreg     st[8];     /* by physical number, not by stack position */
+    uint16_t cw, sw;    /* the top of the stack is in sw, bits 11-13 */
+    uint16_t fop, fcs;  /* the last instruction that was not a control */
+    uint16_t fds;       /* instruction, and its memory operand */
+    uint8_t  empty;     /* bit n set: physical register n is empty */
+    uint8_t  pad;
+    uint32_t fip, fdp;
 } x87state;
 
 #define X87_STATE       128     /* what FPU.INC keeps for it (X87_STATE) */
@@ -128,15 +125,15 @@ typedef struct {
  * What fpu_nm hands over: the fault frame and the six segments
  *-------------------------------------------------------------------*/
 typedef struct {
-    u32 edi, esi, ebp, esp0, ebx, edx, ecx, eax;        /* PUSHAD */
-    u32 vec, err, eip, cs, eflags, esp, ss;             /* the fault */
+    uint32_t edi, esi, ebp, esp0, ebx, edx, ecx, eax;   /* PUSHAD */
+    uint32_t vec, err, eip, cs, eflags, esp, ss;        /* the fault */
 } x87frame;
 
 typedef struct {
-    u32 base, limit;
-    u16 sel;
-    u8  ok;             /* the selector describes a segment */
-    u8  pad;
+    uint32_t base, limit;
+    uint16_t sel;
+    uint8_t  ok;        /* the selector describes a segment */
+    uint8_t  pad;
 } x87seg;
 
 /* in the order a segment register is numbered: ES CS SS DS FS GS */
@@ -167,18 +164,18 @@ typedef struct {
     x87frame *frame;
     x87seg   *segs;
     x87state *st;
-    u32       start;    /* the instruction's first byte, prefixes and all */
-    u32       next;     /* the byte after the last one read */
-    u32       ea;       /* the memory operand's offset... */
-    s32       easeg;    /* ...and its segment */
-    s32       sreg;     /* a segment override, or -1 */
-    u32       exc;      /* the status bits this instruction raised */
-    u8        o16;      /* a 66h prefix: 16-bit environment layouts */
-    u8        a16;      /* a 67h prefix: 16-bit addressing */
-    u8        esc;      /* the escape byte, D8h to DFh, less D8h */
-    u8        modrm;
-    u8        fault;    /* the TRAP_* the instruction ends with, or 0 */
-    u8        pad[3];
+    uint32_t  start;      /* the instruction's first byte, prefixes and all */
+    uint32_t  next;       /* the byte after the last one read */
+    uint32_t  ea;         /* the memory operand's offset... */
+    int       easeg;      /* ...and its segment */
+    int       sreg;       /* a segment override, or -1 */
+    uint32_t  exc;        /* the status bits this instruction raised */
+    unsigned char o16;    /* a 66h prefix: 16-bit environment layouts */
+    unsigned char a16;    /* a 67h prefix: 16-bit addressing */
+    uint8_t   esc;        /* the escape byte, D8h to DFh, less D8h */
+    uint8_t   modrm;
+    unsigned char fault;  /* the TRAP_* the instruction ends with, or 0 */
+    uint8_t   pad[3];
 } x87ctx;
 
 /* the formats a memory operand can have */
@@ -205,21 +202,21 @@ typedef struct {
 #define CMP_EFLAGS      2       /* FCOMI: the answer goes to EFLAGS */
 
 /* X87EMU.C, for X87OPS.C */
-int  xs_stop( x87ctx *c, u32 bits );
-int  xs_rc( x87ctx *c );
-int  xs_pc( x87ctx *c );
-int  xs_empty( x87ctx *c, int i );
-void xs_get( x87ctx *c, int i, wide *w );
-void xs_getraw( x87ctx *c, int i, xreg *x );
-void xs_put( x87ctx *c, int i, const wide *w );
-void xs_putraw( x87ctx *c, int i, const xreg *x );
-void xs_pop( x87ctx *c );
-int  xs_push( x87ctx *c );
-int  xs_under( x87ctx *c );
-void xs_cc( x87ctx *c, u32 cc );
-void xs_result( x87ctx *c, int i, wide *r, int prec );
-void xs_indef( wide *w );
-u8  *xs_mem( x87ctx *c, u32 len );
+int      xs_stop( x87ctx *c, uint32_t bits );
+int      xs_rc( x87ctx *c );
+int      xs_pc( x87ctx *c );
+int      xs_empty( x87ctx *c, int i );
+void     xs_get( x87ctx *c, int i, wide *w );
+void     xs_getraw( x87ctx *c, int i, xreg *x );
+void     xs_put( x87ctx *c, int i, const wide *w );
+void     xs_putraw( x87ctx *c, int i, const xreg *x );
+void     xs_pop( x87ctx *c );
+int      xs_push( x87ctx *c );
+int      xs_under( x87ctx *c );
+void     xs_cc( x87ctx *c, uint32_t cc );
+void     xs_result( x87ctx *c, int i, wide *r, int prec );
+void     xs_indef( wide *w );
+uint8_t *xs_mem( x87ctx *c, unsigned int len );
 
 /* X87OPS.C, for X87EMU.C */
 void op_math( x87ctx *c, int op, int dst, int src, int pops );
@@ -232,27 +229,27 @@ void op_fn( x87ctx *c );
 /*---------------------------------------------------------------------
  * PMIO's side (FPU.INC)
  *-------------------------------------------------------------------*/
-u32 x87_trap( x87frame *frame, x87seg *segs, x87state *st );
+uint32_t x87_trap( x87frame *frame, x87seg *segs, x87state *st );
 #pragma aux x87_trap "*" parm [eax] [edx] [ebx] value [eax];
 void x87_init( x87state *st );
 #pragma aux x87_init "*" parm [eax];
 
 /* usr_wok, as a C function can call it: 1 if ring 3 could write every
    byte of the range itself, 0 if not */
-u32 fpu_uok( u32 lin, u32 len );
+uint32_t fpu_uok( uint32_t lin, unsigned int len );
 #pragma aux fpu_uok "*" parm [eax] [ecx] value [eax] modify exact [eax];
 
 /*---------------------------------------------------------------------
  * 32-by-32 multiply and 64-by-32 divide, as the instructions do them
  *-------------------------------------------------------------------*/
-u32 mul32( u32 a, u32 b, u32 *hi );
+uint32_t mul32( uint32_t a, uint32_t b, uint32_t *hi );
 #pragma aux mul32 = \
         "mul edx" \
         "mov [ebx],edx" \
         parm [eax] [edx] [ebx] value [eax] modify exact [eax edx];
 
 /* (hi:lo) / d with hi < d, so that the quotient fits */
-u32 div32( u32 lo, u32 hi, u32 d, u32 *rem );
+uint32_t div32( uint32_t lo, uint32_t hi, uint32_t d, uint32_t *rem );
 #pragma aux div32 = \
         "div ecx" \
         "mov [ebx],edx" \
@@ -261,35 +258,35 @@ u32 div32( u32 lo, u32 hi, u32 d, u32 *rem );
 /*---------------------------------------------------------------------
  * X87NUM.C
  *-------------------------------------------------------------------*/
-void w_zero( wide *w );
-void w_one( wide *w );
-void w_set( wide *w, const u32 *k );            /* a table constant */
-int  w_mzero( const wide *w );
-void w_norm( wide *w );
-void w_shr( wide *w, s32 count );
-int  w_cmpmag( const wide *a, const wide *b );
-void w_add( wide *res, const wide *a, const wide *b );
-void w_sub( wide *res, const wide *a, const wide *b );
-void w_mul( wide *res, const wide *a, const wide *b );
-void w_div( wide *res, const wide *a, const wide *b, int bits );
-void w_sqrt( wide *res, const wide *a, int bits );
-u32  w_prem( wide *r, const wide *x, const wide *y, int n );
-u32  w_bit( const wide *w, int n );
-void w_divs( wide *w, u32 divisor );
-void w_muls( wide *w, u32 factor );
-void w_int( wide *w, u32 value );
-u32  w_rint( wide *w, int rc );
-u32  w_round( wide *w, int keep, int rc );
-u32  w_fit( wide *w, int prec, s32 emin, s32 emax, int rc );
+void     w_zero( wide *w );
+void     w_one( wide *w );
+void     w_set( wide *w, const uint32_t *k );   /* a table constant */
+int      w_mzero( const wide *w );
+void     w_norm( wide *w );
+void     w_shr( wide *w, int32_t count );
+int      w_cmpmag( const wide *a, const wide *b );
+void     w_add( wide *res, const wide *a, const wide *b );
+void     w_sub( wide *res, const wide *a, const wide *b );
+void     w_mul( wide *res, const wide *a, const wide *b );
+void     w_div( wide *res, const wide *a, const wide *b, int bits );
+void     w_sqrt( wide *res, const wide *a, int bits );
+uint32_t w_prem( wide *r, const wide *x, const wide *y, int n );
+uint32_t w_bit( const wide *w, int n );
+void     w_divs( wide *w, uint32_t divisor );
+void     w_muls( wide *w, uint32_t factor );
+void     w_int( wide *w, uint32_t value );
+uint32_t w_rint( wide *w, int rc );
+uint32_t w_round( wide *w, int keep, int rc );
+uint32_t w_fit( wide *w, int prec, int32_t emin, int32_t emax, int rc );
 
-void x_unpack( wide *w, const xreg *x );
-void x_pack( xreg *x, const wide *w );
-void d_unpack( wide *w, u32 lo, u32 hi );
-void d_pack( const wide *w, u32 *lo, u32 *hi );
-void f_unpack( wide *w, u32 bits );
-u32  f_pack( const wide *w );
-void i_unpack( wide *w, u32 lo, u32 hi );
-int  i_pack( const wide *w, u32 *lo, u32 *hi );
+void     x_unpack( wide *w, const xreg *x );
+void     x_pack( xreg *x, const wide *w );
+void     d_unpack( wide *w, uint32_t lo, uint32_t hi );
+void     d_pack( const wide *w, uint32_t *lo, uint32_t *hi );
+void     f_unpack( wide *w, uint32_t bits );
+uint32_t f_pack( const wide *w );
+void     i_unpack( wide *w, uint32_t lo, uint32_t hi );
+int      i_pack( const wide *w, uint32_t *lo, uint32_t *hi );
 
 /* the results of w_round */
 #define R_INEXACT       1

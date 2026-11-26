@@ -36,29 +36,29 @@
 #define PATH_MAX        260     /* the long-name API's own limit, NUL included */
 
 typedef struct {
-    u8   attr;
-    char name[PATH_MAX];        /* the long name - the 8.3 when there is none */
-    char alias[14];             /* the 8.3 name */
+    uint8_t attr;
+    char    name[PATH_MAX];     /* the long name - the 8.3 when there is none */
+    char    alias[14];          /* the 8.3 name */
 } FINDREC;
 
 int   sys_init( void );
 const char *sys_cmdline( void );
 const char *sys_getenv( const char *name );
-void  sys_write( int handle, const char *buf, u32 len );
+void  sys_write( int handle, const char *buf, unsigned int len );
 int   sys_stdin_is_console( void );
 void  sys_key_flush( void );                /* drop what was typed ahead */
 int   sys_read_key( void );                 /* no echo; -1 at end of input */
 void  sys_exit( int code );
 
 int   sys_truename( const char *path, char *out, int form );   /* 7160h CL */
-int   sys_set_attr( const char *path, u16 attr );
+int   sys_set_attr( const char *path, uint16_t attr );
 int   sys_delete( const char *path );
 int   sys_rmdir( const char *path );
 
-int   sys_find_first( const char *pattern, u16 attrs, FINDREC *rec, u32 *handle );
-int   sys_find_next( u32 handle, FINDREC *rec );
-void  sys_find_close( u32 handle );
+int   sys_find_first( const char *pattern, uint16_t attrs, FINDREC *rec, uint32_t *handle );
+int   sys_find_next( uint32_t handle, FINDREC *rec );
+void  sys_find_close( uint32_t handle );
 
-void *sys_mem_alloc( u32 size );
+void *sys_mem_alloc( unsigned int size );
 
 #endif

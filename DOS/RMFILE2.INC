@@ -485,7 +485,8 @@ sa_got:
         mov     si,di
         pop     di
         mov     word ptr [si+SFT_REF],1
-        pop     cx
+        mov     word ptr [rd_growsft],0 ; whose end sft_grow knew: maybe this
+        pop     cx                      ; entry's, when it was another file's
         clc
         ret
 
@@ -504,8 +505,18 @@ sar_done:
         pop     si
         ret
 
-; BX = a handle.  Drops one reference, closing the file if it was the
-; last - which is the only place a directory entry is written back.
+; BX = a handle.  Drops one reference, and frees the entry if it was the
+; last.
+;
+; EVERY CLOSE COMMITS THE FILE (2026-11-21), as MS-DOS's DOS_CLOSE does
+; whatever the count ("All closes decrement the ref count", DOS6SRC
+; dos/close.asm, and all of them write the entry and flush).  The
+; directory entry and the FAT used to go out with the LAST handle only,
+; so the way a program commits a file on any DOS - duplicate the handle,
+; close the duplicate - did nothing here.  Windows' pager does exactly
+; that after each megabyte it adds to its swap file: the megabyte was
+; in this DOS's FAT window and nowhere else, and the directory still
+; gave the old length, for as long as the file stayed open.
 sft_release:
         push    si
         push    ax
@@ -516,9 +527,9 @@ sft_release:
         cmp     word ptr [si+SFT_REF],0
         je      srl_done
         dec     word ptr [si+SFT_REF]
+        call    file_commit             ; every close, not the last alone
         cmp     word ptr [si+SFT_REF],0
         jne     srl_done
-        call    file_commit
         test    byte ptr [si+SFT_FLAGS],SFF_DEVICE
         jz      srl_done
         cmp     byte ptr [si+SFT_DRIVE],DEV_DRV
@@ -598,8 +609,9 @@ ja_full:
         ret
 
 ;=====================================================================
-; file_commit - SI = an SFT that is being closed.  Write its directory
-;               entry back if anything about it changed.
+; file_commit - SI = an SFT that is being closed or committed.  Write
+;               its directory entry back if anything about it changed,
+;               and the FAT and directory windows with it.
 ;=====================================================================
 file_commit:
         pusha
@@ -667,6 +679,16 @@ sft_clus:
         xor     edx,edx
         div     ecx                     ; EAX = which cluster of the file
 
+        ; From the end of the chain, when sft_grow knows it and the
+        ; position is at it or past it.
+        cmp     di,[rd_growsft]
+        jne     sc_nogrow
+        cmp     eax,dword ptr [rd_growidx]
+        jb      sc_nogrow
+        mov     ebx,dword ptr [rd_growclus]
+        mov     edx,dword ptr [rd_growidx]
+        jmp     short sc_walk
+sc_nogrow:
         mov     ebx,dword ptr [di+SFT_CURCLUS]
         mov     edx,dword ptr [di+SFT_CURIDX]
         cmp     ebx,2
@@ -714,6 +736,35 @@ sc_bad:
 
 ;--- sft_grow - SI = an SFT.  Add one cluster to the end of its chain
 ;--- and answer it in EBX.  CF if the volume is full.
+;
+; THE END OF THE CHAIN IS REMEMBERED FROM ONE CLUSTER TO THE NEXT
+; (2026-11-21).  Every cluster added used to walk the chain from the
+; file's first cluster to find the end, and the sft_clus before it
+; walked it as well - so a length set a megabyte further on, which is
+; how Windows makes its swap file (file_trunc), walked the whole chain
+; two thousand times.  The walk goes through the FAT window, written
+; back and read again whenever the chain crosses a FAT sector: the
+; third megabyte was some ten thousand window loads, and under an
+; emulator that makes writes into a page of code slow (RMSTK.INC, NEXT
+; TO THE SLOTS - the window is in such a page) it took minutes, which
+; was the DOS box that "stayed inactive" of 2026-11-20.  Now each
+; cluster is hooked onto the one added before it: rd_growsft says whose
+; end rd_growclus and rd_growidx are, and sft_clus starts from there as
+; well.
+;
+; IN RMDOS'S OWN WORDS, NOT IN THE FILE TABLE ENTRY - the bytes of an
+; entry that RMDOS keeps its own fields in are SHARE's, which VSHARE
+; and IFSMGR may write into - and for one file, the one that grew last.
+; It is kept from call to call, so that a program writing a file a
+; little at a time walks its chain once and not once a call, and it is
+; FORGOTTEN WHEREVER THE CHAIN IT NAMES MAY HAVE CHANGED WITHOUT IT:
+; when any chain is freed (fat_freechain - a file cut short or deleted,
+; by this handle or another), when an entry is given out (sft_alloc -
+; the entry may be this one again, for another file), when a volume is
+; mounted or let go of (rd_mount, vol_forget - a diskette changed, or
+; Windows' own file system at the disk).  A second handle that makes
+; the same file LONGER is no harm: the walk goes on from the remembered
+; cluster to wherever the end now is.
 sft_grow:
         push    eax
         push    ecx
@@ -728,15 +779,20 @@ sft_grow:
         jz      sg2_bad
         mov     ebx,eax
 
+        xor     edx,edx                 ; EDX = the index of the cluster in ECX
         mov     eax,dword ptr [di+SFT_START]
         cmp     eax,2
         jae     sg2_chain
-        mov     dword ptr [di+SFT_START],ebx    ; the file had none at all
-        or      byte ptr [di+SFT_FLAGS],SFF_WRITTEN
-        jmp     short sg2_ok
+        mov     dword ptr [di+SFT_START],ebx    ; the file had none at all:
+        or      byte ptr [di+SFT_FLAGS],SFF_WRITTEN     ; this is cluster 0
+        jmp     short sg2_here
 sg2_chain:
         ; Walk to the end and hook it on
         mov     ecx,eax
+        cmp     di,[rd_growsft]
+        jne     sg2_walk                ; nothing known: from the front
+        mov     ecx,dword ptr [rd_growclus]
+        mov     edx,dword ptr [rd_growidx]
 sg2_walk:
         mov     eax,ecx
         call    fat_get
@@ -745,12 +801,19 @@ sg2_walk:
         cmp     eax,2
         jb      sg2_tail
         mov     ecx,eax
+        inc     edx
         jmp     short sg2_walk
 sg2_tail:
         mov     eax,ecx
+        push    edx
         mov     edx,ebx
         call    fat_put
-sg2_ok:
+        pop     edx
+        inc     edx                     ; the new one is the next after it
+sg2_here:
+        mov     [rd_growsft],di
+        mov     dword ptr [rd_growclus],ebx
+        mov     dword ptr [rd_growidx],edx
         mov     si,di
         pop     di
         pop     edx
@@ -766,6 +829,11 @@ sg2_bad:
         pop     eax
         stc
         ret
+
+rd_growsft  dw  0                       ; the SFT sft_grow last added a cluster
+                                        ; to, or 0 for none it can vouch for
+rd_growclus dd  0                       ; ...that cluster, the end of its chain
+rd_growidx  dd  0                       ; ...and which cluster of the file it is
 
 ;=====================================================================
 ; file_io - SI = SFT, ES:DI = buffer, ECX = bytes, [rd_iowr] = 0 read
@@ -1207,11 +1275,18 @@ f40_ioerr:
 ; made longer this way had no clusters behind its new end (Windows makes
 ; its swap file 3MB long so, and had one cluster of it), and a file made
 ; shorter kept every cluster it had, lost to everything once closed.  If
-; the volume fills first the length stays as it was; the write of
-; nothing reports nothing written either way.
+; the volume fills first the length stays as it was, AND THE CLUSTERS IT
+; TOOK ON THE WAY GO BACK (2026-11-21) - as MS-DOS's ALLOCATE gives
+; back what it could not finish.  They used to stay on the file's chain
+; behind a length that did not cover them: CHKDSK said "allocation
+; error, size adjusted", and a volume filled that way stayed full until
+; the file was deleted.  The write of nothing reports nothing written
+; either way.
 file_trunc:
         pushad
         mov     eax,dword ptr [si+SFT_POS]
+ft_to:
+        mov     dword ptr [ft_want],eax ; the length the chain is cut to fit
         or      eax,eax
         jz      ft_none
 
@@ -1222,8 +1297,13 @@ ft_reach:
         pop     eax
         jnc     ft_have
         call    sft_grow                ; not there yet: one more
-        jc      ft_done                 ; (the volume is full)
-        jmp     ft_reach
+        jnc     ft_reach
+        ; The volume is full.  Back to the length the file has - once: a
+        ; chain that does not reach even that is left as it is.
+        mov     eax,dword ptr [si+SFT_SIZE]
+        cmp     eax,dword ptr [ft_want]
+        je      ft_done
+        jmp     ft_to
 ft_have:
         ; ...and nothing after it
         push    si
@@ -1261,7 +1341,7 @@ ft_pop:
         pop     si
         mov     dword ptr [si+SFT_START],0
 ft_set:
-        mov     eax,dword ptr [si+SFT_POS]
+        mov     eax,dword ptr [ft_want]
         mov     dword ptr [si+SFT_SIZE],eax
         or      byte ptr [si+SFT_FLAGS],SFF_WRITTEN
         mov     dword ptr [si+SFT_CURCLUS],0    ; walks start again from
@@ -1269,6 +1349,8 @@ ft_set:
 ft_done:                                        ; at may be gone
         popad
         ret
+
+ft_want     dd  0                       ; the length file_trunc is making
 
 ;--- 42h seek --------------------------------------------------------
 fn42:
@@ -1431,6 +1513,7 @@ fn41:
         ; and looked at afterwards.
         push    bx
         mov     bx,[rd_deoff]
+        call    rn_droplfn              ; its long name goes with it
         mov     byte ptr [rd_dirbuf + bx + DE_NAME],0E5h
         pop     bx
         call    dir_commit
@@ -1459,6 +1542,193 @@ f41_net:
         mov     ax,1113h
         jmp     net_simple
 
+;=====================================================================
+; 13h - delete every file the FCB matches, in the current directory of
+;       its drive.  DS:DX -> the FCB, extended or not.
+;
+; MS-DOS's $FCB_Delete is TransFCB then DOS_Delete (DOS6SRC dos/fcbio.asm,
+; dos/delete.asm), and this is the same two steps: the FCB becomes a
+; name, "D:NAME????.EXT" with the drive's current directory understood,
+; and every entry that name matches goes.  An extended FCB's attribute
+; lets hidden and system files be matched; directories and the volume
+; label never are, and a read-only file is passed over, as DOS_Delete
+; passes it over.  AL = 0 if anything went, FFh if nothing did - with
+; 59h's error "access denied" if something matched and was read-only,
+; "file not found" if nothing matched at all.  A redirector's drive gets
+; the name with its question marks in it, 1113h, as DOS sends it.
+;
+; There is no carry: FCB calls answer in AL.
+;=====================================================================
+fn13:
+        mov     es,[bp+F_DS]
+        mov     si,[bp+F_DX]
+        mov     byte ptr [f13_attr],0
+        cmp     byte ptr es:[si],0FFh
+        jne     f13_std
+        mov     al,es:[si+6]
+        mov     [f13_attr],al
+        add     si,7
+f13_std:
+        ; THE NAME, as TransFCB makes it: the drive, then the eight and
+        ; the three with their trailing spaces dropped
+        mov     di,OFFSET f13_path
+        mov     al,es:[si]
+        or      al,al
+        jnz     f13_drv
+        mov     al,[rd_drive]
+        inc     al
+f13_drv:
+        add     al,'A' - 1
+        mov     [di],al
+        mov     byte ptr [di+1],':'
+        add     di,2
+        lea     bx,[si+1]
+        mov     cx,8
+        call    f13_part
+        cmp     byte ptr es:[si+9],' '
+        je      f13_noext
+        mov     byte ptr [di],'.'
+        inc     di
+        lea     bx,[si+9]
+        mov     cx,3
+        call    f13_part
+f13_noext:
+        mov     byte ptr [di],0
+
+        push    cs
+        pop     es
+        mov     si,OFFSET f13_path
+        call    net_canon
+        jc      f13_err
+        jnz     f13_net
+        call    rd_path                 ; -> EBX the directory, rd_fcb, SI
+        jc      f13_err
+        mov     [f13_vol],si
+        push    cs
+        pop     es
+        push    si
+        mov     si,OFFSET rd_fcb
+        mov     di,OFFSET f13_name
+        mov     cx,11
+        cld
+        rep     movsb
+        pop     si
+        mov     byte ptr [f13_hit],0
+        mov     byte ptr [f13_found],0
+        mov     eax,ebx
+        call    dir_first
+        jc      f13_done
+f13_sector:
+        mov     si,[f13_vol]
+        mov     eax,dword ptr [rd_dfsec]
+        call    dir_win
+        jc      f13_done
+        xor     bx,bx
+f13_entry:
+        mov     al,byte ptr [rd_dirbuf + bx]
+        or      al,al
+        jz      f13_done                ; the end of the directory
+        cmp     al,0E5h
+        je      f13_next
+        mov     al,byte ptr [rd_dirbuf + bx + DE_ATTR]
+        test    al,ATTR_DIR OR ATTR_VOLUME
+        jnz     f13_next                ; and a long-name piece is both
+        mov     ah,[f13_attr]
+        not     ah
+        and     ah,al
+        test    ah,ATTR_HIDDEN OR ATTR_SYSTEM
+        jnz     f13_next                ; not asked for
+        mov     di,OFFSET f13_name
+        lea     si,[rd_dirbuf + bx]
+        mov     cx,11
+f13_cmp:
+        mov     ah,[di]
+        cmp     ah,'?'
+        je      f13_cmpnext
+        cmp     ah,[si]
+        jne     f13_next
+f13_cmpnext:
+        inc     si
+        inc     di
+        loop    f13_cmp
+        mov     byte ptr [f13_found],1
+        test    al,ATTR_READONLY
+        jnz     f13_next
+
+        ; one of them: its long name, the entry, then the chain
+        mov     [rd_deoff],bx
+        push    bx
+        call    rd_declus               ; -> EBX
+        mov     dword ptr [f13_clus],ebx
+        pop     bx
+        call    rn_droplfn
+        mov     byte ptr [rd_dirbuf + bx + DE_NAME],0E5h
+        call    dir_commit
+        mov     eax,dword ptr [f13_clus]
+        cmp     eax,2
+        jb      f13_nochain
+        mov     si,[f13_vol]
+        call    fat_freechain
+f13_nochain:
+        mov     byte ptr [f13_hit],1
+f13_next:
+        add     bx,DE_LEN
+        cmp     bx,SECSIZE
+        jb      f13_entry
+        mov     si,[f13_vol]
+        call    dir_next
+        jnc     f13_sector
+f13_done:
+        call    rd_flush
+        cmp     byte ptr [f13_hit],0
+        je      f13_none
+        mov     byte ptr [bp+F_AX],0
+        jmp     i21_ok
+f13_none:
+        mov     ax,ERR_NOFILE
+        cmp     byte ptr [f13_found],0
+        je      f13_err
+        mov     ax,ERR_ACCESS
+f13_err:
+        mov     [rd_lasterr],ax
+        mov     byte ptr [bp+F_AX],0FFh
+        jmp     i21_ok
+f13_net:
+        mov     al,[f13_attr]
+        call    net_sattr
+        mov     ax,1113h
+        call    net_pcall
+        jc      f13_err
+        mov     byte ptr [bp+F_AX],0
+        jmp     i21_ok
+
+;--- f13_part - CX bytes at ES:BX, less their trailing spaces, to DS:DI
+f13_part:
+        push    si
+f13_trim:
+        mov     si,cx
+        cmp     byte ptr es:[bx + si - 1],' '
+        jne     f13_copy
+        loop    f13_trim
+        pop     si
+        ret
+f13_copy:
+        mov     al,es:[bx]
+        mov     [di],al
+        inc     bx
+        inc     di
+        loop    f13_copy
+        pop     si
+        ret
+
+f13_attr    db  0                       ; an extended FCB's attribute
+f13_hit     db  0                       ; something was deleted
+f13_found   db  0                       ; something matched
+f13_vol     dw  0
+f13_clus    dd  0
+f13_name    db  11 dup(0)
+f13_path    db  16 dup(0)               ; "D:NAME????.EXT"
+
 ;--- 43h get or set attributes ---------------------------------------
 fn43:
         mov     es,[bp+F_DS]
@@ -1482,8 +1752,13 @@ fn43:
 f43_set:
         cmp     al,1
         jne     f43_fn
+        ; The directory and volume bits are the entry's own and stay as
+        ; they are: a directory given new attributes is still a directory.
         mov     cl,byte ptr [bp+F_CX]
         and     cl,NOT (ATTR_DIR OR ATTR_VOLUME)
+        mov     al,byte ptr [rd_dirbuf + bx + DE_ATTR]
+        and     al,ATTR_DIR OR ATTR_VOLUME
+        or      cl,al
         mov     byte ptr [rd_dirbuf + bx + DE_ATTR],cl
         call    dir_commit
         call    rd_flush
@@ -2663,10 +2938,22 @@ rd_jftoff   dw  0                       ; ...and where they are
 rd_jftseg   dw  0
 rd_jftnew   dw  0                       ; ...and where they are going
 
-;--- 68h / 6Ah commit a file: everything of ours goes out ------------
+;--- 68h / 6Ah commit a file: its directory entry and everything of ours
+;--- go out, as a close would put them (2026-11-21 - it was the windows
+;--- alone, and a file's new length waited for its last close).
 fn68:
+        mov     bx,[bp+F_BX]
+        call    sft_get
+        jc      f68_bad
+        call    sft_isnet
+        je      f68_done                ; a redirector's file is its own
+        call    file_commit
+f68_done:
         call    rd_flush
         jmp     i21_ok
+f68_bad:
+        mov     ax,ERR_BADHANDLE
+        jmp     i21_fail
 
 ;--- 6Ch the extended open, which says WHICH of create and open
 ;--- happened - the one thing 3Ch and 3Dh cannot say between them.
@@ -2813,7 +3100,23 @@ sub_fromdir:
         mov     [si+SFT_DRIVE],al
         mov     byte ptr [si+SFT_DEVINFO],al    ; a file: its drive, and
         mov     byte ptr [si+SFT_DEVINFO+1],0   ; no device bit
-        mov     dword ptr [si+SFT_DEVPTR],0FFFFFFFFh
+        ; THE DRIVE'S PARAMETER BLOCK, WHERE DOS PUTS IT (2026-11-21) - it
+        ; was FFFF:FFFF, "there is none", from before rd_sysinit built
+        ; the blocks.  IFSMGR.386 counts the files a DOS has open on a
+        ; drive before it takes the drive for 32-bit file access - every
+        ; entry in use whose pointer here is the block the drive's CDS
+        ; names, neither a device nor a redirector's (its Device_Init,
+        ; WfW 3.11) - and LEAVES THE DRIVE TO DOS IF THERE IS ONE.  With
+        ; nothing here it counted none, took C: with Windows' swap file
+        ; open on it by this DOS, and two file systems gave out the same
+        ; clusters.  On MS-DOS a temporary swap file on a drive is enough
+        ; to keep 32-bit file access off that drive, and now it is here.
+        movzx   ax,byte ptr [rp_drv]
+        imul    ax,ax,RL_DPBLEN
+        add     ax,RL_DPB
+        mov     word ptr [si+SFT_DEVPTR],ax
+        mov     ax,[rd_lowseg]
+        mov     word ptr [si+SFT_DEVPTR+2],ax
         mov     ax,[rd_opmode]
         mov     [si+SFT_MODE],ax
         mov     al,byte ptr [rd_dirbuf + di + DE_ATTR]

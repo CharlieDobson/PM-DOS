@@ -14,7 +14,7 @@
 #include "rt.h"
 #include "disp.h"
 
-typedef u32 CELL;               /* character 0-7, attribute 8-15, CELLF_* above */
+typedef uint32_t CELL;          /* character 0-7, attribute 8-15, CELLF_* above */
 
 #define CELLF_PANE      0x02000000UL    /* the cell is a pane's: its number is the character */
 

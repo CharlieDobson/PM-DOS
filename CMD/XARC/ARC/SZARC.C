@@ -99,28 +99,28 @@
  *                the raw range-coder packed stream.
  *-------------------------------------------------------------------------- */
 typedef struct {
-    int    kind;            /* SZ_C_*                                        */
-    Byte   props[SZ_MAX_CODER_PROPS];
-    UInt32 propsSize;
-    UInt32 numIn, numOut;
-    UInt32 firstIn;         /* folder-local index of this coder's first in   */
-    UInt32 firstOut;        /*   and first out stream                        */
-    UInt32 unpackSize;      /* size of its output stream                     */
+    int      kind;          /* SZ_C_*                                        */
+    uint8_t  props[SZ_MAX_CODER_PROPS];
+    uint32_t propsSize;
+    uint32_t numIn, numOut;
+    uint32_t firstIn;       /* folder-local index of this coder's first in   */
+    uint32_t firstOut;      /*   and first out stream                        */
+    uint32_t unpackSize;    /* size of its output stream                     */
 } SzCoder;
 
 typedef struct {
-    int    method;          /* SZ_M_COPY / SZ_M_LZMA / SZ_M_LZMA2            */
-    int    filter;          /* SZ_F_NONE / SZ_F_BCJ_X86 / SZ_F_DELTA         */
-    unsigned deltaDist;     /* SZ_F_DELTA: the frame size, 1..256            */
-    Byte   props[8];
-    UInt32 propsSize;
-    UInt32 numCoders;
-    UInt32 mainOutLocal;    /* out-stream index (0-based, folder-local) of   */
-    UInt32 finalOutLocal;   /*   the main coder and the final output         */
-    UInt32 mainUnpackSize;  /* main coder output size (LZMA decode buffer)   */
-    UInt32 unpackSize;      /* folder final output size                      */
-    int    hasCrc;
-    UInt32 crc;
+    int      method;          /* SZ_M_COPY / SZ_M_LZMA / SZ_M_LZMA2          */
+    int      filter;          /* SZ_F_NONE / SZ_F_BCJ_X86 / SZ_F_DELTA       */
+    unsigned deltaDist;       /* SZ_F_DELTA: the frame size, 1..256          */
+    uint8_t  props[8];
+    uint32_t propsSize;
+    uint32_t numCoders;
+    uint32_t mainOutLocal;    /* out-stream index (0-based, folder-local) of */
+    uint32_t finalOutLocal;   /*   the main coder and the final output       */
+    uint32_t mainUnpackSize;  /* main coder output size (LZMA decode buffer) */
+    uint32_t unpackSize;      /* folder final output size                    */
+    int      hasCrc;
+    uint32_t crc;
 
     /* AES, when the folder's packed stream is wrapped in the 06F10701 coder.
      * The props carry the salt, the IV and the iteration count, so they are
@@ -128,51 +128,51 @@ typedef struct {
      * expensive enough (half a million SHA-256 rounds at the 7-Zip default)
      * that doing it while merely LISTING an archive would be felt. */
     int      encrypted;
-    Byte     aesProps[SZ_MAX_CODER_PROPS];
-    UInt32   aesPropsSize;
+    uint8_t  aesProps[SZ_MAX_CODER_PROPS];
+    uint32_t aesPropsSize;
 
     /* Generic structure, filled for every folder including unsupported ones */
     int      unsupported;   /* 1 = parsed but not decodable                  */
     SzCoder  coders[SZ_MAX_CODERS];
-    UInt32   numOutStreams; /* total across coders (CodersUnpackSize count)  */
-    UInt32   numInStreams;
-    UInt32   numPackStreams;/* packed streams this folder consumes           */
-    UInt32   firstPackStream;/* index of the first, into a->packSizes[]      */
+    uint32_t numOutStreams; /* total across coders (CodersUnpackSize count)  */
+    uint32_t numInStreams;
+    uint32_t numPackStreams;/* packed streams this folder consumes           */
+    uint32_t firstPackStream;/* index of the first, into a->packSizes[]      */
     /* packed stream n (folder-relative) feeds folder in-stream packToIn[n] */
-    UInt32   packToIn[SZ_MAX_FOLDER_STRMS];
+    uint32_t packToIn[SZ_MAX_FOLDER_STRMS];
     /* bind pair b joins out-stream bpOut[b] to in-stream bpIn[b] */
-    UInt32   numBindPairs;
-    UInt32   bpIn[SZ_MAX_FOLDER_STRMS];
-    UInt32   bpOut[SZ_MAX_FOLDER_STRMS];
+    uint32_t numBindPairs;
+    uint32_t bpIn[SZ_MAX_FOLDER_STRMS];
+    uint32_t bpOut[SZ_MAX_FOLDER_STRMS];
     int      hasFinalOut;   /* exactly one unbound out-stream was found      */
 
     /* BCJ2 wiring, valid when isBcj2.  Each is a coder index, except rcPack
      * which is a folder-relative packed stream index. */
     int      isBcj2;
     int      bcj2Main, bcj2Call, bcj2Jump;
-    UInt32   bcj2RcPack;
+    uint32_t bcj2RcPack;
 
     /* The folder's record as it stood in the header, and the size of every
      * coder output, so that deleting can write a folder it keeps whole back
      * exactly as it found it - including one it could not decode.  rawLen 0:
      * the record was longer than raw[], and the folder cannot be copied. */
-    Byte     raw[SZ_FOLDER_RAW_MAX];
-    UInt32   rawLen;
-    UInt32   outSizes[SZ_MAX_FOLDER_STRMS];
+    uint8_t  raw[SZ_FOLDER_RAW_MAX];
+    uint32_t rawLen;
+    uint32_t outSizes[SZ_MAX_FOLDER_STRMS];
 } SzFolder;
 
 struct SzArchive {
     VolFile    *fp;
-    UInt32   baseOffset;                    /* body start (past start hdr)  */
+    uint32_t baseOffset;                    /* body start (past start hdr)  */
 
-    UInt32   packPos;
-    UInt32   numPackStreams;
-    UInt32   packSizes[SZ_MAX_PACKSTREAMS];
-    UInt32   packOffset[SZ_MAX_PACKSTREAMS];/* base-relative cumulative     */
+    uint32_t packPos;
+    uint32_t numPackStreams;
+    uint32_t packSizes[SZ_MAX_PACKSTREAMS];
+    uint32_t packOffset[SZ_MAX_PACKSTREAMS];/* base-relative cumulative     */
 
-    UInt32   numFolders;
+    uint32_t numFolders;
     SzFolder folders[SZ_MAX_FOLDERS];
-    UInt32   numUnpack[SZ_MAX_FOLDERS];     /* substreams per folder        */
+    uint32_t numUnpack[SZ_MAX_FOLDERS];     /* substreams per folder        */
 
     /* The entry table is sized to the archive's actual file count once the
      * header declares it (SZ_MAX_FILES is only the refusal limit).  A fixed
@@ -192,10 +192,10 @@ struct SzArchive {
      * characters this code page lacks; nameOff[i] is entry i's start in
      * nameBlob.  hdrEncrypted: the header was AES-encrypted (-mhe), so the
      * one written in its place must be too. */
-    Byte    *nameBlob;
-    UInt32   nameBlobLen;
-    UInt32  *nameOff;
-    int      hdrEncrypted;
+    uint8_t  *nameBlob;
+    uint32_t  nameBlobLen;
+    uint32_t *nameOff;
+    int       hdrEncrypted;
 };
 
 /* Declared here, defined down with the streaming reader: DecodeFolder needs it
@@ -206,23 +206,23 @@ static int SzFolderKey( SzArchive *a, const SzFolder *fo, AesCbcState *cbc );
 
 /*---- Buffer reader over the (decoded) header ----------------------------- */
 typedef struct {
-    const Byte *p;
-    const Byte *end;
-    int         err;
+    const uint8_t *p;
+    const uint8_t *end;
+    int            err;
 } CRdr;
 
 typedef struct {
-    UInt32 folder;
-    UInt32 size;
-    UInt32 offsetInFolder;
-    int    hasCrc;
-    UInt32 crc;
+    uint32_t folder;
+    uint32_t size;
+    uint32_t offsetInFolder;
+    int      hasCrc;
+    uint32_t crc;
 } SzSub;
 
 typedef struct {
     CRdr        rd;
     SzArchive  *a;
-    UInt32      numSubs;
+    uint32_t    numSubs;
 
     /* Header-parsing scratch, grown on demand to the substream / file count the
      * header declares (PsEnsure).  These must NOT be function locals: the DOS
@@ -231,12 +231,12 @@ typedef struct {
      * parse context rather than in file statics so that the two contexts SzOpen
      * keeps alive at once - the outer archive and the encoded header - cannot
      * tread on each other. */
-    UInt32      cap;                /* elements allocated in each array below  */
+    uint32_t    cap;                /* elements allocated in each array below  */
     SzSub      *subs;               /* substream table from SubStreamsInfo     */
-    Byte       *bitsA;              /* substream CRC-defined / emptyStream     */
-    Byte       *bitsB;              /* emptyFile                               */
-    Byte       *bitsC;              /* per-property "defined" bit vector        */
-    UInt32     *crcTmp;             /* substream CRC digests                   */
+    uint8_t    *bitsA;              /* substream CRC-defined / emptyStream     */
+    uint8_t    *bitsB;              /* emptyFile                               */
+    uint8_t    *bitsC;              /* per-property "defined" bit vector        */
+    uint32_t   *crcTmp;             /* substream CRC digests                   */
 } ParseState;
 
 /* Release a parse context and its scratch. */
@@ -255,11 +255,11 @@ static void PsFree( ParseState *ps )
  * only (an earlier phase's contents stay valid and in place), and reallocs so
  * the substream table built by SubStreamsInfo survives the later growth that
  * FilesInfo may ask for. */
-static int PsEnsure( ParseState *ps, UInt32 n )
+static int PsEnsure( ParseState *ps, uint32_t n )
 {
-    SzSub  *ns;
-    Byte   *nA, *nB, *nC;
-    UInt32 *nCrc;
+    SzSub    *ns;
+    uint8_t  *nA, *nB, *nC;
+    uint32_t *nCrc;
 
     {
         int vrc = ArcCheckEntryCount( n );
@@ -274,19 +274,19 @@ static int PsEnsure( ParseState *ps, UInt32 n )
     if ( !ns ) return SZ_ERR_MEMORY;
     ps->subs = ns;
 
-    nA = (Byte *)realloc( ps->bitsA, n );
+    nA = (uint8_t *)realloc( ps->bitsA, n );
     if ( !nA ) return SZ_ERR_MEMORY;
     ps->bitsA = nA;
 
-    nB = (Byte *)realloc( ps->bitsB, n );
+    nB = (uint8_t *)realloc( ps->bitsB, n );
     if ( !nB ) return SZ_ERR_MEMORY;
     ps->bitsB = nB;
 
-    nC = (Byte *)realloc( ps->bitsC, n );
+    nC = (uint8_t *)realloc( ps->bitsC, n );
     if ( !nC ) return SZ_ERR_MEMORY;
     ps->bitsC = nC;
 
-    nCrc = (UInt32 *)realloc( ps->crcTmp, n * sizeof( UInt32 ) );
+    nCrc = (uint32_t *)realloc( ps->crcTmp, n * sizeof( uint32_t ) );
     if ( !nCrc ) return SZ_ERR_MEMORY;
     ps->crcTmp = nCrc;
 
@@ -294,35 +294,35 @@ static int PsEnsure( ParseState *ps, UInt32 n )
     return SZ_OK;
 }
 
-static Byte RdByte( CRdr *r )
+static uint8_t RdByte( CRdr *r )
 {
     if ( r->p >= r->end ) { r->err = 1; return 0; }
     return *r->p++;
 }
 
-static UInt32 RdUInt32( CRdr *r )
+static uint32_t RdUInt32( CRdr *r )
 {
-    UInt32 v;
-    v  = (UInt32)RdByte( r );
-    v |= (UInt32)RdByte( r ) << 8;
-    v |= (UInt32)RdByte( r ) << 16;
-    v |= (UInt32)RdByte( r ) << 24;
+    uint32_t v;
+    v  = (uint32_t)RdByte( r );
+    v |= (uint32_t)RdByte( r ) << 8;
+    v |= (uint32_t)RdByte( r ) << 16;
+    v |= (uint32_t)RdByte( r ) << 24;
     return v;
 }
 
 /* 7z variable-length number; clamped to 32 bits (overflow -> r->err). */
-static UInt32 RdNum( CRdr *r )
+static uint32_t RdNum( CRdr *r )
 {
-    Byte   first = RdByte( r );
-    Byte   mask  = 0x80;
-    UInt32 value = 0;
-    int    i;
+    uint8_t  first = RdByte( r );
+    uint8_t  mask  = 0x80;
+    uint32_t value = 0;
+    int      i;
 
     for ( i = 0; i < 8; i++ )
     {
         if ( ( first & mask ) == 0 )
         {
-            UInt32 high = (UInt32)( first & ( mask - 1 ) );
+            uint32_t high = (uint32_t)( first & ( mask - 1 ) );
             if ( i < 4 )
                 value |= high << ( 8 * i );
             else if ( high )
@@ -330,9 +330,9 @@ static UInt32 RdNum( CRdr *r )
             return value;
         }
         {
-            Byte b = RdByte( r );
+            uint8_t b = RdByte( r );
             if ( i < 4 )
-                value |= (UInt32)b << ( 8 * i );
+                value |= (uint32_t)b << ( 8 * i );
             else if ( b )
                 r->err = 1;
         }
@@ -342,10 +342,10 @@ static UInt32 RdNum( CRdr *r )
 }
 
 /* Read numItems bits, MSB-first, into bits[] as 0/1 bytes. */
-static void RdBits( CRdr *r, Byte *bits, UInt32 numItems )
+static void RdBits( CRdr *r, uint8_t *bits, uint32_t numItems )
 {
-    Byte   b = 0, mask = 0;
-    UInt32 i;
+    uint8_t  b = 0, mask = 0;
+    unsigned i;
     for ( i = 0; i < numItems; i++ )
     {
         if ( mask == 0 ) { b = RdByte( r ); mask = 0x80; }
@@ -355,12 +355,12 @@ static void RdBits( CRdr *r, Byte *bits, UInt32 numItems )
 }
 
 /* "AllAreDefined" byte, then either all-ones or an explicit bit vector. */
-static void RdBitsOptional( CRdr *r, Byte *bits, UInt32 numItems )
+static void RdBitsOptional( CRdr *r, uint8_t *bits, uint32_t numItems )
 {
-    Byte allDefined = RdByte( r );
+    uint8_t allDefined = RdByte( r );
     if ( allDefined != 0 )
     {
-        UInt32 i;
+        unsigned i;
         for ( i = 0; i < numItems; i++ )
             bits[i] = 1;
     }
@@ -373,8 +373,9 @@ static int ReadPackInfo( ParseState *ps )
 {
     CRdr      *r = &ps->rd;
     SzArchive *a = ps->a;
-    Byte       id;
-    UInt32     i, off;
+    uint8_t    id;
+    uint32_t   off;
+    unsigned   i;
 
     a->packPos        = RdNum( r );
     a->numPackStreams = RdNum( r );
@@ -393,9 +394,9 @@ static int ReadPackInfo( ParseState *ps )
     }
     if ( id == k7zCRC )
     {
-        Byte   defined[SZ_MAX_PACKSTREAMS];   /* one per PACK stream, and a
+        uint8_t  defined[SZ_MAX_PACKSTREAMS]; /* one per PACK stream, and a
                                                * folder may own four */
-        UInt32 c;
+        uint32_t c;
         RdBitsOptional( r, defined, a->numPackStreams );
         for ( i = 0; i < a->numPackStreams; i++ )
             if ( defined[i] ) c = RdUInt32( r );
@@ -426,9 +427,9 @@ static int ReadPackInfo( ParseState *ps )
  *-------------------------------------------------------------------------- */
 /* Is folder in-stream 'inIdx' fed by a bind pair (rather than by a packed
  * stream)?  Returns the bind pair index, or -1. */
-static int FolderBindForIn( const SzFolder *fo, UInt32 inIdx )
+static int FolderBindForIn( const SzFolder *fo, uint32_t inIdx )
 {
-    UInt32 b;
+    unsigned b;
     for ( b = 0; b < fo->numBindPairs; b++ )
         if ( fo->bpIn[b] == inIdx ) return (int)b;
     return -1;
@@ -436,9 +437,9 @@ static int FolderBindForIn( const SzFolder *fo, UInt32 inIdx )
 
 /* Which coder produces folder out-stream 'outIdx'?  Returns the coder index,
  * or -1 when the folder has more coders than we stored. */
-static int FolderCoderForOut( const SzFolder *fo, UInt32 outIdx )
+static int FolderCoderForOut( const SzFolder *fo, uint32_t outIdx )
 {
-    UInt32 c, n = fo->numCoders;
+    unsigned c, n = fo->numCoders;
     if ( n > SZ_MAX_CODERS ) n = SZ_MAX_CODERS;
     for ( c = 0; c < n; c++ )
         if ( outIdx >= fo->coders[c].firstOut &&
@@ -448,9 +449,9 @@ static int FolderCoderForOut( const SzFolder *fo, UInt32 outIdx )
 }
 
 /* Folder-relative packed stream index feeding in-stream 'inIdx', or -1. */
-static int FolderPackForIn( const SzFolder *fo, UInt32 inIdx )
+static int FolderPackForIn( const SzFolder *fo, uint32_t inIdx )
 {
-    UInt32 p;
+    unsigned p;
     for ( p = 0; p < fo->numPackStreams; p++ )
         if ( fo->packToIn[p] == inIdx ) return (int)p;
     return -1;
@@ -518,8 +519,8 @@ static int SetFilter( SzFolder *fo, int idx )
  */
 static int FolderAesCoder( const SzFolder *fo, int *bad )
 {
-    UInt32 c, n = fo->numCoders;
-    int    idx = -1;
+    unsigned c, n = fo->numCoders;
+    int      idx = -1;
 
     *bad = 0;
     if ( n > SZ_MAX_CODERS ) n = SZ_MAX_CODERS;
@@ -544,10 +545,10 @@ static int FolderAesCoder( const SzFolder *fo, int *bad )
 
 static void ClassifyFolder( SzFolder *fo )
 {
-    UInt32 finalOut = 0;
-    UInt32 o;
-    int    bi;
-    int    aesIdx, aesBad;
+    uint32_t finalOut = 0;
+    unsigned o;
+    int      bi;
+    int      aesIdx, aesBad;
 
     fo->unsupported = 1;
     fo->isBcj2      = 0;
@@ -570,8 +571,8 @@ static void ClassifyFolder( SzFolder *fo )
          * for a combination 7-Zip does not produce by default.  It lists and
          * reports unsupported rather than half-decoding.
          *----------------------------------------------------------------- */
-        int    mainIdx = -1, filtIdx = -1;
-        UInt32 c;
+        int      mainIdx = -1, filtIdx = -1;
+        unsigned c;
 
         for ( c = 0; c < fo->numCoders; c++ )
         {
@@ -637,7 +638,7 @@ static void ClassifyFolder( SzFolder *fo )
     if ( fo->numCoders == 2 )
     {
         int mainIdx = -1, filtIdx = -1;
-        UInt32 c;
+        unsigned c;
         for ( c = 0; c < 2; c++ )
         {
             if ( CoderIsMain( fo->coders[c].kind ) )        mainIdx = (int)c;
@@ -685,9 +686,9 @@ static void ClassifyFolder( SzFolder *fo )
         int  k;
         for ( k = 0; k < 3; k++ )
         {
-            UInt32 in = fo->coders[bi].firstIn + (UInt32)k;
-            int    b  = FolderBindForIn( fo, in );
-            int    cd;
+            uint32_t in = fo->coders[bi].firstIn + (uint32_t)k;
+            int      b  = FolderBindForIn( fo, in );
+            int      cd;
             if ( b < 0 ) return;                  /* must be a bound input */
             cd = FolderCoderForOut( fo, fo->bpOut[b] );
             if ( cd < 0 || cd == bi ) return;
@@ -700,7 +701,7 @@ static void ClassifyFolder( SzFolder *fo )
         {
             int p = FolderPackForIn( fo, fo->coders[bi].firstIn + 3 );
             if ( p < 0 ) return;
-            fo->bcj2RcPack = (UInt32)p;
+            fo->bcj2RcPack = (uint32_t)p;
         }
         fo->bcj2Main = sub[0];
         fo->bcj2Call = sub[1];
@@ -723,10 +724,10 @@ static void ClassifyFolder( SzFolder *fo )
  *-------------------------------------------------------------------------- */
 static int ReadFolder( ParseState *ps, SzFolder *fo )
 {
-    CRdr       *r = &ps->rd;
-    const Byte *recStart = r->p;
-    UInt32      numCoders;
-    UInt32      c, totalIn = 0, totalOut = 0, i;
+    CRdr          *r = &ps->rd;
+    const uint8_t *recStart = r->p;
+    uint32_t       numCoders;
+    unsigned       c, totalIn = 0, totalOut = 0, i;
 
     memset( fo, 0, sizeof( *fo ) );
     fo->method   = -1;
@@ -740,13 +741,13 @@ static int ReadFolder( ParseState *ps, SzFolder *fo )
 
     for ( c = 0; c < numCoders; c++ )
     {
-        Byte     flags     = RdByte( r );
+        uint8_t  flags     = RdByte( r );
         unsigned idSize    = flags & 0x0F;
         int      isComplex = ( flags & 0x10 ) != 0;
         int      hasAttr   = ( flags & 0x20 ) != 0;
-        Byte     id[8];
+        uint8_t  id[8];
         unsigned k;
-        UInt32   nin = 1, nout = 1;
+        uint32_t nin = 1, nout = 1;
         SzCoder  cd;
 
         if ( idSize > 8 ) return SZ_ERR_FORMAT;
@@ -787,11 +788,11 @@ static int ReadFolder( ParseState *ps, SzFolder *fo )
 
         if ( hasAttr )
         {
-            UInt32 propSize = RdNum( r );
-            UInt32 j;
+            uint32_t propSize = RdNum( r );
+            unsigned j;
             for ( j = 0; j < propSize; j++ )
             {
-                Byte b = RdByte( r );
+                uint8_t b = RdByte( r );
                 if ( j < sizeof( cd.props ) ) cd.props[j] = b;
             }
             if ( propSize <= sizeof( cd.props ) )
@@ -836,7 +837,7 @@ static int ReadFolder( ParseState *ps, SzFolder *fo )
         for ( i = 0; i < totalIn; i++ )
             if ( FolderBindForIn( fo, i ) < 0 ) { found = (int)i; break; }
         if ( found < 0 ) return SZ_ERR_FORMAT;
-        fo->packToIn[0] = (UInt32)found;
+        fo->packToIn[0] = (uint32_t)found;
     }
     else
     {
@@ -848,9 +849,9 @@ static int ReadFolder( ParseState *ps, SzFolder *fo )
     }
     if ( r->err ) return SZ_ERR_FORMAT;
 
-    if ( (UInt32)( r->p - recStart ) <= sizeof( fo->raw ) )
+    if ( (uint32_t)( r->p - recStart ) <= sizeof( fo->raw ) )
     {
-        fo->rawLen = (UInt32)( r->p - recStart );
+        fo->rawLen = (uint32_t)( r->p - recStart );
         memcpy( fo->raw, recStart, fo->rawLen );
     }
 
@@ -859,8 +860,8 @@ static int ReadFolder( ParseState *ps, SzFolder *fo )
      * classification: an unsupported folder still needs its output size, or
      * its entries would list as zero bytes. */
     {
-        UInt32 o, b;
-        int    found = 0;
+        unsigned o, b;
+        int      found = 0;
         for ( o = 0; o < fo->numOutStreams; o++ )
         {
             int bound = 0;
@@ -884,8 +885,8 @@ static int ReadUnpackInfo( ParseState *ps )
 {
     CRdr      *r = &ps->rd;
     SzArchive *a = ps->a;
-    Byte       id, external;
-    UInt32     i;
+    uint8_t    id, external;
+    unsigned   i;
     int        rc;
 
     id = RdByte( r );
@@ -902,7 +903,7 @@ static int ReadUnpackInfo( ParseState *ps )
 
     {   /* Folders consume packed streams in order; a folder is not one
          * stream (BCJ2 takes four), so walk a running total. */
-        UInt32 packBase = 0;
+        uint32_t packBase = 0;
         for ( i = 0; i < a->numFolders; i++ )
         {
             SzFolder *fo = &a->folders[i];
@@ -923,8 +924,8 @@ static int ReadUnpackInfo( ParseState *ps )
     for ( i = 0; i < a->numFolders; i++ )
     {
         SzFolder *fo = &a->folders[i];
-        UInt32    sizes[SZ_MAX_FOLDER_STRMS];
-        UInt32    o, c, n;
+        uint32_t  sizes[SZ_MAX_FOLDER_STRMS];
+        unsigned  o, c, n;
 
         for ( o = 0; o < fo->numOutStreams; o++ )
         {
@@ -955,8 +956,8 @@ static int ReadUnpackInfo( ParseState *ps )
     id = RdByte( r );
     if ( id == k7zCRC )
     {
-        Byte   defined[SZ_MAX_FOLDERS];
-        UInt32 crcs[SZ_MAX_FOLDERS];
+        uint8_t  defined[SZ_MAX_FOLDERS];
+        uint32_t crcs[SZ_MAX_FOLDERS];
         RdBitsOptional( r, defined, a->numFolders );
         for ( i = 0; i < a->numFolders; i++ )
             if ( defined[i] ) crcs[i] = RdUInt32( r );
@@ -977,8 +978,8 @@ static int ReadSubStreamsInfo( ParseState *ps )
 {
     CRdr      *r = &ps->rd;
     SzArchive *a = ps->a;
-    Byte       id;
-    UInt32     f, s, totalSubs;
+    uint8_t    id;
+    unsigned   f, s, totalSubs;
     int        rc;
 
     for ( f = 0; f < a->numFolders; f++ )
@@ -1007,12 +1008,12 @@ static int ReadSubStreamsInfo( ParseState *ps )
     {
         for ( f = 0; f < a->numFolders; f++ )
         {
-            UInt32 n   = a->numUnpack[f];
-            UInt32 sum = 0, off = 0;
+            uint32_t n   = a->numUnpack[f];
+            uint32_t sum = 0, off = 0;
             if ( n == 0 ) continue;
             for ( s = 0; s + 1 < n; s++ )
             {
-                UInt32 sz = RdNum( r );
+                uint32_t sz = RdNum( r );
                 if ( r->err ) return SZ_ERR_TOOBIG;
                 ps->subs[ps->numSubs].folder         = f;
                 ps->subs[ps->numSubs].offsetInFolder = off;
@@ -1045,19 +1046,19 @@ static int ReadSubStreamsInfo( ParseState *ps )
 
     /* CRC digests: defined only for substreams without an inherited folder CRC */
     {
-        UInt32 numDigests = 0;
+        uint32_t numDigests = 0;
         for ( f = 0; f < a->numFolders; f++ )
         {
-            UInt32 n = a->numUnpack[f];
+            uint32_t n = a->numUnpack[f];
             if ( n != 1 || !a->folders[f].hasCrc )
                 numDigests += n;
         }
 
         if ( id == k7zCRC )
         {
-            Byte   *defined = ps->bitsA;      /* scratch: see ParseState */
-            UInt32 *crcs    = ps->crcTmp;
-            UInt32 di = 0, si = 0, i;
+            uint8_t  *defined = ps->bitsA;    /* scratch: see ParseState */
+            uint32_t *crcs    = ps->crcTmp;
+            unsigned di = 0, si = 0, i;
 
             RdBitsOptional( r, defined, numDigests );
             for ( i = 0; i < numDigests; i++ )
@@ -1065,7 +1066,7 @@ static int ReadSubStreamsInfo( ParseState *ps )
 
             for ( f = 0; f < a->numFolders; f++ )
             {
-                UInt32 n = a->numUnpack[f];
+                uint32_t n = a->numUnpack[f];
                 if ( n == 1 && a->folders[f].hasCrc )
                 {
                     ps->subs[si].hasCrc = 1;
@@ -1086,10 +1087,10 @@ static int ReadSubStreamsInfo( ParseState *ps )
         }
         else
         {
-            UInt32 si = 0;
+            uint32_t si = 0;
             for ( f = 0; f < a->numFolders; f++ )
             {
-                UInt32 n = a->numUnpack[f];
+                uint32_t n = a->numUnpack[f];
                 if ( n == 1 && a->folders[f].hasCrc )
                 {
                     ps->subs[si].hasCrc = 1;
@@ -1109,7 +1110,7 @@ static int ReadSubStreamsInfo( ParseState *ps )
 static int DefaultSubStreams( ParseState *ps )
 {
     SzArchive *a = ps->a;
-    UInt32     f;
+    unsigned   f;
     int        rc = PsEnsure( ps, a->numFolders );
 
     if ( rc ) return rc;
@@ -1130,9 +1131,9 @@ static int DefaultSubStreams( ParseState *ps )
 /*---- StreamsInfo (PackInfo + UnpackInfo + SubStreamsInfo) ----------------- */
 static int ReadStreamsInfo( ParseState *ps )
 {
-    CRdr *r = &ps->rd;
-    Byte  id;
-    int   rc;
+    CRdr   *r = &ps->rd;
+    uint8_t id;
+    int     rc;
 
     id = RdByte( r );
     if ( id == k7zPackInfo )
@@ -1177,8 +1178,8 @@ static int SkipArchiveProps( ParseState *ps )
     CRdr *r = &ps->rd;
     for ( ;; )
     {
-        Byte   type = RdByte( r );
-        UInt32 size;
+        uint8_t  type = RdByte( r );
+        uint32_t size;
         if ( type == k7zEnd ) break;
         size = RdNum( r );
         r->p += size;
@@ -1192,9 +1193,9 @@ static int ReadFilesInfo( ParseState *ps )
 {
     CRdr      *r = &ps->rd;
     SzArchive *a = ps->a;
-    UInt32     numFiles, i;
-    Byte      *emptyStream, *emptyFile;
-    UInt32     numEmptyStreams = 0;
+    unsigned   numFiles, i;
+    uint8_t   *emptyStream, *emptyFile;
+    uint32_t   numEmptyStreams = 0;
     int        rc;
 
     numFiles = RdNum( r );
@@ -1221,9 +1222,9 @@ static int ReadFilesInfo( ParseState *ps )
 
     for ( ;; )
     {
-        Byte        propType = RdByte( r );
-        UInt32      size;
-        const Byte *next;
+        uint8_t        propType = RdByte( r );
+        uint32_t       size;
+        const uint8_t *next;
 
         if ( propType == k7zEnd ) break;
         size = RdNum( r );
@@ -1244,8 +1245,8 @@ static int ReadFilesInfo( ParseState *ps )
 
         case k7zName:
         {
-            Byte        external = RdByte( r );
-            const Byte *blob;
+            uint8_t        external = RdByte( r );
+            const uint8_t *blob;
 
             if ( external != 0 )
                 return SZ_ERR_UNSUPPORTED;
@@ -1254,9 +1255,9 @@ static int ReadFilesInfo( ParseState *ps )
             blob = r->p;
             if ( a->nameBlob ) { free( a->nameBlob ); a->nameBlob = NULL; }
             if ( a->nameOff )  { free( a->nameOff );  a->nameOff = NULL; }
-            a->nameBlobLen = (UInt32)( next - blob );
-            a->nameBlob = (Byte *)malloc( a->nameBlobLen ? a->nameBlobLen : 1 );
-            a->nameOff  = (UInt32 *)malloc( sizeof( UInt32 ) * ( numFiles ? numFiles : 1 ) );
+            a->nameBlobLen = (uint32_t)( next - blob );
+            a->nameBlob = (uint8_t *)malloc( a->nameBlobLen ? a->nameBlobLen : 1 );
+            a->nameOff  = (uint32_t *)malloc( sizeof( uint32_t ) * ( numFiles ? numFiles : 1 ) );
             if ( !a->nameBlob || !a->nameOff ) return SZ_ERR_MEMORY;
             memcpy( a->nameBlob, blob, a->nameBlobLen );
 
@@ -1265,11 +1266,11 @@ static int ReadFilesInfo( ParseState *ps )
                 WCHAR wbuf[SZ_MAX_NAME];
                 int   wn = 0;
 
-                a->nameOff[i] = (UInt32)( r->p - blob );
+                a->nameOff[i] = (uint32_t)( r->p - blob );
                 for ( ;; )
                 {
-                    UInt32 ch = RdByte( r );
-                    ch |= (UInt32)RdByte( r ) << 8;
+                    uint32_t ch = RdByte( r );
+                    ch |= (uint32_t)RdByte( r ) << 8;
                     if ( ch == 0 ) break;
                     if ( wn < SZ_MAX_NAME - 1 )
                         wbuf[wn++] = (WCHAR)ch;
@@ -1285,8 +1286,8 @@ static int ReadFilesInfo( ParseState *ps )
         case k7zMTime:
         {
             /* [AllAreDefined bits][external][per-defined: 8-byte FILETIME] */
-            Byte  *defined = ps->bitsC;      /* scratch: see ParseState */
-            Byte   external;
+            uint8_t *defined = ps->bitsC;    /* scratch: see ParseState */
+            uint8_t  external;
             RdBitsOptional( r, defined, numFiles );
             external = RdByte( r );
             if ( external == 0 )
@@ -1303,8 +1304,8 @@ static int ReadFilesInfo( ParseState *ps )
         case k7zWinAttributes:
         {
             /* [AllAreDefined bits][external][per-defined: 4-byte attributes] */
-            Byte  *defined = ps->bitsC;      /* scratch: see ParseState */
-            Byte   external;
+            uint8_t *defined = ps->bitsC;    /* scratch: see ParseState */
+            uint8_t  external;
             RdBitsOptional( r, defined, numFiles );
             external = RdByte( r );
             if ( external == 0 )
@@ -1326,7 +1327,7 @@ static int ReadFilesInfo( ParseState *ps )
 
     /* Map files to substreams / mark directories and empty files. */
     {
-        UInt32 subIdx = 0, emptyIdx = 0;
+        uint32_t subIdx = 0, emptyIdx = 0;
         for ( i = 0; i < numFiles; i++ )
         {
             if ( !emptyStream[i] )
@@ -1356,9 +1357,9 @@ static int ReadFilesInfo( ParseState *ps )
 /*---- Header dispatcher --------------------------------------------------- */
 static int ReadHeader( ParseState *ps )
 {
-    CRdr *r = &ps->rd;
-    Byte  id;
-    int   rc;
+    CRdr   *r = &ps->rd;
+    uint8_t id;
+    int     rc;
 
     id = RdByte( r );
     if ( id == k7zArchiveProperties )
@@ -1396,8 +1397,8 @@ static int ReadHeader( ParseState *ps )
  * call and 'mask' the E8/E9 history, so the same pass can be run over a whole
  * buffer in one go or over a stream in pieces. */
 typedef struct {
-    UInt32 base;
-    UInt32 mask;
+    uint32_t base;
+    uint32_t mask;
 } SzBcj;
 
 static void BcjInit( SzBcj *b )
@@ -1413,12 +1414,12 @@ static void BcjInit( SzBcj *b )
  * and passes it again at the head of the next call.  Called once with the
  * whole buffer, this is exactly the original single-pass filter.
  */
-static UInt32 BcjX86Chunk( SzBcj *b, Byte *data, UInt32 size )
+static uint32_t BcjX86Chunk( SzBcj *b, uint8_t *data, uint32_t size )
 {
-    UInt32 pos  = 0;
-    UInt32 mask = b->mask;
-    UInt32 lim;
-    const UInt32 ip = 5;          /* start IP (0) + 5, per the SDK */
+    uint32_t pos  = 0;
+    uint32_t mask = b->mask;
+    uint32_t lim;
+    const uint32_t ip = 5;        /* start IP (0) + 5, per the SDK */
 
     if ( size < 5 )
         return 0;                 /* not enough to decide anything yet */
@@ -1426,14 +1427,14 @@ static UInt32 BcjX86Chunk( SzBcj *b, Byte *data, UInt32 size )
 
     for ( ;; )
     {
-        UInt32 p;
+        unsigned p;
 
         for ( p = pos; p < lim; p++ )
             if ( ( data[p] & 0xFE ) == 0xE8 )
                 break;
 
         {
-            UInt32 d = p - pos;
+            uint32_t d = p - pos;
             pos = p;
             /* Ran off the end of what can be decided.  The history has to be
              * aged by the bytes just skipped, exactly as it would have been
@@ -1467,27 +1468,27 @@ static UInt32 BcjX86Chunk( SzBcj *b, Byte *data, UInt32 size )
 
         if ( Test86MSByte( data[pos + 4] ) )
         {
-            UInt32 v   = ( (UInt32)data[pos + 4] << 24 ) |
-                         ( (UInt32)data[pos + 3] << 16 ) |
-                         ( (UInt32)data[pos + 2] << 8  ) |
-                         ( (UInt32)data[pos + 1] );
-            UInt32 cur = ip + b->base + pos;
+            uint32_t v   = ( (uint32_t)data[pos + 4] << 24 ) |
+                         ( (uint32_t)data[pos + 3] << 16 ) |
+                         ( (uint32_t)data[pos + 2] << 8  ) |
+                         ( (uint32_t)data[pos + 1] );
+            uint32_t cur = ip + b->base + pos;
 
             v -= cur;
             if ( mask != 0 )
             {
                 unsigned sh = ( mask & 6 ) << 2;
-                if ( Test86MSByte( (Byte)( v >> sh ) ) )
+                if ( Test86MSByte( (uint8_t)( v >> sh ) ) )
                 {
-                    v ^= ( ( (UInt32)0x100 << sh ) - 1 );
+                    v ^= ( ( (uint32_t)0x100 << sh ) - 1 );
                     v -= cur;
                 }
                 mask = 0;
             }
-            data[pos + 1] = (Byte)v;
-            data[pos + 2] = (Byte)( v >> 8 );
-            data[pos + 3] = (Byte)( v >> 16 );
-            data[pos + 4] = (Byte)( 0 - ( ( v >> 24 ) & 1 ) );
+            data[pos + 1] = (uint8_t)v;
+            data[pos + 2] = (uint8_t)( v >> 8 );
+            data[pos + 3] = (uint8_t)( v >> 16 );
+            data[pos + 4] = (uint8_t)( 0 - ( ( v >> 24 ) & 1 ) );
             pos += 5;
         }
         else
@@ -1503,7 +1504,7 @@ static UInt32 BcjX86Chunk( SzBcj *b, Byte *data, UInt32 size )
 }
 
 /* Whole-buffer form, for the (small, already in memory) encoded header. */
-static void BcjX86Decode( Byte *data, UInt32 size )
+static void BcjX86Decode( uint8_t *data, uint32_t size )
 {
     SzBcj b;
     BcjInit( &b );
@@ -1517,15 +1518,15 @@ static void BcjX86Decode( Byte *data, UInt32 size )
  * back as already restored.  The only state is the last frame, 'hist', with
  * 'pos' the slot the next byte uses - zero both and a stream can come
  * through in any pieces. */
-static void DeltaDecodeRun( Byte *hist, unsigned dist, unsigned *pos,
-                            Byte *data, UInt32 n )
+static void DeltaDecodeRun( uint8_t *hist, unsigned dist, unsigned *pos,
+                            uint8_t *data, uint32_t n )
 {
     unsigned k = *pos;
-    UInt32   i;
+    unsigned i;
 
     for ( i = 0; i < n; i++ )
     {
-        Byte v = (Byte)( data[i] + hist[k] );
+        uint8_t v = (uint8_t)( data[i] + hist[k] );
         data[i] = v;
         hist[k] = v;
         if ( ++k == dist ) k = 0;
@@ -1549,7 +1550,7 @@ static void DeltaDecodeRun( Byte *hist, unsigned dist, unsigned *pos,
  * unpackSize == 0 means "not known here", and then the declared size is all
  * there is to go on and it stands.
  *-------------------------------------------------------------------------- */
-static UInt32 SzDictCost( UInt32 dictSize, UInt32 unpackSize )
+static uint32_t SzDictCost( uint32_t dictSize, uint32_t unpackSize )
 {
     if ( unpackSize && unpackSize < dictSize ) return unpackSize;
     return dictSize;
@@ -1559,21 +1560,21 @@ static UInt32 SzDictCost( UInt32 dictSize, UInt32 unpackSize )
  * The same arithmetic the three decode sites do inline, gathered in one place
  * so SzMemNeeded below cannot drift from what actually gets allocated.
  *-------------------------------------------------------------------------- */
-static UInt32 SzFolderDictCost( const SzFolder *fo )
+static uint32_t SzFolderDictCost( const SzFolder *fo )
 {
     if ( fo->method == SZ_M_LZMA && fo->propsSize >= 5 )
     {
-        UInt32 dictSize = fo->props[1] | ( (UInt32)fo->props[2] << 8 ) |
-                          ( (UInt32)fo->props[3] << 16 ) |
-                          ( (UInt32)fo->props[4] << 24 );
+        uint32_t dictSize = fo->props[1] | ( (uint32_t)fo->props[2] << 8 ) |
+                          ( (uint32_t)fo->props[3] << 16 ) |
+                          ( (uint32_t)fo->props[4] << 24 );
         return SzDictCost( dictSize, fo->mainUnpackSize );
     }
     if ( fo->method == SZ_M_LZMA2 && fo->propsSize >= 1 && fo->props[0] <= 40 )
     {
-        Byte   pbyte    = fo->props[0];
-        UInt32 dictSize = ( pbyte == 40 )
+        uint8_t  pbyte    = fo->props[0];
+        uint32_t dictSize = ( pbyte == 40 )
             ? 0xFFFFFFFFUL
-            : ( (UInt32)( 2 | ( pbyte & 1 ) ) << ( pbyte / 2 + 11 ) );
+            : ( (uint32_t)( 2 | ( pbyte & 1 ) ) << ( pbyte / 2 + 11 ) );
         return SzDictCost( dictSize, fo->mainUnpackSize );
     }
     return 0;                               /* stored, or nothing we decode */
@@ -1590,14 +1591,15 @@ static UInt32 SzFolderDictCost( const SzFolder *fo )
  * 64 MB dictionary peaks at 65.7 MB with a 64 MB largest block, and one at
  * 138 KB peaks at 292 KB.  Callers add the slack.
  *-------------------------------------------------------------------------- */
-UInt32 SzMemNeeded( SzArchive *a )
+uint32_t SzMemNeeded( SzArchive *a )
 {
-    UInt32 best = 0, i;
+    uint32_t best = 0;
+    unsigned i;
 
     if ( !a ) return 0;
     for ( i = 0; i < a->numFolders; i++ )
     {
-        UInt32 c;
+        uint32_t c;
         if ( a->folders[i].unsupported ) continue;
         c = SzFolderDictCost( &a->folders[i] );
         if ( c > best ) best = c;
@@ -1607,13 +1609,13 @@ UInt32 SzMemNeeded( SzArchive *a )
 
 /*---- Decode one folder to a freshly malloc'd buffer ---------------------- */
 
-static int DecodeFolder( SzArchive *a, UInt32 fIdx, Byte **outBufOut )
+static int DecodeFolder( SzArchive *a, uint32_t fIdx, uint8_t **outBufOut )
 {
     SzFolder *fo       = &a->folders[fIdx];
-    UInt32    packOff  = a->baseOffset + a->packOffset[fIdx];
-    UInt32    packSize = a->packSizes[fIdx];
-    Byte     *packBuf  = NULL;
-    Byte     *outBuf   = NULL;
+    uint32_t  packOff  = a->baseOffset + a->packOffset[fIdx];
+    uint32_t  packSize = a->packSizes[fIdx];
+    uint8_t  *packBuf  = NULL;
+    uint8_t  *outBuf   = NULL;
     int       rc       = SZ_OK;
 
     /* Buffered: both the packed and the unpacked stream are held whole, so
@@ -1627,7 +1629,7 @@ static int DecodeFolder( SzArchive *a, UInt32 fIdx, Byte **outBufOut )
     if ( packSize > SZ_MAX_BUFFER_SIZE )        return SZ_ERR_NORAM;
     if ( fo->unpackSize > SZ_MAX_BUFFER_SIZE )  return SZ_ERR_NORAM;
 
-    packBuf = (Byte *)malloc( packSize ? packSize : 1 );
+    packBuf = (uint8_t *)malloc( packSize ? packSize : 1 );
     if ( !packBuf ) return SZ_ERR_MEMORY;
 
     if ( VolSeek( a->fp, (long)packOff, SEEK_SET ) != 0 ||
@@ -1656,9 +1658,9 @@ static int DecodeFolder( SzArchive *a, UInt32 fIdx, Byte **outBufOut )
      * filter, if present, then transforms that buffer in place (BCJ is
      * size-preserving, so the main output and the final output are equal). */
     {
-        UInt32 mainSize = fo->mainUnpackSize;
+        uint32_t mainSize = fo->mainUnpackSize;
 
-        outBuf = (Byte *)malloc( mainSize ? mainSize : 1 );
+        outBuf = (uint8_t *)malloc( mainSize ? mainSize : 1 );
         if ( !outBuf ) { free( packBuf ); return SZ_ERR_MEMORY; }
 
         if ( fo->method == SZ_M_COPY )
@@ -1672,9 +1674,9 @@ static int DecodeFolder( SzArchive *a, UInt32 fIdx, Byte **outBufOut )
                 rc = SZ_ERR_UNSUPPORTED;
             else
             {
-                UInt32 dictSize = fo->props[1] | ( (UInt32)fo->props[2] << 8 ) |
-                                  ( (UInt32)fo->props[3] << 16 ) |
-                                  ( (UInt32)fo->props[4] << 24 );
+                uint32_t dictSize = fo->props[1] | ( (uint32_t)fo->props[2] << 8 ) |
+                                  ( (uint32_t)fo->props[3] << 16 ) |
+                                  ( (uint32_t)fo->props[4] << 24 );
                 if ( SzDictCost( dictSize, mainSize ) > SZ_MAX_DICT_SIZE )
                     rc = SZ_ERR_NORAM;
                 else
@@ -1688,14 +1690,14 @@ static int DecodeFolder( SzArchive *a, UInt32 fIdx, Byte **outBufOut )
                 rc = SZ_ERR_UNSUPPORTED;
             else
             {
-                Byte pbyte = fo->props[0];
+                uint8_t pbyte = fo->props[0];
                 if ( pbyte > 40 )
                     rc = SZ_ERR_UNSUPPORTED;
                 else
                 {
-                    UInt32 dictSize = ( pbyte == 40 )
+                    uint32_t dictSize = ( pbyte == 40 )
                         ? 0xFFFFFFFFUL
-                        : ( (UInt32)( 2 | ( pbyte & 1 ) ) << ( pbyte / 2 + 11 ) );
+                        : ( (uint32_t)( 2 | ( pbyte & 1 ) ) << ( pbyte / 2 + 11 ) );
                     if ( SzDictCost( dictSize, mainSize ) > SZ_MAX_DICT_SIZE )
                         rc = SZ_ERR_NORAM;
                     else
@@ -1718,7 +1720,7 @@ static int DecodeFolder( SzArchive *a, UInt32 fIdx, Byte **outBufOut )
                 rc = SZ_ERR_DATA;            /* so must Delta */
             else
             {
-                Byte     hist[256];
+                uint8_t  hist[256];
                 unsigned pos = 0;
                 memset( hist, 0, sizeof( hist ) );
                 DeltaDecodeRun( hist, fo->deltaDist, &pos, outBuf, mainSize );
@@ -1746,21 +1748,21 @@ static int DecodeFolder( SzArchive *a, UInt32 fIdx, Byte **outBufOut )
  * Public API
  *===========================================================================*/
 
-static const Byte g_sig[6] = { 0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C };
+static const uint8_t g_sig[6] = { 0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C };
 
 /* Read and validate the 32-byte start header at file offset 'off'.  Returns 1
  * (and fills outHdr) only when both the 6-byte signature and the start-header
  * CRC check out, so a stray signature in a stub's code is rejected. */
-static int SzCheckStartHeader( VolFile *fp, long off, Byte outHdr[32] )
+static int SzCheckStartHeader( VolFile *fp, long off, uint8_t outHdr[32] )
 {
-    Byte   hdr[32];
-    UInt32 startCrc;
+    uint8_t  hdr[32];
+    uint32_t startCrc;
 
     if ( VolSeek( fp, off, SEEK_SET ) != 0 )  return 0;
     if ( VolRead( hdr, 1, 32, fp ) != 32 )    return 0;
     if ( memcmp( hdr, g_sig, 6 ) != 0 )     return 0;
-    startCrc = hdr[8] | ( (UInt32)hdr[9] << 8 ) |
-               ( (UInt32)hdr[10] << 16 ) | ( (UInt32)hdr[11] << 24 );
+    startCrc = hdr[8] | ( (uint32_t)hdr[9] << 8 ) |
+               ( (uint32_t)hdr[10] << 16 ) | ( (uint32_t)hdr[11] << 24 );
     if ( Crc32Calc( hdr + 12, 20 ) != startCrc ) return 0;
     memcpy( outHdr, hdr, 32 );
     return 1;
@@ -1771,11 +1773,11 @@ static int SzCheckStartHeader( VolFile *fp, long off, Byte outHdr[32] )
  * success, SZ_ERR_SIG if no valid start header exists. */
 #define SZ_SFX_CHUNK 65536
 
-static int SzFindStartHeader( VolFile *fp, Byte outHdr[32], UInt32 *outOff )
+static int SzFindStartHeader( VolFile *fp, uint8_t outHdr[32], uint32_t *outOff )
 {
-    Byte *buf;
-    long  fileLen, base;
-    int   found = 0;
+    uint8_t *buf;
+    long     fileLen, base;
+    int      found = 0;
 
     if ( SzCheckStartHeader( fp, 0, outHdr ) ) { *outOff = 0; return SZ_OK; }
 
@@ -1783,7 +1785,7 @@ static int SzFindStartHeader( VolFile *fp, Byte outHdr[32], UInt32 *outOff )
     fileLen = VolTell( fp );
     if ( fileLen < 32 ) return SZ_ERR_SIG;
 
-    buf = (Byte *)malloc( SZ_SFX_CHUNK + 5 );   /* +5 to span chunk boundaries */
+    buf = (uint8_t *)malloc( SZ_SFX_CHUNK + 5 ); /* +5 to span chunk boundaries */
     if ( !buf ) return SZ_ERR_MEMORY;
 
     for ( base = 0; base < fileLen && !found; base += SZ_SFX_CHUNK )
@@ -1798,7 +1800,7 @@ static int SzFindStartHeader( VolFile *fp, Byte outHdr[32], UInt32 *outOff )
             if ( buf[i] == 0x37 && memcmp( buf + i, g_sig, 6 ) == 0 &&
                  SzCheckStartHeader( fp, base + i, outHdr ) )
             {
-                *outOff = (UInt32)( base + i );
+                *outOff = (uint32_t)( base + i );
                 found = 1;
                 break;
             }
@@ -1823,14 +1825,14 @@ int SzOpenPw( const char *path, const char *pw, SzArchive **out )
 {
     SzArchive *a;
     VolFile      *fp;
-    Byte       sigHdr[32];
-    UInt32     hdrOff = 0;
-    UInt32     nhOffLo, nhOffHi, nhSizeLo, nhSizeHi, nhCrc;
-    Byte      *headerBuf = NULL;
-    UInt32     headerSize;
+    uint8_t    sigHdr[32];
+    uint32_t   hdrOff = 0;
+    uint32_t   nhOffLo, nhOffHi, nhSizeLo, nhSizeHi, nhCrc;
+    uint8_t   *headerBuf = NULL;
+    uint32_t   headerSize;
     ParseState *ps = NULL;
     int        rc = SZ_OK;
-    Byte       id;
+    uint8_t    id;
 
     *out = NULL;
 
@@ -1843,16 +1845,16 @@ int SzOpenPw( const char *path, const char *pw, SzArchive **out )
     rc = SzFindStartHeader( fp, sigHdr, &hdrOff );
     if ( rc ) { VolClose( fp ); return rc; }
 
-    nhOffLo  = sigHdr[12] | ( (UInt32)sigHdr[13] << 8 ) |
-               ( (UInt32)sigHdr[14] << 16 ) | ( (UInt32)sigHdr[15] << 24 );
-    nhOffHi  = sigHdr[16] | ( (UInt32)sigHdr[17] << 8 ) |
-               ( (UInt32)sigHdr[18] << 16 ) | ( (UInt32)sigHdr[19] << 24 );
-    nhSizeLo = sigHdr[20] | ( (UInt32)sigHdr[21] << 8 ) |
-               ( (UInt32)sigHdr[22] << 16 ) | ( (UInt32)sigHdr[23] << 24 );
-    nhSizeHi = sigHdr[24] | ( (UInt32)sigHdr[25] << 8 ) |
-               ( (UInt32)sigHdr[26] << 16 ) | ( (UInt32)sigHdr[27] << 24 );
-    nhCrc    = sigHdr[28] | ( (UInt32)sigHdr[29] << 8 ) |
-               ( (UInt32)sigHdr[30] << 16 ) | ( (UInt32)sigHdr[31] << 24 );
+    nhOffLo  = sigHdr[12] | ( (uint32_t)sigHdr[13] << 8 ) |
+               ( (uint32_t)sigHdr[14] << 16 ) | ( (uint32_t)sigHdr[15] << 24 );
+    nhOffHi  = sigHdr[16] | ( (uint32_t)sigHdr[17] << 8 ) |
+               ( (uint32_t)sigHdr[18] << 16 ) | ( (uint32_t)sigHdr[19] << 24 );
+    nhSizeLo = sigHdr[20] | ( (uint32_t)sigHdr[21] << 8 ) |
+               ( (uint32_t)sigHdr[22] << 16 ) | ( (uint32_t)sigHdr[23] << 24 );
+    nhSizeHi = sigHdr[24] | ( (uint32_t)sigHdr[25] << 8 ) |
+               ( (uint32_t)sigHdr[26] << 16 ) | ( (uint32_t)sigHdr[27] << 24 );
+    nhCrc    = sigHdr[28] | ( (uint32_t)sigHdr[29] << 8 ) |
+               ( (uint32_t)sigHdr[30] << 16 ) | ( (uint32_t)sigHdr[31] << 24 );
 
     if ( nhOffHi != 0 || nhSizeHi != 0 ) { VolClose( fp ); return SZ_ERR_TOOBIG; }
 
@@ -1879,7 +1881,7 @@ int SzOpenPw( const char *path, const char *pw, SzArchive **out )
     }
 
     headerSize = nhSizeLo;
-    headerBuf  = (Byte *)malloc( headerSize );
+    headerBuf  = (uint8_t *)malloc( headerSize );
     if ( !headerBuf ) { rc = SZ_ERR_MEMORY; goto fail; }
 
     if ( VolSeek( fp, (long)( a->baseOffset + nhOffLo ), SEEK_SET ) != 0 ||
@@ -1921,7 +1923,7 @@ int SzOpenPw( const char *path, const char *pw, SzArchive **out )
          * then parse the resulting bytes as a plain header. */
         SzArchive  *tmp  = (SzArchive *)calloc( 1, sizeof( SzArchive ) );
         ParseState *tps  = (ParseState *)calloc( 1, sizeof( ParseState ) );
-        Byte       *hdr2 = NULL;
+        uint8_t    *hdr2 = NULL;
 
         if ( !tmp || !tps )
         {
@@ -2043,7 +2045,7 @@ const char *SzEntryMethod( SzArchive *a, int index )
     return buf;
 }
 
-UInt32 SzEntryPacked( SzArchive *a, int index )
+uint32_t SzEntryPacked( SzArchive *a, int index )
 {
     SzEntry *e;
     int      i;
@@ -2082,7 +2084,7 @@ void SzSetPassword( SzArchive *a, const char *pw )
 
 int SzNeedsPassword( SzArchive *a )
 {
-    UInt32 i;
+    unsigned i;
 
     if ( !a ) return 0;
     for ( i = 0; i < a->numFolders; i++ )
@@ -2255,26 +2257,26 @@ static void WriteDirEntry( const SzEntry *e, const char *destDir )
  *--------------------------------------------------------------------------*/
 typedef struct {
     VolFile  *fp;
-    UInt32 remaining;
+    uint32_t remaining;
 
     int         encrypted;
     AesCbcState cbc;
-    Byte        carry[16];      /* decrypted spill from a partial block     */
+    uint8_t     carry[16];      /* decrypted spill from a partial block     */
     int         carryPos, carryLen;
 } SzPackSrc;
 
-static void SzPackSrcInit( SzPackSrc *s, VolFile *fp, UInt32 remaining )
+static void SzPackSrcInit( SzPackSrc *s, VolFile *fp, uint32_t remaining )
 {
     memset( s, 0, sizeof( *s ) );
     s->fp        = fp;
     s->remaining = remaining;
 }
 
-static UInt32 SzReadPacked( void *user, Byte *buf, UInt32 len )
+static uint32_t SzReadPacked( void *user, uint8_t *buf, uint32_t len )
 {
     SzPackSrc *s = (SzPackSrc *)user;
     size_t     n;
-    UInt32     done = 0;
+    uint32_t   done = 0;
 
     if ( len > s->remaining ) len = s->remaining;
     if ( len == 0 ) return 0;
@@ -2282,8 +2284,8 @@ static UInt32 SzReadPacked( void *user, Byte *buf, UInt32 len )
     if ( !s->encrypted )
     {
         n = VolRead( buf, 1, len, s->fp );
-        s->remaining -= (UInt32)n;
-        return (UInt32)n;
+        s->remaining -= (uint32_t)n;
+        return (uint32_t)n;
     }
 
     /* 1. anything left over from the last partial block */
@@ -2295,7 +2297,7 @@ static UInt32 SzReadPacked( void *user, Byte *buf, UInt32 len )
 
     /* 2. whole blocks, decrypted in place in the caller's buffer */
     {
-        UInt32 whole = ( len - done ) & ~15UL;
+        uint32_t whole = ( len - done ) & ~15UL;
 
         if ( whole )
         {
@@ -2303,8 +2305,8 @@ static UInt32 SzReadPacked( void *user, Byte *buf, UInt32 len )
             n &= ~(size_t)15;               /* a short read cannot be used  */
             if ( n )
             {
-                AesCbcDecrypt( &s->cbc, buf + done, (UInt32)n );
-                done += (UInt32)n;
+                AesCbcDecrypt( &s->cbc, buf + done, (uint32_t)n );
+                done += (uint32_t)n;
             }
             if ( n < whole )
             {
@@ -2353,10 +2355,10 @@ static UInt32 SzReadPacked( void *user, Byte *buf, UInt32 len )
 
 static int SzFolderKey( SzArchive *a, const SzFolder *fo, AesCbcState *cbc )
 {
-    const Byte *p = fo->aesProps;
-    Byte        salt[16], iv[16], key[32];
-    unsigned    saltSize, ivSize, off;
-    int         ncp;
+    const uint8_t *p = fo->aesProps;
+    uint8_t        salt[16], iv[16], key[32];
+    unsigned       saltSize, ivSize, off;
+    int            ncp;
 
     if ( !a->havePw )
         return SZ_ERR_PASSWORD;
@@ -2402,20 +2404,20 @@ static int SzFolderKey( SzArchive *a, const SzFolder *fo, AesCbcState *cbc )
 
 typedef struct {
     SzBcj    st;
-    Byte    *buf;            /* carry-over bytes + the run being converted */
-    UInt32   nCarry;
+    uint8_t *buf;            /* carry-over bytes + the run being converted */
+    uint32_t nCarry;
     LzmaEmit next;           /* downstream sink */
     void    *nextUser;
 } SzBcjStage;
 
-static int SzBcjEmit( void *user, const Byte *data, UInt32 len )
+static int SzBcjEmit( void *user, const uint8_t *data, uint32_t len )
 {
     SzBcjStage *s = (SzBcjStage *)user;
 
     while ( len )
     {
-        UInt32 take = SZ_BCJ_BUF - s->nCarry;
-        UInt32 have, done;
+        uint32_t take = SZ_BCJ_BUF - s->nCarry;
+        uint32_t have, done;
 
         if ( take > len ) take = len;
         memcpy( s->buf + s->nCarry, data, take );
@@ -2451,20 +2453,20 @@ static int SzBcjFinish( SzBcjStage *s )
  * ever held back, so there is no finish step.
  *-------------------------------------------------------------------------- */
 typedef struct {
-    Byte     hist[256];
+    uint8_t  hist[256];
     unsigned dist, pos;
-    Byte    *buf;            /* SZ_BCJ_BUF staging */
+    uint8_t *buf;            /* SZ_BCJ_BUF staging */
     LzmaEmit next;           /* downstream sink */
     void    *nextUser;
 } SzDeltaStage;
 
-static int SzDeltaEmit( void *user, const Byte *data, UInt32 len )
+static int SzDeltaEmit( void *user, const uint8_t *data, uint32_t len )
 {
     SzDeltaStage *s = (SzDeltaStage *)user;
 
     while ( len )
     {
-        UInt32 take = ( len > SZ_BCJ_BUF ) ? SZ_BCJ_BUF : len;
+        uint32_t take = ( len > SZ_BCJ_BUF ) ? SZ_BCJ_BUF : len;
         memcpy( s->buf, data, take );
         DeltaDecodeRun( s->hist, s->dist, &s->pos, s->buf, take );
         if ( !s->next( s->nextUser, s->buf, take ) ) return 0;
@@ -2507,21 +2509,21 @@ static int SzDeltaEmit( void *user, const Byte *data, UInt32 len )
 
 typedef struct {
     /* range-coded control stream, held whole */
-    const Byte *rc;
-    UInt32      rcLen, rcPos;
-    UInt32      range, code;
-    UInt16      probs[256 + 2];
+    const uint8_t *rc;
+    uint32_t       rcLen, rcPos;
+    uint32_t       range, code;
+    uint16_t       probs[256 + 2];
 
     /* branch target streams, held whole */
-    const Byte *call;  UInt32 callLen, callPos;
-    const Byte *jump;  UInt32 jumpLen, jumpPos;
+    const uint8_t *call;  uint32_t callLen, callPos;
+    const uint8_t *jump;  uint32_t jumpLen, jumpPos;
 
     /* output position and the byte before the current one */
-    UInt32      outPos, outSize;
-    Byte        prevByte;
+    uint32_t    outPos, outSize;
+    uint8_t     prevByte;
 
-    Byte       *obuf;             /* staging, SZ_BCJ_BUF bytes */
-    UInt32      oN;
+    uint8_t    *obuf;             /* staging, SZ_BCJ_BUF bytes */
+    uint32_t    oN;
 
     LzmaEmit    next;             /* downstream sink */
     void       *nextUser;
@@ -2552,7 +2554,7 @@ static int Bcj2RcStart( SzBcj2Stage *s )
     s->rcPos = 1;                              /* byte 0 is always zero */
     s->code  = 0;
     for ( i = 0; i < 4; i++ )
-        s->code = ( s->code << 8 ) | (UInt32)s->rc[s->rcPos++];
+        s->code = ( s->code << 8 ) | (uint32_t)s->rc[s->rcPos++];
     s->range = 0xFFFFFFFFUL;
     return 1;
 }
@@ -2560,33 +2562,33 @@ static int Bcj2RcStart( SzBcj2Stage *s )
 /* One adaptive bit.  Returns 0/1, or -1 when the rc stream runs out. */
 static int Bcj2Bit( SzBcj2Stage *s, unsigned idx )
 {
-    UInt16 *p = &s->probs[idx];
-    UInt32  bound = ( s->range >> 11 ) * (UInt32)*p;
-    int     sym;
+    uint16_t *p = &s->probs[idx];
+    uint32_t  bound = ( s->range >> 11 ) * (uint32_t)*p;
+    int       sym;
 
     if ( s->code < bound )
     {
         s->range = bound;
-        *p = (UInt16)( *p + ( ( SZ_RC_MODEL_TOTAL - *p ) >> SZ_RC_MOVE_BITS ) );
+        *p = (uint16_t)( *p + ( ( SZ_RC_MODEL_TOTAL - *p ) >> SZ_RC_MOVE_BITS ) );
         sym = 0;
     }
     else
     {
         s->range -= bound;
         s->code  -= bound;
-        *p = (UInt16)( *p - ( *p >> SZ_RC_MOVE_BITS ) );
+        *p = (uint16_t)( *p - ( *p >> SZ_RC_MOVE_BITS ) );
         sym = 1;
     }
     while ( s->range < SZ_RC_TOP_VALUE )
     {
         if ( s->rcPos >= s->rcLen ) { s->err = SZ_ERR_DATA; return -1; }
-        s->code   = ( s->code << 8 ) | (UInt32)s->rc[s->rcPos++];
+        s->code   = ( s->code << 8 ) | (uint32_t)s->rc[s->rcPos++];
         s->range <<= 8;
     }
     return sym;
 }
 
-static int Bcj2Put( SzBcj2Stage *s, Byte b )
+static int Bcj2Put( SzBcj2Stage *s, uint8_t b )
 {
     if ( s->outPos >= s->outSize ) return 1;   /* folder complete; drop */
     s->obuf[s->oN++] = b;
@@ -2600,14 +2602,14 @@ static int Bcj2Put( SzBcj2Stage *s, Byte b )
 }
 
 /* Emit callback: receives the main stream and rebuilds the original code. */
-static int SzBcj2Emit( void *user, const Byte *data, UInt32 len )
+static int SzBcj2Emit( void *user, const uint8_t *data, uint32_t len )
 {
     SzBcj2Stage *s = (SzBcj2Stage *)user;
-    UInt32       i;
+    unsigned     i;
 
     for ( i = 0; i < len; i++ )
     {
-        Byte b = data[i];
+        uint8_t b = data[i];
 
         if ( !Bcj2Put( s, b ) ) return 0;
 
@@ -2620,8 +2622,8 @@ static int SzBcj2Emit( void *user, const Byte *data, UInt32 len )
 
             if ( bit )
             {
-                const Byte *v;
-                UInt32      dest;
+                const uint8_t *v;
+                uint32_t       dest;
 
                 if ( b == 0xE8 )
                 {
@@ -2640,14 +2642,14 @@ static int SzBcj2Emit( void *user, const Byte *data, UInt32 len )
 
                 /* stored big-endian and absolute; emitted little-endian and
                  * relative to the address just past the operand */
-                dest = ( (UInt32)v[0] << 24 ) | ( (UInt32)v[1] << 16 ) |
-                       ( (UInt32)v[2] <<  8 ) |   (UInt32)v[3];
+                dest = ( (uint32_t)v[0] << 24 ) | ( (uint32_t)v[1] << 16 ) |
+                       ( (uint32_t)v[2] <<  8 ) |   (uint32_t)v[3];
                 dest -= ( s->outPos + 4 );
 
-                if ( !Bcj2Put( s, (Byte)( dest       ) ) ) return 0;
-                if ( !Bcj2Put( s, (Byte)( dest >>  8 ) ) ) return 0;
-                if ( !Bcj2Put( s, (Byte)( dest >> 16 ) ) ) return 0;
-                s->prevByte = (Byte)( dest >> 24 );
+                if ( !Bcj2Put( s, (uint8_t)( dest       ) ) ) return 0;
+                if ( !Bcj2Put( s, (uint8_t)( dest >>  8 ) ) ) return 0;
+                if ( !Bcj2Put( s, (uint8_t)( dest >> 16 ) ) ) return 0;
+                s->prevByte = (uint8_t)( dest >> 24 );
                 if ( !Bcj2Put( s, s->prevByte ) ) return 0;
             }
             else
@@ -2674,9 +2676,9 @@ static int SzBcj2Finish( SzBcj2Stage *s )
 static int SzCoderPackIndex( SzArchive *a, SzFolder *fo, int coderIdx )
 {
     int rel = FolderPackForIn( fo, fo->coders[coderIdx].firstIn );
-    UInt32 abs;
+    uint32_t abs;
     if ( rel < 0 ) return -1;
-    abs = fo->firstPackStream + (UInt32)rel;
+    abs = fo->firstPackStream + (uint32_t)rel;
     if ( abs >= a->numPackStreams ) return -1;
     return (int)abs;
 }
@@ -2685,12 +2687,12 @@ static int SzCoderPackIndex( SzArchive *a, SzFolder *fo, int coderIdx )
  * known from the header, so an oversized stream is refused before any
  * allocation is attempted.  The caller frees *outBuf. */
 static int SzDecodeSubCoder( SzArchive *a, SzFolder *fo, int coderIdx,
-                             Byte **outBuf, UInt32 *outLen )
+                             uint8_t **outBuf, uint32_t *outLen )
 {
     SzCoder *cd = &fo->coders[coderIdx];
     int      pk = SzCoderPackIndex( a, fo, coderIdx );
-    UInt32   packOff, packSize, unpackSize;
-    Byte    *packBuf = NULL, *dst = NULL;
+    uint32_t packOff, packSize, unpackSize;
+    uint8_t *packBuf = NULL, *dst = NULL;
     int      rc = SZ_OK;
 
     *outBuf = NULL;
@@ -2704,7 +2706,7 @@ static int SzDecodeSubCoder( SzArchive *a, SzFolder *fo, int coderIdx,
     if ( packSize > SZ_MAX_BUFFER_SIZE || unpackSize > SZ_MAX_BUFFER_SIZE )
         return SZ_ERR_NORAM;
 
-    packBuf = (Byte *)malloc( packSize ? packSize : 1 );
+    packBuf = (uint8_t *)malloc( packSize ? packSize : 1 );
     if ( !packBuf ) return SZ_ERR_MEMORY;
     if ( VolSeek( a->fp, (long)packOff, SEEK_SET ) != 0 ||
          VolRead( packBuf, 1, packSize, a->fp ) != packSize )
@@ -2713,7 +2715,7 @@ static int SzDecodeSubCoder( SzArchive *a, SzFolder *fo, int coderIdx,
         return SZ_ERR_READ;
     }
 
-    dst = (Byte *)malloc( unpackSize ? unpackSize : 1 );
+    dst = (uint8_t *)malloc( unpackSize ? unpackSize : 1 );
     if ( !dst ) { free( packBuf ); return SZ_ERR_MEMORY; }
 
     /* Buffered decode: dst doubles as the match dictionary, so this costs
@@ -2728,9 +2730,9 @@ static int SzDecodeSubCoder( SzArchive *a, SzFolder *fo, int coderIdx,
         if ( cd->propsSize < 5 ) rc = SZ_ERR_UNSUPPORTED;
         else
         {
-            UInt32 dictSize = cd->props[1] | ( (UInt32)cd->props[2] << 8 ) |
-                              ( (UInt32)cd->props[3] << 16 ) |
-                              ( (UInt32)cd->props[4] << 24 );
+            uint32_t dictSize = cd->props[1] | ( (uint32_t)cd->props[2] << 8 ) |
+                              ( (uint32_t)cd->props[3] << 16 ) |
+                              ( (uint32_t)cd->props[4] << 24 );
             if ( SzDictCost( dictSize, unpackSize ) > SZ_MAX_DICT_SIZE )
                  rc = SZ_ERR_NORAM;
             else rc = LzmaDecode( cd->props, cd->propsSize,
@@ -2742,13 +2744,13 @@ static int SzDecodeSubCoder( SzArchive *a, SzFolder *fo, int coderIdx,
         if ( cd->propsSize < 1 ) rc = SZ_ERR_UNSUPPORTED;
         else
         {
-            Byte pb = cd->props[0];
+            uint8_t pb = cd->props[0];
             if ( pb > 40 ) rc = SZ_ERR_UNSUPPORTED;
             else
             {
-                UInt32 dictSize = ( pb == 40 )
+                uint32_t dictSize = ( pb == 40 )
                     ? 0xFFFFFFFFUL
-                    : ( (UInt32)( 2 | ( pb & 1 ) ) << ( pb / 2 + 11 ) );
+                    : ( (uint32_t)( 2 | ( pb & 1 ) ) << ( pb / 2 + 11 ) );
                 if ( SzDictCost( dictSize, unpackSize ) > SZ_MAX_DICT_SIZE )
                      rc = SZ_ERR_NORAM;
                 else rc = Lzma2Decode( pb, packBuf, packSize, dst, unpackSize );
@@ -2766,21 +2768,21 @@ static int SzDecodeSubCoder( SzArchive *a, SzFolder *fo, int coderIdx,
 }
 
 /* Read a folder's raw (uncoded) packed stream whole - the BCJ2 rc stream. */
-static int SzReadRawPack( SzArchive *a, int packIdx, Byte **outBuf,
-                          UInt32 *outLen )
+static int SzReadRawPack( SzArchive *a, int packIdx, uint8_t **outBuf,
+                          uint32_t *outLen )
 {
-    UInt32 off, len;
-    Byte  *buf;
+    uint32_t off, len;
+    uint8_t *buf;
 
     *outBuf = NULL;
     *outLen = 0;
-    if ( packIdx < 0 || (UInt32)packIdx >= a->numPackStreams )
+    if ( packIdx < 0 || (uint32_t)packIdx >= a->numPackStreams )
         return SZ_ERR_FORMAT;
     off = a->baseOffset + a->packOffset[packIdx];
     len = a->packSizes[packIdx];
     if ( len > SZ_MAX_BUFFER_SIZE ) return SZ_ERR_NORAM;
 
-    buf = (Byte *)malloc( len ? len : 1 );
+    buf = (uint8_t *)malloc( len ? len : 1 );
     if ( !buf ) return SZ_ERR_MEMORY;
     if ( VolSeek( a->fp, (long)off, SEEK_SET ) != 0 ||
          VolRead( buf, 1, len, a->fp ) != len )
@@ -2795,22 +2797,22 @@ static int SzReadRawPack( SzArchive *a, int packIdx, Byte **outBuf,
 
 /*---- The sink: folder bytes -> the right file, CRC-checked ---------------- */
 typedef struct {
-    SzArchive  *a;
-    const char *destDir;      /* NULL = test only: CRC but write nothing */
-    const int  *order;        /* this folder's entries, ascending offset  */
-    int         count;
-    int         next;         /* next entry in 'order' to open            */
-    const Byte *want;         /* per-entry selection flags, NULL = all    */
-    UInt32      pos;          /* absolute position in the folder stream   */
+    SzArchive     *a;
+    const char    *destDir;   /* NULL = test only: CRC but write nothing */
+    const int     *order;     /* this folder's entries, ascending offset  */
+    int            count;
+    int            next;      /* next entry in 'order' to open            */
+    const uint8_t *want;      /* per-entry selection flags, NULL = all    */
+    uint32_t       pos;       /* absolute position in the folder stream   */
 
     int         cur;          /* entry currently open, -1 = none          */
     int         curSkip;      /* declined overwrite: decode past, keep    */
-    UInt32      curEnd;       /* folder offset where it ends              */
+    uint32_t    curEnd;       /* folder offset where it ends              */
     FILE       *out;          /* NULL when testing or when not wanted     */
-    UInt32      crc;          /* running CRC of the current entry         */
+    uint32_t    crc;          /* running CRC of the current entry         */
     char        curPath[SZ_MAX_NAME * 4];
 
-    UInt32      folderCrc;    /* running CRC of the whole folder output   */
+    uint32_t    folderCrc;    /* running CRC of the whole folder output   */
     SzProgress  prog;
     void       *user;
     int         rc;           /* first error, reported by the caller      */
@@ -2820,7 +2822,7 @@ typedef struct {
      * of every byte decoded, wanted or not, and may cancel. */
     FILE       *spill;
     int         curSpill;     /* the open entry goes to 'spill'           */
-    int       (*tick)( void *tickUser, UInt32 bytes );
+    int       (*tick)( void *tickUser, uint32_t bytes );
     void       *tickUser;
 } SzSink;
 
@@ -2915,7 +2917,7 @@ static int SzSinkClose( SzSink *s )
     return 1;
 }
 
-static int SzSinkEmit( void *user, const Byte *data, UInt32 len )
+static int SzSinkEmit( void *user, const uint8_t *data, uint32_t len )
 {
     SzSink *s = (SzSink *)user;
 
@@ -2928,11 +2930,11 @@ static int SzSinkEmit( void *user, const Byte *data, UInt32 len )
 
     while ( len )
     {
-        UInt32 take;
+        uint32_t take;
 
         if ( s->cur < 0 )
         {
-            UInt32 off;
+            uint32_t off;
 
             if ( s->next >= s->count )      /* nothing left to write */
             {
@@ -2942,7 +2944,7 @@ static int SzSinkEmit( void *user, const Byte *data, UInt32 len )
             off = s->a->entries[s->order[s->next]].offsetInFolder;
             if ( s->pos < off )             /* gap between entries */
             {
-                UInt32 skip = off - s->pos;
+                uint32_t skip = off - s->pos;
                 if ( skip > len ) skip = len;
                 s->pos += skip; data += skip; len -= skip;
                 continue;
@@ -2982,21 +2984,21 @@ static int SzSinkEmit( void *user, const Byte *data, UInt32 len )
  * = every entry in the folder); entries that are not wanted are decoded past
  * but not written, which is what a solid folder requires.
  */
-static int SzStreamFolderEx( SzArchive *a, UInt32 fIdx, const char *destDir,
-                             const Byte *want, SzProgress prog, void *user,
+static int SzStreamFolderEx( SzArchive *a, uint32_t fIdx, const char *destDir,
+                             const uint8_t *want, SzProgress prog, void *user,
                              FILE *spill,
-                             int (*tick)( void *tickUser, UInt32 bytes ),
+                             int (*tick)( void *tickUser, uint32_t bytes ),
                              void *tickUser )
 {
     SzFolder   *fo       = &a->folders[fIdx];
-    UInt32      packOff, packSize;
+    uint32_t    packOff, packSize;
     SzPackSrc   src;
     SzSink      sink;
     SzBcjStage  bcj;
     SzBcj2Stage bcj2;
     SzDeltaStage delta;
-    Byte       *callBuf = NULL, *jumpBuf = NULL, *rcBuf = NULL;
-    UInt32      callLen = 0,     jumpLen = 0,     rcLen = 0;
+    uint8_t    *callBuf = NULL, *jumpBuf = NULL, *rcBuf = NULL;
+    uint32_t    callLen = 0,     jumpLen = 0,     rcLen = 0;
     LzmaEmit    emit     = SzSinkEmit;
     void       *emitUser = &sink;
     int        *order    = NULL;
@@ -3014,7 +3016,7 @@ static int SzStreamFolderEx( SzArchive *a, UInt32 fIdx, const char *destDir,
     mainPack = fo->isBcj2
              ? SzCoderPackIndex( a, fo, fo->bcj2Main )
              : (int)fo->firstPackStream;
-    if ( mainPack < 0 || (UInt32)mainPack >= a->numPackStreams )
+    if ( mainPack < 0 || (uint32_t)mainPack >= a->numPackStreams )
         return SZ_ERR_FORMAT;
     packOff  = a->baseOffset + a->packOffset[mainPack];
     packSize = a->packSizes[mainPack];
@@ -3081,7 +3083,7 @@ static int SzStreamFolderEx( SzArchive *a, UInt32 fIdx, const char *destDir,
                      &rcBuf, &rcLen );
         if ( rc == SZ_OK )
         {
-            bcj2.obuf = (Byte *)malloc( SZ_BCJ_BUF );
+            bcj2.obuf = (uint8_t *)malloc( SZ_BCJ_BUF );
             if ( !bcj2.obuf ) rc = SZ_ERR_MEMORY;
         }
         if ( rc != SZ_OK )
@@ -3119,7 +3121,7 @@ static int SzStreamFolderEx( SzArchive *a, UInt32 fIdx, const char *destDir,
             free( order );
             return SZ_ERR_DATA;              /* BCJ must preserve size */
         }
-        bcj.buf = (Byte *)malloc( SZ_BCJ_BUF );
+        bcj.buf = (uint8_t *)malloc( SZ_BCJ_BUF );
         if ( !bcj.buf ) { free( order ); return SZ_ERR_MEMORY; }
         BcjInit( &bcj.st );
         bcj.nCarry   = 0;
@@ -3137,7 +3139,7 @@ static int SzStreamFolderEx( SzArchive *a, UInt32 fIdx, const char *destDir,
             free( order );
             return SZ_ERR_DATA;              /* Delta must preserve size */
         }
-        delta.buf = (Byte *)malloc( SZ_BCJ_BUF );
+        delta.buf = (uint8_t *)malloc( SZ_BCJ_BUF );
         if ( !delta.buf ) { free( order ); return SZ_ERR_MEMORY; }
         memset( delta.hist, 0, sizeof( delta.hist ) );
         delta.dist     = fo->deltaDist;
@@ -3171,11 +3173,11 @@ static int SzStreamFolderEx( SzArchive *a, UInt32 fIdx, const char *destDir,
         if ( fo->method == SZ_M_COPY )
         {
             /* Stored: hand the packed bytes straight to the pipeline. */
-            Byte *buf = (Byte *)malloc( SZ_BCJ_BUF );
+            uint8_t *buf = (uint8_t *)malloc( SZ_BCJ_BUF );
             if ( !buf ) rc = SZ_ERR_MEMORY;
             else
             {
-                UInt32 left = fo->mainUnpackSize;
+                uint32_t left = fo->mainUnpackSize;
 
                 /* Unencrypted, a stored folder's packed and unpacked sizes are
                  * the same thing.  ENCRYPTED, they are not: CBC works in
@@ -3187,14 +3189,14 @@ static int SzStreamFolderEx( SzArchive *a, UInt32 fIdx, const char *destDir,
                  * test files passed and looked like a partial success. */
                 if ( fo->encrypted )
                 {
-                    UInt32 padded = ( fo->mainUnpackSize + 15 ) & ~15UL;
+                    uint32_t padded = ( fo->mainUnpackSize + 15 ) & ~15UL;
                     if ( packSize != padded ) rc = SZ_ERR_DATA;
                 }
                 else if ( packSize != fo->mainUnpackSize )
                     rc = SZ_ERR_DATA;
                 while ( rc == SZ_OK && left )
                 {
-                    UInt32 got = SzReadPacked( &src, buf,
+                    uint32_t got = SzReadPacked( &src, buf,
                                      ( left < SZ_BCJ_BUF ) ? left : SZ_BCJ_BUF );
                     if ( got == 0 ) { rc = SZ_ERR_READ; break; }
                     if ( !emit( emitUser, buf, got ) )
@@ -3210,9 +3212,9 @@ static int SzStreamFolderEx( SzArchive *a, UInt32 fIdx, const char *destDir,
                 rc = SZ_ERR_UNSUPPORTED;
             else
             {
-                UInt32 dictSize = fo->props[1] | ( (UInt32)fo->props[2] << 8 ) |
-                                  ( (UInt32)fo->props[3] << 16 ) |
-                                  ( (UInt32)fo->props[4] << 24 );
+                uint32_t dictSize = fo->props[1] | ( (uint32_t)fo->props[2] << 8 ) |
+                                  ( (uint32_t)fo->props[3] << 16 ) |
+                                  ( (uint32_t)fo->props[4] << 24 );
                 if ( SzDictCost( dictSize, fo->mainUnpackSize ) > SZ_MAX_DICT_SIZE )
                     rc = SZ_ERR_NORAM;
                 else
@@ -3228,14 +3230,14 @@ static int SzStreamFolderEx( SzArchive *a, UInt32 fIdx, const char *destDir,
                 rc = SZ_ERR_UNSUPPORTED;
             else
             {
-                Byte pbyte = fo->props[0];
+                uint8_t pbyte = fo->props[0];
                 if ( pbyte > 40 )
                     rc = SZ_ERR_UNSUPPORTED;
                 else
                 {
-                    UInt32 dictSize = ( pbyte == 40 )
+                    uint32_t dictSize = ( pbyte == 40 )
                         ? 0xFFFFFFFFUL
-                        : ( (UInt32)( 2 | ( pbyte & 1 ) ) << ( pbyte / 2 + 11 ) );
+                        : ( (uint32_t)( 2 | ( pbyte & 1 ) ) << ( pbyte / 2 + 11 ) );
                     if ( SzDictCost( dictSize, fo->mainUnpackSize ) > SZ_MAX_DICT_SIZE )
                         rc = SZ_ERR_NORAM;
                     else
@@ -3302,8 +3304,8 @@ static int SzStreamFolderEx( SzArchive *a, UInt32 fIdx, const char *destDir,
     return rc;
 }
 
-static int SzStreamFolder( SzArchive *a, UInt32 fIdx, const char *destDir,
-                           const Byte *want, SzProgress prog, void *user )
+static int SzStreamFolder( SzArchive *a, uint32_t fIdx, const char *destDir,
+                           const uint8_t *want, SzProgress prog, void *user )
 {
     return SzStreamFolderEx( a, fIdx, destDir, want, prog, user,
                              NULL, NULL, NULL );
@@ -3312,9 +3314,9 @@ static int SzStreamFolder( SzArchive *a, UInt32 fIdx, const char *destDir,
 int SzExtractAll( SzArchive *a, const char *destDir,
                   SzProgress prog, void *user )
 {
-    int    rc = SZ_OK;
-    UInt32 f;
-    int    i;
+    int      rc = SZ_OK;
+    unsigned f;
+    int      i;
 
     if ( !a ) return SZ_ERR_FORMAT;
 
@@ -3367,15 +3369,15 @@ int SzExtractAll( SzArchive *a, const char *destDir,
 int SzExtractItems( SzArchive *a, const int *indices, int count,
                     const char *destDir, SzProgress prog, void *user )
 {
-    int    rc = SZ_OK;
-    int    k;
-    UInt32 f;
-    Byte  *want;
+    int      rc = SZ_OK;
+    int      k;
+    unsigned f;
+    uint8_t *want;
 
     if ( !a ) return SZ_ERR_FORMAT;
     if ( count <= 0 ) return SZ_OK;
 
-    want = (Byte *)calloc( a->numEntries ? a->numEntries : 1, 1 );
+    want = (uint8_t *)calloc( a->numEntries ? a->numEntries : 1, 1 );
     if ( !want ) return SZ_ERR_MEMORY;
     for ( k = 0; k < count; k++ )
         if ( indices[k] >= 0 && indices[k] < a->numEntries )
@@ -3503,19 +3505,19 @@ const char *SzErrorText( int code )
 
 /* One folder of the new archive. */
 typedef struct {
-    UInt32   src;                       /* its folder in the old archive  */
+    uint32_t src;                       /* its folder in the old archive  */
     int      rebuilt;                   /* compressed again, not copied   */
 
     /* rebuilt only */
     int      method;                    /* SZ_M_COPY or SZ_M_LZMA2        */
     int      filter;                    /* SZ_F_NONE / _BCJ_X86 / _DELTA  */
     unsigned delta;
-    Byte     lzProp;                    /* LZMA2's property byte          */
+    uint8_t  lzProp;                    /* LZMA2's property byte          */
     int      aes;
-    Byte     aesProps[SZD_AES_PROPS];
-    UInt32   unpack;                    /* the kept files' bytes          */
-    UInt32   mainPack;                  /* what the main coder produced   */
-    UInt32   packSize;                  /* what went into the archive     */
+    uint8_t  aesProps[SZD_AES_PROPS];
+    uint32_t unpack;                    /* the kept files' bytes          */
+    uint32_t mainPack;                  /* what the main coder produced   */
+    uint32_t packSize;                  /* what went into the archive     */
 } SzdFolder;
 
 typedef struct {
@@ -3523,7 +3525,7 @@ typedef struct {
     FILE           *out;
     ArcCompProgress prog;
     void           *user;
-    UInt32          done, total;        /* bytes of work                  */
+    uint32_t        done, total;        /* bytes of work                  */
     int             fileIndex, fileCount;
     const char     *name;
     int             cancelled;
@@ -3531,12 +3533,12 @@ typedef struct {
     /* One key serves every folder this run encrypts, and the header: the
      * derivation is the slow part, and only the IV changes per folder. */
     int             haveKey;
-    Byte            rk[240];
-    Byte            ivSeed[32];
-    UInt32          ivCount;
+    uint8_t         rk[240];
+    uint8_t         ivSeed[32];
+    uint32_t        ivCount;
 } SzdJob;
 
-static int SzdTick( SzdJob *j, UInt32 bytes )
+static int SzdTick( SzdJob *j, uint32_t bytes )
 {
     j->done += bytes;
     if ( !j->prog ) return 1;
@@ -3549,7 +3551,7 @@ static int SzdTick( SzdJob *j, UInt32 bytes )
     return 1;
 }
 
-static int SzdSinkTick( void *user, UInt32 bytes )
+static int SzdSinkTick( void *user, uint32_t bytes )
 {
     return SzdTick( (SzdJob *)user, bytes );
 }
@@ -3570,15 +3572,15 @@ static int SzdSinkEntry( void *user, int fileIndex, int fileCount,
 
 /* A fresh IV.  It has only to differ from folder to folder and run to run,
  * not to be secret, so the clock and a counter through SHA-256 will do. */
-static void SzdNewIv( SzdJob *j, Byte iv[16] )
+static void SzdNewIv( SzdJob *j, uint8_t iv[16] )
 {
     SHA256_CTX c;
-    Byte       d[32];
-    UInt32     v[4];
+    uint8_t    d[32];
+    uint32_t   v[4];
 
-    v[0] = (UInt32)time( NULL );
+    v[0] = (uint32_t)time( NULL );
     v[1] = j->ivCount++;
-    v[2] = (UInt32)ftell( j->out );
+    v[2] = (uint32_t)ftell( j->out );
     v[3] = j->done;
     sha256_init( &c );
     sha256_update( &c, j->ivSeed, sizeof( j->ivSeed ) );
@@ -3590,19 +3592,19 @@ static void SzdNewIv( SzdJob *j, Byte iv[16] )
 
 /* The key from the archive's password - no salt, as 7-Zip writes it - and
  * the coder properties for a new IV. */
-static int SzdAesBegin( SzdJob *j, Byte props[SZD_AES_PROPS], Byte iv[16] )
+static int SzdAesBegin( SzdJob *j, uint8_t props[SZD_AES_PROPS], uint8_t iv[16] )
 {
     if ( !j->a->havePw ) return SZ_ERR_PASSWORD;
     if ( !j->haveKey )
     {
-        Byte key[32];
+        uint8_t key[32];
         SzAesDeriveKey( j->a->password, SZD_AES_CYCLES, NULL, 0, key );
         aes256_expand_key( key, j->rk );
         memset( key, 0, sizeof( key ) );
         j->haveKey = 1;
     }
     SzdNewIv( j, iv );
-    props[0] = (Byte)( 0x40 | SZD_AES_CYCLES );     /* an IV, no salt   */
+    props[0] = (uint8_t)( 0x40 | SZD_AES_CYCLES );  /* an IV, no salt   */
     props[1] = 0x0F;                                /* the IV: 16 bytes */
     memcpy( props + 2, iv, 16 );
     return SZ_OK;
@@ -3612,16 +3614,16 @@ static int SzdAesBegin( SzdJob *j, Byte props[SZD_AES_PROPS], Byte iv[16] )
  * when 'rk' is set.  'plain' counts what came in, 'written' what went out -
  * the second rounded up to whole 16-byte blocks when encrypting. */
 typedef struct {
-    FILE       *f;
-    HBuf       *mem;
-    const Byte *rk;
-    Byte        iv[16];
-    Byte        blk[16];
-    unsigned    have;
-    UInt32      plain, written;
+    FILE          *f;
+    HBuf          *mem;
+    const uint8_t *rk;
+    uint8_t        iv[16];
+    uint8_t        blk[16];
+    unsigned       have;
+    uint32_t       plain, written;
 } SzdOut;
 
-static int SzdRaw( SzdOut *o, const Byte *data, UInt32 len )
+static int SzdRaw( SzdOut *o, const uint8_t *data, uint32_t len )
 {
     o->written += len;
     if ( o->mem )
@@ -3642,7 +3644,7 @@ static void SzdBlock( SzdOut *o )
     o->have = 0;
 }
 
-static int SzdPut( void *user, const Byte *data, UInt32 len )
+static int SzdPut( void *user, const uint8_t *data, uint32_t len )
 {
     SzdOut *o = (SzdOut *)user;
 
@@ -3681,39 +3683,39 @@ typedef struct {
     int      err;
     int      filter;
     unsigned delta, dPos;
-    Byte     dHist[256];
+    uint8_t  dHist[256];
     BcjEnc   bcj;
-    Byte    *bbuf;
-    UInt32   bHave, bDone, bPos;
+    uint8_t *bbuf;
+    uint32_t bHave, bDone, bPos;
     int      bEof;
 } SzdIn;
 
-static UInt32 SzdRawRead( SzdIn *in, Byte *buf, UInt32 len )
+static uint32_t SzdRawRead( SzdIn *in, uint8_t *buf, uint32_t len )
 {
     size_t n = fread( buf, 1, (size_t)len, in->f );
 
     if ( n == 0 && ferror( in->f ) ) in->err = SZ_ERR_READ;
-    return (UInt32)n;
+    return (uint32_t)n;
 }
 
 /* What the encoder pulls: the spilled bytes through the folder's filter -
  * the same stages SZWRITE.C runs over files read from disk. */
-static UInt32 SzdRead( void *user, Byte *buf, UInt32 len )
+static uint32_t SzdRead( void *user, uint8_t *buf, uint32_t len )
 {
     SzdIn *in = (SzdIn *)user;
-    UInt32 n;
+    uint32_t n;
 
     if ( in->err || in->j->cancelled ) return 0;
     if ( in->filter == SZ_F_DELTA )
     {
-        UInt32 i;
+        unsigned i;
         unsigned k = in->dPos;
 
         n = SzdRawRead( in, buf, len );
         for ( i = 0; i < n; i++ )
         {
-            Byte cur = buf[i];
-            buf[i] = (Byte)( cur - in->dHist[k] );
+            uint8_t cur = buf[i];
+            buf[i] = (uint8_t)( cur - in->dHist[k] );
             in->dHist[k] = cur;
             if ( ++k == in->delta ) k = 0;
         }
@@ -3724,13 +3726,13 @@ static UInt32 SzdRead( void *user, Byte *buf, UInt32 len )
 
     if ( in->bPos == in->bDone )
     {
-        UInt32 tail = in->bHave - in->bDone;
+        uint32_t tail = in->bHave - in->bDone;
         if ( tail ) memmove( in->bbuf, in->bbuf + in->bDone, tail );
         in->bHave = tail;
         in->bDone = in->bPos = 0;
         while ( !in->bEof && in->bHave < SZD_BUF )
         {
-            UInt32 got = SzdRawRead( in, in->bbuf + in->bHave, SZD_BUF - in->bHave );
+            uint32_t got = SzdRawRead( in, in->bbuf + in->bHave, SZD_BUF - in->bHave );
             if ( got == 0 ) in->bEof = 1;
             in->bHave += got;
         }
@@ -3747,14 +3749,14 @@ static UInt32 SzdRead( void *user, Byte *buf, UInt32 len )
 }
 
 typedef struct {
-    SzdJob *j;
-    UInt32  last;
+    SzdJob  *j;
+    uint32_t last;
 } SzdEncProg;
 
-static int SzdEncProgress( void *user, UInt32 inDone, UInt32 outDone )
+static int SzdEncProgress( void *user, uint32_t inDone, uint32_t outDone )
 {
     SzdEncProg *p = (SzdEncProg *)user;
-    UInt32      step = inDone - p->last;
+    uint32_t    step = inDone - p->last;
 
     (void)outDone;
     p->last = inDone;
@@ -3764,12 +3766,12 @@ static int SzdEncProgress( void *user, UInt32 inDone, UInt32 outDone )
 /*---- Copying and rebuilding ----------------------------------------------- */
 
 /* 'len' bytes from 'from' in the old archive to the end of the new one. */
-static int SzdCopy( SzdJob *j, long from, UInt32 len, Byte *buf, int count )
+static int SzdCopy( SzdJob *j, long from, uint32_t len, uint8_t *buf, int count )
 {
     if ( VolSeek( j->a->fp, from, SEEK_SET ) != 0 ) return SZ_ERR_READ;
     while ( len > 0 )
     {
-        UInt32 part = ( len > SZD_BUF ) ? SZD_BUF : len;
+        uint32_t part = ( len > SZD_BUF ) ? SZD_BUF : len;
 
         if ( VolRead( buf, 1, part, j->a->fp ) != part ) return SZ_ERR_READ;
         if ( fwrite( buf, 1, (size_t)part, j->out ) != (size_t)part )
@@ -3782,15 +3784,15 @@ static int SzdCopy( SzdJob *j, long from, UInt32 len, Byte *buf, int count )
 
 /* Decode folder fo->src keeping only what 'want' marks, then compress that
  * into the new archive as the folder 'fo' describes. */
-static int SzdRebuild( SzdJob *j, SzdFolder *fo, const Byte *want, Byte *buf )
+static int SzdRebuild( SzdJob *j, SzdFolder *fo, const uint8_t *want, uint8_t *buf )
 {
     SzArchive *a   = j->a;
     SzFolder  *sf  = &a->folders[fo->src];
     FILE      *spill;
     SzdIn      in;
     SzdOut     o;
-    Byte       iv[16];
-    UInt32     inT = 0, outT = 0;
+    uint8_t    iv[16];
+    uint32_t   inT = 0, outT = 0;
     int        rc;
 
     spill = ArcDelScratch();
@@ -3831,7 +3833,7 @@ static int SzdRebuild( SzdJob *j, SzdFolder *fo, const Byte *want, Byte *buf )
     in.delta  = fo->delta;
     if ( rc == SZ_OK && fo->filter == SZ_F_BCJ_X86 )
     {
-        in.bbuf = (Byte *)malloc( SZD_BUF );
+        in.bbuf = (uint8_t *)malloc( SZD_BUF );
         if ( !in.bbuf ) rc = SZ_ERR_MEMORY;
     }
 
@@ -3852,7 +3854,7 @@ static int SzdRebuild( SzdJob *j, SzdFolder *fo, const Byte *want, Byte *buf )
     {
         for ( ;; )
         {
-            UInt32 n = SzdRead( &in, buf, SZD_BUF );
+            uint32_t n = SzdRead( &in, buf, SZD_BUF );
             if ( n == 0 ) break;
             inT += n;
             if ( !SzdPut( &o, buf, n ) ) { rc = SZ_ERR_WRITE; break; }
@@ -3877,7 +3879,7 @@ static int SzdRebuild( SzdJob *j, SzdFolder *fo, const Byte *want, Byte *buf )
  * the order SZWRITE.C writes them in - and the bind pairs between. */
 static void SzdCoders( HBuf *h, const SzdFolder *fo )
 {
-    UInt32 n = 1 + ( fo->filter != SZ_F_NONE ) + ( fo->aes != 0 );
+    uint32_t n = 1 + ( fo->filter != SZ_F_NONE ) + ( fo->aes != 0 );
 
     HNum( h, n );
     if ( fo->method == SZ_M_COPY )
@@ -3902,7 +3904,7 @@ static void SzdCoders( HBuf *h, const SzdFolder *fo )
         HByte( h, 0x21 );
         HByte( h, 0x03 );
         HNum( h, 1 );
-        HByte( h, (Byte)( fo->delta - 1 ) );
+        HByte( h, (uint8_t)( fo->delta - 1 ) );
     }
     if ( fo->aes )
     {
@@ -3934,9 +3936,9 @@ static void SzdUnpackSizes( HBuf *h, const SzdFolder *fo )
 }
 
 /* An entry's name in nameBlob, with its terminator.  0 if it is not whole. */
-static UInt32 SzdNameLen( SzArchive *a, int i )
+static uint32_t SzdNameLen( SzArchive *a, int i )
 {
-    UInt32 p = a->nameOff[i];
+    uint32_t p = a->nameOff[i];
 
     while ( p + 1 < a->nameBlobLen )
     {
@@ -3948,10 +3950,10 @@ static UInt32 SzdNameLen( SzArchive *a, int i )
 }
 
 /* A time or attribute property: [all defined][bits if not][external 0][values]. */
-static void SzdProp( HBuf *h, Byte id, const Byte *defined, UInt32 n,
-                     UInt32 nDef, UInt32 width )
+static void SzdProp( HBuf *h, uint8_t id, const uint8_t *defined, uint32_t n,
+                     uint32_t nDef, uint32_t width )
 {
-    UInt32 size = 2 + nDef * width;
+    uint32_t size = 2 + nDef * width;
 
     if ( nDef < n ) size += ( n + 7 ) / 8;
     HByte( h, id );
@@ -3965,13 +3967,13 @@ static void SzdProp( HBuf *h, Byte id, const Byte *defined, UInt32 n,
     HByte( h, 0 );
 }
 
-static int SzdHeader( SzdJob *j, HBuf *h, const Byte *del, SzdFolder *ofo,
-                      int nOut, const UInt32 *packs, UInt32 nPacks,
-                      const int *keptN, Byte *bits )
+static int SzdHeader( SzdJob *j, HBuf *h, const uint8_t *del, SzdFolder *ofo,
+                      int nOut, const uint32_t *packs, uint32_t nPacks,
+                      const int *keptN, uint8_t *bits )
 {
     SzArchive *a = j->a;
-    UInt32     k, nKeep = 0, nEmpty = 0, nEmptyFile = 0, nData = 0, nCrc = 0;
-    UInt32     nMt = 0, nAt = 0, namesLen = 0;
+    unsigned   k, nKeep = 0, nEmpty = 0, nEmptyFile = 0, nData = 0, nCrc = 0;
+    unsigned   nMt = 0, nAt = 0, namesLen = 0;
     int        i, f;
 
     for ( i = 0; i < a->numEntries; i++ )
@@ -4010,7 +4012,7 @@ static int SzdHeader( SzdJob *j, HBuf *h, const Byte *del, SzdFolder *ofo,
 
         HByte( h, k7zUnpackInfo );
         HByte( h, k7zFolder );
-        HNum( h, (UInt32)nOut );
+        HNum( h, (uint32_t)nOut );
         HByte( h, 0 );                      /* not external */
         for ( f = 0; f < nOut; f++ )
         {
@@ -4040,7 +4042,7 @@ static int SzdHeader( SzdJob *j, HBuf *h, const Byte *del, SzdFolder *ofo,
          * them. */
         HByte( h, k7zSubStreamsInfo );
         HByte( h, k7zNumUnpackStream );
-        for ( f = 0; f < nOut; f++ ) HNum( h, (UInt32)keptN[ofo[f].src] );
+        for ( f = 0; f < nOut; f++ ) HNum( h, (uint32_t)keptN[ofo[f].src] );
         HByte( h, k7zSize );
         for ( f = 0; f < nOut; f++ )
         {
@@ -4062,7 +4064,7 @@ static int SzdHeader( SzdJob *j, HBuf *h, const Byte *del, SzdFolder *ofo,
                 for ( f = 0; f < nOut; f++ )
                     for ( i = 0; i < a->numEntries; i++ )
                         if ( !del[i] && a->entries[i].folderIndex == (int)ofo[f].src )
-                            bits[k++] = (Byte)a->entries[i].hasCrc;
+                            bits[k++] = (uint8_t)a->entries[i].hasCrc;
                 HByte( h, 0 );
                 HBits( h, bits, nData );
             }
@@ -4082,7 +4084,7 @@ static int SzdHeader( SzdJob *j, HBuf *h, const Byte *del, SzdFolder *ofo,
     {
         k = 0;
         for ( i = 0; i < a->numEntries; i++ )
-            if ( !del[i] ) bits[k++] = (Byte)( a->entries[i].folderIndex < 0 );
+            if ( !del[i] ) bits[k++] = (uint8_t)( a->entries[i].folderIndex < 0 );
         HByte( h, k7zEmptyStream );
         HNum( h, ( nKeep + 7 ) / 8 );
         HBits( h, bits, nKeep );
@@ -4091,7 +4093,7 @@ static int SzdHeader( SzdJob *j, HBuf *h, const Byte *del, SzdFolder *ofo,
             k = 0;
             for ( i = 0; i < a->numEntries; i++ )
                 if ( !del[i] && a->entries[i].folderIndex < 0 )
-                    bits[k++] = (Byte)!a->entries[i].isDir;
+                    bits[k++] = (uint8_t)!a->entries[i].isDir;
             HByte( h, k7zEmptyFile );
             HNum( h, ( nEmpty + 7 ) / 8 );
             HBits( h, bits, nEmpty );
@@ -4109,7 +4111,7 @@ static int SzdHeader( SzdJob *j, HBuf *h, const Byte *del, SzdFolder *ofo,
     {
         k = 0;
         for ( i = 0; i < a->numEntries; i++ )
-            if ( !del[i] ) bits[k++] = (Byte)a->entries[i].hasMtime;
+            if ( !del[i] ) bits[k++] = (uint8_t)a->entries[i].hasMtime;
         SzdProp( h, k7zMTime, bits, nKeep, nMt, 8 );
         for ( i = 0; i < a->numEntries; i++ )
             if ( !del[i] && a->entries[i].hasMtime )
@@ -4122,7 +4124,7 @@ static int SzdHeader( SzdJob *j, HBuf *h, const Byte *del, SzdFolder *ofo,
     {
         k = 0;
         for ( i = 0; i < a->numEntries; i++ )
-            if ( !del[i] ) bits[k++] = (Byte)a->entries[i].hasAttrib;
+            if ( !del[i] ) bits[k++] = (uint8_t)a->entries[i].hasAttrib;
         SzdProp( h, k7zWinAttributes, bits, nKeep, nAt, 4 );
         for ( i = 0; i < a->numEntries; i++ )
             if ( !del[i] && a->entries[i].hasAttrib )
@@ -4133,12 +4135,12 @@ static int SzdHeader( SzdJob *j, HBuf *h, const Byte *del, SzdFolder *ofo,
     return h->failed ? SZ_ERR_MEMORY : SZ_OK;
 }
 
-typedef struct { const Byte *p; UInt32 len, pos; } SzdMemIn;
+typedef struct { const uint8_t *p; uint32_t len, pos; } SzdMemIn;
 
-static UInt32 SzdMemRead( void *user, Byte *buf, UInt32 len )
+static uint32_t SzdMemRead( void *user, uint8_t *buf, uint32_t len )
 {
     SzdMemIn *m = (SzdMemIn *)user;
-    UInt32    n = m->len - m->pos;
+    uint32_t  n = m->len - m->pos;
 
     if ( n > len ) n = len;
     if ( n ) memcpy( buf, m->p + m->pos, n );
@@ -4151,13 +4153,13 @@ static UInt32 SzdMemRead( void *user, Byte *buf, UInt32 len )
  * 'base' is where the start header goes: past a self-extractor's stub. */
 static int SzdFinish( SzdJob *j, HBuf *h, long base )
 {
-    HBuf        packed, rec;
-    const Byte *hdr = h->p;
-    UInt32      hdrLen = h->len;
-    UInt32      nextOff, nextCrc, sc;
-    long        hdrPos = ftell( j->out );
-    Byte        start[32];
-    int         rc = SZ_OK;
+    HBuf           packed, rec;
+    const uint8_t *hdr = h->p;
+    uint32_t       hdrLen = h->len;
+    uint32_t       nextOff, nextCrc, sc;
+    long           hdrPos = ftell( j->out );
+    uint8_t        start[32];
+    int            rc = SZ_OK;
 
     memset( &packed, 0, sizeof( packed ) );
     memset( &rec, 0, sizeof( rec ) );
@@ -4168,8 +4170,8 @@ static int SzdFinish( SzdJob *j, HBuf *h, long base )
         LzmaEncProps p;
         SzdMemIn     m;
         SzdOut       o;
-        Byte         lzProps[5], aesProps[SZD_AES_PROPS], iv[16];
-        UInt32       inT = 0, outT = 0;
+        uint8_t      lzProps[5], aesProps[SZD_AES_PROPS], iv[16];
+        uint32_t     inT = 0, outT = 0;
 
         memset( &o, 0, sizeof( o ) );
         o.mem = &packed;
@@ -4193,7 +4195,7 @@ static int SzdFinish( SzdJob *j, HBuf *h, long base )
         {
             HByte( &rec, k7zEncodedHeader );
             HByte( &rec, k7zPackInfo );
-            HNum( &rec, (UInt32)( hdrPos - base - 32 ) );
+            HNum( &rec, (uint32_t)( hdrPos - base - 32 ) );
             HNum( &rec, 1 );
             HByte( &rec, k7zSize );
             HNum( &rec, o.written );
@@ -4241,20 +4243,20 @@ static int SzdFinish( SzdJob *j, HBuf *h, long base )
 
     if ( rc == SZ_OK )
     {
-        nextOff = hdrLen ? (UInt32)( hdrPos - base - 32 ) : 0;
+        nextOff = hdrLen ? (uint32_t)( hdrPos - base - 32 ) : 0;
         nextCrc = hdrLen ? Crc32Calc( hdr, hdrLen ) : 0;
         memset( start, 0, sizeof( start ) );
         memcpy( start, g_sig, 6 );
         start[7] = 4;
-        start[12] = (Byte)nextOff;           start[13] = (Byte)( nextOff >> 8 );
-        start[14] = (Byte)( nextOff >> 16 ); start[15] = (Byte)( nextOff >> 24 );
-        start[20] = (Byte)hdrLen;            start[21] = (Byte)( hdrLen >> 8 );
-        start[22] = (Byte)( hdrLen >> 16 );  start[23] = (Byte)( hdrLen >> 24 );
-        start[28] = (Byte)nextCrc;           start[29] = (Byte)( nextCrc >> 8 );
-        start[30] = (Byte)( nextCrc >> 16 ); start[31] = (Byte)( nextCrc >> 24 );
+        start[12] = (uint8_t)nextOff;           start[13] = (uint8_t)( nextOff >> 8 );
+        start[14] = (uint8_t)( nextOff >> 16 ); start[15] = (uint8_t)( nextOff >> 24 );
+        start[20] = (uint8_t)hdrLen;            start[21] = (uint8_t)( hdrLen >> 8 );
+        start[22] = (uint8_t)( hdrLen >> 16 );  start[23] = (uint8_t)( hdrLen >> 24 );
+        start[28] = (uint8_t)nextCrc;           start[29] = (uint8_t)( nextCrc >> 8 );
+        start[30] = (uint8_t)( nextCrc >> 16 ); start[31] = (uint8_t)( nextCrc >> 24 );
         sc = Crc32Calc( start + 12, 20 );
-        start[8]  = (Byte)sc;                start[9]  = (Byte)( sc >> 8 );
-        start[10] = (Byte)( sc >> 16 );      start[11] = (Byte)( sc >> 24 );
+        start[8]  = (uint8_t)sc;                start[9]  = (uint8_t)( sc >> 8 );
+        start[10] = (uint8_t)( sc >> 16 );      start[11] = (uint8_t)( sc >> 24 );
         if ( fseek( j->out, base, SEEK_SET ) != 0 ||
              fwrite( start, 1, 32, j->out ) != 32 || fflush( j->out ) != 0 )
             rc = SZ_ERR_WRITE;
@@ -4265,16 +4267,16 @@ static int SzdFinish( SzdJob *j, HBuf *h, long base )
 }
 
 /*---- The entry point ------------------------------------------------------ */
-int SzDeleteWrite( SzArchive *a, const Byte *del, FILE *out,
+int SzDeleteWrite( SzArchive *a, const uint8_t *del, FILE *out,
                    ArcCompProgress prog, void *user, const char **why )
 {
     SzdJob     j;
     SzdFolder *ofo   = NULL;
     int       *keptN = NULL, *delN = NULL;
-    UInt32    *keptBytes = NULL, *packs = NULL;
-    Byte      *want = NULL, *bits = NULL, *buf = NULL;
+    uint32_t  *keptBytes = NULL, *packs = NULL;
+    uint8_t   *want = NULL, *bits = NULL, *buf = NULL;
     HBuf       h;
-    UInt32     f, k, nPacks = 0, nf = a->numFolders;
+    unsigned   f, k, nPacks = 0, nf = a->numFolders;
     long       base = (long)a->baseOffset - 32;
     int        i, nOut = 0, nKeep = 0, rc;
 
@@ -4284,7 +4286,7 @@ int SzDeleteWrite( SzArchive *a, const Byte *del, FILE *out,
     rc = SZ_ERR_MEMORY;
     keptN     = (int *)calloc( nf + 1, sizeof( int ) );
     delN      = (int *)calloc( nf + 1, sizeof( int ) );
-    keptBytes = (UInt32 *)calloc( nf + 1, sizeof( UInt32 ) );
+    keptBytes = (uint32_t *)calloc( nf + 1, sizeof( uint32_t ) );
     if ( !keptN || !delN || !keptBytes ) goto done;
 
     for ( i = 0; i < a->numEntries; i++ )
@@ -4293,7 +4295,7 @@ int SzDeleteWrite( SzArchive *a, const Byte *del, FILE *out,
 
         if ( !del[i] ) nKeep++;
         if ( fi < 0 ) continue;
-        if ( (UInt32)fi >= nf ) { rc = SZ_ERR_FORMAT; goto done; }
+        if ( (uint32_t)fi >= nf ) { rc = SZ_ERR_FORMAT; goto done; }
         if ( del[i] ) delN[fi]++;
         else
         {
@@ -4360,14 +4362,14 @@ int SzDeleteWrite( SzArchive *a, const Byte *del, FILE *out,
 
     rc = SZ_ERR_MEMORY;
     ofo   = (SzdFolder *)calloc( nf + 1, sizeof( SzdFolder ) );
-    packs = (UInt32 *)malloc( sizeof( UInt32 ) * ( a->numPackStreams + nf + 1 ) );
-    want  = (Byte *)calloc( (size_t)a->numEntries + 1, 1 );
-    bits  = (Byte *)calloc( (size_t)a->numEntries + 1, 1 );
-    buf   = (Byte *)malloc( SZD_BUF );
+    packs = (uint32_t *)malloc( sizeof( uint32_t ) * ( a->numPackStreams + nf + 1 ) );
+    want  = (uint8_t *)calloc( (size_t)a->numEntries + 1, 1 );
+    bits  = (uint8_t *)calloc( (size_t)a->numEntries + 1, 1 );
+    buf   = (uint8_t *)malloc( SZD_BUF );
     if ( !ofo || !packs || !want || !bits || !buf ) goto done;
 
     /* The stub, if any, and room for the start header. */
-    rc = SzdCopy( &j, 0L, (UInt32)base, buf, 0 );
+    rc = SzdCopy( &j, 0L, (uint32_t)base, buf, 0 );
     if ( rc != SZ_OK ) goto done;
     memset( buf, 0, 32 );
     if ( fwrite( buf, 1, 32, out ) != 32 ) { rc = SZ_ERR_WRITE; goto done; }
@@ -4390,7 +4392,7 @@ int SzDeleteWrite( SzArchive *a, const Byte *del, FILE *out,
         {
             for ( k = 0; k < sf->numPackStreams && rc == SZ_OK; k++ )
             {
-                UInt32 p = sf->firstPackStream + k;
+                uint32_t p = sf->firstPackStream + k;
                 rc = SzdCopy( &j, (long)( a->baseOffset + a->packOffset[p] ),
                               a->packSizes[p], buf, 1 );
                 packs[nPacks++] = a->packSizes[p];
@@ -4400,7 +4402,7 @@ int SzDeleteWrite( SzArchive *a, const Byte *del, FILE *out,
         else
         {
             for ( i = 0; i < a->numEntries; i++ )
-                want[i] = (Byte)( a->entries[i].folderIndex == (int)f && !del[i] );
+                want[i] = (uint8_t)( a->entries[i].folderIndex == (int)f && !del[i] );
             fo->rebuilt = 1;
             fo->unpack  = keptBytes[f];
             rc = SzdRebuild( &j, fo, want, buf );

@@ -81,46 +81,46 @@
 #define k7zEncodedHeader      0x17
 
 #define SZW_MAX_FOLDERS       64
-#define SZW_DICT_MIN          ( (UInt32)1 << 16 )
-#define SZW_DICT_MAX          ( (UInt32)1 << 26 )
+#define SZW_DICT_MIN          ( (uint32_t)1 << 16 )
+#define SZW_DICT_MAX          ( (uint32_t)1 << 26 )
 #define SZW_BCJ_BUF           65536U
-#define SZW_BCJ2_MAX          ( (UInt32)64 << 20 )  /* BCJ2 up to here      */
-#define SZW_SIDE_DICT_MAX     ( (UInt32)1 << 20 )   /* CALL/JUMP streams    */
+#define SZW_BCJ2_MAX          ( (uint32_t)64 << 20 )  /* BCJ2 up to here    */
+#define SZW_SIDE_DICT_MAX     ( (uint32_t)1 << 20 )   /* CALL/JUMP streams  */
 
 typedef struct {
-    int    kind;              /* CK_DATA, CK_EXE, CK_PACKED or CK_DELTA      */
-    UInt32 first, count;      /* range of j->order-style indices in 'files'  */
-    UInt32 planned;           /* bytes the scan said                         */
-    UInt32 packSize;          /* the main packed stream                      */
-    UInt32 unpackSize;        /* bytes of file data in the folder            */
-    UInt32 dictSize;
-    UInt32 numSubs;           /* files that came out with data               */
-    int    lzma2;             /* LZMA2 (the data folders) or LZMA (the header) */
-    Byte   props[5];          /* LZMA: all five; LZMA2: the first            */
+    int      kind;            /* CK_DATA, CK_EXE, CK_PACKED or CK_DELTA      */
+    uint32_t first, count;    /* range of j->order-style indices in 'files'  */
+    uint32_t planned;         /* bytes the scan said                         */
+    uint32_t packSize;        /* the main packed stream                      */
+    uint32_t unpackSize;      /* bytes of file data in the folder            */
+    uint32_t dictSize;
+    uint32_t numSubs;         /* files that came out with data               */
+    int      lzma2;           /* LZMA2 (the data folders) or LZMA (the header) */
+    uint8_t  props[5];        /* LZMA: all five; LZMA2: the first            */
     unsigned delta;           /* CK_DELTA: the frame size                    */
 
     /* BCJ2: three more packed streams follow the main one, in this order. */
-    int    bcj2;
-    UInt32 mainLen;           /* the main stream, before LZMA2               */
-    UInt32 rcSize;            /* the range-coded bits, written raw           */
-    UInt32 callLen, callPack; /* CALL targets, before and after LZMA         */
-    UInt32 jumpLen, jumpPack; /* JUMP targets                                */
-    Byte   callProps[5];
-    Byte   jumpProps[5];
+    int      bcj2;
+    uint32_t mainLen;           /* the main stream, before LZMA2             */
+    uint32_t rcSize;            /* the range-coded bits, written raw         */
+    uint32_t callLen, callPack; /* CALL targets, before and after LZMA       */
+    uint32_t jumpLen, jumpPack; /* JUMP targets                              */
+    uint8_t  callProps[5];
+    uint8_t  jumpProps[5];
 } SzwFolder;
 
 /*===========================================================================
  * A growable byte buffer, for building the header
  *===========================================================================*/
-void HPut( HBuf *h, const void *data, UInt32 n )
+void HPut( HBuf *h, const void *data, uint32_t n )
 {
     if ( h->failed ) return;
     if ( h->len + n > h->cap )
     {
-        UInt32 cap = ( h->cap ? h->cap * 2 : 4096 );
-        Byte  *np;
+        uint32_t cap = ( h->cap ? h->cap * 2 : 4096 );
+        uint8_t *np;
         while ( cap < h->len + n ) cap *= 2;
-        np = (Byte *)realloc( h->p, cap );
+        np = (uint8_t *)realloc( h->p, cap );
         if ( !np ) { h->failed = 1; return; }
         h->p = np;
         h->cap = cap;
@@ -129,37 +129,37 @@ void HPut( HBuf *h, const void *data, UInt32 n )
     h->len += n;
 }
 
-void HByte( HBuf *h, Byte b ) { HPut( h, &b, 1 ); }
+void HByte( HBuf *h, uint8_t b ) { HPut( h, &b, 1 ); }
 
-void HUInt32( HBuf *h, UInt32 v )
+void HUInt32( HBuf *h, uint32_t v )
 {
-    Byte b[4];
-    b[0] = (Byte)v; b[1] = (Byte)( v >> 8 ); b[2] = (Byte)( v >> 16 ); b[3] = (Byte)( v >> 24 );
+    uint8_t b[4];
+    b[0] = (uint8_t)v; b[1] = (uint8_t)( v >> 8 ); b[2] = (uint8_t)( v >> 16 ); b[3] = (uint8_t)( v >> 24 );
     HPut( h, b, 4 );
 }
 
 /* 7z's variable-length number: the leading 1 bits of the first byte say how
  * many little-endian bytes follow. */
-void HNum( HBuf *h, UInt32 v )
+void HNum( HBuf *h, uint32_t v )
 {
-    if ( v < 0x80UL )             HByte( h, (Byte)v );
+    if ( v < 0x80UL )             HByte( h, (uint8_t)v );
     else if ( v < 0x4000UL )
     {
-        HByte( h, (Byte)( 0x80 | ( v >> 8 ) ) );
-        HByte( h, (Byte)v );
+        HByte( h, (uint8_t)( 0x80 | ( v >> 8 ) ) );
+        HByte( h, (uint8_t)v );
     }
     else if ( v < 0x200000UL )
     {
-        HByte( h, (Byte)( 0xC0 | ( v >> 16 ) ) );
-        HByte( h, (Byte)v );
-        HByte( h, (Byte)( v >> 8 ) );
+        HByte( h, (uint8_t)( 0xC0 | ( v >> 16 ) ) );
+        HByte( h, (uint8_t)v );
+        HByte( h, (uint8_t)( v >> 8 ) );
     }
     else if ( v < 0x10000000UL )
     {
-        HByte( h, (Byte)( 0xE0 | ( v >> 24 ) ) );
-        HByte( h, (Byte)v );
-        HByte( h, (Byte)( v >> 8 ) );
-        HByte( h, (Byte)( v >> 16 ) );
+        HByte( h, (uint8_t)( 0xE0 | ( v >> 24 ) ) );
+        HByte( h, (uint8_t)v );
+        HByte( h, (uint8_t)( v >> 8 ) );
+        HByte( h, (uint8_t)( v >> 16 ) );
     }
     else
     {
@@ -169,13 +169,13 @@ void HNum( HBuf *h, UInt32 v )
 }
 
 /* A bit vector, most significant bit first. */
-void HBits( HBuf *h, const Byte *bits, UInt32 n )
+void HBits( HBuf *h, const uint8_t *bits, uint32_t n )
 {
-    Byte   cur = 0;
-    UInt32 i;
+    uint8_t  cur = 0;
+    unsigned i;
     for ( i = 0; i < n; i++ )
     {
-        if ( bits[i] ) cur |= (Byte)( 0x80 >> ( i & 7 ) );
+        if ( bits[i] ) cur |= (uint8_t)( 0x80 >> ( i & 7 ) );
         if ( ( i & 7 ) == 7 ) { HByte( h, cur ); cur = 0; }
     }
     if ( n & 7 ) HByte( h, cur );
@@ -192,20 +192,20 @@ void HBits( HBuf *h, const Byte *bits, UInt32 n )
  *===========================================================================*/
 #define Test86MSByte( b )  ( ( ( (b) + 1 ) & 0xFE ) == 0 )
 
-UInt32 BcjEncChunk( BcjEnc *b, Byte *data, UInt32 size )
+uint32_t BcjEncChunk( BcjEnc *b, uint8_t *data, uint32_t size )
 {
-    UInt32 pos = 0, mask = b->mask, lim;
-    const UInt32 ip = 5;
+    uint32_t pos = 0, mask = b->mask, lim;
+    const uint32_t ip = 5;
 
     if ( size < 5 ) return 0;
     lim = size - 4;
     for ( ;; )
     {
-        UInt32 p;
+        unsigned p;
         for ( p = pos; p < lim; p++ )
             if ( ( data[p] & 0xFE ) == 0xE8 ) break;
         {
-            UInt32 d = p - pos;
+            uint32_t d = p - pos;
             pos = p;
             if ( p >= lim )
             {
@@ -228,24 +228,24 @@ UInt32 BcjEncChunk( BcjEnc *b, Byte *data, UInt32 size )
         }
         if ( Test86MSByte( data[pos + 4] ) )
         {
-            UInt32 v = ( (UInt32)data[pos + 4] << 24 ) | ( (UInt32)data[pos + 3] << 16 ) |
-                       ( (UInt32)data[pos + 2] << 8 ) | (UInt32)data[pos + 1];
-            UInt32 cur = ip + b->base + pos;
+            uint32_t v = ( (uint32_t)data[pos + 4] << 24 ) | ( (uint32_t)data[pos + 3] << 16 ) |
+                       ( (uint32_t)data[pos + 2] << 8 ) | (uint32_t)data[pos + 1];
+            uint32_t cur = ip + b->base + pos;
             v += cur;
             if ( mask != 0 )
             {
                 unsigned sh = ( mask & 6 ) << 2;
-                if ( Test86MSByte( (Byte)( v >> sh ) ) )
+                if ( Test86MSByte( (uint8_t)( v >> sh ) ) )
                 {
-                    v ^= ( ( (UInt32)0x100 << sh ) - 1 );
+                    v ^= ( ( (uint32_t)0x100 << sh ) - 1 );
                     v += cur;
                 }
                 mask = 0;
             }
-            data[pos + 1] = (Byte)v;
-            data[pos + 2] = (Byte)( v >> 8 );
-            data[pos + 3] = (Byte)( v >> 16 );
-            data[pos + 4] = (Byte)( 0 - ( ( v >> 24 ) & 1 ) );
+            data[pos + 1] = (uint8_t)v;
+            data[pos + 2] = (uint8_t)( v >> 8 );
+            data[pos + 3] = (uint8_t)( v >> 16 );
+            data[pos + 4] = (uint8_t)( 0 - ( ( v >> 24 ) & 1 ) );
             pos += 5;
         }
         else
@@ -283,7 +283,7 @@ UInt32 BcjEncChunk( BcjEnc *b, Byte *data, UInt32 size )
  * LZMAENC.C, since MSVC 2.2 has no 64-bit integer.  Its first byte is the
  * zero every LZMA stream starts with, and the decoder skips it.
  *===========================================================================*/
-#define SZW_RC_TOP        ( (UInt32)1 << 24 )
+#define SZW_RC_TOP        ( (uint32_t)1 << 24 )
 #define SZW_RC_BITS       11
 #define SZW_RC_TOTAL      ( 1 << SZW_RC_BITS )
 #define SZW_RC_MOVE       5
@@ -292,11 +292,11 @@ UInt32 BcjEncChunk( BcjEnc *b, Byte *data, UInt32 size )
                             ( (b0) == 0x0F && ( (b1) & 0xF0 ) == 0x80 ) )
 
 typedef struct {
-    UInt32 low, range;
-    UInt32 carry;
-    Byte   cache;
-    UInt32 cacheSize;
-    HBuf  *out;
+    uint32_t low, range;
+    uint32_t carry;
+    uint8_t  cache;
+    uint32_t cacheSize;
+    HBuf    *out;
 } Bcj2Rc;
 
 static void Bcj2RcInit( Bcj2Rc *rc, HBuf *out )
@@ -313,22 +313,22 @@ static void Bcj2RcShiftLow( Bcj2Rc *rc )
 {
     if ( rc->low < 0xFF000000UL || rc->carry )
     {
-        Byte temp = rc->cache;
+        uint8_t temp = rc->cache;
         do {
-            HByte( rc->out, (Byte)( temp + (Byte)rc->carry ) );
+            HByte( rc->out, (uint8_t)( temp + (uint8_t)rc->carry ) );
             temp = 0xFF;
         } while ( --rc->cacheSize != 0 );
-        rc->cache = (Byte)( rc->low >> 24 );
+        rc->cache = (uint8_t)( rc->low >> 24 );
     }
     rc->cacheSize++;
     rc->low = ( rc->low & 0x00FFFFFFUL ) << 8;
     rc->carry = 0;
 }
 
-static void Bcj2RcBit( Bcj2Rc *rc, UInt16 *prob, unsigned bit )
+static void Bcj2RcBit( Bcj2Rc *rc, uint16_t *prob, unsigned bit )
 {
-    UInt32 p     = *prob;
-    UInt32 bound = ( rc->range >> SZW_RC_BITS ) * p;
+    uint32_t p     = *prob;
+    uint32_t bound = ( rc->range >> SZW_RC_BITS ) * p;
 
     if ( bit == 0 )
     {
@@ -337,13 +337,13 @@ static void Bcj2RcBit( Bcj2Rc *rc, UInt16 *prob, unsigned bit )
     }
     else
     {
-        UInt32 nl = rc->low + bound;
+        uint32_t nl = rc->low + bound;
         if ( nl < rc->low ) rc->carry = 1;
         rc->low = nl;
         rc->range -= bound;
         p -= p >> SZW_RC_MOVE;
     }
-    *prob = (UInt16)p;
+    *prob = (uint16_t)p;
     if ( rc->range < SZW_RC_TOP )
     {
         rc->range <<= 8;
@@ -358,16 +358,16 @@ static void Bcj2RcFlush( Bcj2Rc *rc )
 }
 
 typedef struct {
-    Byte   *in;               /* raw bytes waiting, SZW_BCJ_BUF              */
-    UInt32  inHave, inPos;
-    int     inEof;
-    UInt32  nowPos;           /* stream offset of in[0]                      */
-    Byte    prevByte;
-    Byte   *out;              /* main-stream bytes ready, SZW_BCJ_BUF        */
-    UInt32  outN, outPos;
-    HBuf    call, jump, rcOut;
-    Bcj2Rc  rc;
-    UInt16  probs[2 + 256];   /* Jcc, E9, then E8 by the byte before it      */
+    uint8_t *in;              /* raw bytes waiting, SZW_BCJ_BUF              */
+    uint32_t inHave, inPos;
+    int      inEof;
+    uint32_t nowPos;          /* stream offset of in[0]                      */
+    uint8_t  prevByte;
+    uint8_t *out;             /* main-stream bytes ready, SZW_BCJ_BUF        */
+    uint32_t outN, outPos;
+    HBuf     call, jump, rcOut;
+    Bcj2Rc   rc;
+    uint16_t probs[2 + 256];  /* Jcc, E9, then E8 by the byte before it      */
 } Bcj2Enc;
 
 static Bcj2Enc *Bcj2EncCreate( void )
@@ -376,8 +376,8 @@ static Bcj2Enc *Bcj2EncCreate( void )
     int      i;
 
     if ( !b ) return 0;
-    b->in  = (Byte *)malloc( SZW_BCJ_BUF );
-    b->out = (Byte *)malloc( SZW_BCJ_BUF );
+    b->in  = (uint8_t *)malloc( SZW_BCJ_BUF );
+    b->out = (uint8_t *)malloc( SZW_BCJ_BUF );
     if ( !b->in || !b->out )
     {
         free( b->in );
@@ -408,7 +408,7 @@ static void Bcj2Process( Bcj2Enc *b )
 {
     while ( b->inPos < b->inHave && b->outN < SZW_BCJ_BUF )
     {
-        Byte     c = b->in[b->inPos];
+        uint8_t  c = b->in[b->inPos];
         unsigned idx;
 
         if ( !Bcj2IsJ( b->prevByte, c ) )
@@ -424,20 +424,20 @@ static void Bcj2Process( Bcj2Enc *b )
         b->out[b->outN++] = c;
         if ( b->inHave - b->inPos >= 5 )
         {
-            const Byte *p = b->in + b->inPos + 1;
-            Byte nextByte = p[3];
+            const uint8_t *p = b->in + b->inPos + 1;
+            uint8_t nextByte = p[3];
             if ( Test86MSByte( nextByte ) )
             {
-                UInt32 src  = (UInt32)p[0] | ( (UInt32)p[1] << 8 ) |
-                              ( (UInt32)p[2] << 16 ) | ( (UInt32)p[3] << 24 );
-                UInt32 dest = b->nowPos + b->inPos + 5 + src;
-                HBuf  *s    = ( c == 0xE8 ) ? &b->call : &b->jump;
+                uint32_t src  = (uint32_t)p[0] | ( (uint32_t)p[1] << 8 ) |
+                              ( (uint32_t)p[2] << 16 ) | ( (uint32_t)p[3] << 24 );
+                uint32_t dest = b->nowPos + b->inPos + 5 + src;
+                HBuf    *s    = ( c == 0xE8 ) ? &b->call : &b->jump;
 
                 Bcj2RcBit( &b->rc, &b->probs[idx], 1 );
-                HByte( s, (Byte)( dest >> 24 ) );
-                HByte( s, (Byte)( dest >> 16 ) );
-                HByte( s, (Byte)( dest >> 8 ) );
-                HByte( s, (Byte)dest );
+                HByte( s, (uint8_t)( dest >> 24 ) );
+                HByte( s, (uint8_t)( dest >> 16 ) );
+                HByte( s, (uint8_t)( dest >> 8 ) );
+                HByte( s, (uint8_t)dest );
                 b->prevByte = nextByte;
                 b->inPos += 5;
                 continue;
@@ -454,22 +454,22 @@ static void Bcj2Process( Bcj2Enc *b )
  *===========================================================================*/
 typedef struct {
     ArcCompJob *j;
-    UInt32     *files;        /* entry indices, in folder order              */
-    UInt32      count;
-    UInt32      next;         /* the next one to open                        */
-    UInt32      overall;      /* index of files[0] in the progress count     */
+    uint32_t   *files;        /* entry indices, in folder order              */
+    uint32_t    count;
+    uint32_t    next;         /* the next one to open                        */
+    uint32_t    overall;      /* index of files[0] in the progress count     */
     FILE       *fp;
     CompEntry  *cur;
-    UInt32      crc;
+    uint32_t    crc;
     int         readError;
 
-    UInt32      rawIn;        /* file bytes read, whatever a stage made of them */
+    uint32_t    rawIn;        /* file bytes read, whatever a stage made of them */
 
     /* BCJ stage, when this is a large executables folder */
     int         bcj;
     BcjEnc      bst;
-    Byte       *bbuf;
-    UInt32      bHave, bDone, bPos;
+    uint8_t    *bbuf;
+    uint32_t    bHave, bDone, bPos;
     int         bEof;
 
     /* BCJ2 stage, when this is an executables folder up to SZW_BCJ2_MAX */
@@ -478,7 +478,7 @@ typedef struct {
     /* Delta stage, when this is a sampled-data folder */
     unsigned    delta;        /* the frame size, or 0                        */
     unsigned    dPos;
-    Byte        dHist[256];   /* the last frame's bytes, as they were        */
+    uint8_t     dHist[256];   /* the last frame's bytes, as they were        */
 } FolderReader;
 
 static void FinishFile( FolderReader *r )
@@ -492,7 +492,7 @@ static void FinishFile( FolderReader *r )
 }
 
 /* Raw file bytes, the files one after another. */
-static UInt32 RawRead( FolderReader *r, Byte *buf, UInt32 len )
+static uint32_t RawRead( FolderReader *r, uint8_t *buf, uint32_t len )
 {
     ArcCompJob *j = r->j;
 
@@ -518,11 +518,11 @@ static UInt32 RawRead( FolderReader *r, Byte *buf, UInt32 len )
         n = fread( buf, 1, len, r->fp );
         if ( n > 0 )
         {
-            r->crc = Crc32Update( r->crc, buf, (UInt32)n );
-            r->cur->realSize += (UInt32)n;
-            r->rawIn += (UInt32)n;
-            j->doneBytes += (UInt32)n;
-            return (UInt32)n;
+            r->crc = Crc32Update( r->crc, buf, (uint32_t)n );
+            r->cur->realSize += (uint32_t)n;
+            r->rawIn += (uint32_t)n;
+            j->doneBytes += (uint32_t)n;
+            return (uint32_t)n;
         }
         if ( ferror( r->fp ) )
         {
@@ -539,7 +539,7 @@ static UInt32 RawRead( FolderReader *r, Byte *buf, UInt32 len )
 }
 
 /* The raw stream through BCJ2: refill the window, convert, hand out main. */
-static UInt32 Bcj2Read( FolderReader *r, Byte *buf, UInt32 len )
+static uint32_t Bcj2Read( FolderReader *r, uint8_t *buf, uint32_t len )
 {
     Bcj2Enc *b = r->b2;
 
@@ -547,7 +547,7 @@ static UInt32 Bcj2Read( FolderReader *r, Byte *buf, UInt32 len )
     {
         if ( b->outPos < b->outN )
         {
-            UInt32 n = b->outN - b->outPos;
+            uint32_t n = b->outN - b->outPos;
             if ( n > len ) n = len;
             memcpy( buf, b->out + b->outPos, n );
             b->outPos += n;
@@ -556,14 +556,14 @@ static UInt32 Bcj2Read( FolderReader *r, Byte *buf, UInt32 len )
         b->outN = b->outPos = 0;
         if ( !b->inEof )
         {
-            UInt32 tail = b->inHave - b->inPos;
+            uint32_t tail = b->inHave - b->inPos;
             if ( tail && b->inPos ) memmove( b->in, b->in + b->inPos, tail );
             b->nowPos += b->inPos;
             b->inHave  = tail;
             b->inPos   = 0;
             while ( !b->inEof && b->inHave < SZW_BCJ_BUF )
             {
-                UInt32 got = RawRead( r, b->in + b->inHave, SZW_BCJ_BUF - b->inHave );
+                uint32_t got = RawRead( r, b->in + b->inHave, SZW_BCJ_BUF - b->inHave );
                 if ( got == 0 ) b->inEof = 1;
                 b->inHave += got;
             }
@@ -575,15 +575,15 @@ static UInt32 Bcj2Read( FolderReader *r, Byte *buf, UInt32 len )
 }
 
 /* The Delta filter, in place: each byte minus the byte one frame back. */
-static void DeltaEncodeRun( FolderReader *r, Byte *data, UInt32 n )
+static void DeltaEncodeRun( FolderReader *r, uint8_t *data, uint32_t n )
 {
     unsigned k = r->dPos, d = r->delta;
-    UInt32   i;
+    unsigned i;
 
     for ( i = 0; i < n; i++ )
     {
-        Byte cur = data[i];
-        data[i] = (Byte)( cur - r->dHist[k] );
+        uint8_t cur = data[i];
+        data[i] = (uint8_t)( cur - r->dHist[k] );
         r->dHist[k] = cur;
         if ( ++k == d ) k = 0;
     }
@@ -591,10 +591,10 @@ static void DeltaEncodeRun( FolderReader *r, Byte *data, UInt32 n )
 }
 
 /* What the encoder reads: the raw stream, through this folder's filter. */
-static UInt32 FolderRead( void *user, Byte *buf, UInt32 len )
+static uint32_t FolderRead( void *user, uint8_t *buf, uint32_t len )
 {
     FolderReader *r = (FolderReader *)user;
-    UInt32 n;
+    uint32_t n;
 
     if ( r->delta )
     {
@@ -607,13 +607,13 @@ static UInt32 FolderRead( void *user, Byte *buf, UInt32 len )
 
     if ( r->bPos == r->bDone )
     {
-        UInt32 tail = r->bHave - r->bDone;
+        uint32_t tail = r->bHave - r->bDone;
         if ( tail ) memmove( r->bbuf, r->bbuf + r->bDone, tail );
         r->bHave = tail;
         r->bDone = r->bPos = 0;
         while ( !r->bEof && r->bHave < SZW_BCJ_BUF )
         {
-            UInt32 got = RawRead( r, r->bbuf + r->bHave, SZW_BCJ_BUF - r->bHave );
+            uint32_t got = RawRead( r, r->bbuf + r->bHave, SZW_BCJ_BUF - r->bHave );
             if ( got == 0 ) r->bEof = 1;
             r->bHave += got;
         }
@@ -629,7 +629,7 @@ static UInt32 FolderRead( void *user, Byte *buf, UInt32 len )
     return n;
 }
 
-static int FileSink( void *user, const Byte *data, UInt32 len )
+static int FileSink( void *user, const uint8_t *data, uint32_t len )
 {
     FILE *f = (FILE *)user;
     return fwrite( data, 1, len, f ) == len;
@@ -640,7 +640,7 @@ typedef struct {
     FolderReader *r;
 } EncProg;
 
-static int EncProgress( void *user, UInt32 inDone, UInt32 outDone )
+static int EncProgress( void *user, uint32_t inDone, uint32_t outDone )
 {
     EncProg *p = (EncProg *)user;
     FolderReader *r = p->r;
@@ -655,9 +655,9 @@ static int EncProgress( void *user, UInt32 inDone, UInt32 outDone )
  *===========================================================================*/
 /* Asked afresh each time: in a GUI that stays up all day, the physical
  * memory free at the second archive is not what it was at the first. */
-static UInt32 DictCap( void )
+static uint32_t DictCap( void )
 {
-    UInt32 budget, phys, d;
+    uint32_t budget, phys, d;
 
     budget = ArcMaxDictSize();
     phys = PlatPhysFree();
@@ -671,9 +671,9 @@ static UInt32 DictCap( void )
     return d;
 }
 
-UInt32 SzwDictFor( UInt32 bytes )
+uint32_t SzwDictFor( uint32_t bytes )
 {
-    UInt32 d = SZW_DICT_MIN, cap = DictCap();
+    uint32_t d = SZW_DICT_MIN, cap = DictCap();
     while ( d < bytes && d < cap ) d <<= 1;
     return d;
 }
@@ -709,8 +709,8 @@ static int StrICmp( const char *a, const char *b )
 
 static int StreamCmp( const void *a, const void *b )
 {
-    const CompEntry *x = &g_sj->ents[ *(const UInt32 *)a ];
-    const CompEntry *y = &g_sj->ents[ *(const UInt32 *)b ];
+    const CompEntry *x = &g_sj->ents[ *(const uint32_t *)a ];
+    const CompEntry *y = &g_sj->ents[ *(const uint32_t *)b ];
     int c;
     if ( x->kind != y->kind ) return (int)x->kind - (int)y->kind;
     if ( x->kind == CK_DELTA && x->delta != y->delta )
@@ -719,7 +719,7 @@ static int StreamCmp( const void *a, const void *b )
     if ( c ) return c;
     c = StrICmp( CompStoredName( g_sj, x ), CompStoredName( g_sj, y ) );
     if ( c ) return c;
-    return ( *(const UInt32 *)a < *(const UInt32 *)b ) ? -1 : 1;
+    return ( *(const uint32_t *)a < *(const uint32_t *)b ) ? -1 : 1;
 }
 
 /*===========================================================================
@@ -794,21 +794,21 @@ static void WriteCoder( HBuf *h, const SzwFolder *fo )
         HByte( h, 0x21 );                 /* 1-byte id, has properties       */
         HByte( h, 0x03 );
         HNum( h, 1 );
-        HByte( h, (Byte)( fo->delta - 1 ) );
+        HByte( h, (uint8_t)( fo->delta - 1 ) );
         HNum( h, 1 );                     /* bind: Delta's input ...         */
         HNum( h, 0 );                     /*     ... is LZMA2's output       */
     }
 }
 
 /* Packed streams a folder puts in the archive. */
-static UInt32 FolderPacks( const SzwFolder *fo ) { return fo->bcj2 ? 4 : 1; }
+static uint32_t FolderPacks( const SzwFolder *fo ) { return fo->bcj2 ? 4 : 1; }
 
-static void WriteStreamsInfo( HBuf *h, UInt32 packPos, SzwFolder *fo, int nFo,
-                              int withSubs, ArcCompJob *j, UInt32 *files,
-                              const UInt32 *folderCrc )
+static void WriteStreamsInfo( HBuf *h, uint32_t packPos, SzwFolder *fo, int nFo,
+                              int withSubs, ArcCompJob *j, uint32_t *files,
+                              const uint32_t *folderCrc )
 {
     int i;
-    UInt32 k, nPack = 0;
+    unsigned k, nPack = 0;
 
     for ( i = 0; i < nFo; i++ ) nPack += FolderPacks( &fo[i] );
     HByte( h, k7zPackInfo );
@@ -829,7 +829,7 @@ static void WriteStreamsInfo( HBuf *h, UInt32 packPos, SzwFolder *fo, int nFo,
 
     HByte( h, k7zUnpackInfo );
     HByte( h, k7zFolder );
-    HNum( h, (UInt32)nFo );
+    HNum( h, (uint32_t)nFo );
     HByte( h, 0 );                        /* not external */
     for ( i = 0; i < nFo; i++ ) WriteCoder( h, &fo[i] );
     HByte( h, k7zCodersUnpackSize );
@@ -868,7 +868,7 @@ static void WriteStreamsInfo( HBuf *h, UInt32 packPos, SzwFolder *fo, int nFo,
             HByte( h, k7zSize );
             for ( i = 0; i < nFo; i++ )
             {
-                UInt32 left = fo[i].numSubs;
+                uint32_t left = fo[i].numSubs;
                 for ( k = fo[i].first; k < fo[i].first + fo[i].count && left > 1; k++ )
                 {
                     CompEntry *e = &j->ents[ files[k] ];
@@ -903,30 +903,30 @@ static void PutName( HBuf *h, const char *name )
     for ( i = 0; i < n && w[i]; i++ )
     {
         WCHAR c = ( w[i] == '\\' ) ? (WCHAR)'/' : w[i];
-        HByte( h, (Byte)c );
-        HByte( h, (Byte)( c >> 8 ) );
+        HByte( h, (uint8_t)c );
+        HByte( h, (uint8_t)( c >> 8 ) );
     }
     HByte( h, 0 );
     HByte( h, 0 );
 }
 
-static UInt32 NameBytes( const char *name )
+static uint32_t NameBytes( const char *name )
 {
     WCHAR w[SZ_MAX_NAME + 1];
     int   n = MultiByteToWideChar( CP_ACP, 0, name, -1, w, SZ_MAX_NAME + 1 );
     if ( n <= 0 ) n = 1;
-    return (UInt32)n * 2;
+    return (uint32_t)n * 2;
 }
 
 /* Compress the header itself.  Returns the packed bytes in a malloc'd
  * buffer, or NULL when that would not save anything (or memory ran out -
  * either way the plain header is written). */
-typedef struct { const Byte *p; UInt32 len, pos; } MemIn;
+typedef struct { const uint8_t *p; uint32_t len, pos; } MemIn;
 
-static UInt32 MemRead( void *user, Byte *buf, UInt32 len )
+static uint32_t MemRead( void *user, uint8_t *buf, uint32_t len )
 {
     MemIn *m = (MemIn *)user;
-    UInt32 n = m->len - m->pos;
+    uint32_t n = m->len - m->pos;
     if ( n > len ) n = len;
     if ( n ) memcpy( buf, m->p + m->pos, n );
     m->pos += n;
@@ -937,11 +937,11 @@ static UInt32 MemRead( void *user, Byte *buf, UInt32 len )
  * archive after the main stream: lc 0, lp 2, pb 2 for 4-byte big-endian
  * addresses, as 7-Zip codes them, and a dictionary no bigger than the
  * stream or 1 MB. */
-static int WriteSideStream( FILE *f, const Byte *p, UInt32 len, Byte props[5], UInt32 *packed )
+static int WriteSideStream( FILE *f, const uint8_t *p, uint32_t len, uint8_t props[5], uint32_t *packed )
 {
     LzmaEncProps lp;
     MemIn        m;
-    UInt32       inT = 0, outT = 0, d = SZW_DICT_MIN, cap = DictCap();
+    uint32_t     inT = 0, outT = 0, d = SZW_DICT_MIN, cap = DictCap();
     int          rc;
 
     while ( d < len && d < SZW_SIDE_DICT_MAX ) d <<= 1;
@@ -975,7 +975,7 @@ static int Bcj2Finish( Bcj2Enc *b, FILE *f, SzwFolder *fo )
     return rc;
 }
 
-static int MemWrite( void *user, const Byte *data, UInt32 len )
+static int MemWrite( void *user, const uint8_t *data, uint32_t len )
 {
     HBuf *h = (HBuf *)user;
     HPut( h, data, len );
@@ -989,21 +989,22 @@ int SzWriteArchive( ArcCompJob *j, FILE *f )
 {
     SzwFolder  fo[SZW_MAX_FOLDERS];
     int        nFo = 0, rc = SZ_OK, i;
-    UInt32    *files = 0, nFiles = 0, k;
-    UInt32    *dirs = 0, nDirs = 0;
-    UInt32     nEmpty = 0, nStream = 0, nAll;
+    uint32_t  *files = 0, nFiles = 0;
+    unsigned   k;
+    uint32_t  *dirs = 0, nDirs = 0;
+    uint32_t   nEmpty = 0, nStream = 0, nAll;
     HBuf       h;
-    Byte       start[32];
+    uint8_t    start[32];
     long       hdrPos;
-    Byte      *sniff = 0;
+    uint8_t   *sniff = 0;
 
     memset( &h, 0, sizeof( h ) );
     memset( fo, 0, sizeof( fo ) );
     j->dictSize = 0;
 
-    files = (UInt32 *)malloc( ( j->nOrder ? j->nOrder : 1 ) * sizeof( UInt32 ) );
-    dirs  = (UInt32 *)malloc( ( j->nOrder ? j->nOrder : 1 ) * sizeof( UInt32 ) );
-    sniff = (Byte *)malloc( 16384 );
+    files = (uint32_t *)malloc( ( j->nOrder ? j->nOrder : 1 ) * sizeof( uint32_t ) );
+    dirs  = (uint32_t *)malloc( ( j->nOrder ? j->nOrder : 1 ) * sizeof( uint32_t ) );
+    sniff = (uint8_t *)malloc( 16384 );
     if ( !files || !dirs || !sniff ) { rc = SZ_ERR_MEMORY; goto done; }
 
     /*---- Look at each file, and sort them into folders ----------------- */
@@ -1027,8 +1028,8 @@ int SzWriteArchive( ArcCompJob *j, FILE *f )
             {
                 size_t   got = fread( sniff, 1, 16384, s );
                 unsigned frame = 0;
-                e->kind  = (Byte)CompSniff( sniff, (UInt32)got, e->size, &isText, &frame );
-                e->delta = (Byte)frame;
+                e->kind  = (uint8_t)CompSniff( sniff, (uint32_t)got, e->size, &isText, &frame );
+                e->delta = (uint8_t)frame;
                 fclose( s );
             }
             else
@@ -1038,21 +1039,21 @@ int SzWriteArchive( ArcCompJob *j, FILE *f )
     }
 
     g_sj = j;
-    qsort( files, nFiles, sizeof( UInt32 ), StreamCmp );
+    qsort( files, nFiles, sizeof( uint32_t ), StreamCmp );
 
     /* Empty files lead (they need no folder); the rest are grouped by kind
      * (and, for sampled data, by frame size), a new folder at each change
      * and at the 1 GB mark. */
     {
-        UInt32 a = 0, b;
-        UInt32 *tmp = (UInt32 *)malloc( ( nFiles ? nFiles : 1 ) * sizeof( UInt32 ) );
+        unsigned a = 0, b;
+        uint32_t *tmp = (uint32_t *)malloc( ( nFiles ? nFiles : 1 ) * sizeof( uint32_t ) );
         if ( !tmp ) { rc = SZ_ERR_MEMORY; goto done; }
         for ( b = 0; b < nFiles; b++ )
             if ( j->ents[ files[b] ].size == 0 ) tmp[a++] = files[b];
         nEmpty = a;
         for ( b = 0; b < nFiles; b++ )
             if ( j->ents[ files[b] ].size != 0 ) tmp[a++] = files[b];
-        memcpy( files, tmp, nFiles * sizeof( UInt32 ) );
+        memcpy( files, tmp, nFiles * sizeof( uint32_t ) );
         free( tmp );
     }
     for ( k = nEmpty; k < nFiles; k++ )
@@ -1071,7 +1072,7 @@ int SzWriteArchive( ArcCompJob *j, FILE *f )
         }
         cur->count++;
         cur->planned += e->size;
-        e->folder = (Byte)( nFo - 1 );
+        e->folder = (uint8_t)( nFo - 1 );
     }
     nStream = nFiles - nEmpty;
 
@@ -1083,7 +1084,7 @@ int SzWriteArchive( ArcCompJob *j, FILE *f )
     {
         FolderReader r;
         long         startPos = ftell( f );
-        UInt32       inT = 0, outT = 0;
+        uint32_t     inT = 0, outT = 0;
 
         memset( &r, 0, sizeof( r ) );
         r.j       = j;
@@ -1093,8 +1094,8 @@ int SzWriteArchive( ArcCompJob *j, FILE *f )
 
         if ( fo[i].kind == CK_PACKED )
         {
-            Byte *buf = (Byte *)malloc( COMP_IOBUF );
-            UInt32 n;
+            uint8_t *buf = (uint8_t *)malloc( COMP_IOBUF );
+            uint32_t n;
             if ( !buf ) { rc = SZ_ERR_MEMORY; break; }
             while ( ( n = RawRead( &r, buf, COMP_IOBUF ) ) > 0 )
             {
@@ -1129,7 +1130,7 @@ int SzWriteArchive( ArcCompJob *j, FILE *f )
             else if ( fo[i].kind == CK_EXE )
             {
                 r.bcj  = 1;
-                r.bbuf = (Byte *)malloc( SZW_BCJ_BUF );
+                r.bbuf = (uint8_t *)malloc( SZW_BCJ_BUF );
                 if ( !r.bbuf ) { rc = SZ_ERR_MEMORY; break; }
             }
             else if ( fo[i].kind == CK_DELTA )
@@ -1195,9 +1196,9 @@ int SzWriteArchive( ArcCompJob *j, FILE *f )
         /* Entry order: folders, then everything without data, then the
          * files with data in folder order - the order their substreams
          * are in, which is what ties a file to its bytes. */
-        UInt32 *list = (UInt32 *)malloc( ( nDirs + nFiles + 1 ) * sizeof( UInt32 ) );
-        Byte   *bits = 0;
-        UInt32  nEmptyStream = 0, nEmptyFile = 0, n = 0, namesLen = 1;
+        uint32_t *list = (uint32_t *)malloc( ( nDirs + nFiles + 1 ) * sizeof( uint32_t ) );
+        uint8_t  *bits = 0;
+        uint32_t  nEmptyStream = 0, nEmptyFile = 0, n = 0, namesLen = 1;
 
         if ( !list ) { rc = SZ_ERR_MEMORY; goto done; }
         for ( k = 0; k < nDirs; k++ ) list[n++] = dirs[k];
@@ -1226,17 +1227,17 @@ int SzWriteArchive( ArcCompJob *j, FILE *f )
         HByte( &h, k7zFilesInfo );
         HNum( &h, nAll );
 
-        bits = (Byte *)calloc( nAll + 1, 1 );
+        bits = (uint8_t *)calloc( nAll + 1, 1 );
         if ( !bits ) { free( list ); rc = SZ_ERR_MEMORY; goto done; }
         if ( nEmptyStream > 0 )
         {
-            for ( k = 0; k < nAll; k++ ) bits[k] = (Byte)( k < nEmptyStream );
+            for ( k = 0; k < nAll; k++ ) bits[k] = (uint8_t)( k < nEmptyStream );
             HByte( &h, k7zEmptyStream );
             HNum( &h, ( nAll + 7 ) / 8 );
             HBits( &h, bits, nAll );
             if ( nEmptyFile > 0 )
             {
-                for ( k = 0; k < nEmptyStream; k++ ) bits[k] = (Byte)( k >= nDirs );
+                for ( k = 0; k < nEmptyStream; k++ ) bits[k] = (uint8_t)( k >= nDirs );
                 HByte( &h, k7zEmptyFile );
                 HNum( &h, ( nEmptyStream + 7 ) / 8 );
                 HBits( &h, bits, nEmptyStream );
@@ -1279,9 +1280,9 @@ int SzWriteArchive( ArcCompJob *j, FILE *f )
      * big saving for an archive of many small files (UTF-16 names). */
     hdrPos = ftell( f );
     {
-        HBuf  packed, shdr;
-        Byte *hdr = h.p;
-        UInt32 hdrLen = h.len, hdrCrc = Crc32Calc( h.p, h.len );
+        HBuf     packed, shdr;
+        uint8_t *hdr = h.p;
+        uint32_t hdrLen = h.len, hdrCrc = Crc32Calc( h.p, h.len );
 
         memset( &packed, 0, sizeof( packed ) );
         memset( &shdr, 0, sizeof( shdr ) );
@@ -1290,7 +1291,7 @@ int SzWriteArchive( ArcCompJob *j, FILE *f )
             LzmaEncProps p;
             MemIn        m;
             SzwFolder    hf;
-            UInt32       inT, outT;
+            uint32_t     inT, outT;
 
             memset( &hf, 0, sizeof( hf ) );
             m.p = h.p; m.len = h.len; m.pos = 0;
@@ -1304,7 +1305,7 @@ int SzWriteArchive( ArcCompJob *j, FILE *f )
                 hf.packSize = outT;
                 hf.unpackSize = hdrLen;
                 HByte( &shdr, k7zEncodedHeader );
-                WriteStreamsInfo( &shdr, (UInt32)( hdrPos - 32 ), &hf, 1, 0, j, files, &hdrCrc );
+                WriteStreamsInfo( &shdr, (uint32_t)( hdrPos - 32 ), &hf, 1, 0, j, files, &hdrCrc );
                 if ( !shdr.failed &&
                      fwrite( packed.p, 1, packed.len, f ) == packed.len )
                 {
@@ -1320,25 +1321,25 @@ int SzWriteArchive( ArcCompJob *j, FILE *f )
 
         if ( rc == SZ_OK )
         {
-            UInt32 nextOff = (UInt32)( hdrPos - 32 );
-            UInt32 nextCrc = Crc32Calc( hdr, hdrLen );
+            uint32_t nextOff = (uint32_t)( hdrPos - 32 );
+            uint32_t nextCrc = Crc32Calc( hdr, hdrLen );
             start[0] = 0x37; start[1] = 0x7A; start[2] = 0xBC;
             start[3] = 0xAF; start[4] = 0x27; start[5] = 0x1C;
             start[6] = 0;    start[7] = 4;
-            start[12] = (Byte)nextOff;          start[13] = (Byte)( nextOff >> 8 );
-            start[14] = (Byte)( nextOff >> 16 ); start[15] = (Byte)( nextOff >> 24 );
+            start[12] = (uint8_t)nextOff;          start[13] = (uint8_t)( nextOff >> 8 );
+            start[14] = (uint8_t)( nextOff >> 16 ); start[15] = (uint8_t)( nextOff >> 24 );
             memset( start + 16, 0, 4 );
-            start[20] = (Byte)hdrLen;          start[21] = (Byte)( hdrLen >> 8 );
-            start[22] = (Byte)( hdrLen >> 16 ); start[23] = (Byte)( hdrLen >> 24 );
+            start[20] = (uint8_t)hdrLen;          start[21] = (uint8_t)( hdrLen >> 8 );
+            start[22] = (uint8_t)( hdrLen >> 16 ); start[23] = (uint8_t)( hdrLen >> 24 );
             memset( start + 24, 0, 4 );
-            start[28] = (Byte)nextCrc;          start[29] = (Byte)( nextCrc >> 8 );
-            start[30] = (Byte)( nextCrc >> 16 ); start[31] = (Byte)( nextCrc >> 24 );
+            start[28] = (uint8_t)nextCrc;          start[29] = (uint8_t)( nextCrc >> 8 );
+            start[30] = (uint8_t)( nextCrc >> 16 ); start[31] = (uint8_t)( nextCrc >> 24 );
             {
-                UInt32 sc = Crc32Calc( start + 12, 20 );
-                start[8]  = (Byte)sc;          start[9]  = (Byte)( sc >> 8 );
-                start[10] = (Byte)( sc >> 16 ); start[11] = (Byte)( sc >> 24 );
+                uint32_t sc = Crc32Calc( start + 12, 20 );
+                start[8]  = (uint8_t)sc;          start[9]  = (uint8_t)( sc >> 8 );
+                start[10] = (uint8_t)( sc >> 16 ); start[11] = (uint8_t)( sc >> 24 );
             }
-            j->outBytes = (UInt32)ftell( f );
+            j->outBytes = (uint32_t)ftell( f );
             if ( fseek( f, 0, SEEK_SET ) != 0 || fwrite( start, 1, 32, f ) != 32 ||
                  fflush( f ) != 0 )
                 rc = SZ_ERR_WRITE;

@@ -22,15 +22,13 @@
 #ifndef NDRV_H
 #define NDRV_H
 
-typedef unsigned char  u8;
-typedef unsigned short u16;
-typedef unsigned long  u32;
+#include <stdint.h>
 
 /* the registers in and out of an INT 21h or a service with a register
    contract: flags bit 0 is CF - on the way in, what to set it to */
 typedef struct {
-    u32 eax, ebx, ecx, edx, esi, edi;
-    u32 flags;
+    uint32_t eax, ebx, ecx, edx, esi, edi;
+    uint32_t flags;
 } REGS;
 
 #define CF( regs )   ((regs).flags & 1)
@@ -58,10 +56,10 @@ typedef struct {
    program changes by a byte here and there for nothing */
 
 typedef struct {
-    u32  sig;
-    u16  ver;
-    u16  flags;
-    char name[8];                        /* blank padded, no NUL */
+    uint32_t sig;
+    uint16_t ver;
+    uint16_t flags;
+    char     name[8];                    /* blank padded, no NUL */
     void (__cdecl *init)( void );
     void (__cdecl *park)( void );
     void (__cdecl *halt)( void );
@@ -70,12 +68,12 @@ typedef struct {
 
 /* THE KERNEL'S ROW for a loaded driver (ND_*) */
 typedef struct {
-    char name[8];
-    u32  base;                           /* where the image is */
-    u32  size;                           /* bytes kept */
-    u32  table;                          /* its driver table */
-    u32  flags;                          /* the table's NDT_FLAGS */
-    u32  parks, unparks;
+    char     name[8];
+    uint32_t base;                       /* where the image is */
+    uint32_t size;                       /* bytes kept */
+    uint32_t table;                      /* its driver table */
+    uint32_t flags;                      /* the table's NDT_FLAGS */
+    uint32_t parks, unparks;
 } ND_ROW;
 
 #define ND_MAX       8
@@ -89,6 +87,7 @@ typedef struct {
 
 /* the errors a CALL entry answers with (PMDOS.INC's ERR_*) */
 #define ERR_FUNC     1
+#define ERR_ACCESS   5
 #define ERR_BADDATA  13
 #define ERR_BADDRIVE 15
 #define ERR_BADLEN   0x18
@@ -123,9 +122,9 @@ typedef struct {
 int  __cdecl nd_init( const char *line );    /* 0: installed; else refused */
 void __cdecl nd_park( int back );            /* 0 going down, 1 come back */
 void __cdecl nd_halt( void );
-int  __cdecl nd_call( u32 fn, void *buf, u32 len, u32 *answer );
+int  __cdecl nd_call( uint32_t fn, void *buf, uint32_t len, uint32_t *answer );
                                              /* 0: EAX = *answer; else ERR_* */
-int  __cdecl nd_irq( u32 line );             /* 1: the device was asking */
+int  __cdecl nd_irq( uint32_t line );        /* 1: the device was asking */
 void __cdecl nd_tick( void );
 
 /* the entries the table names: NDSTART.ASM's, which call the above */
@@ -135,30 +134,30 @@ void __cdecl ndv_halt( void );
 void __cdecl ndv_call( void );
 
 /* WHAT NDSTART.ASM GIVES IT: the kernel's services (NDS_*) */
-void *__cdecl nds_alloc( u32 bytes );        /* 0 if none; never reclaimed */
-void  __cdecl nds_free( void *block );
-void  __cdecl nds_print( const char *text ); /* ASCIIZ, to the console */
-u32   __cdecl nds_ticks( void );             /* the 18.2Hz count */
-int   __cdecl nds_bus( REGS *regs );         /* AH = BUS_*; 1 if CF clear */
-int   __cdecl nds_irqhook( u32 line );       /* nd_irq on it; 1 if hooked */
-int   __cdecl nds_irqunhook( u32 line );
-int   __cdecl nds_tickhook( void );          /* nd_tick every tick; 1 if hooked */
-int   __cdecl nds_tickunhook( void );
+void *__cdecl nds_alloc( uint32_t bytes );        /* 0 if none; never reclaimed */
+void  __cdecl      nds_free( void *block );
+void  __cdecl      nds_print( const char *text ); /* ASCIIZ, to the console */
+uint32_t   __cdecl nds_ticks( void );             /* the 18.2Hz count */
+int   __cdecl      nds_bus( REGS *regs );         /* AH = BUS_*; 1 if CF clear */
+int   __cdecl      nds_irqhook( uint32_t line );  /* nd_irq on it; 1 if hooked */
+int   __cdecl      nds_irqunhook( uint32_t line );
+int   __cdecl      nds_tickhook( void );          /* nd_tick every tick; 1 if hooked */
+int   __cdecl      nds_tickunhook( void );
 
 /* the TCP/IP stack rides on the NIC drivers: these reach them, the same
    way a program reaches a driver through 21h/F1h AL=25h NDF_CALL */
-u32   __cdecl nds_niccount( void );          /* loaded drivers that are NICs */
-int   __cdecl nds_niccall( u32 idx, u32 fn, void *buf, u32 len, u32 *answer );
+uint32_t   __cdecl nds_niccount( void );     /* loaded drivers that are NICs */
+int   __cdecl nds_niccall( uint32_t idx, uint32_t fn, void *buf, uint32_t len, uint32_t *answer );
                                              /* 0: EAX = *answer; else ERR_* */
 
 /* a redirector reaches the one TCP/IP stack the same way: EBX = a socket
    function (INC\SOCKET.H), the request buffer is the driver's own memory */
-int   __cdecl nds_sockcall( u32 fn, void *buf, u32 len, u32 *answer );
+int   __cdecl nds_sockcall( uint32_t fn, void *buf, uint32_t len, uint32_t *answer );
                                              /* 0: EAX = *answer; else ERR_* */
 
 /* any other kind of driver, by its NDTF_* flag: the first loaded one
    that has it.  ERR_FUNC from a kernel older than NDS_VERSION 5 */
-int   __cdecl nds_flagcall( u32 flag, u32 fn, void *buf, u32 len, u32 *answer );
+int   __cdecl nds_flagcall( uint32_t flag, uint32_t fn, void *buf, uint32_t len, uint32_t *answer );
                                              /* 0: EAX = *answer; else ERR_* */
 
 extern ND_ROW *nds_row;                      /* the kernel's row for us */

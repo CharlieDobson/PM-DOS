@@ -16,8 +16,9 @@
 #include "defrag.h"
 #include "text.h"
 
-static u32  moves, moved, stop_after;
-static int  tracing;
+static unsigned int moves, stop_after;
+static uint32_t     moved;
+static int          tracing;
 
 static void __cdecl put( const char *fmt, ... )
 {
@@ -28,13 +29,13 @@ static void __cdecl put( const char *fmt, ... )
     say( "\r\n" );
 }
 
-static u32 env_number( const char *name )
+static unsigned int env_number( const char *name )
 {
     const char *text = sys_getenv( name );
-    u32 val = 0;
+    unsigned int val = 0;
 
     for ( ; text && *text >= '0' && *text <= '9'; text++ ) {
-        val = val * 10 + (u32)(*text - '0');
+        val = val * 10 + (unsigned int)(*text - '0');
     }
     return val;
 }
@@ -63,7 +64,7 @@ void fe_drive( int loaded )
         return;
     }
     put( "Drive %c: FAT%u, %,u clusters of %,u bytes: %,u used, %,u free, %,u bad, %,u not moved",
-         'A' + vol.drive, (u32)vol.fattype, vol.nclus, vol.bpc, dst.used, dst.free, dst.bad, dst.fixed );
+         'A' + vol.drive, (unsigned int)vol.fattype, vol.nclus, vol.bpc, dst.used, dst.free, dst.bad, dst.fixed );
     put( "%,u files, %,u directories; %,u in pieces, %,u free clusters below the last one used",
          dst.files, dst.folders, dst.frag_items, dst.gaps );
 }
@@ -82,7 +83,7 @@ void fe_run( int running )
     }
 }
 
-void fe_activity( int what, u32 clus, u32 count )
+void fe_activity( int what, uint32_t clus, uint32_t count )
 {
     if ( what == ACT_WRITE ) {
         moves++;
@@ -93,7 +94,7 @@ void fe_activity( int what, u32 clus, u32 count )
     }
 }
 
-void fe_progress( u32 done, u32 total )
+void fe_progress( uint32_t done, uint32_t total )
 {
     (void)done;
     (void)total;
@@ -138,7 +139,7 @@ void fe_about( void )
 
 int fe_recommend( int percent, int method )
 {
-    put( tx_recommend_1, (u32)percent, 'A' + vol.drive );
+    put( tx_recommend_1, (unsigned int)percent, 'A' + vol.drive );
     put( "%s %s", tx_recommend_2, tx_method[method] );
     return 1;
 }

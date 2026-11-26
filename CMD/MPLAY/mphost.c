@@ -54,13 +54,13 @@ void out_of_memory( void )
 }
 
 typedef struct {
-    DECOPT opt;
-    EQSET  eq;
-    int    use_eq;
-    u32    seek_ms;
-    u32    max_ms;
-    u32    piece;
-    u32    lag, skip, len;
+    DECOPT       opt;
+    EQSET        eq;
+    int          use_eq;
+    uint32_t     seek_ms;
+    uint32_t     max_ms;
+    unsigned int piece;
+    unsigned int lag, skip, len;
 } OPTS;
 
 static int parse_eq( const char *val, EQSET *eq )
@@ -100,9 +100,9 @@ static int parse_eq( const char *val, EQSET *eq )
             num = 24;
         }
         if ( n < EQ_BANDS ) {
-            eq->band[n] = (s8)(neg ? -num : num);
+            eq->band[n] = (int8_t)(neg ? -num : num);
         } else {
-            eq->preamp = (s8)(neg ? -num : num);
+            eq->preamp = (int8_t)(neg ? -num : num);
         }
         n++;
         if ( *at == ',' ) {
@@ -143,22 +143,22 @@ static int parse_opts( int argc, char **argv, int first, OPTS *opts )
         } else if ( stricmp( arg, "F" ) == 0 ) {
             opts->opt.fast = 1;
         } else if ( strnicmp( arg, "SEEK:", 5 ) == 0 ) {
-            opts->seek_ms = (u32)strtoul( arg + 5, NULL, 10 );
+            opts->seek_ms = (uint32_t)strtoul( arg + 5, NULL, 10 );
         } else if ( strnicmp( arg, "MS:", 3 ) == 0 ) {
-            opts->max_ms = (u32)strtoul( arg + 3, NULL, 10 );
+            opts->max_ms = (uint32_t)strtoul( arg + 3, NULL, 10 );
         } else if ( strnicmp( arg, "RATE:", 5 ) == 0 ) {
-            opts->opt.rate = (u32)strtoul( arg + 5, NULL, 10 );
+            opts->opt.rate = (uint32_t)strtoul( arg + 5, NULL, 10 );
         } else if ( strnicmp( arg, "PIECE:", 6 ) == 0 ) {
-            opts->piece = (u32)strtoul( arg + 6, NULL, 10 );
+            opts->piece = (unsigned int)strtoul( arg + 6, NULL, 10 );
             if ( opts->piece < 1152 ) {
                 opts->piece = 1152;
             }
         } else if ( strnicmp( arg, "LAG:", 4 ) == 0 ) {
-            opts->lag = (u32)strtoul( arg + 4, NULL, 10 );
+            opts->lag = (unsigned int)strtoul( arg + 4, NULL, 10 );
         } else if ( strnicmp( arg, "SKIP:", 5 ) == 0 ) {
-            opts->skip = (u32)strtoul( arg + 5, NULL, 10 );
+            opts->skip = (unsigned int)strtoul( arg + 5, NULL, 10 );
         } else if ( strnicmp( arg, "LEN:", 4 ) == 0 ) {
-            opts->len = (u32)strtoul( arg + 4, NULL, 10 );
+            opts->len = (unsigned int)strtoul( arg + 4, NULL, 10 );
         } else if ( strnicmp( arg, "SYN:", 4 ) == 0 ) {
             if ( stricmp( arg + 4, "OPL2" ) == 0 ) {
                 opts->opt.synth = SYN_OPL2;
@@ -213,7 +213,7 @@ static void print_info( const CODEC *codec, const DECINFO *info )
     printf( "album:    %s\n", info->album );
 }
 
-static void put32( FILE *out, u32 val )
+static void put32( FILE *out, uint32_t val )
 {
     fputc( (int)(val & 0xFF), out );
     fputc( (int)((val >> 8) & 0xFF), out );
@@ -221,15 +221,15 @@ static void put32( FILE *out, u32 val )
     fputc( (int)((val >> 24) & 0xFF), out );
 }
 
-static void put16( FILE *out, u32 val )
+static void put16( FILE *out, uint32_t val )
 {
     fputc( (int)(val & 0xFF), out );
     fputc( (int)((val >> 8) & 0xFF), out );
 }
 
-static void wav_header( FILE *out, u32 rate, u32 channels, u32 frames )
+static void wav_header( FILE *out, uint32_t rate, uint32_t channels, uint32_t frames )
 {
-    u32 bytes = frames * channels * 2;
+    uint32_t bytes = frames * channels * 2;
 
     fwrite( "RIFF", 1, 4, out );
     put32( out, 36 + bytes );
@@ -254,12 +254,12 @@ static int run_decode( const char *mode, const char *path, const char *out_path,
     DECINFO info;
     DECBUF buf;
     FILE *out = NULL;
-    u32 total = 0, events = 0, limit = 0, at_ms, held_before;
+    uint32_t total = 0, events = 0, limit = 0, at_ms, held_before;
     int rc, pieces = 0;
     clock_t start, stop;
-    s16 *pcm;
+    int16_t *pcm;
     DECEV *ev;
-    u32 i, ev_room = 4096;
+    unsigned int i, ev_room = 4096;
 
     held_before = heap_in_use();
     rc = dec_open( &src, path, &opts->opt, &codec, &state, &info );
@@ -283,9 +283,9 @@ static int run_decode( const char *mode, const char *path, const char *out_path,
                 (unsigned long)at_ms );
     }
     if ( opts->max_ms ) {
-        limit = (u32)((double)opts->max_ms * info.rate / 1000.0);
+        limit = (uint32_t)((double)opts->max_ms * info.rate / 1000.0);
     }
-    pcm = (s16 *)malloc( opts->piece * 2 * sizeof( s16 ) );
+    pcm = (int16_t *)malloc( opts->piece * 2 * sizeof( int16_t ) );
     ev = (DECEV *)malloc( ev_room * sizeof( DECEV ) );
     if ( pcm == NULL || ev == NULL ) {
         printf( "no memory\n" );
@@ -327,7 +327,7 @@ static int run_decode( const char *mode, const char *path, const char *out_path,
             break;
         }
         if ( out != NULL && strcmp( mode, "wav" ) == 0 ) {
-            fwrite( pcm, sizeof( s16 ) * info.channels, buf.frames, out );
+            fwrite( pcm, sizeof( int16_t ) * info.channels, buf.frames, out );
         }
         if ( out != NULL && strcmp( mode, "ev" ) == 0 ) {
             for ( i = 0; i < buf.ev_count; i++ ) {
@@ -380,8 +380,8 @@ static int run_decode( const char *mode, const char *path, const char *out_path,
 /* comparing two wave files                                            */
 /* ------------------------------------------------------------------ */
 typedef struct {
-    u32  rate, channels, frames;
-    s16 *data;
+    uint32_t rate, channels, frames;
+    int16_t *data;
 } WAVE;
 
 static int load_wave( const char *path, WAVE *wave )
@@ -416,13 +416,13 @@ static int load_wave( const char *path, WAVE *wave )
             wave->rate = LE32( fmt + 4 );
             got_fmt = 1;
         } else if ( memcmp( hdr, "data", 4 ) == 0 && got_fmt ) {
-            wave->frames = (u32)size / (2 * wave->channels);
-            wave->data = (s16 *)malloc( wave->frames * wave->channels * 2 + 2 );
+            wave->frames = (uint32_t)size / (2 * wave->channels);
+            wave->data = (int16_t *)malloc( wave->frames * wave->channels * 2 + 2 );
             if ( wave->data == NULL ) {
                 fclose( in );
                 return 0;
             }
-            wave->frames = (u32)fread( wave->data, 2 * wave->channels, wave->frames, in );
+            wave->frames = (uint32_t)fread( wave->data, 2 * wave->channels, wave->frames, in );
             fclose( in );
             return 1;
         } else {
@@ -439,7 +439,7 @@ static int run_cmp( const char *path_a, const char *path_b, OPTS *opts )
     WAVE wa, wb;
     long lag, best_lag = 0, ia, ib;
     double err, best = -1.0, sig = 0.0, noise = 0.0, diff;
-    u32 ch, frames, n, window;
+    unsigned int ch, frames, n, window;
     long maxdiff = 0;
 
     if ( !load_wave( path_a, &wa ) || !load_wave( path_b, &wb ) ) {

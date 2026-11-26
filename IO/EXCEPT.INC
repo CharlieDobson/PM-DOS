@@ -35,9 +35,26 @@ irq&n:
         EXCN    %v
         ENDM
 
+IFDEF V86_FAST
+        IRP     v,<8,10,11,12,14,17>
+        EXCE    %v
+        ENDM
+
+; A #GP out of a box goes to the monitor's fast path (VM86.INC,
+; v86_gpfast) before anything here runs: almost every one is a CLI, an
+; STI, a PUSHF, a POPF, an IRET or an INT, and the fast path answers
+; those itself.  What it does not answer, it hands to exc_common with
+; this same frame.
+exc13:
+        test    dword ptr [esp+0Ch],EFL_VM      ; error code, EIP, CS, EFLAGS
+        jnz     v86_gpfast
+        push    13
+        jmp     exc_common
+ELSE
         IRP     v,<8,10,11,12,13,14,17>
         EXCE    %v
         ENDM
+ENDIF
 
         IRP     v,<0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15>
         IRQS    %v
@@ -317,31 +334,22 @@ ENDIF
 
         mov     ebp,esp
 
-        mov     esi,OFFSET msgExc
-        call    con_str
+        ; THE REPORT IS KEPT AS WELL AS PRINTED.  It is printed here,
+        ; where the BIOS cannot be called, so on a graphics screen it
+        ; goes into the text page under the picture and nobody sees it.
+        ; The DOS side's recovery can call the BIOS: it puts the screen
+        ; back and has the same report printed again (exc_report).
         mov     eax,[ebp+0]             ; vector
-        call    con_hex8
-        mov     esi,OFFSET msgAt
-        call    con_str
-        mov     eax,[ebp+8]             ; faulting EIP
-        call    con_hex32
-        mov     esi,OFFSET msgErr
-        call    con_str
+        mov     dword ptr ds:[exc_rvec],eax
         mov     eax,[ebp+4]             ; error code
-        call    con_hex32
-
-        ; A page fault says WHERE in CR2, and without it the report
-        ; names the instruction but not the address it was reaching
-        ; for - which is the half that identifies the bug.
-        cmp     dword ptr [ebp+0],14
-        jne     exc_nocr2
-        mov     esi,OFFSET msgCR2
-        call    con_str
-        mov     eax,cr2
-        call    con_hex32
-exc_nocr2:
-        mov     esi,OFFSET msgCR
-        call    con_str
+        mov     dword ptr ds:[exc_rerr],eax
+        mov     eax,[ebp+8]             ; faulting EIP
+        mov     dword ptr ds:[exc_reip],eax
+        mov     eax,cr2                 ; for a page fault
+        mov     dword ptr ds:[exc_rcr2],eax
+        mov     al,byte ptr ds:[rm_busy]        ; a BIOS call half made
+        mov     byte ptr ds:[exc_rbios],al
+        mov     byte ptr ds:[exc_rhave],0       ; not until the hook
 
         ; A #DB with one of our four breakpoint bits set in DR6 is a
         ; write through a null pointer, and saying so is most of the
@@ -349,13 +357,14 @@ exc_nocr2:
         ; and names no bug at all.  nt_hit clears DR6 either way,
         ; because the bits are sticky and a stale one would make the
         ; next debug exception - anybody's - look like this one.
+        mov     byte ptr ds:[exc_rnull],0
         cmp     dword ptr [ebp+0],1
         jne     exc_nodb
         call    nt_hit
         jz      exc_nodb
-        mov     esi,OFFSET msgNull
-        call    con_str
+        mov     byte ptr ds:[exc_rnull],1
 exc_nodb:
+        call    exc_say
 
         ; A RING-0 FAULT USED TO END THE MACHINE, and the thing that
         ; caused it was nearly always an ordinary PM-DOS program: a
@@ -385,6 +394,7 @@ exc_nodb:
         call    fpu_reclaim             ; outlive it (VM86.INC, FPU.INC)
         mov     esi,OFFSET msgRecover
         call    con_str
+        mov     byte ptr ds:[exc_rhave],1       ; for the hook to ask about
         call    dword ptr ds:[exc_hook] ; does not return
 
 exc_stop:
@@ -409,10 +419,100 @@ exc_sethook:
 ;=====================================================================
 exc_clearnest:
         mov     dword ptr ds:[exc_nested],0
+        mov     byte ptr ds:[exc_rhave],0       ; and the report is spent
+        ret
+
+;=====================================================================
+; exc_say - the report exc_common kept, printed: the exception, where,
+;           its error code, the address for a page fault, and the line
+;           for a write through a null pointer.  Everything preserved.
+;=====================================================================
+exc_say:
+        pushad
+        mov     esi,OFFSET msgExc
+        call    con_str
+        mov     eax,dword ptr ds:[exc_rvec]
+        call    con_hex8
+        mov     esi,OFFSET msgAt
+        call    con_str
+        mov     eax,dword ptr ds:[exc_reip]
+        call    con_hex32
+        mov     esi,OFFSET msgErr
+        call    con_str
+        mov     eax,dword ptr ds:[exc_rerr]
+        call    con_hex32
+
+        ; A page fault says WHERE in CR2, and without it the report
+        ; names the instruction but not the address it was reaching
+        ; for - which is the half that identifies the bug.
+        cmp     dword ptr ds:[exc_rvec],14
+        jne     exs_nocr2
+        mov     esi,OFFSET msgCR2
+        call    con_str
+        mov     eax,dword ptr ds:[exc_rcr2]
+        call    con_hex32
+exs_nocr2:
+        mov     esi,OFFSET msgCR
+        call    con_str
+        cmp     byte ptr ds:[exc_rnull],0
+        je      exs_out
+        mov     esi,OFFSET msgNull
+        call    con_str
+exs_out:
+        popad
+        ret
+
+;=====================================================================
+; exc_report - IOS_EXCREP.  For the DOS side's recovery from a ring-0
+;              fault (dos_fault), which can call the BIOS where
+;              exc_common could not.
+;
+;   AL = EXR_ASK  CF clear: a report is kept and the BIOS may be called
+;                 now.  CF set: none is, or the fault came in the middle
+;                 of a BIOS call (rm_busy), with that call's state half
+;                 changed - no mode set on top of it.
+;   AL = EXR_SAY  the kept report again, with its "Program terminated"
+;                 line, after the screen has been put back to text.  CF
+;                 if none is kept.
+;
+; The report is kept from the hook's call until IOS_EXCCLEAR, which is
+; the end of the recovery: a ring-3 fault reaches the same recovery
+; with no report of exc_common's, and is told there is none.
+; Everything preserved.
+;=====================================================================
+exc_report:                             ; (labels exrp_: wasm folds case,
+        cmp     byte ptr ds:[exc_rhave],0       ; and exr_say IS EXR_SAY)
+        je      exrp_none
+        cmp     al,EXR_SAY
+        je      exrp_print
+        cmp     al,EXR_ASK
+        jne     exrp_none
+        cmp     byte ptr ds:[exc_rbios],0
+        jne     exrp_none
+        clc
+        ret
+exrp_print:
+        call    exc_say
+        push    esi
+        mov     esi,OFFSET msgRecover
+        call    con_str
+        pop     esi
+        clc
+        ret
+exrp_none:
+        stc
         ret
 
 exc_hook        dd      0
 exc_nested      dd      0
+exc_rvec        dd      0               ; the last ring-0 report: the vector,
+exc_rerr        dd      0               ; the error code,
+exc_reip        dd      0               ; where,
+exc_rcr2        dd      0               ; and CR2 as the fault found it
+exc_rnull       db      0               ; 1: a write through a null pointer
+exc_rbios       db      0               ; 1: rm_busy was set at the fault
+exc_rhave       db      0               ; 1: kept for IOS_EXCREP
+                db      0
 exc_guard       dd      0               ; where a fault that was asked for
                                         ; goes; 0 when none is
 exc_gesp        dd      0               ; ...and the ESP it goes there with
@@ -832,6 +932,9 @@ irq_timer:
 it_noroll:
         mov     dword ptr ds:[BDA_TICKS],eax
 it_noday:
+IFDEF V86_TCOUNT
+        call    tc_tick                 ; the trap counts, every five seconds
+ENDIF
 
 IFDEF HANG_E9
 ;--- the hang reporter (BUILD hang) ----------------------------------

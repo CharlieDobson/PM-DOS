@@ -112,33 +112,33 @@
 #define TXN             8
 #define QMAX            1024            /* the most entries a queue may say */
 
-typedef struct { u32 addr_lo, addr_hi, len; u16 flags, next; } VDESC;
-typedef struct { u32 id, len; } VUSED;
+typedef struct { uint32_t addr_lo, addr_hi, len; uint16_t flags, next; } VDESC;
+typedef struct { uint32_t id, len; } VUSED;
 
 typedef struct {
-    u16  size;                  /* entries, as the device says */
+    uint16_t size;              /* entries, as the device says */
     volatile VDESC *desc;
-    volatile u16 *avail;        /* flags, idx, ring[size] */
-    volatile u16 *used;         /* flags, idx, then VUSED[size] */
-    u16  used_seen;             /* the used index taken so far */
-    u16  avail_next;            /* the avail index given so far */
-    u32  notify;                /* modern: where its notify is written */
+    volatile uint16_t *avail;   /* flags, idx, ring[size] */
+    volatile uint16_t *used;    /* flags, idx, then VUSED[size] */
+    uint16_t used_seen;         /* the used index taken so far */
+    uint16_t avail_next;        /* the avail index given so far */
+    uint32_t notify;            /* modern: where its notify is written */
 } VQUEUE;
 
-static VQUEUE vq[2];
-static u8  *qmem[2];            /* the page-aligned block of each */
-static u32  qcap[2];            /* ...and the entries it was made for */
-static u8  *hdrs;               /* RXN + TXN headers */
-static u8  *rxbuf[RXN];
-static u8  *txbuf[TXN];
-static u16  tx_free;            /* TX buffer slots not in flight */
-static u8   tx_busy[TXN];
-static u32  hdrlen = HDR_LEGACY;
+static VQUEUE   vq[2];
+static uint8_t *qmem[2];        /* the page-aligned block of each */
+static unsigned int qcap[2];    /* ...and the entries it was made for */
+static uint8_t *hdrs;           /* RXN + TXN headers */
+static uint8_t *rxbuf[RXN];
+static uint8_t *txbuf[TXN];
+static unsigned short tx_free;  /* TX buffer slots not in flight */
+static unsigned char tx_busy[TXN];
+static unsigned int hdrlen = HDR_LEGACY;
 
 /* the modern device's four blocks, mapped (0 on a legacy one) */
-static u8   modern;
-static u32  m_common, m_isr, m_device;
-static u32  m_notify, m_notify_len, m_notify_mul;
+static unsigned char modern;
+static uint32_t m_common, m_isr, m_device;
+static uint32_t m_notify, m_notify_len, m_notify_mul;
 
 static const PCI_ID vio_ids[] = {
     { 0x1AF4, 0x1000 },         /* transitional virtio-net: the legacy ports */
@@ -146,41 +146,41 @@ static const PCI_ID vio_ids[] = {
     { 0, 0 }
 };
 
-static u32 align4k( u32 p ) { return ( p + 4095 ) & ~4095L; }
+static uint32_t align4k( uint32_t p ) { return ( p + 4095 ) & ~4095L; }
 
 /* ---------------------------------------------------------------- */
 /* the registers, either way                                         */
 /* ---------------------------------------------------------------- */
 
-static void st_set( u8 value )
+static void st_set( uint8_t value )
 {
     if ( modern ) MMIO8( m_common, CC_STATUS ) = value;
     else outb( net_port + VIO_STATUS, value );
 }
 
-static u8 st_get( void )
+static uint8_t st_get( void )
 {
     return modern ? MMIO8( m_common, CC_STATUS ) : inb( net_port + VIO_STATUS );
 }
 
-static u8 isr_get( void )
+static uint8_t isr_get( void )
 {
     return modern ? MMIO8( m_isr, 0 ) : inb( net_port + VIO_ISR );
 }
 
 static void notify( int index )
 {
-    if ( modern ) MMIO16( vq[index].notify, 0 ) = (u16)index;
-    else outw( net_port + VIO_QUEUE_NOTIFY, (u16)index );
+    if ( modern ) MMIO16( vq[index].notify, 0 ) = (uint16_t)index;
+    else outw( net_port + VIO_QUEUE_NOTIFY, (uint16_t)index );
 }
 
-static u32 queue_size( int index )
+static unsigned int queue_size( int index )
 {
     if ( modern ) {
-        MMIO16( m_common, CC_QSELECT ) = (u16)index;
+        MMIO16( m_common, CC_QSELECT ) = (uint16_t)index;
         return MMIO16( m_common, CC_QSIZE );
     }
-    outw( net_port + VIO_QUEUE_SELECT, (u16)index );
+    outw( net_port + VIO_QUEUE_SELECT, (uint16_t)index );
     return inw( net_port + VIO_QUEUE_SIZE );
 }
 
@@ -201,7 +201,7 @@ static void dev_reset( void )
    which it then confirms with FEATURES_OK.  0 if the device will not */
 static int features_set( void )
 {
-    u32 low, high;
+    uint32_t low, high;
 
     st_set( ST_ACKNOWLEDGE );
     st_set( ST_ACKNOWLEDGE | ST_DRIVER );
@@ -230,9 +230,9 @@ static int features_set( void )
 
 /* one block: its BAR, its place and its length, mapped; 0 if it cannot
    be reached */
-static u32 cap_map( u32 bar, u32 offset, u32 length, u32 need )
+static uint32_t cap_map( uint32_t bar, uint32_t offset, uint32_t length, uint32_t need )
 {
-    u32 base, lin;
+    uint32_t base, lin;
     int isio;
 
     if ( bar > 5 || length < need ) return 0;
@@ -247,7 +247,7 @@ static u32 cap_map( u32 bar, u32 offset, u32 length, u32 need )
    there and mapped */
 static int caps_find( void )
 {
-    u32 at, kind, bar, offset, length;
+    uint32_t at, kind, bar, offset, length;
     int guard;
 
     m_common = m_isr = m_device = m_notify = 0;
@@ -284,12 +284,12 @@ static int caps_find( void )
 
 /* the bytes a queue of SIZE entries takes: descriptors and the avail
    ring, then the used ring from the next page */
-static u32 vq_bytes( u32 size )
+static unsigned int vq_bytes( unsigned int size )
 {
     return align4k( size * 16 + 6 + size * 2 ) + align4k( 6 + size * 8 );
 }
 
-static void vq_avail_put( VQUEUE *q, u16 head )
+static void vq_avail_put( VQUEUE *q, uint16_t head )
 {
     q->avail[2 + ( q->avail_next % q->size )] = head;
     q->avail_next++;
@@ -299,37 +299,38 @@ static void vq_avail_put( VQUEUE *q, u16 head )
 static volatile VUSED *vq_used_ring( VQUEUE *q ) { return (volatile VUSED *)( q->used + 2 ); }
 
 /* a queue laid out in BLOCK and handed to the device; 0 if it cannot be */
-static int vq_setup( int index, u8 *block )
+static int vq_setup( int index, uint8_t *block )
 {
     VQUEUE *q = &vq[index];
-    u32 size, off;
+    unsigned int size;
+    uint32_t off;
 
     size = queue_size( index );                 /* selects the queue too */
     /* a power of two, and no bigger than the block made at the load: a
        device that now says more would have its rings run off the end */
     if ( size == 0 || size > qcap[index] || ( size & ( size - 1 ) ) ) return 0;
-    q->size = (u16)size;
+    q->size = (uint16_t)size;
     net_memzero( block, vq_bytes( size ) );
     q->desc = (volatile VDESC *)block;
-    q->avail = (volatile u16 *)( block + size * 16 );
-    q->used = (volatile u16 *)( block + align4k( size * 16 + 6 + size * 2 ) );
+    q->avail = (volatile uint16_t *)( block + size * 16 );
+    q->used = (volatile uint16_t *)( block + align4k( size * 16 + 6 + size * 2 ) );
     q->used_seen = 0;
     q->avail_next = 0;
     q->avail[0] = AVAIL_NO_INTERRUPT;
     if ( !modern ) {
-        outl( net_port + VIO_QUEUE_PFN, (u32)block >> 12 );
+        outl( net_port + VIO_QUEUE_PFN, (uint32_t)block >> 12 );
         return 1;
     }
     /* the queue's notify is at its own offset in the notify area, which
        must hold the two bytes written there */
-    off = (u32)MMIO16( m_common, CC_QNOTIFYOFF ) * m_notify_mul;
+    off = (uint32_t)MMIO16( m_common, CC_QNOTIFYOFF ) * m_notify_mul;
     if ( off > m_notify_len || m_notify_len - off < 2 ) return 0;
     q->notify = m_notify + off;
-    MMIO32( m_common, CC_QDESC ) = (u32)q->desc;
+    MMIO32( m_common, CC_QDESC ) = (uint32_t)q->desc;
     MMIO32( m_common, CC_QDESC + 4 ) = 0;
-    MMIO32( m_common, CC_QDRIVER ) = (u32)q->avail;
+    MMIO32( m_common, CC_QDRIVER ) = (uint32_t)q->avail;
     MMIO32( m_common, CC_QDRIVER + 4 ) = 0;
-    MMIO32( m_common, CC_QDEVICE ) = (u32)q->used;
+    MMIO32( m_common, CC_QDEVICE ) = (uint32_t)q->used;
     MMIO32( m_common, CC_QDEVICE + 4 ) = 0;
     MMIO16( m_common, CC_QENABLE ) = 1;
     return 1;
@@ -339,12 +340,13 @@ int card_find( void )
 {
     const PCI_ID *which;
     int isio, i;
-    u32 need, at;
-    u8 *pool;
+    unsigned int need;
+    uint32_t at;
+    uint8_t *pool;
 
     if ( !net_pci_find( vio_ids, &which ) ) { net_strcpy( net_name, "virtio-net" ); return 1; }
     net_pci_enable( net_pciaddr );
-    net_irq = (u8)net_pci_irqline( net_pciaddr );
+    net_irq = (uint8_t)net_pci_irqline( net_pciaddr );
     net_bus = NICB_PCI;
     net_flags = NICF_WORD;
     if ( which->device == 0x1041 ) {
@@ -363,7 +365,7 @@ int card_find( void )
         hdrlen = HDR_LEGACY;
         net_mem = 0;
         net_strcpy( net_name, "virtio-net" );
-        net_port = (u16)net_pci_bar( net_pciaddr, 0, &isio );
+        net_port = (uint16_t)net_pci_bar( net_pciaddr, 0, &isio );
         if ( net_port == 0 || !isio ) {
             net_print( "virtio-net: no legacy I/O ports\r\n" );
             return 1;
@@ -377,7 +379,7 @@ int card_find( void )
         return 1;
     }
     for ( i = 0; i < 6; i++ ) {
-        net_mac[i] = modern ? MMIO8( m_device, i ) : inb( (u16)( net_port + VIO_MAC + i ) );
+        net_mac[i] = modern ? MMIO8( m_device, i ) : inb( (uint16_t)( net_port + VIO_MAC + i ) );
     }
     if ( !net_mac_ok( net_mac ) ) return 1;
 
@@ -389,15 +391,15 @@ int card_find( void )
             if ( need == 0 || need > QMAX ) { net_print( "virtio-net: a queue the driver cannot use\r\n" ); return 1; }
             pool = net_alloc( vq_bytes( need ) + 4096 );
             if ( pool == 0 ) return 1;
-            qmem[i] = (u8 *)align4k( (u32)pool );
+            qmem[i] = (uint8_t *)align4k( (uint32_t)pool );
             qcap[i] = need;
         }
         pool = net_alloc( ( RXN + TXN ) * HDRSLOT + ( RXN + TXN ) * BUFSZ + 16 );
         if ( pool == 0 ) return 1;
-        at = ( (u32)pool + 15 ) & ~15L;
-        hdrs = (u8 *)at;                at += ( RXN + TXN ) * HDRSLOT;
-        for ( i = 0; i < RXN; i++ ) { rxbuf[i] = (u8 *)at; at += BUFSZ; }
-        for ( i = 0; i < TXN; i++ ) { txbuf[i] = (u8 *)at; at += BUFSZ; }
+        at = ( (uint32_t)pool + 15 ) & ~15L;
+        hdrs = (uint8_t *)at;                at += ( RXN + TXN ) * HDRSLOT;
+        for ( i = 0; i < RXN; i++ ) { rxbuf[i] = (uint8_t *)at; at += BUFSZ; }
+        for ( i = 0; i < TXN; i++ ) { txbuf[i] = (uint8_t *)at; at += BUFSZ; }
     }
     return 0;
 }
@@ -409,17 +411,17 @@ static void rx_give( int entry )
     VQUEUE *q = &vq[VQ_RX];
     int head = entry * 2;
 
-    q->desc[head].addr_lo = (u32)( hdrs + entry * HDRSLOT );
+    q->desc[head].addr_lo = (uint32_t)( hdrs + entry * HDRSLOT );
     q->desc[head].addr_hi = 0;
     q->desc[head].len = hdrlen;
     q->desc[head].flags = DESC_WRITE | DESC_NEXT;
-    q->desc[head].next = (u16)( head + 1 );
-    q->desc[head + 1].addr_lo = (u32)rxbuf[entry];
+    q->desc[head].next = (uint16_t)( head + 1 );
+    q->desc[head + 1].addr_lo = (uint32_t)rxbuf[entry];
     q->desc[head + 1].addr_hi = 0;
     q->desc[head + 1].len = BUFSZ;
     q->desc[head + 1].flags = DESC_WRITE;
     q->desc[head + 1].next = 0;
-    vq_avail_put( q, (u16)head );
+    vq_avail_put( q, (uint16_t)head );
 }
 
 int card_setup( void )
@@ -451,10 +453,10 @@ int card_setup( void )
     tx_free = TXN;
     vq[VQ_TX].avail[0] = AVAIL_NO_INTERRUPT;    /* finished frames are taken back on the next send */
 
-    st_set( (u8)( ST_ACKNOWLEDGE | ST_DRIVER | ST_DRIVER_OK | ( modern ? ST_FEATURES_OK : 0 ) ) );
+    st_set( (uint8_t)( ST_ACKNOWLEDGE | ST_DRIVER | ST_DRIVER_OK | ( modern ? ST_FEATURES_OK : 0 ) ) );
     notify( VQ_RX );                            /* the buffers are there */
     isr_get();                                  /* nothing old left to ask */
-    vq[VQ_RX].avail[0] = (u16)( net_flags & NICF_POLLED ? AVAIL_NO_INTERRUPT : 0 );
+    vq[VQ_RX].avail[0] = (uint16_t)( net_flags & NICF_POLLED ? AVAIL_NO_INTERRUPT : 0 );
     return 0;
 }
 
@@ -467,7 +469,7 @@ void card_stop( void )
 static void tx_reclaim( void )
 {
     VQUEUE *q = &vq[VQ_TX];
-    u32 id;
+    uint32_t id;
 
     while ( q->used_seen != q->used[1] ) {
         id = vq_used_ring( q )[q->used_seen % q->size].id;
@@ -479,11 +481,11 @@ static void tx_reclaim( void )
     }
 }
 
-int card_send( const u8 *frame, u32 len )
+int card_send( const uint8_t *frame, unsigned int len )
 {
     VQUEUE *q = &vq[VQ_TX];
-    u8 *hdr;
-    u32 n;
+    uint8_t *hdr;
+    unsigned int n;
     int entry, head;
 
     tx_reclaim();
@@ -501,19 +503,19 @@ int card_send( const u8 *frame, u32 len )
     hdr = hdrs + ( RXN + entry ) * HDRSLOT;
     net_memzero( hdr, hdrlen );
     head = entry * 2;
-    q->desc[head].addr_lo = (u32)hdr;
+    q->desc[head].addr_lo = (uint32_t)hdr;
     q->desc[head].addr_hi = 0;
     q->desc[head].len = hdrlen;
     q->desc[head].flags = DESC_NEXT;
-    q->desc[head].next = (u16)( head + 1 );
-    q->desc[head + 1].addr_lo = (u32)txbuf[entry];
+    q->desc[head].next = (uint16_t)( head + 1 );
+    q->desc[head + 1].addr_lo = (uint32_t)txbuf[entry];
     q->desc[head + 1].addr_hi = 0;
     q->desc[head + 1].len = len;
     q->desc[head + 1].flags = 0;
     q->desc[head + 1].next = 0;
     tx_busy[entry] = 1;
     tx_free--;
-    vq_avail_put( q, (u16)head );
+    vq_avail_put( q, (uint16_t)head );
     notify( VQ_TX );
     return 1;
 }
@@ -523,9 +525,10 @@ static int rx_drain( void )
 {
     VQUEUE *q = &vq[VQ_RX];
     volatile VUSED *used;
-    u32 id, len;
+    uint32_t id;
+    unsigned int len;
     int got = 0, entry;
-    u8 *slot;
+    uint8_t *slot;
 
     while ( q->used_seen != q->used[1] && got < RXN ) {
         used = &vq_used_ring( q )[q->used_seen % q->size];
@@ -550,7 +553,7 @@ static int rx_drain( void )
 
 int card_service( void )
 {
-    u8 isr;
+    uint8_t isr;
     int got;
 
     isr = isr_get();                            /* reading it drops the line */

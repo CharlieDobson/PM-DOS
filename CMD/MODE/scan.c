@@ -39,7 +39,7 @@ static int is_blank( int ch )
 /* a copy of the tail, with the blanks round each '=' taken out */
 void line_init( const char *tail )
 {
-    u32 out = 0;
+    unsigned int out = 0;
     const char *src = tail;
 
     while ( *src && *src != '\r' && *src != '\n' && out + 1 < LINE_MAX ) {
@@ -111,14 +111,14 @@ int scan_next( SCAN *sc, ITEM *it, int colon )
     while ( !word_end( *pos, colon ) ) {
         pos++;
     }
-    it->len = (u32)(pos - it->text);
+    it->len = (unsigned int)(pos - it->text);
 
     if ( it->kind == IT_POS ) {
         for ( eq = it->text; eq < pos; eq++ ) {
             if ( *eq == '=' ) {
                 it->kind = IT_KEY;
                 it->value = eq + 1;
-                it->vlen = (u32)(pos - it->value);
+                it->vlen = (unsigned int)(pos - it->value);
                 break;
             }
         }
@@ -150,7 +150,7 @@ int scan_more( const SCAN *sc )
 /* comparing                                                           */
 /* ------------------------------------------------------------------ */
 
-static int same( const char *text, u32 len, const char *word )
+static int same( const char *text, unsigned int len, const char *word )
 {
     return str_len( word ) == len && str_nicmp( text, word, len ) == 0;
 }
@@ -162,7 +162,7 @@ int is_word( const ITEM *it, const char *word )
 
 int is_key( const ITEM *it, const char *name )
 {
-    return it->kind == IT_KEY && same( it->text, (u32)(it->value - it->text), name );
+    return it->kind == IT_KEY && same( it->text, (unsigned int)(it->value - it->text), name );
 }
 
 int val_is( const ITEM *it, const char *word )
@@ -170,9 +170,9 @@ int val_is( const ITEM *it, const char *word )
     return same( it->value, it->vlen, word );
 }
 
-int val_num( const ITEM *it, u32 *num )
+int val_num( const ITEM *it, unsigned int *num )
 {
-    u32 pos, val = 0;
+    unsigned int pos, val = 0;
 
     if ( it->vlen == 0 ) {
         return 1;
@@ -181,7 +181,7 @@ int val_num( const ITEM *it, u32 *num )
         if ( it->value[pos] < '0' || it->value[pos] > '9' || val > 99999999UL ) {
             return 1;
         }
-        val = val * 10 + (u32)(it->value[pos] - '0');
+        val = val * 10 + (unsigned int)(it->value[pos] - '0');
     }
     *num = val;
     return 0;
@@ -209,7 +209,7 @@ int is_help( const ITEM *it )
 static void show_text( const ITEM *it, char *buf )
 {
     const char *end;
-    u32 len;
+    unsigned int len;
 
     if ( it->kind == IT_EMPTY ) {
         buf[0] = 0;
@@ -222,7 +222,7 @@ static void show_text( const ITEM *it, char *buf )
     if ( end < it->text + it->len ) {
         end = it->text + it->len;
     }
-    len = (u32)(end - it->text);
+    len = (unsigned int)(end - it->text);
     if ( len > SHOW_MAX - 1 ) {
         len = SHOW_MAX - 1;
     }
@@ -250,7 +250,7 @@ int err_param( const ITEM *it )
 int err_param_cut( const ITEM *it )
 {
     char buf[SHOW_MAX];
-    u32 pos;
+    unsigned int pos;
 
     show_text( it, buf );
     for ( pos = 0; buf[pos]; pos++ ) {

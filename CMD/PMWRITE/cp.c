@@ -13,14 +13,14 @@
  */
 #include "fmt.h"
 
-extern const u16 cp_tab_437[128], cp_tab_850[128], cp_tab_852[128], cp_tab_860[128],
+extern const uint16_t cp_tab_437[128], cp_tab_850[128], cp_tab_852[128], cp_tab_860[128],
                  cp_tab_863[128], cp_tab_865[128], cp_tab_866[128], cp_tab_1250[128],
                  cp_tab_1251[128], cp_tab_1252[128], cp_tab_1253[128], cp_tab_1254[128],
                  cp_tab_10000[128];
 
 static const struct {
-    int        page;
-    const u16 *high;
+    int             page;
+    const uint16_t *high;
 } pages[] = {
     { CP_437, cp_tab_437 },   { CP_850, cp_tab_850 },   { CP_852, cp_tab_852 },
     { CP_860, cp_tab_860 },   { CP_863, cp_tab_863 },   { CP_865, cp_tab_865 },
@@ -31,9 +31,9 @@ static const struct {
 
 #define NPAGES  (sizeof( pages ) / sizeof( pages[0] ))
 
-static const u16 *high_of( int codepage )
+static const uint16_t *high_of( int codepage )
 {
-    u32 index;
+    unsigned int index;
 
     for ( index = 0; index < NPAGES; index++ ) {
         if ( pages[index].page == codepage ) {
@@ -49,24 +49,24 @@ int cp_known( int codepage )
            high_of( codepage ) != NULL;
 }
 
-u16 cp_to_uni( int codepage, int byte )
+uint16_t cp_to_uni( int codepage, int byte )
 {
-    const u16 *high;
+    const uint16_t *high;
 
     byte &= 0xFF;
     if ( byte < 0x80 ) {
-        return (u16)byte;
+        return (uint16_t)byte;
     }
     if ( codepage == CP_LATIN1 ) {
-        return (u16)byte;
+        return (uint16_t)byte;
     }
     high = high_of( codepage );
     return high == NULL ? 0xFFFD : high[byte - 0x80];
 }
 
-int cp_from_uni( int codepage, u32 code )
+int cp_from_uni( int codepage, uint32_t code )
 {
-    const u16 *high;
+    const uint16_t *high;
     int index;
 
     if ( code < 0x80 ) {
@@ -102,7 +102,7 @@ static const char latina_base[] =
     "lLlNnNnNnnNnOoOo" "OoOoRrRrRrSsSsSs" "SsTtTtTtUuUuUuUu" "UuUuWwYyYZzZzZzs";
 
 static const struct {
-    u16         code;
+    uint16_t    code;
     const char *text;
 } nearest[] = {
     { 0x00A0, " " },   { 0x00A1, "!" },   { 0x00A6, "|" },   { 0x00A9, "(c)" },
@@ -123,9 +123,9 @@ static const struct {
     { 0x25A0, "*" },   { 0x25CF, "*" },   { 0xFB01, "fi" },  { 0xFB02, "fl" }
 };
 
-int uni_fallback( u32 code, char *out )
+int uni_fallback( uint32_t code, char *out )
 {
-    u32 index;
+    unsigned int index;
     char base;
 
     out[0] = 0;
@@ -149,7 +149,7 @@ int uni_fallback( u32 code, char *out )
     return 1;
 }
 
-int cp_put( int codepage, u32 code, char *out )
+int cp_put( int codepage, uint32_t code, char *out )
 {
     int byte = cp_from_uni( codepage, code );
     int len;
@@ -170,10 +170,10 @@ int cp_put( int codepage, u32 code, char *out )
 /* UTF-8 and UTF-16                                                    */
 /* ------------------------------------------------------------------ */
 
-u32 utf8_get( const u8 **cur, const u8 *end )
+uint32_t utf8_get( const uint8_t **cur, const uint8_t *end )
 {
-    const u8 *walk = *cur;
-    u32 code, least;
+    const uint8_t *walk = *cur;
+    uint32_t code, least;
     int more;
 
     if ( walk >= end ) {
@@ -205,7 +205,7 @@ u32 utf8_get( const u8 **cur, const u8 *end )
             *cur = walk;
             return 0xFFFD;
         }
-        code = (code << 6) | (u32)(*walk++ & 0x3F);
+        code = (code << 6) | (uint32_t)(*walk++ & 0x3F);
     }
     *cur = walk;
     if ( code < least || code > 0x10FFFFUL || (code >= 0xD800 && code <= 0xDFFF) ) {
@@ -214,38 +214,38 @@ u32 utf8_get( const u8 **cur, const u8 *end )
     return code;
 }
 
-int utf8_put( u8 *out, u32 code )
+int utf8_put( uint8_t *out, uint32_t code )
 {
     if ( code < 0x80 ) {
-        out[0] = (u8)code;
+        out[0] = (uint8_t)code;
         return 1;
     }
     if ( code < 0x800 ) {
-        out[0] = (u8)(0xC0 | (code >> 6));
-        out[1] = (u8)(0x80 | (code & 0x3F));
+        out[0] = (uint8_t)(0xC0 | (code >> 6));
+        out[1] = (uint8_t)(0x80 | (code & 0x3F));
         return 2;
     }
     if ( code < 0x10000UL ) {
-        out[0] = (u8)(0xE0 | (code >> 12));
-        out[1] = (u8)(0x80 | ((code >> 6) & 0x3F));
-        out[2] = (u8)(0x80 | (code & 0x3F));
+        out[0] = (uint8_t)(0xE0 | (code >> 12));
+        out[1] = (uint8_t)(0x80 | ((code >> 6) & 0x3F));
+        out[2] = (uint8_t)(0x80 | (code & 0x3F));
         return 3;
     }
     if ( code > 0x10FFFFUL ) {
         code = 0xFFFD;
         return utf8_put( out, code );
     }
-    out[0] = (u8)(0xF0 | (code >> 18));
-    out[1] = (u8)(0x80 | ((code >> 12) & 0x3F));
-    out[2] = (u8)(0x80 | ((code >> 6) & 0x3F));
-    out[3] = (u8)(0x80 | (code & 0x3F));
+    out[0] = (uint8_t)(0xF0 | (code >> 18));
+    out[1] = (uint8_t)(0x80 | ((code >> 12) & 0x3F));
+    out[2] = (uint8_t)(0x80 | ((code >> 6) & 0x3F));
+    out[3] = (uint8_t)(0x80 | (code & 0x3F));
     return 4;
 }
 
-u32 utf16_get( const u16 *text, u32 len, u32 *pos )
+uint32_t utf16_get( const uint16_t *text, unsigned int len, unsigned int *pos )
 {
-    u32 code = text[(*pos)++];
-    u32 low;
+    uint32_t code = text[(*pos)++];
+    uint32_t low;
 
     if ( code >= 0xD800 && code <= 0xDBFF && *pos < len ) {
         low = text[*pos];
@@ -260,25 +260,25 @@ u32 utf16_get( const u16 *text, u32 len, u32 *pos )
     return code;
 }
 
-void out_utf8( OUT *out, const u16 *text, u32 len )
+void out_utf8( OUT *out, const uint16_t *text, unsigned int len )
 {
-    u8 buf[256];
-    u32 pos = 0, used = 0;
+    uint8_t buf[256];
+    unsigned int pos = 0, used = 0;
 
     while ( pos < len ) {
         if ( used > sizeof( buf ) - 4 ) {
             out_put( out, buf, used );
             used = 0;
         }
-        used += (u32)utf8_put( buf + used, utf16_get( text, len, &pos ) );
+        used += (unsigned int)utf8_put( buf + used, utf16_get( text, len, &pos ) );
     }
     out_put( out, buf, used );
 }
 
-void utf8_copy( char *dst, u32 max, const u16 *text, u32 len )
+void utf8_copy( char *dst, unsigned int max, const uint16_t *text, unsigned int len )
 {
-    u8 one[4];
-    u32 pos = 0, used = 0;
+    uint8_t one[4];
+    unsigned int pos = 0, used = 0;
     int count;
 
     if ( max == 0 ) {
@@ -286,11 +286,11 @@ void utf8_copy( char *dst, u32 max, const u16 *text, u32 len )
     }
     while ( pos < len ) {
         count = utf8_put( one, utf16_get( text, len, &pos ) );
-        if ( used + (u32)count >= max ) {
+        if ( used + (unsigned int)count >= max ) {
             break;
         }
-        mem_cpy( dst + used, one, (u32)count );
-        used += (u32)count;
+        mem_cpy( dst + used, one, (unsigned int)count );
+        used += (unsigned int)count;
     }
     dst[used] = 0;
 }

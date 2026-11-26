@@ -77,7 +77,7 @@ typedef struct ArcCompJob ArcCompJob;
 
 typedef int (*ArcCompProgress)( void *user, int fileIndex, int fileCount,
                                 const char *name,
-                                UInt32 doneKB, UInt32 totalKB );
+                                uint32_t doneKB, uint32_t totalKB );
 
 ArcCompJob *ArcCompCreate( void );           /* NULL when out of memory */
 void        ArcCompFree( ArcCompJob *j );
@@ -143,8 +143,8 @@ int  ArcCompScan( ArcCompJob *j, const char *archivePath,
                   ArcCompProgress prog, void *user );
 
 /* Entries found by ArcCompScan, and their total size. */
-int    ArcCompCount( ArcCompJob *j );
-UInt32 ArcCompTotalKB( ArcCompJob *j );
+int      ArcCompCount( ArcCompJob *j );
+uint32_t ArcCompTotalKB( ArcCompJob *j );
 
 /* Write the archive (running ArcCompScan first if it has not been).
  * SZ_OK, SZ_ERR_CANCEL, SZ_ERR_WRITE (the archive could not be created or
@@ -155,9 +155,9 @@ int  ArcCompRun( ArcCompJob *j, const char *archivePath,
                  ArcCompProgress prog, void *user );
 
 /* What happened. */
-int    ArcCompFiles( ArcCompJob *j );        /* entries written           */
-UInt32 ArcCompInBytes( ArcCompJob *j );      /* bytes of file data read   */
-UInt32 ArcCompOutBytes( ArcCompJob *j );     /* size of the archive       */
+int      ArcCompFiles( ArcCompJob *j );      /* entries written           */
+uint32_t ArcCompInBytes( ArcCompJob *j );    /* bytes of file data read   */
+uint32_t ArcCompOutBytes( ArcCompJob *j );   /* size of the archive       */
 
 /* Entries left out, by reason: a stored name already taken (flat archives,
  * or the same name from two places), a file that vanished or could not be
@@ -178,6 +178,6 @@ const char *ArcCompProblem( ArcCompJob *j );
 
 /* The dictionary a 7z was (or would be) written with, in bytes, and what
  * extracting it will need.  0 until known. */
-UInt32 ArcCompDictSize( ArcCompJob *j );
+uint32_t ArcCompDictSize( ArcCompJob *j );
 
 #endif /* ARCCOMP_H */

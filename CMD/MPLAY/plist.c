@@ -31,10 +31,11 @@ int plist_top;
 
 static int *order;                      /* the shuffled order: positions of plist */
 static int order_pos;
-static u32 seed = 12345;
+static uint32_t seed = 12345;
 
 static const char *const media_exts[] = {
     "WAV", "VOC", "MID", "MIDI", "RMI", "KAR", "MP3", "MP2", "MP1", "MPA", "OGG", "OGA",
+    "FLAC", "FLA",
 #ifdef HAVE_WMA
     "WMA", "ASF",
 #endif
@@ -150,17 +151,17 @@ static int add_one( const char *path )
 }
 
 /* the directory part of a path, with its last backslash: "C:\MUSIC\" */
-static void dir_of( const char *path, char *dir, u32 max )
+static void dir_of( const char *path, char *dir, unsigned int max )
 {
     const char *last = NULL, *at;
-    u32 len;
+    unsigned int len;
 
     for ( at = path; *at; at++ ) {
         if ( *at == '\\' || *at == '/' || *at == ':' ) {
             last = at;
         }
     }
-    len = last != NULL ? (u32)(last - path) + 1 : 0;
+    len = last != NULL ? (unsigned int)(last - path) + 1 : 0;
     if ( len >= max ) {
         len = max - 1;
     }
@@ -182,7 +183,7 @@ static int has_wild( const char *path )
 static int add_pattern( const char *pattern, int media_only )
 {
     FINDREC rec;
-    u32 handle;
+    uint32_t handle;
     char dir[PATH_LEN], full[PATH_LEN];
     char **names = NULL;
     int count = 0, room = 0, added = 0, i, j;
@@ -200,7 +201,7 @@ static int add_pattern( const char *pattern, int media_only )
             continue;
         }
         if ( count == room ) {
-            char **more = (char **)try_realloc( names, (u32)(room + 64) * sizeof( char * ) );
+            char **more = (char **)try_realloc( names, (unsigned int)(room + 64) * sizeof( char * ) );
             if ( more == NULL ) {
                 break;
             }
@@ -243,9 +244,9 @@ static int add_listfile( const char *path, int is_pls )
     SRC src;
     char line[PATH_LEN], dir[PATH_LEN], full[PATH_LEN];
     const char *name;
-    u32 len;
+    unsigned int len;
     int ch, added = 0, lines = 0;
-    u16 attr;
+    uint16_t attr;
 
     if ( src_open( &src, path ) != 0 ) {
         return 0;
@@ -274,7 +275,7 @@ static int add_listfile( const char *path, int is_pls )
             name = NULL;
         }
         /* a byte-order mark before the first line */
-        if ( name != NULL && (u8)name[0] == 0xEF && (u8)name[1] == 0xBB && (u8)name[2] == 0xBF ) {
+        if ( name != NULL && (uint8_t)name[0] == 0xEF && (uint8_t)name[1] == 0xBB && (uint8_t)name[2] == 0xBF ) {
             name += 3;
         }
         if ( name != NULL && name[0] ) {
@@ -312,8 +313,8 @@ static int is_drive_dir( const char *path )
 int plist_add( const char *path )
 {
     char ext[8], pattern[PATH_LEN];
-    u16 attr;
-    u32 len;
+    uint16_t attr;
+    unsigned int len;
 
     if ( path == NULL || path[0] == 0 ) {
         return 0;
@@ -352,7 +353,7 @@ void plist_remove( int index )
         return;
     }
     entry_free( &plist[index] );
-    mem_cpy( &plist[index], &plist[index + 1], (u32)(plist_count - index - 1) * sizeof( PLENTRY ) );
+    mem_cpy( &plist[index], &plist[index + 1], (unsigned int)(plist_count - index - 1) * sizeof( PLENTRY ) );
     plist_count--;
     mem_set( &plist[plist_count], 0, sizeof( PLENTRY ) );
     if ( plist_now == index ) {
@@ -368,7 +369,7 @@ void plist_remove( int index )
 
 int plist_save( const char *path )
 {
-    u32 handle, done;
+    uint32_t handle, done;
     int index, rc;
 
     rc = sys_create( path, &handle );
@@ -405,7 +406,7 @@ const char *plist_name( int index )
     return name;
 }
 
-static u32 rnd( void )
+static uint32_t rnd( void )
 {
     seed = seed * 1103515245UL + 12345UL;
     return (seed >> 8) & 0xFFFFFFUL;
@@ -420,7 +421,7 @@ void plist_reshuffle( void )
         order[index] = index;
     }
     for ( index = plist_count - 1; index > 0; index-- ) {
-        other = (int)(rnd() % (u32)(index + 1));
+        other = (int)(rnd() % (unsigned int)(index + 1));
         swap = order[index];
         order[index] = order[other];
         order[other] = swap;

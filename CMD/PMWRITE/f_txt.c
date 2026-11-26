@@ -30,9 +30,9 @@ static const char *const txt_variants[] = {
 };
 
 /* 0 not UTF-8; 1 nothing above 7Fh; 2 UTF-8 with such bytes in it */
-static int utf8_kind( const u8 *data, u32 len )
+static int utf8_kind( const uint8_t *data, uint32_t len )
 {
-    const u8 *cur = data, *end = data + len;
+    const uint8_t *cur = data, *end = data + len;
     int high = 0;
 
     while ( cur < end ) {
@@ -53,9 +53,9 @@ static int utf8_kind( const u8 *data, u32 len )
     return high ? 2 : 1;
 }
 
-static int txt_detect( const u8 *data, u32 len, const char *ext )
+static int txt_detect( const uint8_t *data, uint32_t len, const char *ext )
 {
-    u32 index, look, odd = 0;
+    unsigned int index, look, odd = 0;
     int by_name = str_cmp( ext, "TXT" ) == 0 || str_cmp( ext, "ASC" ) == 0 ||
                   str_cmp( ext, "ME" ) == 0 || str_cmp( ext, "BAT" ) == 0 ||
                   str_cmp( ext, "INI" ) == 0 || str_cmp( ext, "LOG" ) == 0;
@@ -81,7 +81,7 @@ static int txt_detect( const u8 *data, u32 len, const char *ext )
     return by_name ? 40 : 20;
 }
 
-static void txt_unit( WBUILD *wb, u32 code, int *was_cr )
+static void txt_unit( WBUILD *wb, uint32_t code, int *was_cr )
 {
     if ( code == '\n' && *was_cr ) {
         *was_cr = 0;
@@ -97,12 +97,12 @@ static void txt_unit( WBUILD *wb, u32 code, int *was_cr )
     }
 }
 
-static int txt_load( const u8 *data, u32 len, WDOC *doc )
+static int txt_load( const uint8_t *data, uint32_t len, WDOC *doc )
 {
     WBUILD wb;
-    const u8 *cur = data, *end = data + len;
+    const uint8_t *cur = data, *end = data + len;
     int was_cr = 0, wide = 0, big = 0, utf8 = 0;
-    u32 code;
+    uint32_t code;
 
     if ( len >= 2 && data[0] == 0xFF && data[1] == 0xFE ) {
         wide = 1;
@@ -119,7 +119,7 @@ static int txt_load( const u8 *data, u32 len, WDOC *doc )
     doc->variant = (wide || utf8) ? 2 : txt_codepage == CP_1252 ? 1 : 0;
 
     wb_init( &wb, doc, &doc->body );
-    wb.chp.font = (u16)wd_font( doc, "Courier New", FAM_MODERN, 1 );
+    wb.chp.font = (uint16_t)wd_font( doc, "Courier New", FAM_MODERN, 1 );
     wb.chp.size = 20;
     doc->style[0].chp = wb.chp;
 
@@ -128,7 +128,7 @@ static int txt_load( const u8 *data, u32 len, WDOC *doc )
             code = big ? BE16( cur ) : LE16( cur );
             cur += 2;
             if ( code >= 0xD800 && code <= 0xDBFF && end - cur >= 2 ) {
-                u32 low = big ? BE16( cur ) : LE16( cur );
+                uint32_t low = big ? BE16( cur ) : LE16( cur );
 
                 if ( low >= 0xDC00 && low <= 0xDFFF ) {
                     code = 0x10000UL + ((code - 0xD800) << 10) + (low - 0xDC00);
@@ -162,8 +162,9 @@ static void txt_story( WDOC *doc, OUT *out, STORY *story, int codepage, int dept
 static void txt_para( WDOC *doc, OUT *out, WPARA *para, int codepage, int depth )
 {
     char near_buf[8];
-    u8 utf[4];
-    u32 pos = 0, at, code;
+    uint8_t utf[4];
+    unsigned int pos = 0, at;
+    uint32_t code;
     int obj;
 
     while ( pos < para->len ) {
@@ -178,9 +179,9 @@ static void txt_para( WDOC *doc, OUT *out, WPARA *para, int codepage, int depth 
         } else if ( code == WCH_SHY ) {
             continue;                   /* a hyphen that is not showing */
         } else if ( codepage == CP_UTF8 ) {
-            out_put( out, utf, (u32)utf8_put( utf, code ) );
+            out_put( out, utf, (unsigned int)utf8_put( utf, code ) );
         } else {
-            out_put( out, near_buf, (u32)cp_put( codepage, code, near_buf ) );
+            out_put( out, near_buf, (unsigned int)cp_put( codepage, code, near_buf ) );
         }
         (void)at;
     }
@@ -189,7 +190,7 @@ static void txt_para( WDOC *doc, OUT *out, WPARA *para, int codepage, int depth 
     if ( depth == 0 ) {
         for ( at = 0; at < para->nanch; at++ ) {
             obj = (int)para->anch[at].obj;
-            if ( (u32)obj < doc->nobj && doc->obj[obj].kind == OBJ_NOTE && doc->obj[obj].story != NULL ) {
+            if ( (unsigned int)obj < doc->nobj && doc->obj[obj].kind == OBJ_NOTE && doc->obj[obj].story != NULL ) {
                 out_byte( out, '[' );
                 txt_story( doc, out, doc->obj[obj].story, codepage, 1 );
                 out_str( out, "]\r\n" );
@@ -200,7 +201,7 @@ static void txt_para( WDOC *doc, OUT *out, WPARA *para, int codepage, int depth 
 
 static void txt_story( WDOC *doc, OUT *out, STORY *story, int codepage, int depth )
 {
-    u32 index;
+    unsigned int index;
 
     for ( index = 0; index < story->count; index++ ) {
         txt_para( doc, out, story->para[index], codepage, depth );

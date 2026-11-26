@@ -56,11 +56,11 @@
 #define SPIN_INIT   1000000L
 #define SPIN_TX     400000L
 
-static volatile u32 *rxr, *txr; /* the rings, four dwords a descriptor */
-static u8  *rxbuf[RXN];
-static u8  *txbuf[TXN];
-static u8  *iblock;
-static int  rx_cur, tx_cur;
+static volatile uint32_t *rxr, *txr; /* the rings, four dwords a descriptor */
+static uint8_t *rxbuf[RXN];
+static uint8_t *txbuf[TXN];
+static uint8_t *iblock;
+static int      rx_cur, tx_cur;
 
 static const PCI_ID pcnet_ids[] = {
     { 0x1022, 0x2000 },         /* Am79C970/971/972/973 PCnet-PCI */
@@ -68,11 +68,11 @@ static const PCI_ID pcnet_ids[] = {
     { 0, 0 }
 };
 
-static u32 align16( u32 p ) { return ( p + 15 ) & ~15L; }
+static uint32_t align16( uint32_t p ) { return ( p + 15 ) & ~15L; }
 
-static void csr_write( int reg, u16 value ) { outw( net_port + R_RAP, (u16)reg ); outw( net_port + R_RDP, value ); }
-static u16  csr_read( int reg )             { outw( net_port + R_RAP, (u16)reg ); return inw( net_port + R_RDP ); }
-static void bcr_write( int reg, u16 value ) { outw( net_port + R_RAP, (u16)reg ); outw( net_port + R_BDP, value ); }
+static void     csr_write( int reg, uint16_t value ) { outw( net_port + R_RAP, (uint16_t)reg ); outw( net_port + R_RDP, value ); }
+static uint16_t csr_read( int reg )             { outw( net_port + R_RAP, (uint16_t)reg ); return inw( net_port + R_RDP ); }
+static void     bcr_write( int reg, uint16_t value ) { outw( net_port + R_RAP, (uint16_t)reg ); outw( net_port + R_BDP, value ); }
 
 int card_find( void )
 {
@@ -82,12 +82,12 @@ int card_find( void )
     if ( net_opt_port == 0 ) {
         if ( !net_pci_find( pcnet_ids, &which ) ) return 1;
         net_pci_enable( net_pciaddr );
-        net_port = (u16)net_pci_bar( net_pciaddr, 0, &isio );
+        net_port = (uint16_t)net_pci_bar( net_pciaddr, 0, &isio );
         if ( net_port == 0 || !isio ) return 1;
-        net_irq = (u8)net_pci_irqline( net_pciaddr );
+        net_irq = (uint8_t)net_pci_irqline( net_pciaddr );
         net_bus = NICB_PCI;
     } else {
-        net_port = (u16)net_opt_port;
+        net_port = (uint16_t)net_opt_port;
         net_bus = NICB_PCI;
     }
     net_flags = NICF_WORD;
@@ -98,16 +98,16 @@ int card_find( void )
     if ( !net_mac_ok( net_mac ) ) return 1;
 
     if ( iblock == 0 ) {
-        u32 need = 32 + RXN * 16 + TXN * 16 + ( RXN + TXN ) * BUFSZ + 16;
-        u8 *pool = net_alloc( need );
-        u32 at;
+        unsigned int need = 32 + RXN * 16 + TXN * 16 + ( RXN + TXN ) * BUFSZ + 16;
+        uint8_t *pool = net_alloc( need );
+        uint32_t at;
         if ( pool == 0 ) return 1;
-        at = align16( (u32)pool );
-        iblock = (u8 *)at;                  at += 32;
-        rxr = (volatile u32 *)at;           at += RXN * 16;
-        txr = (volatile u32 *)at;           at += TXN * 16;
-        for ( i = 0; i < RXN; i++ ) { rxbuf[i] = (u8 *)at; at += BUFSZ; }
-        for ( i = 0; i < TXN; i++ ) { txbuf[i] = (u8 *)at; at += BUFSZ; }
+        at = align16( (uint32_t)pool );
+        iblock = (uint8_t *)at;                  at += 32;
+        rxr = (volatile uint32_t *)at;           at += RXN * 16;
+        txr = (volatile uint32_t *)at;           at += TXN * 16;
+        for ( i = 0; i < RXN; i++ ) { rxbuf[i] = (uint8_t *)at; at += BUFSZ; }
+        for ( i = 0; i < TXN; i++ ) { txbuf[i] = (uint8_t *)at; at += BUFSZ; }
     }
     net_strcpy( net_name, "PCnet-PCI" );
     return 0;
@@ -115,7 +115,7 @@ int card_find( void )
 
 int card_setup( void )
 {
-    u32 n;
+    unsigned int n;
     int i;
 
     inw( net_port + R_RESET );
@@ -123,13 +123,13 @@ int card_setup( void )
     bcr_write( 20, 2 );                         /* software style 2: 32-bit */
 
     for ( i = 0; i < RXN; i++ ) {
-        rxr[i * 4 + 0] = (u32)rxbuf[i];
-        rxr[i * 4 + 1] = OWN | ( (u32)(u16)( -BUFSZ ) );   /* 0xF000 is in the top nibble of -BUFSZ */
+        rxr[i * 4 + 0] = (uint32_t)rxbuf[i];
+        rxr[i * 4 + 1] = OWN | ( (uint32_t)(uint16_t)( -BUFSZ ) ); /* 0xF000 is in the top nibble of -BUFSZ */
         rxr[i * 4 + 2] = 0;
         rxr[i * 4 + 3] = 0;
     }
     for ( i = 0; i < TXN; i++ ) {
-        txr[i * 4 + 0] = (u32)txbuf[i];
+        txr[i * 4 + 0] = (uint32_t)txbuf[i];
         txr[i * 4 + 1] = 0;                      /* OWN clear: the driver's */
         txr[i * 4 + 2] = 0;
         txr[i * 4 + 3] = 0;
@@ -138,18 +138,18 @@ int card_setup( void )
 
     /* the init block, software style 2 */
     net_memzero( iblock, 32 );
-    *(u16 *)( iblock + 0 ) = 0;                  /* MODE: normal, broadcast on */
-    *(u16 *)( iblock + 2 ) = TLEN_RLEN;
+    *(uint16_t *)( iblock + 0 ) = 0;               /* MODE: normal, broadcast on */
+    *(uint16_t *)( iblock + 2 ) = TLEN_RLEN;
     net_memcpy( iblock + 4, net_mac, 6 );
     /* LADRF (the 64-bit multicast hash, init-block offset 12) all ones: take
        every multicast address.  NetBEUI's functional address
        03-00-00-00-00-01 is a multicast, not only broadcast */
     for ( i = 0; i < 8; i++ ) iblock[12 + i] = 0xFF;
-    *(u32 *)( iblock + 20 ) = (u32)rxr;          /* RDRA */
-    *(u32 *)( iblock + 24 ) = (u32)txr;          /* TDRA */
+    *(uint32_t *)( iblock + 20 ) = (uint32_t)rxr;  /* RDRA */
+    *(uint32_t *)( iblock + 24 ) = (uint32_t)txr;  /* TDRA */
 
-    csr_write( 1, (u16)( (u32)iblock & 0xFFFF ) );
-    csr_write( 2, (u16)( ( (u32)iblock >> 16 ) & 0xFFFF ) );
+    csr_write( 1, (uint16_t)( (uint32_t)iblock & 0xFFFF ) );
+    csr_write( 2, (uint16_t)( ( (uint32_t)iblock >> 16 ) & 0xFFFF ) );
     csr_write( 4, 0x0915 );                      /* auto-pad transmit, and the rest off */
     csr_write( 3, 0x0000 );
     csr_write( 0, C0_INIT );
@@ -162,7 +162,7 @@ int card_setup( void )
        went on, while the driver was not yet answering, and the kernel
        shut the line after 256 of them - every frame came in on the
        clock instead (QEMU showed "interrupts 0", 2026-11-14) */
-    csr_write( 0, (u16)( C0_IDON | C0_STRT | ( net_flags & NICF_POLLED ? 0 : C0_IENA ) ) );
+    csr_write( 0, (uint16_t)( C0_IDON | C0_STRT | ( net_flags & NICF_POLLED ? 0 : C0_IENA ) ) );
     return 0;
 }
 
@@ -171,12 +171,12 @@ void card_stop( void )
     csr_write( 0, C0_STOP );
 }
 
-int card_send( const u8 *frame, u32 len )
+int card_send( const uint8_t *frame, unsigned int len )
 {
-    static u8 pad[64];
+    static uint8_t pad[64];
     int entry = tx_cur;
-    volatile u32 *d = txr + entry * 4;
-    u32 n;
+    volatile uint32_t *d = txr + entry * 4;
+    unsigned int n;
 
     if ( d[1] & OWN ) {
         for ( n = 0; n < SPIN_TX; n++ ) {
@@ -192,19 +192,20 @@ int card_send( const u8 *frame, u32 len )
     } else {
         net_memcpy( txbuf[entry], frame, len );
     }
-    d[0] = (u32)txbuf[entry];
+    d[0] = (uint32_t)txbuf[entry];
     d[2] = 0;
-    d[1] = OWN | TD_STP | TD_ENP | ( (u32)(u16)( -(long)len ) );
+    d[1] = OWN | TD_STP | TD_ENP | ( (uint32_t)(uint16_t)( -(long)len ) );
     tx_cur = ( entry + 1 ) % TXN;
-    csr_write( 0, (u16)( C0_TDMD | ( net_flags & NICF_POLLED ? 0 : C0_IENA ) ) );
+    csr_write( 0, (uint16_t)( C0_TDMD | ( net_flags & NICF_POLLED ? 0 : C0_IENA ) ) );
     return 1;
 }
 
 static void rx_drain( void )
 {
-    volatile u32 *d;
-    u32 status, mcnt, len, n;
-    u8 *slot;
+    volatile uint32_t *d;
+    uint32_t status, mcnt;
+    unsigned int len, n;
+    uint8_t *slot;
 
     for ( n = 0; n < RXN * 2; n++ ) {
         d = rxr + rx_cur * 4;
@@ -213,7 +214,7 @@ static void rx_drain( void )
         if ( ( status & RD_ERR ) || ( status & ( TD_STP | TD_ENP ) ) != ( TD_STP | TD_ENP ) ) {
             net_stats.rxerrors++;
         } else {
-            mcnt = d[2] & 0xFFF;                 /* the frame and its CRC */
+            mcnt = d[2] & 0xFFF;                          /* the frame and its CRC */
             len = mcnt - 4;
             if ( len >= NIC_HDRLEN && len <= NIC_MAXFRAME ) {
                 slot = net_rx_begin();
@@ -224,15 +225,15 @@ static void rx_drain( void )
             }
         }
         d[2] = 0;
-        d[1] = OWN | ( (u32)(u16)( -BUFSZ ) );   /* give it back to the chip */
+        d[1] = OWN | ( (uint32_t)(uint16_t)( -BUFSZ ) );  /* give it back to the chip */
         rx_cur = ( rx_cur + 1 ) % RXN;
     }
 }
 
 int card_service( void )
 {
-    u16 csr;
-    u32 n;
+    uint16_t csr;
+    unsigned int n;
     int mine = 0;
 
     for ( n = 0; n < 8; n++ ) {
@@ -241,7 +242,7 @@ int card_service( void )
         mine = 1;
         /* clear the latched status bits by writing them back; keep the
            chip running and, unless polled, interrupting */
-        csr_write( 0, (u16)( ( csr & C0_STATUS ) | ( net_flags & NICF_POLLED ? 0 : C0_IENA ) ) );
+        csr_write( 0, (uint16_t)( ( csr & C0_STATUS ) | ( net_flags & NICF_POLLED ? 0 : C0_IENA ) ) );
         if ( csr & C0_RINT ) rx_drain();
         if ( csr & C0_TINT ) {
             /* a transmit that erred leaves ERR in its descriptor */

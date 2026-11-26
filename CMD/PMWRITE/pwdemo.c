@@ -107,7 +107,7 @@ static void test_paint( int pane, int x0, int y0, int x1, int y1 )
 {
     static const char sample[] = "The quick brown fox jumps over the lazy dog 0123456789";
     static const char *const frames[5] = { "raised", "sunken", "button", "pressed", "field" };
-    u8 *block;
+    uint8_t *block;
     int px, py, pw, ph, index, col, row;
 
     (void)x0;
@@ -148,11 +148,11 @@ static void test_paint( int pane, int x0, int y0, int x1, int y1 )
         gfx_vline( px + 180 + index * 2, py + 72, 22, index );
     }
     /* all 256 pixel numbers, and a ramp of coverage three ways */
-    block = (u8 *)try_alloc( 256 * 16 );
+    block = (uint8_t *)try_alloc( 256 * 16 );
     if ( block != NULL ) {
         for ( row = 0; row < 16; row++ ) {
             for ( col = 0; col < 256; col++ ) {
-                block[row * 256 + col] = (u8)col;
+                block[row * 256 + col] = (uint8_t)col;
             }
         }
         gfx_blit( px, py + 104, 256, 16, block, 256 );
@@ -165,7 +165,7 @@ static void test_paint( int pane, int x0, int y0, int x1, int y1 )
     /* colours asked for by what they are */
     for ( index = 0; index < 8; index++ ) {
         gfx_rect( px + 272 + index * 20, py + 104, 18, 16,
-                  gfx_rgb( ((u32)(index * 36) << 16) | ((u32)(255 - index * 36) << 8) | 0x80UL ) );
+                  gfx_rgb( ((uint32_t)(index * 36) << 16) | ((uint32_t)(255 - index * 36) << 8) | 0x80UL ) );
     }
 }
 

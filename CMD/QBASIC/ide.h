@@ -110,70 +110,70 @@ void  mouse_where( int *row, int *col );
 /* the screen                                                          */
 /* ------------------------------------------------------------------ */
 typedef struct {
-    u8 text;            /* a window's text */
-    u8 select;          /* selected text */
-    u8 frame;           /* a window's frame, and a title not active */
-    u8 title;           /* the active window's title */
-    u8 current;         /* the statement a stopped program is at */
-    u8 bkpt;            /* a breakpoint's line */
-    u8 bkpt_current;    /* ...with the current statement on it */
-    u8 scroll;          /* scroll bars */
-    u8 thumb;           /* the scroll box in them */
-    u8 menu;            /* the menu bar, menus and dialogs */
-    u8 menu_hot;        /* an access key in them */
-    u8 menu_sel;        /* the highlighted item */
-    u8 menu_sel_hot;
-    u8 menu_off;        /* an item that cannot be chosen now */
-    u8 status;          /* the status line */
-    u8 status_right;    /* ...its line and column part */
-    u8 field_sel;       /* text offered in a field, a list's chosen entry */
-    u8 shadow;
-    u8 help;            /* the help window's text */
-    u8 help_bold;
-    u8 help_link;       /* the arrows round a link */
+    uint8_t text;          /* a window's text */
+    uint8_t select;        /* selected text */
+    uint8_t frame;         /* a window's frame, and a title not active */
+    uint8_t title;         /* the active window's title */
+    uint8_t current;       /* the statement a stopped program is at */
+    uint8_t bkpt;          /* a breakpoint's line */
+    uint8_t bkpt_current;  /* ...with the current statement on it */
+    uint8_t scroll;        /* scroll bars */
+    uint8_t thumb;         /* the scroll box in them */
+    uint8_t menu;          /* the menu bar, menus and dialogs */
+    uint8_t menu_hot;      /* an access key in them */
+    uint8_t menu_sel;      /* the highlighted item */
+    uint8_t menu_sel_hot;
+    uint8_t menu_off;      /* an item that cannot be chosen now */
+    uint8_t status;        /* the status line */
+    uint8_t status_right;  /* ...its line and column part */
+    uint8_t field_sel;     /* text offered in a field, a list's chosen entry */
+    uint8_t shadow;
+    uint8_t help;          /* the help window's text */
+    uint8_t help_bold;
+    uint8_t help_link;     /* the arrows round a link */
 } PALETTE;
 
 extern PALETTE pal;
 extern int scr_rows, scr_cols;
 
-void  scr_init( int lines );
-void  scr_done( void );
-void  scr_palette( void );
-void  scr_ch( int row, int col, int ch, u8 attr );
-void  scr_putn( int row, int col, const char *text, int len, u8 attr );
-void  scr_put( int row, int col, const char *text, u8 attr );
-void  scr_hot( int row, int col, const char *text, u8 attr, u8 hot_attr );
-int   scr_hotlen( const char *text );
-int   scr_hotkey( const char *text );
-void  scr_fill( int row, int col, int len, int ch, u8 attr );
-void  scr_recolor( int row, int col, int len, u8 attr );
-void  scr_box( int top, int left, int bottom, int right, u8 attr );
-void  scr_shadow( int top, int left, int bottom, int right );
-void  scr_cursor( int row, int col, int kind );
-void  scr_cursor_get( int *row, int *col, int *kind );
-void  scr_flush( void );
-void  scr_invalidate( void );       /* the program's screen was showing */
-void  scr_dump( void );             /* test mode */
-void  scr_dump_output( void );      /* test mode: the program's text screen */
-u16   scr_cell( int row, int col );
+void     scr_init( int lines );
+void     scr_done( void );
+void     scr_palette( void );
+void     scr_ch( int row, int col, int ch, uint8_t attr );
+void     scr_putn( int row, int col, const char *text, int len, uint8_t attr );
+void     scr_put( int row, int col, const char *text, uint8_t attr );
+void     scr_hot( int row, int col, const char *text, uint8_t attr, uint8_t hot_attr );
+int      scr_hotlen( const char *text );
+int      scr_hotkey( const char *text );
+void     scr_fill( int row, int col, int len, int ch, uint8_t attr );
+void     scr_recolor( int row, int col, int len, uint8_t attr );
+void     scr_box( int top, int left, int bottom, int right, uint8_t attr );
+void     scr_shadow( int top, int left, int bottom, int right );
+void     scr_cursor( int row, int col, int kind );
+void     scr_cursor_get( int *row, int *col, int *kind );
+void     scr_flush( void );
+void     scr_invalidate( void );    /* the program's screen was showing */
+void     scr_dump( void );          /* test mode */
+void     scr_dump_output( void );   /* test mode: the program's text screen */
+uint16_t scr_cell( int row, int col );
 
 /* ------------------------------------------------------------------ */
 /* windows                                                             */
 /* ------------------------------------------------------------------ */
 typedef struct {
-    int   text;             /* which of ptext.texts; -1 the Immediate window */
-    DOC  *doc;
-    u32   top;              /* the first line shown */
-    u32   left;             /* the first column shown */
-    u32   line;             /* the cursor's line */
-    u32   col;              /* ...and screen column (may be past the end) */
-    u32   want;             /* the column Up and Down try to keep */
-    int   sel;              /* a selection is on */
-    u32   sel_line, sel_col;
-    int   row, height;      /* on the screen: the title row and how many rows */
-    int   bars;             /* scroll bars drawn (the active window has them) */
-    int   dirty;            /* the cursor's line has been typed on */
-    int   err_line;         /* a line left with an error in it: not asked again */
+    int          text;          /* which of ptext.texts; -1 the Immediate window */
+    DOC         *doc;
+    unsigned int top;           /* the first line shown */
+    unsigned int left;          /* the first column shown */
+    unsigned int line;          /* the cursor's line */
+    unsigned int col;           /* ...and screen column (may be past the end) */
+    unsigned int want;          /* the column Up and Down try to keep */
+    int          sel;           /* a selection is on */
+    unsigned int sel_line, sel_col;
+    int          row, height;   /* on the screen: the title row and how many rows */
+    int          bars;          /* scroll bars drawn (the active window has them) */
+    int          dirty;         /* the cursor's line has been typed on */
+    int          err_line;      /* a line left with an error in it: not asked again */
 } VIEW;
 
 extern int insert_mode;
@@ -183,18 +183,18 @@ extern int scroll_bars;         /* Options > Display: the scroll bars shown */
 void  view_draw( VIEW *view, int active );
 void  view_place_cursor( VIEW *view );
 int   view_key( VIEW *view, int key );       /* 1 = it was an editing key */
-void  view_goto( VIEW *view, u32 line, u32 col, int select );
+void  view_goto( VIEW *view, unsigned int line, unsigned int col, int select );
 void  view_sel_range( VIEW *view, POS *from, POS *to );
 int   view_has_sel( VIEW *view );
 void  view_keep_visible( VIEW *view );
 int   view_text_rows( VIEW *view );
 POS   view_pos( VIEW *view );
 void  view_delete_sel( VIEW *view );
-int   view_insert_text( VIEW *view, const char *text, u32 len );
+int   view_insert_text( VIEW *view, const char *text, unsigned int len );
 void  view_fixup( DOC *doc );
 int   view_leave_line( VIEW *view );         /* the line checked: 0 = it has an error */
 void  view_show_text( VIEW *view, int text );
-void  view_word_at( VIEW *view, char *out, u32 max );
+void  view_word_at( VIEW *view, char *out, unsigned int max );
 void  view_learn_program( void );   /* a program loaded: its names, its lines in form */
 
 enum { VH_NONE, VH_TITLE, VH_MAXBOX, VH_TEXT, VH_UP, VH_DOWN, VH_PGUP, VH_PGDN, VH_VTHUMB,
@@ -206,7 +206,7 @@ void  view_scroll_part( VIEW *view, int part, int row, int col );
 
 /* the lines a stopped program marks: the text and line of the current
    statement and its columns, from MAIN.C */
-int   app_current( int text, u32 line, int *col, int *len );
+int   app_current( int text, unsigned int line, int *col, int *len );
 
 /* ------------------------------------------------------------------ */
 /* the application                                                     */
@@ -238,11 +238,11 @@ int   app_can( int cmd );           /* can it be chosen right now? */
 int   app_checked( int cmd );       /* a bullet beside it (Trace, Syntax) */
 VIEW *app_view( void );
 int   clip_has( void );
-void  clip_set( char *text, u32 len );
-const char *clip_get( u32 *len );
+void  clip_set( char *text, unsigned int len );
+const char *clip_get( unsigned int *len );
 void  app_abandon( void );          /* test mode's end */
 void  app_edited( void );           /* the program changed while stopped */
-const char *app_title( int text, char *buf, u32 max );
+const char *app_title( int text, char *buf, unsigned int max );
 int   app_running( void );          /* a program is stopped part way */
 void  app_set_bar_hot( int hot );   /* the menu bar's letters, Alt held */
 
@@ -277,10 +277,10 @@ typedef struct CTL {
     int  *value;            /* CT_CHECK and CT_RADIO: *value, CT_RADIO: == id */
     int   count;            /* CT_LIST */
     const char *(*item)( struct DLG *dlg, int index );
-    int   sel, top;
-    int   is_default;       /* CT_BUTTON: Enter presses it */
-    int   columns;          /* CT_LIST: entries side by side (Open's files) */
-    u8    attr;             /* CT_SAMPLE: its colours */
+    int     sel, top;
+    int     is_default;     /* CT_BUTTON: Enter presses it */
+    int     columns;        /* CT_LIST: entries side by side (Open's files) */
+    uint8_t attr;           /* CT_SAMPLE: its colours */
                             /* CT_EDIT: height 1 is a field with no box round it */
 } CTL;
 

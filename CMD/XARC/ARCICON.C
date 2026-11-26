@@ -325,7 +325,7 @@ int icon_for_name( const char *name )
         return s_file;
     }
     for ( len = 0; len < 7 && dot[len]; len++ ) {
-        up[len] = (char)toupper( (u8)dot[len] );
+        up[len] = (char)toupper( (unsigned char)dot[len] );
     }
     up[len] = 0;
     if ( !strcmp( up, ".7Z" ) )  return s_7z;

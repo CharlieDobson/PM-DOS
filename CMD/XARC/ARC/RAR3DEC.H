@@ -25,8 +25,8 @@
  * Returns SZ_OK, or SZ_ERR_UNSUPPORTED (v3 PPMd/filter, or v2 audio block),
  * SZ_ERR_DATA, SZ_ERR_MEMORY.
  */
-int Rar3Decode( const Byte *src, UInt32 srcLen, Byte *dst, UInt32 dstLen );
-int Rar2Decode( const Byte *src, UInt32 srcLen, Byte *dst, UInt32 dstLen );
+int Rar3Decode( const uint8_t *src, uint32_t srcLen, uint8_t *dst, uint32_t dstLen );
+int Rar2Decode( const uint8_t *src, uint32_t srcLen, uint8_t *dst, uint32_t dstLen );
 
 /*
  * Stateful RAR2 decoder with a bounded ring window, for SOLID archives (and
@@ -38,21 +38,21 @@ int Rar2Decode( const Byte *src, UInt32 srcLen, Byte *dst, UInt32 dstLen );
  *
  * emit returns SZ_OK to continue or an SZ_ERR_* code to abort the decode.
  */
-typedef int (*Rar2Emit)( void *user, Byte b );
+typedef int (*Rar2Emit)( void *user, uint8_t b );
 
 typedef struct Rar2Ctx Rar2Ctx;
 Rar2Ctx *Rar2Create( void );
-Rar2Ctx *Rar2CreateSized( UInt32 winSize );
+Rar2Ctx *Rar2CreateSized( uint32_t winSize );
 void     Rar2Free( Rar2Ctx *c );
-void     Rar2SetInput( Rar2Ctx *c, const Byte *src, UInt32 srcLen );
+void     Rar2SetInput( Rar2Ctx *c, const uint8_t *src, uint32_t srcLen );
 void     Rar2Align( Rar2Ctx *c );
 int      Rar2ReadTables( Rar2Ctx *c );
 
 /* Decode until the absolute output position reaches endPos, emitting each
  * output byte.  Also used to push stored (uncompressed) bytes into the window
  * via Rar2Feed. */
-int      Rar2Decode2( Rar2Ctx *c, Rar2Emit emit, void *user, UInt32 endPos );
-int      Rar2Feed( Rar2Ctx *c, Rar2Emit emit, void *user, const Byte *data, UInt32 len );
+int      Rar2Decode2( Rar2Ctx *c, Rar2Emit emit, void *user, uint32_t endPos );
+int      Rar2Feed( Rar2Ctx *c, Rar2Emit emit, void *user, const uint8_t *data, uint32_t len );
 
 /*
  * Stateful RAR3 (unpack v3) decoder - same streaming/ring-window contract as
@@ -63,12 +63,12 @@ int      Rar2Feed( Rar2Ctx *c, Rar2Emit emit, void *user, const Byte *data, UInt
  */
 typedef struct Rar3Ctx Rar3Ctx;
 Rar3Ctx *Rar3Create( void );
-Rar3Ctx *Rar3CreateSized( UInt32 winSize );
+Rar3Ctx *Rar3CreateSized( uint32_t winSize );
 void     Rar3Free( Rar3Ctx *c );
-void     Rar3SetInput( Rar3Ctx *c, const Byte *src, UInt32 srcLen );
+void     Rar3SetInput( Rar3Ctx *c, const uint8_t *src, uint32_t srcLen );
 int      Rar3ReadTables( Rar3Ctx *c );
-int      Rar3Decode2( Rar3Ctx *c, Rar2Emit emit, void *user, UInt32 endPos );
-int      Rar3Feed( Rar3Ctx *c, Rar2Emit emit, void *user, const Byte *data, UInt32 len );
+int      Rar3Decode2( Rar3Ctx *c, Rar2Emit emit, void *user, uint32_t endPos );
+int      Rar3Feed( Rar3Ctx *c, Rar2Emit emit, void *user, const uint8_t *data, uint32_t len );
 
 /* Solid chains only.  Call Rar3EndOfFile after decoding each member to
  * consume the end-of-block trailer that closes it, then Rar3NeedTables to
@@ -99,11 +99,11 @@ int      Rar3NeedTables( Rar3Ctx *c );
 /* What ...Sized will really allocate for a given request: the rounded,
  * clamped figure.  Exported so a memory estimate (RarMemNeeded) reports the
  * allocation rather than a second guess at it. */
-UInt32   RarWindowFor( UInt32 want );
+uint32_t RarWindowFor( uint32_t want );
 
-int      Rar2DecodeSized( const Byte *src, UInt32 srcLen, Byte *dst,
-                          UInt32 dstLen, UInt32 winSize );
-int      Rar3DecodeSized( const Byte *src, UInt32 srcLen, Byte *dst,
-                          UInt32 dstLen, UInt32 winSize );
+int      Rar2DecodeSized( const uint8_t *src, uint32_t srcLen, uint8_t *dst,
+                          uint32_t dstLen, uint32_t winSize );
+int      Rar3DecodeSized( const uint8_t *src, uint32_t srcLen, uint8_t *dst,
+                          uint32_t dstLen, uint32_t winSize );
 
 #endif /* RAR3DEC_H */

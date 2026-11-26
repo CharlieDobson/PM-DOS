@@ -208,7 +208,7 @@ int key_service( int key )
 
 /* "&File" with its access key shown or not.  A graphics look gives the
    key no colour of its own and underlines it. */
-static void put_hot( int row, int col, const char *text, u8 attr, u8 hot, int show )
+static void put_hot( int row, int col, const char *text, uint8_t attr, uint8_t hot, int show )
 {
     const char *amp;
 
@@ -415,7 +415,7 @@ static int pull_item_at( const MENUITEM *items, int count, int top, int left, in
 static void pull_draw( const MENUITEM *items, int count, int top, int left, int sel )
 {
     int width = pull_width( items, count ), index, row;
-    u8 attr, hot;
+    uint8_t attr, hot;
 
     scr_box( top, left, top + count + 1, left + width - 1, pal.menu );
     for ( index = 0; index < count; index++ ) {
@@ -936,7 +936,7 @@ static void draw_edit( DLG *dlg, CTL *ctl, int focus )
 {
     int row = dlg->top + ctl->row, col = dlg->left + ctl->col;
     int len = (int)str_len( ctl->buf ), shown, pos;
-    u8 attr;
+    uint8_t attr;
 
     if ( ctl->caret > len ) {
         ctl->caret = len;
@@ -971,7 +971,7 @@ static void draw_drop( DLG *dlg, CTL *ctl, int focus )
     int row = dlg->top + ctl->row, col = dlg->left + ctl->col, width = ctl->width - 1;
     const char *text = entry( dlg, ctl, ctl->sel );
     int len = (int)str_len( text );
-    u8 attr = ctl->disabled ? pal.dlg_off : focus ? pal.field_sel : pal.field;
+    uint8_t attr = ctl->disabled ? pal.dlg_off : focus ? pal.field_sel : pal.field;
 
     if ( len > width ) {
         len = width;
@@ -1063,7 +1063,7 @@ static void draw_list( DLG *dlg, CTL *ctl, int focus )
     int top = dlg->top + ctl->row, left = dlg->left + ctl->col;
     int rows = ctl->height - 2, index, item, len;
     const char *text;
-    u8 attr = ctl->disabled ? pal.dlg_off : pal.list;
+    uint8_t attr = ctl->disabled ? pal.dlg_off : pal.list;
 
     scr_box( top, left, top + ctl->height - 1, left + ctl->width - 1, attr );
     if ( ctl->sel >= ctl->count ) {
@@ -1106,7 +1106,7 @@ static void draw_list( DLG *dlg, CTL *ctl, int focus )
     }
     if ( ctl->text ) {
         scr_ch( top, left + 1, ' ', attr );
-        put_hot( top, left + 2, ctl->text, attr, ctl->disabled ? attr : (u8)((attr & 0xF0) | (pal.dlg_hot & 0x0F)), 1 );
+        put_hot( top, left + 2, ctl->text, attr, ctl->disabled ? attr : (uint8_t)((attr & 0xF0) | (pal.dlg_hot & 0x0F)), 1 );
         scr_ch( top, left + 2 + scr_hotlen( ctl->text ), ' ', attr );
     }
 }
@@ -1118,8 +1118,8 @@ static void draw_button( DLG *dlg, CTL *ctl, int focus, int pressed_by_enter )
 {
     int row = dlg->top + ctl->row, col = dlg->left + ctl->col;
     int len = scr_hotlen( ctl->text );
-    u8 attr = ctl->disabled ? pal.dlg_off : pal.button;
-    u8 edge = pressed_by_enter && !ctl->disabled ? pal.button_hot : attr;
+    uint8_t attr = ctl->disabled ? pal.dlg_off : pal.button;
+    uint8_t edge = pressed_by_enter && !ctl->disabled ? pal.button_hot : attr;
 
     scr_fill( row, col, len + 4, ' ', attr );
     put_hot( row, col + 2, ctl->text, attr, ctl->disabled ? attr : pal.dlg_hot, 1 );
@@ -1140,7 +1140,7 @@ static void draw_button( DLG *dlg, CTL *ctl, int focus, int pressed_by_enter )
 static void draw_mark( DLG *dlg, CTL *ctl, int on, int radio, int focus )
 {
     int row = dlg->top + ctl->row, col = dlg->left + ctl->col;
-    u8 attr = ctl->disabled ? pal.dlg_off : pal.dlg;
+    uint8_t attr = ctl->disabled ? pal.dlg_off : pal.dlg;
 
     scr_put( row, col, radio ? (on ? "(\x07)" : "( )") : (on ? "[X]" : "[ ]"), attr );
     put_hot( row, col + 4, ctl->text, attr, ctl->disabled ? attr : pal.dlg_hot, 1 );
@@ -1345,7 +1345,7 @@ static int edit_key( DLG *dlg, CTL *ctl, int key )
             ctl->buf[0] = 0;
             ctl->caret = 0;
         } else if ( ctl->caret > 0 ) {
-            mem_cpy( ctl->buf + ctl->caret - 1, ctl->buf + ctl->caret, (u32)(len - ctl->caret + 1) );
+            mem_cpy( ctl->buf + ctl->caret - 1, ctl->buf + ctl->caret, (unsigned int)(len - ctl->caret + 1) );
             ctl->caret--;
         }
         ctl->fresh = 0;
@@ -1356,7 +1356,7 @@ static int edit_key( DLG *dlg, CTL *ctl, int key )
             ctl->buf[0] = 0;
             ctl->caret = 0;
         } else if ( ctl->caret < len ) {
-            mem_cpy( ctl->buf + ctl->caret, ctl->buf + ctl->caret + 1, (u32)(len - ctl->caret) );
+            mem_cpy( ctl->buf + ctl->caret, ctl->buf + ctl->caret + 1, (unsigned int)(len - ctl->caret) );
         }
         ctl->fresh = 0;
         told( dlg, index );
@@ -1370,7 +1370,7 @@ static int edit_key( DLG *dlg, CTL *ctl, int key )
         }
         ctl->fresh = 0;
         if ( len < ctl->max - 1 ) {
-            mem_cpy( ctl->buf + ctl->caret + 1, ctl->buf + ctl->caret, (u32)(len - ctl->caret + 1) );
+            mem_cpy( ctl->buf + ctl->caret + 1, ctl->buf + ctl->caret, (unsigned int)(len - ctl->caret + 1) );
             ctl->buf[ctl->caret++] = (char)key;
         }
         told( dlg, index );
@@ -1952,9 +1952,9 @@ int ctl_button_width( const char *text )
 
 /* "text" into "out" with every line no longer than MSG_WIDE: broken at
    a blank where there is one.  Returns the lines, and the longest. */
-static int wrap( const char *text, char *out, u32 max, int *widest )
+static int wrap( const char *text, char *out, unsigned int max, int *widest )
 {
-    u32 len = 0;
+    unsigned int len = 0;
     int col = 0, lines = 1, last_blank = -1, index;
 
     *widest = 0;
@@ -2129,11 +2129,11 @@ int input_box( const char *title, const char *label, char *buf, int max, int wid
     if ( max <= 0 ) {
         return 0;
     }
-    text = (char *)try_alloc( (u32)max );
+    text = (char *)try_alloc( (unsigned int)max );
     if ( text == NULL ) {
         return 0;
     }
-    sfmt( text, (u32)max, "%s", buf );
+    sfmt( text, (unsigned int)max, "%s", buf );
     if ( width > 70 - label_len ) {
         width = 70 - label_len;
     }

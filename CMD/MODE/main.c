@@ -50,7 +50,7 @@ void say_dev( char *buf, const char *name, int unit )
 }
 
 /* "COM1" to "COM4" (max 4) or "LPT1" to "LPT3": the port, or 0 */
-static int dev_unit( const char *text, u32 len, const char *name, int max )
+static int dev_unit( const char *text, unsigned int len, const char *name, int max )
 {
     if ( len == 4 && str_nicmp( text, name, 3 ) == 0 && text[3] >= '1' && text[3] <= '0' + max ) {
         return text[3] - '0';
@@ -82,7 +82,7 @@ static int display_word( const ITEM *it )
    format error ("/STA:X") and anything else an invalid switch */
 static int bad_switch( const ITEM *it )
 {
-    u32 pos;
+    unsigned int pos;
 
     for ( pos = 0; pos < it->len; pos++ ) {
         if ( it->text[pos] == ':' ) {
@@ -177,7 +177,7 @@ static int parse_line( REQ *rq )
     SCAN sc;
     ITEM it;
     int unit, mode;
-    u32 len;
+    unsigned int len;
 
     /* the first reading: no colon among the delimiters */
     scan_start( &sc );
@@ -216,7 +216,7 @@ static int parse_line( REQ *rq )
         }
     }
     if ( it.kind == IT_KEY ) {
-        len = (u32)(it.value - it.text) - 1;        /* the name, no '=' */
+        len = (unsigned int)(it.value - it.text) - 1;   /* the name, no '=' */
         if ( len == 5 && it.text[4] == ':' ) {
             len = 4;
         }

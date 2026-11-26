@@ -46,7 +46,7 @@ static const char *const wp_variants[] = {
     NULL
 };
 
-static const u16 wp_set1[242] = {
+static const uint16_t wp_set1[242] = {
     0x0300, 0x00B7, 0x0303, 0x0302, 0x0335, 0x0338, 0x0301, 0x0308, 0x0304, 0x0313,
     0x0315, 0x02BC, 0x0326, 0x0315, 0x00B0, 0x0307, 0x030B, 0x0327, 0x0328, 0x030C,
     0x0337, 0x0305, 0x0306, 0x00DF, 0x0138, 0x006A, 0x00C1, 0x00E1, 0x00C2, 0x00E2,
@@ -74,13 +74,13 @@ static const u16 wp_set1[242] = {
     0x014E, 0x014F
 };
 
-static const u16 wp5_set2[28] = {
+static const uint16_t wp5_set2[28] = {
     0x0323, 0x0324, 0x02DA, 0x0325, 0x02BC, 0x032D, 0x2017, 0x005F, 0x0138, 0x032E,
     0x033E, 0x2018, 0x0020, 0x02BD, 0x02DB, 0x0327, 0x0321, 0x0322, 0x030D, 0x2019,
     0x0329, 0x0020, 0x0621, 0x02BE, 0x0306, 0x0310, 0x2032, 0x2034
 };
 
-static const u16 wp6_set2[145] = {
+static const uint16_t wp6_set2[145] = {
     0x02B9, 0x02BA, 0x02BB, 0x0020, 0x02BD, 0x02BC, 0x0020, 0x02BE, 0x02BF, 0x0310,
     0x02D0, 0x02D1, 0x0306, 0x032E, 0x0329, 0x02C8, 0x02CC, 0x02C9, 0x02CA, 0x02CB,
     0x02CD, 0x02CE, 0x02CF, 0x02C6, 0x02C7, 0x02DC, 0x0325, 0x02DA, 0x032D, 0x032C,
@@ -98,7 +98,7 @@ static const u16 wp6_set2[145] = {
     0x02A4, 0x02A5, 0x02A6, 0x02A7, 0x02A8
 };
 
-static const u16 wp_set3[88] = {
+static const uint16_t wp_set3[88] = {
     0x2591, 0x2592, 0x2593, 0x2588, 0x258C, 0x2580, 0x2590, 0x2584, 0x2500, 0x2502,
     0x250C, 0x2510, 0x2518, 0x2514, 0x251C, 0x252C, 0x2524, 0x2534, 0x253C, 0x2550,
     0x2551, 0x2554, 0x2557, 0x255D, 0x255A, 0x2560, 0x2566, 0x2563, 0x2569, 0x256C,
@@ -110,7 +110,7 @@ static const u16 wp_set3[88] = {
     0x2544, 0x254A, 0x253D, 0x2545, 0x2548, 0x2543, 0x2549, 0x2547
 };
 
-static const u16 wp_set4[102] = {
+static const uint16_t wp_set4[102] = {
     0x25CF, 0x25CB, 0x25A0, 0x2022, 0x002A, 0x00B6, 0x00A7, 0x00A1, 0x00BF, 0x00AB,
     0x00BB, 0x00A3, 0x00A5, 0x20A7, 0x0192, 0x00AA, 0x00BA, 0x00BD, 0x00BC, 0x00A2,
     0x00B2, 0x207F, 0x00AE, 0x00A9, 0x00A4, 0x00BE, 0x00B3, 0x201B, 0x2019, 0x2018,
@@ -124,14 +124,14 @@ static const u16 wp_set4[102] = {
     0x0000, 0x0000
 };
 
-static const u16 wp5_set5[35] = {
+static const uint16_t wp5_set5[35] = {
     0x2665, 0x2666, 0x2663, 0x2660, 0x2642, 0x2640, 0x263C, 0x263A, 0x263B, 0x266A,
     0x266C, 0x25AC, 0x2302, 0x203C, 0x221A, 0x21A8, 0x2310, 0x2319, 0x25D8, 0x25D9,
     0x21B5, 0x261E, 0x261C, 0x2713, 0x2610, 0x2612, 0x2639, 0x266F, 0x266D, 0x266E,
     0x260E, 0x231A, 0x231B, 0x2104, 0x23B5
 };
 
-static const u16 wp6_set5[255] = {
+static const uint16_t wp6_set5[255] = {
     0x2661, 0x2662, 0x2667, 0x2664, 0x2642, 0x2640, 0x263C, 0x263A, 0x263B, 0x266A,
     0x266C, 0x25AC, 0x2302, 0x203C, 0x221A, 0x21A8, 0x2310, 0x2319, 0x25D8, 0x25D9,
     0x21B5, 0x2104, 0x261C, 0x23B5, 0x2610, 0x2612, 0x2639, 0x266F, 0x266D, 0x266E,
@@ -160,7 +160,7 @@ static const u16 wp6_set5[255] = {
     0x27BA, 0x27BB, 0x27BC, 0x27BD, 0x27BE
 };
 
-static const u16 wp_set6[238] = {
+static const uint16_t wp_set6[238] = {
     0x2212, 0x00B1, 0x2264, 0x2265, 0x221D, 0x002F, 0x2215, 0x2216, 0x00F7, 0x2223,
     0x27E8, 0x27E9, 0x223C, 0x2248, 0x2261, 0x2208, 0x2229, 0x2225, 0x2211, 0x221E,
     0x00AC, 0x2192, 0x2190, 0x2191, 0x2193, 0x2194, 0x2195, 0x25B8, 0x25C2, 0x25B4,
@@ -187,7 +187,7 @@ static const u16 wp_set6[238] = {
     0x2032, 0x2033, 0x2034, 0x210B, 0x2118, 0x2272, 0x2273, 0x0020
 };
 
-static const u16 wp_set7[229] = {
+static const uint16_t wp_set7[229] = {
     0x2320, 0x2321, 0x23A5, 0x23BD, 0x221A, 0x0020, 0x2211, 0x220F, 0x2210, 0x222B,
     0x222E, 0x0020, 0x0020, 0x0020, 0x0020, 0x0020, 0x0020, 0x0020, 0x0020, 0x0020,
     0x0020, 0x0020, 0x0020, 0x0020, 0x0020, 0x23A7, 0x23A8, 0x23A9, 0x23AA, 0x0020,
@@ -213,7 +213,7 @@ static const u16 wp_set7[229] = {
     0x0020, 0x2293, 0x2A05, 0x23A1, 0x0020, 0x0020, 0x0020, 0x0020, 0x0020
 };
 
-static const u16 wp5_set8[210] = {
+static const uint16_t wp5_set8[210] = {
     0x0391, 0x03B1, 0x0392, 0x03B2, 0x0392, 0x03D0, 0x0393, 0x03B3, 0x0394, 0x03B4,
     0x0395, 0x03B5, 0x0396, 0x03B6, 0x0397, 0x03B7, 0x0398, 0x03B8, 0x0399, 0x03B9,
     0x039A, 0x03BA, 0x039B, 0x03BB, 0x039C, 0x03BC, 0x039D, 0x03BD, 0x039E, 0x03BE,
@@ -237,7 +237,7 @@ static const u16 wp5_set8[210] = {
     0x0386, 0x0388, 0x0389, 0x038A, 0x038C, 0x038E, 0x038F, 0x03AA, 0x03AB, 0x1FE5
 };
 
-static const u16 wp6_set8[219] = {
+static const uint16_t wp6_set8[219] = {
     0x0391, 0x03B1, 0x0392, 0x03B2, 0x0392, 0x03D0, 0x0393, 0x03B3, 0x0394, 0x03B4,
     0x0395, 0x03B5, 0x0396, 0x03B6, 0x0397, 0x03B7, 0x0398, 0x03B8, 0x0399, 0x03B9,
     0x039A, 0x03BA, 0x039B, 0x03BB, 0x039C, 0x03BC, 0x039D, 0x03BD, 0x039E, 0x03BE,
@@ -262,7 +262,7 @@ static const u16 wp6_set8[219] = {
     0x1F67, 0x1FA1, 0x1FA5, 0x1FA3, 0x1FA7, 0x03DA, 0x03DC, 0x03DE, 0x03E0
 };
 
-static const u16 wp5_set9[119] = {
+static const uint16_t wp5_set9[119] = {
     0x05D0, 0x05D1, 0x05D2, 0x05D3, 0x05D4, 0x05D5, 0x05D6, 0x05D7, 0x05D8, 0x05D9,
     0x05DA, 0x05DB, 0x05DC, 0x05DD, 0x05DE, 0x05DF, 0x05E0, 0x05E1, 0x05E2, 0x05E3,
     0x05E4, 0x05E5, 0x05E6, 0x05E7, 0x05E8, 0x05E9, 0x05EA, 0x05BE, 0x05C0, 0x05C3,
@@ -277,7 +277,7 @@ static const u16 wp5_set9[119] = {
     0xFB2B, 0xFB2D, 0xFB2A, 0xFB2C, 0xFB4A, 0xFB4C, 0xFB4E, 0xFB1F, 0xFB1D
 };
 
-static const u16 wp6_set9[123] = {
+static const uint16_t wp6_set9[123] = {
     0x05D0, 0x05D1, 0x05D2, 0x05D3, 0x05D4, 0x05D5, 0x05D6, 0x05D7, 0x05D8, 0x05D9,
     0x05DA, 0x05DB, 0x05DC, 0x05DD, 0x05DE, 0x05DF, 0x05E0, 0x05E1, 0x05E2, 0x05E3,
     0x05E4, 0x05E5, 0x05E6, 0x05E7, 0x05E8, 0x05E9, 0x05EA, 0x05BE, 0x05C0, 0x05C3,
@@ -293,7 +293,7 @@ static const u16 wp6_set9[123] = {
     0xFB3C, 0xFB49, 0x20AA
 };
 
-static const u16 wp5_set10[150] = {
+static const uint16_t wp5_set10[150] = {
     0x0410, 0x0430, 0x0411, 0x0431, 0x0412, 0x0432, 0x0413, 0x0433, 0x0414, 0x0434,
     0x0415, 0x0435, 0x0401, 0x0451, 0x0416, 0x0436, 0x0417, 0x0437, 0x0418, 0x0438,
     0x0419, 0x0439, 0x041A, 0x043A, 0x041B, 0x043B, 0x041C, 0x043C, 0x041D, 0x043D,
@@ -311,7 +311,7 @@ static const u16 wp5_set10[150] = {
     0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0301, 0x0300
 };
 
-static const u16 wp6_set10[250] = {
+static const uint16_t wp6_set10[250] = {
     0x0410, 0x0430, 0x0411, 0x0431, 0x0412, 0x0432, 0x0413, 0x0433, 0x0414, 0x0434,
     0x0415, 0x0435, 0x0401, 0x0451, 0x0416, 0x0436, 0x0417, 0x0437, 0x0418, 0x0438,
     0x0419, 0x0439, 0x041A, 0x043A, 0x041B, 0x043B, 0x041C, 0x043C, 0x041D, 0x043D,
@@ -339,7 +339,7 @@ static const u16 wp6_set10[250] = {
     0x10EB, 0x10EC, 0x10ED, 0x10EE, 0x10F4, 0x10EF, 0x10F0, 0x10F5, 0x10F6, 0x10E3
 };
 
-static const u16 wp5_set11[185] = {
+static const uint16_t wp5_set11[185] = {
     0x3041, 0x3043, 0x3045, 0x3047, 0x3049, 0x3053, 0x3083, 0x3085, 0x3087, 0x3094,
     0x3095, 0x3096, 0x3042, 0x3044, 0x3046, 0x3048, 0x304A, 0x304B, 0x304D, 0x3047,
     0x3051, 0x3053, 0x304C, 0x304E, 0x3050, 0x3052, 0x3054, 0x3055, 0x3057, 0x3059,
@@ -361,7 +361,7 @@ static const u16 wp5_set11[185] = {
     0x30EF, 0x30F2, 0x30F3, 0x30FD, 0x30FE
 };
 
-static const u16 wp6_set11[63] = {
+static const uint16_t wp6_set11[63] = {
     0xFF61, 0xFF62, 0xFF63, 0xFF64, 0xFF65, 0xFF66, 0xFF67, 0xFF68, 0xFF69, 0xFF6A,
     0xFF6B, 0xFF6C, 0xFF6D, 0xFF6E, 0xFF6F, 0xFF70, 0xFF71, 0xFF72, 0xFF73, 0xFF74,
     0xFF75, 0xFF76, 0xFF77, 0xFF78, 0xFF79, 0xFF7A, 0xFF7B, 0xFF7C, 0xFF7D, 0xFF7E,
@@ -371,7 +371,7 @@ static const u16 wp6_set11[63] = {
     0xFF9D, 0xFF9E, 0xFF9F
 };
 
-static const u16 wp6_low[32] = {
+static const uint16_t wp6_low[32] = {
     0x00E5, 0x00C5, 0x00E6, 0x00C6, 0x00E4, 0x00C4, 0x00E1, 0x00E0, 0x00E2, 0x00E3,
     0x00C3, 0x00E7, 0x00C7, 0x00EB, 0x00E9, 0x00C9, 0x00E8, 0x00EA, 0x00ED, 0x00F1,
     0x00D1, 0x00F8, 0x00D8, 0x00F5, 0x00D5, 0x00F6, 0x00D6, 0x00FC, 0x00DC, 0x00FA,
@@ -379,7 +379,7 @@ static const u16 wp6_low[32] = {
 };
 
 /* characters that are two of Unicode's: the set, the number, a letter and its mark */
-static const u16 wp_pairs[49][4] = {
+static const uint16_t wp_pairs[49][4] = {
     { 1, 156, 0x02BC, 0x004E },
     { 1, 212, 0x0044, 0x0304 },
     { 1, 213, 0x0064, 0x0304 },
@@ -435,8 +435,8 @@ static const u16 wp_pairs[49][4] = {
 /* the character sets                                                  */
 /* ------------------------------------------------------------------ */
 typedef struct {
-    const u16 *tab;
-    u32 count;
+    const uint16_t *tab;
+    unsigned int count;
 } WPSET;
 
 #define WP_NSETS    12
@@ -456,7 +456,7 @@ static const WPSET wp6_sets[WP_NSETS] = {
 #define WP_NPAIRS   (sizeof( wp_pairs ) / sizeof( wp_pairs[0] ))
 
 /* Unicode's combining accents, and the same accents standing alone */
-static const u16 wp_spacing[][2] = {
+static const uint16_t wp_spacing[][2] = {
     { 0x0300, 0x0060 }, { 0x0301, 0x00B4 }, { 0x0302, 0x02C6 }, { 0x0303, 0x02DC },
     { 0x0304, 0x00AF }, { 0x0305, 0x00AF }, { 0x0306, 0x02D8 }, { 0x0307, 0x02D9 },
     { 0x0308, 0x00A8 }, { 0x030B, 0x02DD }, { 0x030C, 0x02C7 }, { 0x0313, 0x2019 },
@@ -469,7 +469,7 @@ static const u16 wp_spacing[][2] = {
 /* ------------------------------------------------------------------ */
 /* reading                                                             */
 /* ------------------------------------------------------------------ */
-#define WPU_TWIPS( wpu )    ((s32)(wpu) * 6 / 5)
+#define WPU_TWIPS( wpu )    ((int)(wpu) * 6 / 5)
 #define WP_DEPTH            3       /* a note in a header in ... */
 
 /* the attributes, by WordPerfect's numbers */
@@ -490,54 +490,54 @@ static const u16 wp_spacing[][2] = {
 #define WPA_UNDER       14
 #define WPA_SMALLCAPS   15
 
-static const u16 wp_attr_flag[16] = {
+static const uint16_t wp_attr_flag[16] = {
     0, 0, 0, 0, 0, CF_SUPER, CF_SUB, CF_OUTLINE, CF_ITALIC, CF_SHADOW, 0,
     CF_DUNDER, CF_BOLD, CF_STRIKE, CF_UNDER, CF_SMALLCAPS
 };
 
 typedef struct {
-    const u8 *data;
-    u32   len;
-    WDOC *doc;
-    WBUILD wb;
-    int   version;          /* 42, 50, 51 or 60 */
-    int   depth;            /* how far into headers and notes */
-    int   mute;             /* text that is a number WordPerfect made */
-    u32   attrs;            /* the attributes that are on, a bit each */
-    u16   base_size;        /* half points, before Large and Small */
-    u8    justify;          /* AL_* until the next change */
-    u8    line_align;       /* AL_CENTER or AL_RIGHT for this paragraph, or 0 */
-    u8    page_next;        /* the next paragraph starts a page */
-    u8    page_set;         /* 5.x: the page's margins have been read */
-    u8    in_table, in_cell;
-    s32   page_left, page_right;        /* the page's margins, twips */
-    s32   mar_left, mar_right;          /* the margins in force */
-    s32   adj_left, adj_right, adj_first;   /* 6.x: paragraph adjustments */
-    s32   ind_left, ind_right, ind_first;   /* until the paragraph ends */
+    const uint8_t *data;
+    uint32_t     len;
+    WDOC        *doc;
+    WBUILD       wb;
+    int          version;       /* 42, 50, 51 or 60 */
+    int          depth;         /* how far into headers and notes */
+    int          mute;          /* text that is a number WordPerfect made */
+    uint32_t     attrs;         /* the attributes that are on, a bit each */
+    uint16_t     base_size;     /* half points, before Large and Small */
+    uint8_t      justify;       /* AL_* until the next change */
+    uint8_t      line_align;    /* AL_CENTER or AL_RIGHT for this paragraph, or 0 */
+    uint8_t      page_next;     /* the next paragraph starts a page */
+    uint8_t      page_set;      /* 5.x: the page's margins have been read */
+    uint8_t      in_table, in_cell;
+    int          page_left, page_right;     /* the page's margins, twips */
+    int          mar_left, mar_right;       /* the margins in force */
+    int          adj_left, adj_right, adj_first;  /* 6.x: paragraph adjustments */
+    int          ind_left, ind_right, ind_first;  /* until the paragraph ends */
     /* 5.x: the fonts of the prefix */
-    const u8 *fonts;
-    u32   nfonts;
-    int   fonts50;
-    const u8 *names;
-    u32   names_len;
+    const uint8_t *fonts;
+    uint32_t     nfonts;
+    int          fonts50;
+    const uint8_t *names;
+    uint32_t     names_len;
     /* 6.x: the prefix's index */
-    u32   index_off, index_count;
+    uint32_t     index_off, index_count;
     /* the table being read */
-    u32   ncols, next_col;
-    s32   col_edge[MAX_CELLS];
-    s32   tab_left;
-    TROW  row;
+    unsigned int ncols, next_col;
+    int          col_edge[MAX_CELLS];
+    int          tab_left;
+    TROW         row;
     /* 4.2 */
-    u8    one_shot;         /* Superscript or Subscript, for one character */
-    u8    dunder;           /* underlining is double */
-    u8    dead[64];         /* functions that have no closing gate left */
+    uint8_t      one_shot;      /* Superscript or Subscript, for one character */
+    uint8_t      dunder;        /* underlining is double */
+    uint8_t      dead[64];      /* functions that have no closing gate left */
 } WP;
 
-static void wp5_body( WP *wp, u32 pos, u32 end );
-static void wp6_body( WP *wp, u32 pos, u32 end );
-static void wp42_body( WP *wp, u32 pos, u32 end );
+static void wp5_body( WP *wp, uint32_t pos, uint32_t end );
+static void wp6_body( WP *wp, uint32_t pos, uint32_t end );
+static void wp42_body( WP *wp, uint32_t pos, uint32_t end );
 
-static s32 wp_clamp( s32 value, s32 low, s32 high )
+static int wp_clamp( int value, int low, int high )
 {
     return value < low ? low : value > high ? high : value;
 }
@@ -552,7 +552,7 @@ static int wp_body_empty( const WP *wp )
     return wp->depth == 0 && wp->doc->body.count == 0;
 }
 
-static void wp_char( WP *wp, u32 code )
+static void wp_char( WP *wp, uint32_t code )
 {
     if ( !wp->mute ) {
         wb_char( &wp->wb, code );
@@ -560,10 +560,11 @@ static void wp_char( WP *wp, u32 code )
 }
 
 /* a character of one of WordPerfect's sets */
-static void wp_extchar( WP *wp, u32 set, u32 num )
+static void wp_extchar( WP *wp, uint32_t set, uint32_t num )
 {
     const WPSET *sets = wp->version >= 60 ? wp6_sets : wp5_sets;
-    u32 index, code = 0;
+    unsigned int index;
+    uint32_t code = 0;
 
     if ( set == 0 ) {
         if ( num >= 0x20 && num < 0x7F ) {
@@ -600,8 +601,8 @@ static void wp_extchar( WP *wp, u32 set, u32 num )
 /* the looks the attributes and the font size come to */
 static void wp_looks( WP *wp )
 {
-    u32 index, size = wp->base_size;
-    u16 flags = 0;
+    unsigned int index, size = wp->base_size;
+    uint16_t flags = 0;
 
     for ( index = 0; index < 16; index++ ) {
         if ( wp->attrs & (1UL << index) ) {
@@ -620,10 +621,10 @@ static void wp_looks( WP *wp )
         size = size * 3 / 5;
     }
     wp->wb.chp.flags = flags;
-    wp->wb.chp.size = (u16)wp_clamp( (s32)size, 2, 1638 );
+    wp->wb.chp.size = (uint16_t)wp_clamp( (int)size, 2, 1638 );
 }
 
-static void wp_attr( WP *wp, u32 attr, int on )
+static void wp_attr( WP *wp, uint32_t attr, int on )
 {
     if ( attr < 16 ) {
         if ( on ) {
@@ -636,10 +637,10 @@ static void wp_attr( WP *wp, u32 attr, int on )
 }
 
 /* a size in 3600ths of an inch (a fiftieth of a point) */
-static void wp_size( WP *wp, u32 size )
+static void wp_size( WP *wp, uint32_t size )
 {
     if ( size >= 50 && size <= 40000UL ) {
-        wp->base_size = (u16)(size / 25);
+        wp->base_size = (uint16_t)(size / 25);
         wp_looks( wp );
     }
 }
@@ -649,7 +650,7 @@ static void wp_size( WP *wp, u32 size )
    Roman */
 static void wp_font( WP *wp, char *name )
 {
-    u32 used = str_len( name );
+    unsigned int used = str_len( name );
     char *cut;
 
     cut = str_chr( name, '(' );
@@ -670,13 +671,13 @@ static void wp_font( WP *wp, char *name )
         }
     }
     if ( name[0] ) {
-        wp->wb.chp.font = (u16)wd_font( wp->doc, name, FAM_ANY, -1 );
+        wp->wb.chp.font = (uint16_t)wd_font( wp->doc, name, FAM_ANY, -1 );
     }
 }
 
 /* the paragraph ends: its indents and alignment are made of what is in
    force, and what was for this paragraph only is forgotten */
-static void wp_par( WP *wp, u16 flags )
+static void wp_par( WP *wp, uint16_t flags )
 {
     PAP *pap = &wp->wb.pap;
 
@@ -701,7 +702,7 @@ static void wp_par( WP *wp, u16 flags )
 static void wp_soft_space( WP *wp )
 {
     WPARA *para = wp->wb.para;
-    u16 last;
+    uint16_t last;
 
     if ( para == NULL || para->len == 0 ) {
         return;
@@ -728,7 +729,7 @@ static void wp_page( WP *wp )
 static void wp_align_tab( WP *wp, int align )
 {
     if ( wp_empty_line( wp ) ) {
-        wp->line_align = (u8)align;
+        wp->line_align = (uint8_t)align;
     } else {
         wp_char( wp, WCH_TAB );
     }
@@ -736,9 +737,9 @@ static void wp_align_tab( WP *wp, int align )
 
 /* Indent: to "pos" from the paper's edge if the file says where, else
    a half inch more than before */
-static void wp_indent( WP *wp, s32 pos, int both )
+static void wp_indent( WP *wp, int pos, int both )
 {
-    s32 amount = pos - wp->mar_left - wp->adj_left;
+    int amount = pos - wp->mar_left - wp->adj_left;
 
     if ( pos <= 0 || amount <= wp->ind_left || amount > 20000 ) {
         amount = wp->ind_left + 720;
@@ -752,9 +753,9 @@ static void wp_indent( WP *wp, s32 pos, int both )
 /* Margin Release: the first line starts to the left of the rest, at
    "pos" from the paper's edge if the file says where, else a tab stop
    back */
-static void wp_back_tab( WP *wp, s32 pos )
+static void wp_back_tab( WP *wp, int pos )
 {
-    s32 first = pos - (wp->mar_left + wp->adj_left + wp->ind_left);
+    int first = pos - (wp->mar_left + wp->adj_left + wp->ind_left);
 
     if ( !wp_empty_line( wp ) ) {
         return;
@@ -770,8 +771,8 @@ static void wp_back_tab( WP *wp, s32 pos )
 
 static void wp_cell_end( WP *wp, int row_end )
 {
-    u16 flags = PF_INTABLE | PF_CELLEND;
-    u32 index;
+    uint16_t flags = PF_INTABLE | PF_CELLEND;
+    unsigned int index;
 
     if ( !wp->in_cell ) {
         return;
@@ -796,7 +797,7 @@ static void wp_cell_end( WP *wp, int row_end )
     wp->in_cell = 0;
 }
 
-static void wp_tbl_start( WP *wp, s32 left )
+static void wp_tbl_start( WP *wp, int left )
 {
     if ( wp->in_cell ) {
         wp_cell_end( wp, 1 );
@@ -810,9 +811,9 @@ static void wp_tbl_start( WP *wp, s32 left )
     wp->row.ncells = 0;
 }
 
-static void wp_tbl_column( WP *wp, s32 width )
+static void wp_tbl_column( WP *wp, int width )
 {
-    s32 from = wp->ncols ? wp->col_edge[wp->ncols - 1] : wp->tab_left;
+    int from = wp->ncols ? wp->col_edge[wp->ncols - 1] : wp->tab_left;
 
     if ( wp->ncols < MAX_CELLS ) {
         wp->col_edge[wp->ncols++] = from + wp_clamp( width, 144, 31680 );
@@ -829,9 +830,9 @@ static void wp_tbl_row( WP *wp )
     wp->next_col = 0;
 }
 
-static void wp_tbl_cell( WP *wp, u32 span )
+static void wp_tbl_cell( WP *wp, unsigned int span )
 {
-    s32 edge;
+    int edge;
 
     if ( !wp->in_table ) {
         wp_tbl_start( wp, 0 );
@@ -853,7 +854,7 @@ static void wp_tbl_cell( WP *wp, u32 span )
         edge = wp->col_edge[wp->next_col - 1];
     } else {
         edge = (wp->ncols ? wp->col_edge[wp->ncols - 1] : wp->tab_left) +
-               (s32)(wp->next_col - wp->ncols) * 1440;
+               (int)(wp->next_col - wp->ncols) * 1440;
     }
     wp->row.edge[wp->row.ncells++] = edge;
     wp->in_cell = 1;
@@ -867,16 +868,16 @@ static void wp_tbl_off( WP *wp )
 
 /* --- text that is somewhere else: a header, a note ------------------ */
 
-static void wp_sub( WP *wp, STORY *story, u32 pos, u32 end )
+static void wp_sub( WP *wp, STORY *story, uint32_t pos, uint32_t end )
 {
-    WBUILD keep_wb;
-    u32 keep_attrs = wp->attrs;
-    u16 keep_size = wp->base_size;
-    int keep_mute = wp->mute;
-    u8  keep_align = wp->line_align, keep_table = wp->in_table, keep_cell = wp->in_cell;
-    u8  keep_justify = wp->justify;
-    s32 keep_left = wp->ind_left, keep_right = wp->ind_right, keep_first = wp->ind_first;
-    s32 keep_mar_left = wp->mar_left, keep_mar_right = wp->mar_right;
+    WBUILD   keep_wb;
+    uint32_t keep_attrs = wp->attrs;
+    uint16_t keep_size = wp->base_size;
+    int      keep_mute = wp->mute;
+    uint8_t  keep_align = wp->line_align, keep_table = wp->in_table, keep_cell = wp->in_cell;
+    uint8_t  keep_justify = wp->justify;
+    int      keep_left = wp->ind_left, keep_right = wp->ind_right, keep_first = wp->ind_first;
+    int      keep_mar_left = wp->mar_left, keep_mar_right = wp->mar_right;
 
     if ( story == NULL || wp->depth >= WP_DEPTH || pos > end || end > wp->len ) {
         return;
@@ -923,7 +924,7 @@ static void wp_sub( WP *wp, STORY *story, u32 pos, u32 end )
 }
 
 /* a header (0, 1) or footer (2, 3): the first of each is the document's */
-static void wp_hdrftr( WP *wp, u32 which, u32 pos, u32 end )
+static void wp_hdrftr( WP *wp, unsigned int which, uint32_t pos, uint32_t end )
 {
     STORY *story = which < 2 ? &wp->doc->header : &wp->doc->footer;
 
@@ -933,7 +934,7 @@ static void wp_hdrftr( WP *wp, u32 which, u32 pos, u32 end )
     wp_sub( wp, story, pos, end );
 }
 
-static void wp_note( WP *wp, int kind, u32 pos, u32 end )
+static void wp_note( WP *wp, int kind, uint32_t pos, uint32_t end )
 {
     int obj;
 
@@ -951,14 +952,15 @@ static void wp_note( WP *wp, int kind, u32 pos, u32 end )
 /* ------------------------------------------------------------------ */
 /* WordPerfect 5.0 and 5.1                                             */
 /* ------------------------------------------------------------------ */
-static const u8 wp5_fixed[16] = { 4, 9, 11, 3, 3, 5, 6, 7, 4, 5, 6, 6, 8, 10, 10, 12 };
+static const uint8_t wp5_fixed[16] = { 4, 9, 11, 3, 3, 5, 6, 7, 4, 5, 6, 6, 8, 10, 10, 12 };
 
 /* a font of the prefix's list, and the size it is listed with */
-static void wp5_font( WP *wp, u32 number, u32 size )
+static void wp5_font( WP *wp, uint32_t number, uint32_t size )
 {
     char name[FONT_NAME_LEN];
-    const u8 *entry;
-    u32 off, used = 0;
+    const uint8_t *entry;
+    uint32_t off;
+    unsigned int used = 0;
 
     if ( number < wp->nfonts ) {
         entry = wp->fonts + number * 86;
@@ -978,11 +980,12 @@ static void wp5_font( WP *wp, u32 number, u32 size )
 
 /* the tab stops of a Tab Set: 40 places, then a type for each in half
    a byte; 5.1 adds whether they are counted from the margin */
-static void wp5_tabs( WP *wp, const u8 *body, u32 len )
+static void wp5_tabs( WP *wp, const uint8_t *body, uint32_t len )
 {
     WTAB tabs[MAX_TABS];
-    u32 index, pos, kind;
-    s32 base = wp->mar_left, where;
+    unsigned int index;
+    uint32_t pos, kind;
+    int base = wp->mar_left, where;
     int count = 0;
 
     if ( len < 200 ) {
@@ -1004,9 +1007,9 @@ static void wp5_tabs( WP *wp, const u8 *body, u32 len )
             continue;
         }
         tabs[count].pos = where;
-        tabs[count].kind = (u8)((kind & 3) == 1 ? TAB_CENTER : (kind & 3) == 2 ? TAB_RIGHT :
-                                (kind & 3) == 3 ? TAB_DECIMAL : TAB_LEFT);
-        tabs[count].lead = (u8)((kind & 4) ? LEAD_DOTS : LEAD_NONE);
+        tabs[count].kind = (uint8_t)((kind & 3) == 1 ? TAB_CENTER : (kind & 3) == 2 ? TAB_RIGHT :
+                                     (kind & 3) == 3 ? TAB_DECIMAL : TAB_LEFT);
+        tabs[count].lead = (uint8_t)((kind & 4) ? LEAD_DOTS : LEAD_NONE);
         count++;
     }
     if ( !pap_set_tabs( &wp->wb.pap, tabs, count ) ) {
@@ -1015,9 +1018,10 @@ static void wp5_tabs( WP *wp, const u8 *body, u32 len )
 }
 
 /* Define Table: how many columns, and how wide each is */
-static void wp5_table( WP *wp, const u8 *body, u32 len )
+static void wp5_table( WP *wp, const uint8_t *body, uint32_t len )
 {
-    u32 old, count, at, index;
+    uint32_t old, count, at;
+    unsigned int index;
 
     if ( len < 4 ) {
         return;
@@ -1040,11 +1044,11 @@ static void wp5_table( WP *wp, const u8 *body, u32 len )
     }
 }
 
-static void wp5_page_format( WP *wp, u32 sub, const u8 *body, u32 len )
+static void wp5_page_format( WP *wp, uint32_t sub, const uint8_t *body, uint32_t len )
 {
     PAGESETUP *page = &wp->doc->page;
-    s32 one, two;
-    u32 value;
+    int one, two;
+    uint32_t value;
 
     switch ( sub ) {
     case 1:                             /* left and right margins */
@@ -1065,7 +1069,7 @@ static void wp5_page_format( WP *wp, u32 sub, const u8 *body, u32 len )
         if ( len >= 4 ) {
             value = LE16( body + 2 ) * 240 / 256;
             if ( value >= 60 && value <= 2400 ) {
-                wp->wb.pap.line = (u16)value;
+                wp->wb.pap.line = (uint16_t)value;
                 wp->wb.pap.line_rule = LS_MULTIPLE;
             }
         }
@@ -1081,8 +1085,8 @@ static void wp5_page_format( WP *wp, u32 sub, const u8 *body, u32 len )
         break;
     case 6:
         if ( len >= 2 ) {
-            wp->justify = (u8)(body[1] == 0 ? AL_LEFT : body[1] == 2 ? AL_CENTER :
-                               body[1] == 3 ? AL_RIGHT : AL_JUSTIFY);
+            wp->justify = (uint8_t)(body[1] == 0 ? AL_LEFT : body[1] == 2 ? AL_CENTER :
+                                    body[1] == 3 ? AL_RIGHT : AL_JUSTIFY);
         }
         break;
     case 11:                            /* the paper */
@@ -1092,7 +1096,7 @@ static void wp5_page_format( WP *wp, u32 sub, const u8 *body, u32 len )
             if ( one >= 1440 && two >= 1440 ) {
                 page->width = one;
                 page->height = two;
-                page->landscape = (u8)(one > two);
+                page->landscape = (uint8_t)(one > two);
             }
         }
         break;
@@ -1101,10 +1105,10 @@ static void wp5_page_format( WP *wp, u32 sub, const u8 *body, u32 len )
     }
 }
 
-static void wp5_var( WP *wp, u32 code, u32 sub, u32 pos, u32 len )
+static void wp5_var( WP *wp, uint32_t code, uint32_t sub, uint32_t pos, uint32_t len )
 {
-    const u8 *body = wp->data + pos;
-    u32 skip;
+    const uint8_t *body = wp->data + pos;
+    uint32_t skip;
 
     switch ( code ) {
     case 0xD0:
@@ -1129,7 +1133,7 @@ static void wp5_var( WP *wp, u32 code, u32 sub, u32 pos, u32 len )
         break;
     case 0xD6:
         if ( sub == 0 && len >= 4 ) {
-            skip = 4 + 2 * ((u32)body[3] + 1) + 9;
+            skip = 4 + 2 * ((uint32_t)body[3] + 1) + 9;
         } else {
             skip = 7;
         }
@@ -1151,7 +1155,7 @@ static void wp5_var( WP *wp, u32 code, u32 sub, u32 pos, u32 len )
             break;
         }
         if ( sub == 0 ) {
-            wp_tbl_cell( wp, code == 0xDC && len >= 3 ? (u32)(body[2] & 0x7F) : 1 );
+            wp_tbl_cell( wp, code == 0xDC && len >= 3 ? (uint32_t)(body[2] & 0x7F) : 1 );
         } else if ( sub == 1 || sub == 3 ) {
             wp_tbl_row( wp );
         } else if ( sub == 2 ) {
@@ -1163,9 +1167,9 @@ static void wp5_var( WP *wp, u32 code, u32 sub, u32 pos, u32 len )
     }
 }
 
-static void wp5_fixed_fn( WP *wp, const u8 *body )
+static void wp5_fixed_fn( WP *wp, const uint8_t *body )
 {
-    u32 kind;
+    uint32_t kind;
 
     switch ( body[0] ) {
     case 0xC0:
@@ -1197,7 +1201,7 @@ static void wp5_fixed_fn( WP *wp, const u8 *body )
     }
 }
 
-static void wp5_single( WP *wp, u32 code )
+static void wp5_single( WP *wp, uint32_t code )
 {
     switch ( code ) {
     case 0x0A:
@@ -1248,10 +1252,10 @@ static void wp5_single( WP *wp, u32 code )
     }
 }
 
-static void wp5_body( WP *wp, u32 pos, u32 end )
+static void wp5_body( WP *wp, uint32_t pos, uint32_t end )
 {
-    const u8 *data = wp->data;
-    u32 code, size, sub;
+    const uint8_t *data = wp->data;
+    uint32_t code, size, sub;
 
     while ( pos < end ) {
         code = data[pos];
@@ -1289,8 +1293,10 @@ static void wp5_body( WP *wp, u32 pos, u32 end )
    place; the list of fonts and their names are what is wanted */
 static void wp5_prefix( WP *wp )
 {
-    const u8 *data = wp->data;
-    u32 pos = 16, blocks, count, index, next, kind, size, off;
+    const uint8_t *data = wp->data;
+    uint32_t pos = 16;
+    unsigned int blocks;
+    uint32_t count, index, next, kind, size, off;
 
     for ( blocks = 0; blocks < 64 && IN_RANGE( pos, 10, wp->len ); blocks++ ) {
         if ( LE16( data + pos ) != 0xFFFB ) {
@@ -1330,12 +1336,12 @@ static void wp5_prefix( WP *wp )
 /* ------------------------------------------------------------------ */
 /* WordPerfect 6.0 and later                                           */
 /* ------------------------------------------------------------------ */
-static const u8 wp6_fixed[16] = { 4, 5, 3, 3, 3, 3, 4, 4, 4, 5, 5, 6, 6, 8, 8, 0 };
+static const uint8_t wp6_fixed[16] = { 4, 5, 3, 3, 3, 3, 4, 4, 4, 5, 5, 6, 6, 8, 8, 0 };
 
 /* packet "id" of the prefix: where, how long, what kind; 0 for none */
-static int wp6_packet( const WP *wp, u32 id, u32 *off, u32 *size, u32 *kind )
+static int wp6_packet( const WP *wp, uint32_t id, uint32_t *off, uint32_t *size, uint32_t *kind )
 {
-    const u8 *entry;
+    const uint8_t *entry;
 
     if ( id < 1 || id >= wp->index_count ) {
         return 0;
@@ -1348,11 +1354,12 @@ static int wp6_packet( const WP *wp, u32 id, u32 *off, u32 *size, u32 *kind )
 }
 
 /* the font a packet describes: its name is sixteen-bit characters */
-static void wp6_font( WP *wp, u32 id )
+static void wp6_font( WP *wp, uint32_t id )
 {
     char name[FONT_NAME_LEN];
-    const u8 *body;
-    u32 off, size, kind, count, index, used = 0;
+    const uint8_t *body;
+    uint32_t off, size, kind, count;
+    unsigned int index, used = 0;
 
     if ( !wp6_packet( wp, id, &off, &size, &kind ) || kind != 0x55 || size < 24 ) {
         return;
@@ -1377,9 +1384,10 @@ static void wp6_font( WP *wp, u32 id )
 
 /* the text a function keeps in the prefix: the first of its packets
    that is text */
-static int wp6_text_packet( const WP *wp, const u8 *ids, u32 nids, u32 *off, u32 *size )
+static int wp6_text_packet( const WP *wp, const uint8_t *ids, uint32_t nids, uint32_t *off, uint32_t *size )
 {
-    u32 index, kind, blocks;
+    unsigned int index;
+    uint32_t kind, blocks;
 
     for ( index = 0; index < nids; index++ ) {
         if ( wp6_packet( wp, LE16( ids + index * 2 ), off, size, &kind ) && kind == 0x08 ) {
@@ -1400,13 +1408,14 @@ static int wp6_text_packet( const WP *wp, const u8 *ids, u32 nids, u32 *off, u32
     return 0;
 }
 
-static void wp6_tabs( WP *wp, const u8 *body, u32 len )
+static void wp6_tabs( WP *wp, const uint8_t *body, uint32_t len )
 {
-    WTAB tabs[MAX_TABS];
-    u32 index, at = 4, kind, pos, repeat;
-    s32 base, where = 0;
-    int count = 0;
-    u8  tab_kind = TAB_LEFT, lead = LEAD_NONE;
+    WTAB         tabs[MAX_TABS];
+    unsigned int index;
+    uint32_t     at = 4, kind, pos, repeat;
+    int          base, where = 0;
+    int          count = 0;
+    uint8_t      tab_kind = TAB_LEFT, lead = LEAD_NONE;
 
     if ( len < 4 ) {
         return;
@@ -1421,9 +1430,9 @@ static void wp6_tabs( WP *wp, const u8 *body, u32 len )
             repeat = kind & 0x7F;       /* the one before, again and again */
         } else {
             repeat = 0;
-            tab_kind = (u8)((kind & 0x0F) == 1 ? TAB_CENTER : (kind & 0x0F) == 2 ? TAB_RIGHT :
-                            (kind & 0x0F) == 3 ? TAB_DECIMAL : TAB_LEFT);
-            lead = (u8)((kind & 0x10) ? LEAD_DOTS : LEAD_NONE);
+            tab_kind = (uint8_t)((kind & 0x0F) == 1 ? TAB_CENTER : (kind & 0x0F) == 2 ? TAB_RIGHT :
+                                 (kind & 0x0F) == 3 ? TAB_DECIMAL : TAB_LEFT);
+            lead = (uint8_t)((kind & 0x10) ? LEAD_DOTS : LEAD_NONE);
             where = WPU_TWIPS( pos ) - base;
         }
         do {
@@ -1445,7 +1454,7 @@ static void wp6_tabs( WP *wp, const u8 *body, u32 len )
 
 /* the end of a line, a cell, a row, a page: by the numbers of the End
    of Line group, which the one-byte codes are turned into too */
-static void wp6_eol( WP *wp, u32 sub )
+static void wp6_eol( WP *wp, uint32_t sub )
 {
     if ( (sub >= 0x01 && sub <= 0x03) || (sub >= 0x14 && sub <= 0x16) ) {
         wp_soft_space( wp );
@@ -1468,13 +1477,13 @@ static void wp6_eol( WP *wp, u32 sub )
     }
 }
 
-static void wp6_var( WP *wp, u32 code, u32 sub, u32 pos, u32 size )
+static void wp6_var( WP *wp, uint32_t code, uint32_t sub, uint32_t pos, uint32_t size )
 {
     PAGESETUP *page = &wp->doc->page;
-    const u8 *data = wp->data, *ids = NULL, *body;
-    u32 cur = pos + 5, limit = pos + size - 3, nids = 0, len, off, psize, value;
-    u32 flags = data[pos + 4];
-    s32 one, two;
+    const uint8_t *data = wp->data, *ids = NULL, *body;
+    uint32_t cur = pos + 5, limit = pos + size - 3, nids = 0, len, off, psize, value;
+    uint32_t flags = data[pos + 4];
+    int one, two;
 
     /* the packets it uses, then the part that is kept when it is deleted */
     if ( flags & 0x80 ) {
@@ -1512,7 +1521,7 @@ static void wp6_var( WP *wp, u32 code, u32 sub, u32 pos, u32 size )
             if ( one >= 1440 && two >= 1440 ) {
                 page->width = one;
                 page->height = two;
-                page->landscape = (u8)(one > two);
+                page->landscape = (uint8_t)(one > two);
             }
         }
         break;
@@ -1539,20 +1548,20 @@ static void wp6_var( WP *wp, u32 code, u32 sub, u32 pos, u32 size )
         if ( sub == 0x01 && len >= 4 ) {
             value = (LE32( body ) >> 8) * 240 / 256;
             if ( value >= 60 && value <= 2400 ) {
-                wp->wb.pap.line = (u16)value;
+                wp->wb.pap.line = (uint16_t)value;
                 wp->wb.pap.line_rule = LS_MULTIPLE;
             }
         } else if ( sub == 0x04 ) {
             wp6_tabs( wp, body, len );
         } else if ( sub == 0x05 && len >= 1 ) {
-            wp->justify = (u8)(body[0] == 0 ? AL_LEFT : body[0] == 2 ? AL_CENTER :
-                               body[0] == 3 ? AL_RIGHT : AL_JUSTIFY);
+            wp->justify = (uint8_t)(body[0] == 0 ? AL_LEFT : body[0] == 2 ? AL_CENTER :
+                                    body[0] == 3 ? AL_RIGHT : AL_JUSTIFY);
         } else if ( sub == 0x0A && len >= 4 ) {
             value = (LE32( body ) >> 8) * 240 / 256;
-            wp->wb.pap.after = (u16)(value > 240 && value <= 2400 ? value - 240 : 0);
+            wp->wb.pap.after = (uint16_t)(value > 240 && value <= 2400 ? value - 240 : 0);
         } else if ( sub >= 0x0B && sub <= 0x0D && len >= 2 ) {
             value = LE16( body );
-            one = WPU_TWIPS( value >= 0x8000UL ? (s32)value - 0x10000L : (s32)value );
+            one = WPU_TWIPS( value >= 0x8000UL ? (int)value - 0x10000L : (int)value );
             if ( sub == 0x0B ) {
                 wp->adj_first = one;
             } else if ( sub == 0x0C ) {
@@ -1640,10 +1649,10 @@ static void wp6_var( WP *wp, u32 code, u32 sub, u32 pos, u32 size )
     }
 }
 
-static void wp6_single( WP *wp, u32 code )
+static void wp6_single( WP *wp, uint32_t code )
 {
     /* the one-byte ends of line, as the End of Line group numbers them */
-    static const u8 eol_of[0xD0 - 0xB4] = {
+    static const uint8_t eol_of[0xD0 - 0xB4] = {
         0x1C, 0x1B, 0x1A, 0x19, 0x18, 0x17, 0x16, 0x15, 0x14,   /* B4-BC */
         0x13, 0x12, 0x11,                                       /* BD-BF */
         0x10, 0x0F, 0x0E, 0x0D, 0x0C, 0x0B, 0x0A,               /* C0-C6 */
@@ -1676,10 +1685,10 @@ static void wp6_single( WP *wp, u32 code )
     }
 }
 
-static void wp6_body( WP *wp, u32 pos, u32 end )
+static void wp6_body( WP *wp, uint32_t pos, uint32_t end )
 {
-    const u8 *data = wp->data;
-    u32 code, size;
+    const uint8_t *data = wp->data;
+    uint32_t code, size;
 
     while ( pos < end ) {
         code = data[pos];
@@ -1728,8 +1737,10 @@ static void wp6_body( WP *wp, u32 pos, u32 end )
 /* the prefix's index, and the font the document starts in */
 static void wp6_prefix( WP *wp )
 {
-    const u8 *data = wp->data;
-    u32 at = LE16( data + 14 ), count, index, off, size, kind;
+    const uint8_t *data = wp->data;
+    uint32_t at = LE16( data + 14 ), count;
+    unsigned int index;
+    uint32_t off, size, kind;
 
     if ( at < 16 || !IN_RANGE( at, 14, wp->len ) ) {
         return;
@@ -1757,7 +1768,7 @@ static void wp6_prefix( WP *wp )
 
 /* how long each function C0h to FFh is, with both its gates; 0 for one
    that runs to its closing gate */
-static const u8 wp42_size[64] = {
+static const uint8_t wp42_size[64] = {
     6, 4, 3, 5, 5, 6, 4, 6, 8, 42, 3, 6, 4, 3, 4, 3,
     6, 0, 0, 4, 4, 4, 6, 0, 4, 4, 4, 4, 0, 24, 4, 0,
     4, 3, 0, 150, 6, 23, 11, 3, 3, 0, 0, 32, 4, 0, 44, 18,
@@ -1767,9 +1778,9 @@ static const u8 wp42_size[64] = {
 /* the function at "pos", whole: its length, or 0.  "dead" remembers the
    functions whose closing gate was looked for to the end and not found,
    so that a file full of them is not searched again for each */
-static u32 wp42_extent( const u8 *data, u32 pos, u32 end, u8 *dead )
+static uint32_t wp42_extent( const uint8_t *data, uint32_t pos, uint32_t end, uint8_t *dead )
 {
-    u32 code = data[pos], size = wp42_size[code - 0xC0], at;
+    uint32_t code = data[pos], size = wp42_size[code - 0xC0], at;
 
     if ( size ) {
         return IN_RANGE( pos, size, end ) && data[pos + size - 1] == code ? size : 0;
@@ -1791,7 +1802,7 @@ static u32 wp42_extent( const u8 *data, u32 pos, u32 end, u8 *dead )
     return 0;
 }
 
-static void wp42_char( WP *wp, u32 code )
+static void wp42_char( WP *wp, uint32_t code )
 {
     wp_char( wp, code );
     if ( wp->one_shot ) {
@@ -1803,17 +1814,17 @@ static void wp42_char( WP *wp, u32 code )
 }
 
 /* Tab Reset: a bit for each column that has a stop */
-static void wp42_tabs( WP *wp, const u8 *table )
+static void wp42_tabs( WP *wp, const uint8_t *table )
 {
     WTAB tabs[MAX_TABS];
-    u32 column;
-    s32 where;
+    unsigned int column;
+    int where;
     int count = 0;
 
     mem_set( tabs, 0, sizeof( tabs ) );
     for ( column = 0; column < 256 && count < MAX_TABS; column++ ) {
         if ( table[column / 8] & (0x80 >> (column & 7)) ) {
-            where = (s32)column * WP42_COL - wp->mar_left;
+            where = (int)column * WP42_COL - wp->mar_left;
             if ( where > 0 ) {
                 tabs[count].pos = where;
                 tabs[count].kind = TAB_LEFT;
@@ -1826,17 +1837,17 @@ static void wp42_tabs( WP *wp, const u8 *table )
     }
 }
 
-static void wp42_fn( WP *wp, u32 pos, u32 size )
+static void wp42_fn( WP *wp, uint32_t pos, uint32_t size )
 {
     PAGESETUP *page = &wp->doc->page;
-    const u8 *body = wp->data + pos;
-    u32 at;
-    s32 one, two;
+    const uint8_t *body = wp->data + pos;
+    uint32_t at;
+    int one, two;
 
     switch ( body[0] ) {
     case 0xC0:                          /* margins, as columns */
-        one = (s32)body[3] * WP42_COL;
-        two = page->width - (s32)body[4] * WP42_COL;
+        one = (int)body[3] * WP42_COL;
+        two = page->width - (int)body[4] * WP42_COL;
         if ( two < 0 ) {
             two = 0;
         }
@@ -1849,13 +1860,13 @@ static void wp42_fn( WP *wp, u32 pos, u32 size )
         break;
     case 0xC1:                          /* spacing, in half lines */
         if ( body[2] >= 1 && body[2] <= 20 ) {
-            wp->wb.pap.line = (u16)(body[2] * 120);
+            wp->wb.pap.line = (uint16_t)(body[2] * 120);
             wp->wb.pap.line_rule = LS_MULTIPLE;
         }
         break;
     case 0xC2:
         if ( wp_empty_line( wp ) ) {
-            wp->ind_first -= (s32)body[1] * WP42_COL;
+            wp->ind_first -= (int)body[1] * WP42_COL;
         }
         break;
     case 0xC3:
@@ -1874,25 +1885,25 @@ static void wp42_fn( WP *wp, u32 pos, u32 size )
         break;
     case 0xCB:                          /* pitch: characters to the inch */
         if ( body[3] >= 5 && body[3] <= 24 ) {
-            wp->base_size = (u16)(240 / body[3]);
+            wp->base_size = (uint16_t)(240 / body[3]);
             wp_looks( wp );
         }
         break;
     case 0xCC:
-        one = (s32)body[2] * WP42_COL - wp->mar_left;
+        one = (int)body[2] * WP42_COL - wp->mar_left;
         if ( one > 0 ) {
             wp->ind_left = one;
         }
         break;
     case 0xCE:
         if ( wp_body_empty( wp ) ) {
-            page->top = (s32)body[2] * WP42_HALF;
+            page->top = (int)body[2] * WP42_HALF;
         }
         break;
     case 0xD0:                          /* the paper: lines, and lines of text */
         if ( wp_body_empty( wp ) && body[3] >= 6 ) {
-            page->height = (s32)body[3] * 240;
-            one = page->height - page->top - (s32)body[4] * WP42_HALF;
+            page->height = (int)body[3] * 240;
+            one = page->height - page->top - (int)body[4] * WP42_HALF;
             page->bottom = one > 0 ? one : 0;
         }
         break;
@@ -1907,11 +1918,11 @@ static void wp42_fn( WP *wp, u32 pos, u32 size )
         }
         break;
     case 0xDA:
-        wp->dunder = (u8)(body[2] & 1);
+        wp->dunder = (uint8_t)(body[2] & 1);
         break;
     case 0xE0:
         if ( body[1] == 0 ) {
-            wp->ind_left += (s32)body[2] * WP42_COL;
+            wp->ind_left += (int)body[2] * WP42_COL;
             wp->ind_right = wp->ind_left;
         }
         break;
@@ -1937,7 +1948,7 @@ static void wp42_fn( WP *wp, u32 pos, u32 size )
     }
 }
 
-static void wp42_single( WP *wp, u32 code )
+static void wp42_single( WP *wp, uint32_t code )
 {
     switch ( code ) {
     case 0x02:
@@ -2020,10 +2031,10 @@ static void wp42_single( WP *wp, u32 code )
     }
 }
 
-static void wp42_body( WP *wp, u32 pos, u32 end )
+static void wp42_body( WP *wp, uint32_t pos, uint32_t end )
 {
-    const u8 *data = wp->data;
-    u32 size;
+    const uint8_t *data = wp->data;
+    uint32_t size;
 
     while ( pos < end ) {
         if ( data[pos] < 0xC0 ) {
@@ -2043,11 +2054,13 @@ static void wp42_body( WP *wp, u32 pos, u32 end )
 /* Is it 4.2?  There is no signature: its functions, each closed by its
    own code at the right distance, and nothing in between that text
    never has, are all there is to go by. */
-static int wp42_look( const u8 *data, u32 len, const char *ext )
+static int wp42_look( const uint8_t *data, uint32_t len, const char *ext )
 {
-    u8  dead[64];
-    u32 look = len < 8192 ? len : 8192, pos = 0, good = 0, size, code;
-    int sure;
+    uint8_t      dead[64];
+    uint32_t     look = len < 8192 ? len : 8192, pos = 0;
+    unsigned int good = 0;
+    uint32_t     size, code;
+    int          sure;
 
     mem_set( dead, 0, sizeof( dead ) );
     while ( pos < look ) {
@@ -2087,29 +2100,29 @@ static int wp42_look( const u8 *data, u32 len, const char *ext )
 #define WPS_UNKNOWN     0x7FFFFFFFL
 
 typedef struct {
-    WDOC *doc;
-    OUT  *out;
-    int   depth;
-    u32   attrs;            /* the attributes that are on in the file */
-    int   font;             /* the font and size in force there, by the */
-    u32   size;             /* list's numbers; -1 for "not known" */
-    u32   color;
-    s32   left, right;      /* the indents the margins in force make */
-    int   align;
-    u32   line;
-    const WTAB *tabs;       /* the tab stops last written */
-    u32   ntabs;
-    u32   notes[2];
-    u32   nfonts;
-    u16   fonts[WPS_MAX_FONTS];     /* the document's font for each in the list */
-    u16   sizes[WPS_MAX_FONTS];
+    WDOC        *doc;
+    OUT         *out;
+    int          depth;
+    uint32_t     attrs;         /* the attributes that are on in the file */
+    int          font;          /* the font and size in force there, by the */
+    uint32_t     size;          /* list's numbers; -1 for "not known" */
+    uint32_t     color;
+    int          left, right;   /* the indents the margins in force make */
+    int          align;
+    uint32_t     line;
+    const WTAB  *tabs;          /* the tab stops last written */
+    unsigned int ntabs;
+    uint32_t     notes[2];
+    unsigned int nfonts;
+    uint16_t     fonts[WPS_MAX_FONTS];  /* the document's font for each in the list */
+    uint16_t     sizes[WPS_MAX_FONTS];
 } WPS;
 
 static void wps_story( WPS *ws, STORY *story );
 
 /* twips as WordPerfect units: rounded up, which gives back the unit a
    length read from a file was made from */
-static u32 wps_wpu( s32 twips )
+static uint32_t wps_wpu( int twips )
 {
     if ( twips <= 0 ) {
         return 0;
@@ -2117,13 +2130,13 @@ static u32 wps_wpu( s32 twips )
     if ( twips > 65000 ) {
         twips = 65000;
     }
-    return ((u32)twips * 5 + 5) / 6;
+    return ((uint32_t)twips * 5 + 5) / 6;
 }
 
 /* function, kind, length ... length, kind, function */
-static u32 wps_open( OUT *out, int code, int sub )
+static uint32_t wps_open( OUT *out, int code, int sub )
 {
-    u32 at = out_tell( out );
+    uint32_t at = out_tell( out );
 
     out_byte( out, code );
     out_byte( out, sub );
@@ -2131,9 +2144,9 @@ static u32 wps_open( OUT *out, int code, int sub )
     return at;
 }
 
-static void wps_close( OUT *out, u32 at, int code, int sub )
+static void wps_close( OUT *out, uint32_t at, int code, int sub )
 {
-    u32 end = out_tell( out );
+    uint32_t end = out_tell( out );
 
     out_seek( out, at + 2 );
     out_le16( out, end - at );
@@ -2143,10 +2156,10 @@ static void wps_close( OUT *out, u32 at, int code, int sub )
     out_byte( out, code );
 }
 
-static void wps_margins( WPS *ws, s32 left, s32 right )
+static void wps_margins( WPS *ws, int left, int right )
 {
     PAGESETUP *page = &ws->doc->page;
-    u32 at = wps_open( ws->out, 0xD0, 1 );
+    uint32_t at = wps_open( ws->out, 0xD0, 1 );
 
     out_le16( ws->out, ws->left == WPS_UNKNOWN ? 0 : wps_wpu( page->left + ws->left ) );
     out_le16( ws->out, ws->right == WPS_UNKNOWN ? 0 : wps_wpu( page->right + ws->right ) );
@@ -2159,8 +2172,8 @@ static void wps_margins( WPS *ws, s32 left, s32 right )
 
 static void wps_align( WPS *ws, int align )
 {
-    static const u8 code_of[4] = { 0, 2, 3, 1 };    /* AL_* as WordPerfect's */
-    u32 at = wps_open( ws->out, 0xD0, 6 );
+    static const uint8_t code_of[4] = { 0, 2, 3, 1 }; /* AL_* as WordPerfect's */
+    uint32_t at = wps_open( ws->out, 0xD0, 6 );
 
     out_byte( ws->out, ws->align >= 0 && ws->align < 4 ? code_of[ws->align] : 0 );
     out_byte( ws->out, code_of[align & 3] );
@@ -2168,9 +2181,9 @@ static void wps_align( WPS *ws, int align )
     ws->align = align;
 }
 
-static void wps_spacing( WPS *ws, u32 line )
+static void wps_spacing( WPS *ws, uint32_t line )
 {
-    u32 at = wps_open( ws->out, 0xD0, 2 );
+    uint32_t at = wps_open( ws->out, 0xD0, 2 );
 
     out_le16( ws->out, ws->line * 256 / 240 );
     out_le16( ws->out, line * 256 / 240 );
@@ -2180,11 +2193,13 @@ static void wps_spacing( WPS *ws, u32 line )
 
 /* Tab Set: the old stops (left empty), forty places, their kinds two
    to a byte, and the left margin they are counted from */
-static void wps_tabs( WPS *ws, const WTAB *tabs, u32 count )
+static void wps_tabs( WPS *ws, const WTAB *tabs, unsigned int count )
 {
-    u8  kinds[20];
-    u32 at = wps_open( ws->out, 0xD0, 4 ), index, kind;
-    u32 margin = wps_wpu( ws->doc->page.left + (ws->left == WPS_UNKNOWN ? 0 : ws->left) );
+    uint8_t      kinds[20];
+    uint32_t     at = wps_open( ws->out, 0xD0, 4 );
+    unsigned int index;
+    uint32_t     kind;
+    uint32_t     margin = wps_wpu( ws->doc->page.left + (ws->left == WPS_UNKNOWN ? 0 : ws->left) );
 
     if ( count > 40 ) {
         count = 40;
@@ -2200,7 +2215,7 @@ static void wps_tabs( WPS *ws, const WTAB *tabs, u32 count )
             if ( tabs[index].lead != LEAD_NONE ) {
                 kind |= 4;
             }
-            kinds[index / 2] |= (u8)((index & 1) ? kind : kind << 4);
+            kinds[index / 2] |= (uint8_t)((index & 1) ? kind : kind << 4);
         } else {
             out_le16( ws->out, 0xFFFF );
         }
@@ -2216,7 +2231,9 @@ static void wps_tabs( WPS *ws, const WTAB *tabs, u32 count )
 /* the font and size of a run: Font Change names a font of the list */
 static void wps_font( WPS *ws, const CHP *chp )
 {
-    u32 at, index, number = 0;
+    uint32_t at;
+    unsigned int index;
+    uint32_t number = 0;
 
     for ( index = 0; index < ws->nfonts; index++ ) {
         if ( ws->fonts[index] == chp->font ) {
@@ -2229,20 +2246,20 @@ static void wps_font( WPS *ws, const CHP *chp )
     }
     at = wps_open( ws->out, 0xD1, 1 );
     out_byte( ws->out, 0 );
-    out_le16( ws->out, (u32)chp->size * 25 );
+    out_le16( ws->out, (uint32_t)chp->size * 25 );
     out_fill( ws->out, 0, 22 );
     out_byte( ws->out, (int)number );
     out_le16( ws->out, 0 );
-    out_le16( ws->out, (u32)chp->size * 25 );
+    out_le16( ws->out, (uint32_t)chp->size * 25 );
     out_byte( ws->out, 0 );
     wps_close( ws->out, at, 0xD1, 1 );
     ws->font = (int)number;
     ws->size = chp->size;
 }
 
-static void wps_color( WPS *ws, u32 color )
+static void wps_color( WPS *ws, uint32_t color )
 {
-    u32 at;
+    uint32_t at;
 
     if ( color == COLOR_AUTO ) {
         color = 0;
@@ -2262,9 +2279,9 @@ static void wps_color( WPS *ws, u32 color )
 }
 
 /* the attributes: off the ones that end, on the ones that start */
-static void wps_attrs( WPS *ws, u32 want )
+static void wps_attrs( WPS *ws, uint32_t want )
 {
-    u32 index;
+    unsigned int index;
 
     for ( index = 0; index < 16; index++ ) {
         if ( (ws->attrs & (1UL << index)) && !(want & (1UL << index)) ) {
@@ -2283,9 +2300,10 @@ static void wps_attrs( WPS *ws, u32 want )
     ws->attrs = want;
 }
 
-static u32 wps_attrs_of( u16 flags )
+static uint32_t wps_attrs_of( uint16_t flags )
 {
-    u32 index, attrs = 0;
+    unsigned int index;
+    uint32_t attrs = 0;
 
     for ( index = 0; index < 16; index++ ) {
         if ( wp_attr_flag[index] && (flags & wp_attr_flag[index]) ) {
@@ -2300,7 +2318,7 @@ static u32 wps_attrs_of( u16 flags )
 
 /* Tab, and Margin Release to "pos" WordPerfect units from the paper's
    edge: function, kind, where it was, where it goes, the column */
-static void wps_tab( OUT *out, int kind, u32 pos )
+static void wps_tab( OUT *out, int kind, uint32_t pos )
 {
     out_byte( out, 0xC1 );
     out_byte( out, kind );
@@ -2311,13 +2329,14 @@ static void wps_tab( OUT *out, int kind, u32 pos )
 }
 
 /* a character: ASCII as it is, the rest by its set and number */
-static void wps_char( WPS *ws, u32 code )
+static void wps_char( WPS *ws, uint32_t code )
 {
     /* the typographic set before the others: its quotes and dashes
        are the ones every reader knows */
-    static const u8 order[WP_NSETS - 1] = { 4, 1, 6, 8, 10, 3, 5, 7, 9, 11, 2 };
+    static const uint8_t order[WP_NSETS - 1] = { 4, 1, 6, 8, 10, 3, 5, 7, 9, 11, 2 };
     char plain[8];
-    u32 set, num, index;
+    uint32_t set, num;
+    unsigned int index;
     int count;
 
     if ( code >= 0x20 && code < 0x7F ) {
@@ -2341,19 +2360,21 @@ static void wps_char( WPS *ws, u32 code )
         plain[0] = '?';
         count = 1;
     }
-    out_put( ws->out, plain, (u32)count );
+    out_put( ws->out, plain, (uint32_t)count );
 }
 
 /* a header, a footer or a note: its text is made apart, because the
    function's length is sixteen bits and a story may not fit */
-static void wps_sub( WPS *ws, STORY *story, int code, int sub, const u8 *head, u32 head_len )
+static void wps_sub( WPS *ws, STORY *story, int code, int sub, const uint8_t *head, uint32_t head_len )
 {
     OUT *main_out = ws->out, *part;
     const WTAB *keep_tabs = ws->tabs;
-    u8  *bytes;
-    u32 len = 0, at, keep_attrs = ws->attrs, keep_size = ws->size, keep_ntabs = ws->ntabs, keep_line = ws->line;
-    u32 keep_color = ws->color;
-    s32 keep_left = ws->left, keep_right = ws->right;
+    uint8_t *bytes;
+    uint32_t len = 0, at, keep_attrs = ws->attrs, keep_size = ws->size;
+    unsigned int keep_ntabs = ws->ntabs;
+    uint32_t keep_line = ws->line;
+    uint32_t keep_color = ws->color;
+    int keep_left = ws->left, keep_right = ws->right;
     int keep_font = ws->font, keep_align = ws->align;
 
     if ( story == NULL || ws->depth != 0 ) {
@@ -2403,17 +2424,17 @@ static void wps_sub( WPS *ws, STORY *story, int code, int sub, const u8 *head, u
 
 static void wps_note( WPS *ws, const WOBJ *obj )
 {
-    u8  head[16];
-    int end = obj->fmt == NOTE_END;
-    u32 number = ++ws->notes[end], used = end ? 7 : 15;
+    uint8_t  head[16];
+    int      end = obj->fmt == NOTE_END;
+    uint32_t number = ++ws->notes[end], used = end ? 7 : 15;
 
     /* flags, the number; a footnote has a count of pages and their
        lines after it, an endnote four bytes.  The text starts with
        the code that shows the note's number, as WordPerfect's own
        notes do: a reader may take the first byte for it unseen. */
     mem_set( head, 0, sizeof( head ) );
-    head[1] = (u8)(number & 0xFF);
-    head[2] = (u8)((number >> 8) & 0xFF);
+    head[1] = (uint8_t)(number & 0xFF);
+    head[2] = (uint8_t)((number >> 8) & 0xFF);
     head[used] = 0x8D;
     wps_sub( ws, obj->story, 0xD6, end, head, used + 1 );
 }
@@ -2423,9 +2444,10 @@ static void wps_para( WPS *ws, WPARA *para, int last )
     WDOC *doc = ws->doc;
     const PAP *pap = &para->pap;
     const CHP *chp;
-    u32 pos = 0, run, stop, code, line;
+    unsigned int pos = 0, run, stop;
+    uint32_t code, line;
     int obj, in_table = (pap->flags & PF_INTABLE) != 0;
-    s32 left = pap->left, right = pap->right;
+    int left = pap->left, right = pap->right;
 
     if ( (pap->flags & PF_PAGEBEFORE) && ws->depth == 0 ) {
         out_byte( ws->out, 0x0C );
@@ -2496,7 +2518,7 @@ static void wps_para( WPS *ws, WPARA *para, int last )
                 break;
             case WCH_OBJ:
                 obj = wd_obj_at( para, pos - 1 );
-                if ( obj >= 0 && (u32)obj < doc->nobj && doc->obj[obj].kind == OBJ_NOTE ) {
+                if ( obj >= 0 && (unsigned int)obj < doc->nobj && doc->obj[obj].kind == OBJ_NOTE ) {
                     wps_note( ws, &doc->obj[obj] );
                 }
                 break;
@@ -2523,7 +2545,7 @@ static void wps_para( WPS *ws, WPARA *para, int last )
 
 static void wps_story( WPS *ws, STORY *story )
 {
-    u32 index;
+    unsigned int index;
 
     for ( index = 0; index < story->count; index++ ) {
         /* the last paragraph of a header or a note has no Hard Return
@@ -2534,9 +2556,10 @@ static void wps_story( WPS *ws, STORY *story )
 
 static int wp_save( WDOC *doc, OUT *out, int variant )
 {
-    WPS *ws;
-    u8  head[18];
-    u32 index, slot, at, pool = 0, name_off;
+    WPS         *ws;
+    uint8_t      head[18];
+    unsigned int index, slot;
+    uint32_t     at, pool = 0, name_off;
 
     (void)variant;
     ws = (WPS *)try_alloc( sizeof( WPS ) );
@@ -2591,9 +2614,9 @@ static int wp_save( WDOC *doc, OUT *out, int variant )
         out_fill( out, 0, 18 );
         out_le16( out, name_off );
         out_fill( out, 0, 3 );
-        out_le16( out, (u32)ws->sizes[index] * 25 );
+        out_le16( out, (uint32_t)ws->sizes[index] * 25 );
         out_fill( out, 0, 22 );
-        out_le16( out, (u32)ws->sizes[index] * 25 );
+        out_le16( out, (uint32_t)ws->sizes[index] * 25 );
         out_fill( out, 0, 37 );
         name_off += str_len( doc->font[ws->fonts[index]].name ) + 1;
     }
@@ -2631,12 +2654,12 @@ static int wp_save( WDOC *doc, OUT *out, int variant )
 /* ------------------------------------------------------------------ */
 /* the format                                                          */
 /* ------------------------------------------------------------------ */
-static int wp_signed( const u8 *data, u32 len )
+static int wp_signed( const uint8_t *data, uint32_t len )
 {
     return len >= 16 && data[0] == 0xFF && data[1] == 'W' && data[2] == 'P' && data[3] == 'C';
 }
 
-static int wp_detect( const u8 *data, u32 len, const char *ext )
+static int wp_detect( const uint8_t *data, uint32_t len, const char *ext )
 {
     if ( wp_signed( data, len ) ) {
         return (data[8] == 1 && data[9] == 0x0A) ? 100 : 0;
@@ -2644,10 +2667,10 @@ static int wp_detect( const u8 *data, u32 len, const char *ext )
     return wp42_look( data, len, ext );
 }
 
-static int wp_load( const u8 *data, u32 len, WDOC *doc )
+static int wp_load( const uint8_t *data, uint32_t len, WDOC *doc )
 {
     WP wp;
-    u32 start = 0;
+    uint32_t start = 0;
 
     mem_set( &wp, 0, sizeof( wp ) );
     wp.data = data;
@@ -2694,7 +2717,7 @@ static int wp_load( const u8 *data, u32 len, WDOC *doc )
         }
     } else {
         /* 4.2: columns 10 to 74 of a 10-pitch printer, justified */
-        wp.wb.chp.font = (u16)wd_font( doc, "Courier New", FAM_MODERN, 1 );
+        wp.wb.chp.font = (uint16_t)wd_font( doc, "Courier New", FAM_MODERN, 1 );
         wp.justify = AL_JUSTIFY;
         doc->page.right = wp.page_right = wp.mar_right = doc->page.width - 74 * WP42_COL;
     }

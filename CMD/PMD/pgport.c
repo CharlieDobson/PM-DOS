@@ -38,7 +38,7 @@ static const char *floppy_name( int type )
     return "Floppy Drive";
 }
 
-static void size_text( u32 kb, char *out, u32 max )
+static void size_text( uint32_t kb, char *out, unsigned int max )
 {
     if ( kb < 10240 ) {
         sfmt( out, max, "%uK", kb );
@@ -52,7 +52,7 @@ static void size_text( u32 kb, char *out, u32 max )
 static void drive_line( TEXT *text, int drv, const char *type, int sized )
 {
     char free_text[16], total_text[16];
-    u32 free_kb, total_kb;
+    uint32_t free_kb, total_kb;
 
     free_text[0] = total_text[0] = 0;
     if ( sized && sys_disk_space( drv, &free_kb, &total_kb ) && !crit_take() ) {
@@ -67,7 +67,7 @@ static void drive_line( TEXT *text, int drv, const char *type, int sized )
    MSD leaves it out. */
 static int floppy_drives( void )
 {
-    u32 equipment = peek_w( 0x410 );
+    uint32_t equipment = peek_w( 0x410 );
 
     return (equipment & 1) ? (int)((equipment >> 6) & 3) + 1 : 0;
 }
@@ -135,7 +135,7 @@ void sum_disk( char *line1, char *line2 )
     DRVREC rec;
     int drv, letters = 0;
     char *line = line1;
-    u32 len;
+    unsigned int len;
 
     line1[0] = line2[0] = 0;
     for ( drv = 0; sys_drive_rec( drv, &rec, &letters ); drv++ ) {
@@ -165,7 +165,7 @@ void sum_disk( char *line1, char *line2 )
 
 int lpt_port( int index )
 {
-    return index >= 0 && index < 3 ? peek_w( 0x408 + (u32)index * 2 ) : 0;
+    return index >= 0 && index < 3 ? peek_w( 0x408 + (uint32_t)index * 2 ) : 0;
 }
 
 void pg_lpt( TEXT *text )
@@ -211,7 +211,7 @@ void sum_lpt( char *line1, char *line2 )
 
 int com_port( int index )
 {
-    return index >= 0 && index < 4 ? peek_w( 0x400 + (u32)index * 2 ) : 0;
+    return index >= 0 && index < 4 ? peek_w( 0x400 + (uint32_t)index * 2 ) : 0;
 }
 
 typedef struct {
@@ -329,9 +329,9 @@ static const char *const irq_names[16] = {
 };
 
 /* a bit for every line a PCI card has been routed to */
-static u32 pci_lines( void )
+static uint32_t pci_lines( void )
 {
-    u32 addr, ident, class_rev, lines = 0;
+    uint32_t addr, ident, class_rev, lines = 0;
     int index, line, pin;
 
     for ( index = 0; index < 256 && sys_pci_enum( index, &addr, &ident, &class_rev ); index++ ) {
@@ -343,7 +343,7 @@ static u32 pci_lines( void )
     return lines;
 }
 
-static void irq_detected( int irq, u32 pci, char *out )
+static void irq_detected( int irq, uint32_t pci, char *out )
 {
     MOUSEINFO mouse_info;
     int port = mouse_com_port();
@@ -394,9 +394,9 @@ static void irq_detected( int irq, u32 pci, char *out )
     str_cpy( out, found );
 }
 
-static void irq_handler( u32 vector, u32 flags, char *out, u32 max )
+static void irq_handler( uint32_t vector, uint32_t flags, char *out, unsigned int max )
 {
-    u32 flat = FAR_FLAT( vector >> 16, vector & 0xFFFF );
+    uint32_t flat = FAR_FLAT( vector >> 16, vector & 0xFFFF );
     const char *owner;
 
     if ( flags & IRQF_KERNEL ) {
@@ -421,14 +421,14 @@ static void irq_handler( u32 vector, u32 flags, char *out, u32 max )
 
 void pg_irq( TEXT *text )
 {
-    u32 pci = pci_lines(), vector, flags, taken;
+    uint32_t pci = pci_lines(), vector, flags, taken;
     int irq;
     char detected[24], handler[24];
 
     tx_add( text, "IRQ  Address    Description       Detected            Handled By" );
     tx_add( text, "---  ---------  ----------------  ------------------  ----------------" );
     for ( irq = 0; irq < 16; irq++ ) {
-        vector = peek_d( (u32)(irq < 8 ? 0x08 + irq : 0x70 + irq - 8) * 4 );
+        vector = peek_d( (uint32_t)(irq < 8 ? 0x08 + irq : 0x70 + irq - 8) * 4 );
         flags = taken = 0;
         sys_irq_stat( irq, &flags, &taken );
         irq_detected( irq, pci, detected );

@@ -82,8 +82,8 @@ static void btn_one( BTNROW *row, int index, int at_row, int col )
     int quiet = row->on_desk && (ui_box_up() || row->focus < 0);
     int lit = index == row->focus && !(row->on_desk && ui_box_up());
     int down = index == row->armed;
-    u8 attr, hot;
-    u32 flags;
+    uint8_t attr, hot;
+    uint32_t flags;
 
     row->col[index] = col;
     row->len[index] = wide;
@@ -96,9 +96,9 @@ static void btn_one( BTNROW *row, int index, int at_row, int col )
             scr_hot( at_row, col + 2, label, pal.button, pal.button_hot );
         }
         flags = (lit ? CF_FOCUS : 0) | (down ? CF_DOWN : 0);
-        scr_flag( at_row - 1, col, wide, flags | ((u32)BP_ABOVE << CF_PART_SHIFT) );
-        scr_flag( at_row, col, wide, flags | ((u32)BP_LABEL << CF_PART_SHIFT) );
-        scr_flag( at_row + 1, col, wide, flags | ((u32)BP_BELOW << CF_PART_SHIFT) );
+        scr_flag( at_row - 1, col, wide, flags | ((uint32_t)BP_ABOVE << CF_PART_SHIFT) );
+        scr_flag( at_row, col, wide, flags | ((uint32_t)BP_LABEL << CF_PART_SHIFT) );
+        scr_flag( at_row + 1, col, wide, flags | ((uint32_t)BP_BELOW << CF_PART_SHIFT) );
         scr_flag( at_row - 1, col, 1, CF_LEFT );
         scr_flag( at_row, col, 1, CF_LEFT );
         scr_flag( at_row + 1, col, 1, CF_LEFT );

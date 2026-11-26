@@ -38,8 +38,8 @@
  */
 #include "treeview.h"
 
-void __cdecl vid_put( u32 selector, u32 offset, const void *src, u32 len );
-void __cdecl port_out( unsigned port, unsigned value );
+void __cdecl vid_put( uint32_t selector, uint32_t offset, const void *src, uint32_t len );
+void __cdecl port_out( uint16_t port, uint8_t value );
 
 #define GW              640
 #define GH              480
@@ -50,32 +50,32 @@ void __cdecl port_out( unsigned port, unsigned value );
 #define SEQ_INDEX       0x3C4
 #define SEQ_DATA        0x3C5
 
-static u32 vid_sel, vid_bytes;
+static uint32_t vid_sel, vid_bytes;
 static int mode_on;
 static const char *error_text = "";
 
-static u8 *pic;                 /* the picture, a byte a pixel */
-static u8 *planes;              /* changed lines as four planes */
-static u8  font16[16 * 256], font14[14 * 256];
-static u16 dirty_lo[GH], dirty_hi[GH];
-static u32 c2p_tab[16];
-static u8  blk[CELL_H][8];
+static uint8_t *pic;            /* the picture, a byte a pixel */
+static uint8_t *planes;         /* changed lines as four planes */
+static uint8_t  font16[16 * 256], font14[14 * 256];
+static uint16_t dirty_lo[GH], dirty_hi[GH];
+static uint32_t c2p_tab[16];
+static uint8_t  blk[CELL_H][8];
 
 static int ptr_x, ptr_y, ptr_on;
 
 /* the icons, compiled from their art the first time each is drawn */
-static u8  icon_px[ICON_MAX][CELL_H][8];
-static u8  icon_done[ICON_MAX];
+static uint8_t icon_px[ICON_MAX][CELL_H][8];
+static uint8_t icon_done[ICON_MAX];
 
 #define CLEAR   0xFF
 
 /* the picture: "pc_px" is pc_w x pc_h pixels, a byte each, over the
    cells pc_row.. and pc_col.. (from 0) */
-static u8 *pc_px;
-static u32 pc_bytes;
+static uint8_t *pc_px;
+static unsigned pc_bytes;
 static int pc_row, pc_col, pc_rows, pc_cols, pc_w, pc_h;
 
-static const u8 vga16[16][3] = {        /* red, green, blue: six bits each */
+static const uint8_t vga16[16][3] = {   /* red, green, blue: six bits each */
     {  0,  0,  0 }, {  0,  0, 42 }, {  0, 42,  0 }, {  0, 42, 42 },
     { 42,  0,  0 }, { 42,  0, 42 }, { 42, 21,  0 }, { 42, 42, 42 },
     { 21, 21, 21 }, { 21, 21, 63 }, { 21, 63, 21 }, { 21, 63, 63 },
@@ -106,14 +106,14 @@ static const char *const pointer_shape[16] = {
 /* ------------------------------------------------------------------ */
 
 /* 21h/F1h AL=20h: bytes of the first megabyte */
-static int peek( u32 addr, void *buf, u32 len )
+static int peek( uint32_t addr, void *buf, uint32_t len )
 {
     REGS regs;
 
     xa_clear( &regs );
     regs.ebx = addr;
     regs.ecx = len;
-    regs.edi = (u32)buf;
+    regs.edi = (uint32_t)buf;
     if ( xa_dos( &regs, 0xF120 ) ) {
         memset( buf, 0, len );
         return 0;
@@ -122,9 +122,9 @@ static int peek( u32 addr, void *buf, u32 len )
 }
 
 typedef struct {
-    u32 eax, ebx, ecx, edx, esi, edi;
-    u16 es, ds;
-    u32 flags;
+    uint32_t eax, ebx, ecx, edx, esi, edi;
+    uint16_t es, ds;
+    uint32_t flags;
 } BREGS;
 
 /* 21h/F1h AL=21h: one of the BIOS calls that only report */
@@ -135,8 +135,8 @@ static int bios( int vector, BREGS *bregs )
     bregs->es = bregs->ds = 0;
     bregs->flags = 0;
     xa_clear( &regs );
-    regs.edx = (u32)vector;
-    regs.esi = (u32)bregs;
+    regs.edx = (uint32_t)vector;
+    regs.esi = (uint32_t)bregs;
     return xa_dos( &regs, 0xF121 ) == 0;
 }
 
@@ -144,7 +144,7 @@ static int bios( int vector, BREGS *bregs )
 static int is_vga( void )
 {
     BREGS regs;
-    u8 probe;
+    uint8_t probe;
     int code;
 
     if ( !peek( 0x449, &probe, 1 ) ) {
@@ -163,7 +163,7 @@ static int is_vga( void )
 }
 
 /* 21h/F1h AL=1Fh, function 2: a BIOS mode, and its video memory's selector */
-static int set_mode( u32 mode )
+static int set_mode( uint32_t mode )
 {
     REGS regs;
 
@@ -190,7 +190,7 @@ static void restore_mode( void )
 /* the font                                                            */
 /* ------------------------------------------------------------------ */
 
-static int glyph_bits( const u8 *data, int height, int ch )
+static int glyph_bits( const uint8_t *data, int height, int ch )
 {
     int line, bits = 0;
 
@@ -203,7 +203,7 @@ static int glyph_bits( const u8 *data, int height, int ch )
 /* a table of characters this many lines high has an empty space, and
    something in its capital A and in its full block; one of another
    height fails the first of those */
-static int font_sane( const u8 *data, int height )
+static int font_sane( const uint8_t *data, int height )
 {
     return glyph_bits( data, height, ' ' ) == 0 && glyph_bits( data, height, 'A' ) != 0
            && glyph_bits( data, height, 0xDB ) != 0;
@@ -211,10 +211,10 @@ static int font_sane( const u8 *data, int height )
 
 /* the table vector 43h points at, when the BIOS says its characters are
    that many lines high and the table looks it */
-static int font_of_mode( int height, u8 *dst )
+static int font_of_mode( int height, uint8_t *dst )
 {
-    u16 points;
-    u32 vec, addr;
+    uint16_t points;
+    uint32_t vec, addr;
 
     if ( !peek( BDA_POINTS, &points, 2 ) || points != height || !peek( 0x43 * 4, &vec, 4 ) ) {
         return 0;
@@ -250,8 +250,8 @@ int gfx_start( void )
         return 0;
     }
     if ( pic == NULL ) {
-        pic = (u8 *)malloc( (u32)GW * GH );
-        planes = (u8 *)malloc( 4u * LINE_BYTES * GH );
+        pic = (uint8_t *)malloc( (unsigned)GW * GH );
+        planes = (uint8_t *)malloc( 4u * LINE_BYTES * GH );
         if ( pic == NULL || planes == NULL ) {
             free( pic );
             free( planes );
@@ -296,7 +296,7 @@ int gfx_start( void )
         }
     }
     /* a mode set clears the screen, and so the picture starts the same */
-    memset( pic, 0, (u32)GW * GH );
+    memset( pic, 0, (unsigned)GW * GH );
     clean_all();
     ptr_on = 0;
     return 1;
@@ -341,14 +341,14 @@ static void mark( int x0, int y0, int x1, int y1 )
     }
     for ( line = y0; line <= y1; line++ ) {
         if ( dirty_lo[line] > dirty_hi[line] ) {
-            dirty_lo[line] = (u16)x0;
-            dirty_hi[line] = (u16)x1;
+            dirty_lo[line] = (uint16_t)x0;
+            dirty_hi[line] = (uint16_t)x1;
         } else {
             if ( x0 < dirty_lo[line] ) {
-                dirty_lo[line] = (u16)x0;
+                dirty_lo[line] = (uint16_t)x0;
             }
             if ( x1 > dirty_hi[line] ) {
-                dirty_hi[line] = (u16)x1;
+                dirty_hi[line] = (uint16_t)x1;
             }
         }
     }
@@ -386,7 +386,7 @@ static int icon_compile( int id )
     memset( icon_px[id], CLEAR, sizeof( icon_px[id] ) );
     for ( line = 0; line < CELL_H && line < nrows; line++ ) {
         for ( px = 0; px < 8 && art[line] && art[line][px]; px++ ) {
-            icon_px[id][line][px] = (u8)art_color( art[line][px] );
+            icon_px[id][line][px] = (uint8_t)art_color( art[line][px] );
         }
     }
     icon_done[id] = 1;
@@ -400,7 +400,7 @@ static void paint_char( int ch, int fg, int bg )
     for ( line = 0; line < CELL_H; line++ ) {
         bits = font16[ch * CELL_H + line];
         for ( px = 0; px < 8; px++ ) {
-            blk[line][px] = (u8)((bits & (0x80 >> px)) ? fg : bg);
+            blk[line][px] = (uint8_t)((bits & (0x80 >> px)) ? fg : bg);
         }
     }
 }
@@ -408,7 +408,7 @@ static void paint_char( int ch, int fg, int bg )
 static void paint_icon( int id, int bg )
 {
     int line, px;
-    u8 dot;
+    uint8_t dot;
 
     if ( !icon_compile( id ) ) {
         paint_char( ' ', 0, bg );       /* never registered: background */
@@ -417,7 +417,7 @@ static void paint_icon( int id, int bg )
     for ( line = 0; line < CELL_H; line++ ) {
         for ( px = 0; px < 8; px++ ) {
             dot = icon_px[id][line][px];
-            blk[line][px] = dot == CLEAR ? (u8)bg : dot;
+            blk[line][px] = dot == CLEAR ? (uint8_t)bg : dot;
         }
     }
 }
@@ -434,7 +434,7 @@ static void paint_picture( int row, int col, int bg )
     }
     for ( line = 0; line < CELL_H; line++ ) {
         for ( px = 0; px < 8; px++ ) {
-            blk[line][px] = pc_px[(u32)(y0 + line) * pc_w + x0 + px];
+            blk[line][px] = pc_px[(unsigned)(y0 + line) * pc_w + x0 + px];
         }
     }
 }
@@ -443,7 +443,7 @@ void gfx_cell( int row, int col, CELL cell )
 {
     int left = col * 8, top = row * CELL_H, line;
     int fg = CELL_ATTR( cell ) & 0x0F, bg = (CELL_ATTR( cell ) >> 4) & 0x0F;
-    u8 extra = CELL_EXTRA( cell );
+    uint8_t extra = CELL_EXTRA( cell );
 
     if ( pic == NULL || row < 0 || row >= GFX_ROWS || col < 0 || col >= GW / 8 ) {
         return;
@@ -458,7 +458,7 @@ void gfx_cell( int row, int col, CELL cell )
         paint_char( ' ', fg, bg );
     }
     for ( line = 0; line < CELL_H; line++ ) {
-        memcpy( pic + (u32)(top + line) * GW + left, blk[line], 8 );
+        memcpy( pic + (unsigned)(top + line) * GW + left, blk[line], 8 );
     }
     mark( left, top, left + 7, top + CELL_H - 1 );
 }
@@ -469,15 +469,15 @@ void gfx_cell( int row, int col, CELL cell )
 
 int gfx_picture_open( int row, int col, int rows, int cols, int bg )
 {
-    u32 need;
+    unsigned need;
 
     if ( rows < 1 || cols < 1 || row < 0 || col < 0 || row + rows > GFX_ROWS
          || col + cols > GW / 8 ) {
         return 0;
     }
-    need = (u32)rows * CELL_H * (u32)cols * 8;
+    need = (unsigned)rows * CELL_H * (unsigned)cols * 8;
     if ( need > pc_bytes ) {
-        u8 *grown = (u8 *)malloc( need );
+        uint8_t *grown = (uint8_t *)malloc( need );
 
         if ( grown == NULL ) {
             return 0;
@@ -510,7 +510,7 @@ void gfx_picture_span( int y, int x0, int x1, int color )
     if ( x0 > x1 ) {
         return;
     }
-    memset( pc_px + (u32)y * pc_w + x0, color & 0x0F, (u32)(x1 - x0 + 1) );
+    memset( pc_px + (unsigned)y * pc_w + x0, color & 0x0F, (unsigned)(x1 - x0 + 1) );
 }
 
 /* ------------------------------------------------------------------ */
@@ -535,20 +535,20 @@ void gfx_pointer( int x, int y, int show )
 
 /* a scan line as it goes to the screen: the picture's, with the pointer
    laid over the pixels from "lo" to "hi" */
-static const u8 *compose( int line, int lo, int hi, u8 *buf )
+static const uint8_t *compose( int line, int lo, int hi, uint8_t *buf )
 {
     const char *shape;
     int px, at;
 
     if ( !ptr_on || line < ptr_y || line >= ptr_y + 16 || ptr_x > hi || ptr_x + 15 < lo ) {
-        return pic + (u32)line * GW;
+        return pic + (unsigned)line * GW;
     }
-    memcpy( buf + lo, pic + (u32)line * GW + lo, (u32)(hi - lo + 1) );
+    memcpy( buf + lo, pic + (unsigned)line * GW + lo, (unsigned)(hi - lo + 1) );
     shape = pointer_shape[line - ptr_y];
     for ( px = 0; px < 16; px++ ) {
         at = ptr_x + px;
         if ( at >= lo && at <= hi && shape[px] != '.' ) {
-            buf[at] = (u8)(shape[px] == 'k' ? 0 : 15);
+            buf[at] = (uint8_t)(shape[px] == 'k' ? 0 : 15);
         }
     }
     return buf;
@@ -563,33 +563,33 @@ static const u8 *compose( int line, int lo, int hi, u8 *buf )
    written with the sequencer letting only that plane take it. */
 static void flush_band( int first, int last, int blo, int bhi )
 {
-    static u8 buf[GW];
-    const u8 *src;
-    u8 *out;
-    u32 acc;
+    static uint8_t buf[GW];
+    const uint8_t *src;
+    uint8_t *out;
+    uint32_t acc;
     int line, byte, plane;
 
     for ( line = first; line <= last; line++ ) {
         src = compose( line, blo * 8, bhi * 8 + 7, buf ) + blo * 8;
-        out = planes + (u32)line * LINE_BYTES + blo;
+        out = planes + (unsigned)line * LINE_BYTES + blo;
         for ( byte = blo; byte <= bhi; byte++, src += 8, out++ ) {
             acc = c2p_tab[src[0] & 15] | (c2p_tab[src[1] & 15] >> 1)
                   | (c2p_tab[src[2] & 15] >> 2) | (c2p_tab[src[3] & 15] >> 3)
                   | (c2p_tab[src[4] & 15] >> 4) | (c2p_tab[src[5] & 15] >> 5)
                   | (c2p_tab[src[6] & 15] >> 6) | (c2p_tab[src[7] & 15] >> 7);
-            out[0] = (u8)acc;
-            out[LINE_BYTES * GH] = (u8)(acc >> 8);
-            out[2 * LINE_BYTES * GH] = (u8)(acc >> 16);
-            out[3 * LINE_BYTES * GH] = (u8)(acc >> 24);
+            out[0] = (uint8_t)acc;
+            out[LINE_BYTES * GH] = (uint8_t)(acc >> 8);
+            out[2 * LINE_BYTES * GH] = (uint8_t)(acc >> 16);
+            out[3 * LINE_BYTES * GH] = (uint8_t)(acc >> 24);
         }
     }
     for ( plane = 0; plane < 4; plane++ ) {
         port_out( SEQ_INDEX, 2 );
         port_out( SEQ_DATA, 1u << plane );
         for ( line = first; line <= last; line++ ) {
-            vid_put( vid_sel, (u32)line * LINE_BYTES + blo,
-                     planes + (u32)plane * LINE_BYTES * GH + (u32)line * LINE_BYTES + blo,
-                     (u32)(bhi - blo + 1) );
+            vid_put( vid_sel, (uint32_t)line * LINE_BYTES + blo,
+                     planes + (unsigned)plane * LINE_BYTES * GH + (unsigned)line * LINE_BYTES + blo,
+                     (uint32_t)(bhi - blo + 1) );
         }
     }
     port_out( SEQ_INDEX, 2 );
@@ -630,19 +630,19 @@ void gfx_flush( void )
 /* test mode: the picture as a file                                    */
 /* ------------------------------------------------------------------ */
 
-static void put32( u8 *at, u32 val )
+static void put32( uint8_t *at, uint32_t val )
 {
-    at[0] = (u8)val;
-    at[1] = (u8)(val >> 8);
-    at[2] = (u8)(val >> 16);
-    at[3] = (u8)(val >> 24);
+    at[0] = (uint8_t)val;
+    at[1] = (uint8_t)(val >> 8);
+    at[2] = (uint8_t)(val >> 16);
+    at[3] = (uint8_t)(val >> 24);
 }
 
 /* a Windows bitmap, a byte a pixel: the picture with the pointer, which
    is what the screen was sent */
 int gfx_snapshot( const char *path )
 {
-    static u8 head[54 + 1024], buf[GW];
+    static uint8_t head[54 + 1024], buf[GW];
     FILE *fp;
     int line, color, ok;
 
@@ -652,19 +652,19 @@ int gfx_snapshot( const char *path )
     memset( head, 0, sizeof( head ) );
     head[0] = 'B';
     head[1] = 'M';
-    put32( head + 2, sizeof( head ) + (u32)GW * GH );
+    put32( head + 2, sizeof( head ) + (uint32_t)GW * GH );
     put32( head + 10, sizeof( head ) );
     put32( head + 14, 40 );
     put32( head + 18, GW );
     put32( head + 22, GH );
     head[26] = 1;
     head[28] = 8;
-    put32( head + 34, (u32)GW * GH );
+    put32( head + 34, (uint32_t)GW * GH );
     put32( head + 46, 256 );
     for ( color = 0; color < 16; color++ ) {
-        head[54 + color * 4] = (u8)(vga16[color][2] << 2 | vga16[color][2] >> 4);
-        head[54 + color * 4 + 1] = (u8)(vga16[color][1] << 2 | vga16[color][1] >> 4);
-        head[54 + color * 4 + 2] = (u8)(vga16[color][0] << 2 | vga16[color][0] >> 4);
+        head[54 + color * 4] = (uint8_t)(vga16[color][2] << 2 | vga16[color][2] >> 4);
+        head[54 + color * 4 + 1] = (uint8_t)(vga16[color][1] << 2 | vga16[color][1] >> 4);
+        head[54 + color * 4 + 2] = (uint8_t)(vga16[color][0] << 2 | vga16[color][0] >> 4);
     }
     ok = fwrite( head, sizeof( head ), 1, fp ) == 1;
     for ( line = GH - 1; line >= 0 && ok; line-- ) {

@@ -30,30 +30,30 @@
 #define MAX_PAGES       8
 #define KEYQ            64
 
-static u16 *pages[MAX_PAGES];
-static int  npages = 1;
-static int  apage, vpage;
-static int  rows = 25, cols = 80;
-static int  crow = 1, ccol = 1;         /* the cursor, 1-based */
-static int  page_row[MAX_PAGES], page_col[MAX_PAGES];  /* other pages' */
-static int  view_top = 1, view_bot = 24;
-static int  view_set;                   /* VIEW PRINT given */
-static int  wrapped;                    /* the last character filled a line */
-static u8   attr = 0x07;
-static int  fg = 7, bg = 0;
-static int  cursor_on;                  /* LOCATE ,,1 */
-static int  hidden;                     /* the editor is up until something is written */
-static int  cur_start = -1, cur_stop = -1;
-static u32  dirty_lo = 0xFFFFFFFFUL, dirty_hi;
-static int  keyline;                    /* KEY ON */
-static STR *softkeys[13];                /* 1-10 F1-F10, 11 and 12 F11 and F12 (KEY 30, 31) */
+static uint16_t    *pages[MAX_PAGES];
+static int          npages = 1;
+static int          apage, vpage;
+static int          rows = 25, cols = 80;
+static int          crow = 1, ccol = 1; /* the cursor, 1-based */
+static int          page_row[MAX_PAGES], page_col[MAX_PAGES]; /* other pages' */
+static int          view_top = 1, view_bot = 24;
+static int          view_set;           /* VIEW PRINT given */
+static int          wrapped;            /* the last character filled a line */
+static uint8_t      attr = 0x07;
+static int          fg = 7, bg = 0;
+static int          cursor_on;          /* LOCATE ,,1 */
+static int          hidden;             /* the editor is up until something is written */
+static int          cur_start = -1, cur_stop = -1;
+static unsigned int dirty_lo = 0xFFFFFFFFUL, dirty_hi;
+static int          keyline;            /* KEY ON */
+static STR         *softkeys[13];        /* 1-10 F1-F10, 11 and 12 F11 and F12 (KEY 30, 31) */
 
-static u16  keyq[KEYQ];
-static u8   keyshift[KEYQ];          /* the shift keys and locks with each */
-static int  kq_head, kq_count;
-static int  last_scan;
-static int  shift_seen;
-static int  in_scan = -1;               /* INPUT$: an extended key's scan code, next */
+static uint16_t keyq[KEYQ];
+static uint8_t  keyshift[KEYQ];      /* the shift keys and locks with each */
+static int      kq_head, kq_count;
+static int      last_scan;
+static int      shift_seen;
+static int      in_scan = -1;           /* INPUT$: an extended key's scan code, next */
 
 int con_no_break;
 
@@ -73,12 +73,12 @@ static int text_pages( int new_rows, int new_cols )
 static int alloc_pages( int count, int new_rows, int new_cols )
 {
     int i;
-    u32 cells = (u32)new_rows * (u32)new_cols, c;
-    u16 *made[MAX_PAGES];
+    unsigned int cells = (unsigned int)new_rows * (unsigned int)new_cols, c;
+    uint16_t *made[MAX_PAGES];
 
     /* the new pages first: without page 0 the old ones stay */
     for ( i = 0; i < count && i < MAX_PAGES; i++ ) {
-        made[i] = (u16 *)try_alloc( cells * sizeof( u16 ) );
+        made[i] = (uint16_t *)try_alloc( cells * sizeof( uint16_t ) );
         if ( made[i] == NULL ) {
             if ( i == 0 ) {
                 return 0;
@@ -105,7 +105,7 @@ static int alloc_pages( int count, int new_rows, int new_cols )
     return 1;
 }
 
-static void mark( u32 first, u32 count )
+static void mark( unsigned int first, unsigned int count )
 {
     if ( first < dirty_lo ) {
         dirty_lo = first;
@@ -117,18 +117,18 @@ static void mark( u32 first, u32 count )
 
 static void mark_all( void )
 {
-    mark( 0, (u32)rows * (u32)cols );
+    mark( 0, (unsigned int)rows * (unsigned int)cols );
 }
 
 /* one cell of the working page; in a graphics mode the picture too */
 static void put_cell( int row, int col, int ch, int cell_attr )
 {
-    u32 at = (u32)(row - 1) * (u32)cols + (u32)(col - 1);
+    unsigned int at = (unsigned int)(row - 1) * (unsigned int)cols + (unsigned int)(col - 1);
 
     if ( row < 1 || row > rows || col < 1 || col > cols ) {
         return;                                 /* off the screen: nowhere to go */
     }
-    pages[apage][at] = (u16)((cell_attr << 8) | (ch & 0xFF));
+    pages[apage][at] = (uint16_t)((cell_attr << 8) | (ch & 0xFF));
     if ( gfx_mode() ) {
         gfx_text_cell( row, col, ch, cell_attr );
     } else if ( apage == vpage ) {
@@ -152,8 +152,8 @@ void con_flush( void )
         dirty_hi = 0;
         return;
     }
-    if ( dirty_hi > (u32)rows * (u32)cols ) {
-        dirty_hi = (u32)rows * (u32)cols;
+    if ( dirty_hi > (unsigned int)rows * (unsigned int)cols ) {
+        dirty_hi = (unsigned int)rows * (unsigned int)cols;
     }
     if ( dirty_lo < dirty_hi ) {
         sys_put_cells( dirty_lo, pages[vpage] + dirty_lo, dirty_hi - dirty_lo );
@@ -208,7 +208,7 @@ int con_output_shown( void )
    the screen is cleared instead. */
 void con_exit( void )
 {
-    u16 blank[132];
+    uint16_t blank[132];
     int row, col, srows, scols;
 
     if ( gfx_mode() ) {
@@ -221,7 +221,7 @@ void con_exit( void )
             blank[col] = 0x0720;
         }
         for ( row = 0; row < srows; row++ ) {
-            sys_put_cells( (u32)row * (u32)scols, blank, (u32)scols );
+            sys_put_cells( (unsigned int)row * (unsigned int)scols, blank, (unsigned int)scols );
         }
         sys_cursor_shape( CUR_LINE );
         sys_cursor( 0, 0 );
@@ -264,7 +264,7 @@ void con_capture_dos( void )
     if ( !alloc_pages( text_pages( srows, scols ), srows, scols ) ) {
         return;
     }
-    sys_get_cells( 0, pages[0], (u32)srows * (u32)scols );
+    sys_get_cells( 0, pages[0], (unsigned int)srows * (unsigned int)scols );
     sys_get_cursor( &row, &col );
     crow = row + 1;
     ccol = col + 1;
@@ -363,21 +363,21 @@ int con_row( void )
 /* rows top..bottom up by one, the last one blank in the current colour */
 static void scroll_up( int top, int bottom )
 {
-    u16 *page = pages[apage];
-    u32 from = (u32)top * (u32)cols, to = (u32)(top - 1) * (u32)cols;
-    u32 count = (u32)(bottom - top) * (u32)cols, i;
-    u16 blank = (u16)((attr << 8) | ' ');
+    uint16_t *page = pages[apage];
+    unsigned int from = (unsigned int)top * (unsigned int)cols, to = (unsigned int)(top - 1) * (unsigned int)cols;
+    unsigned int count = (unsigned int)(bottom - top) * (unsigned int)cols, i;
+    uint16_t blank = (uint16_t)((attr << 8) | ' ');
 
     if ( bottom > top ) {
-        mem_cpy( page + to, page + from, count * sizeof( u16 ) );
+        mem_cpy( page + to, page + from, count * sizeof( uint16_t ) );
     }
-    for ( i = 0; i < (u32)cols; i++ ) {
-        page[(u32)(bottom - 1) * (u32)cols + i] = blank;
+    for ( i = 0; i < (unsigned int)cols; i++ ) {
+        page[(unsigned int)(bottom - 1) * (unsigned int)cols + i] = blank;
     }
     if ( gfx_mode() ) {
         gfx_scroll_text( top, bottom, attr );
     } else if ( apage == vpage ) {
-        mark( to, count + (u32)cols );
+        mark( to, count + (unsigned int)cols );
     }
 }
 
@@ -404,9 +404,9 @@ void con_newline( void )
 
 static void clear_rows( int top, int bottom )
 {
-    u16 *page = pages[apage];
-    u32 i, from = (u32)(top - 1) * (u32)cols, to = (u32)bottom * (u32)cols;
-    u16 blank = (u16)((attr << 8) | ' ');
+    uint16_t *page = pages[apage];
+    unsigned int i, from = (unsigned int)(top - 1) * (unsigned int)cols, to = (unsigned int)bottom * (unsigned int)cols;
+    uint16_t blank = (uint16_t)((attr << 8) | ' ');
 
     for ( i = from; i < to; i++ ) {
         page[i] = blank;
@@ -495,10 +495,10 @@ void con_putc( int ch )
     }
 }
 
-void con_write( const char *text, u32 len )
+void con_write( const char *text, unsigned int len )
 {
     while ( len-- ) {
-        con_putc( (u8)*text++ );
+        con_putc( (uint8_t)*text++ );
     }
 }
 
@@ -517,12 +517,12 @@ static int chan;                        /* 0 screen, -1 printer, n file */
 
 int  file_col( int num );
 int  file_width( int num );
-void file_text( int num, const char *text, u32 len );
+void file_text( int num, const char *text, unsigned int len );
 void file_newline( int num );
 void file_check_output( int num );
 int  lpt_col( void );
 int  lpt_width( void );
-void lpt_text( const char *text, u32 len );
+void lpt_text( const char *text, unsigned int len );
 void lpt_newline( void );
 
 static int out_col( void )
@@ -535,7 +535,7 @@ static int out_width( void )
     return chan == 0 ? cols : chan < 0 ? lpt_width() : file_width( chan );
 }
 
-static void out_text( const char *text, u32 len )
+static void out_text( const char *text, unsigned int len )
 {
     if ( chan == 0 ) {
         con_write( text, len );
@@ -565,12 +565,12 @@ static void out_newline( void )
     }
 }
 
-static void out_spaces( u32 count )
+static void out_spaces( unsigned int count )
 {
     static const char blanks[] = "                                ";
 
     while ( count > 0 ) {
-        u32 n = count > 32 ? 32 : count;
+        unsigned int n = count > 32 ? 32 : count;
         out_text( blanks, n );
         count -= n;
     }
@@ -578,11 +578,11 @@ static void out_spaces( u32 count )
 
 /* an item: moved whole to the next line when it does not fit the rest
    of this one (and would fit a line) */
-static void out_item( const char *text, u32 len )
+static void out_item( const char *text, unsigned int len )
 {
     int width = out_width(), col = out_col();
 
-    if ( width > 0 && col > 1 && (u32)(col - 1) + len > (u32)width && len <= (u32)width ) {
+    if ( width > 0 && col > 1 && (unsigned int)(col - 1) + len > (unsigned int)width && len <= (unsigned int)width ) {
         out_newline();
     }
     out_text( text, len );
@@ -599,7 +599,7 @@ void rtf_PRCHAN( void )
 static void print_number( const char *digits )
 {
     char buf[48];
-    u32 len;
+    unsigned int len;
 
     if ( digits[0] == '-' ) {
         str_cpy( buf, digits );
@@ -658,12 +658,12 @@ void rtf_PRCOMMA( void )
         out_newline();
         return;
     }
-    out_spaces( (u32)(next - col) );
+    out_spaces( (unsigned int)(next - col) );
 }
 
 void rtf_PRTAB( void )
 {
-    s32 n = POP_L();
+    int32_t n = POP_L();
     int width = out_width(), col = out_col();
 
     if ( chan == 0 || chan < 0 ) {
@@ -678,12 +678,12 @@ void rtf_PRTAB( void )
         out_newline();
         col = 1;
     }
-    out_spaces( (u32)(n - col) );
+    out_spaces( (unsigned int)(n - col) );
 }
 
 void rtf_PRSPC( void )
 {
-    s32 n = POP_L();
+    int32_t n = POP_L();
     int width = out_width();
 
     if ( n < 0 ) {
@@ -692,7 +692,7 @@ void rtf_PRSPC( void )
     if ( width > 0 ) {
         n %= width;
     }
-    out_spaces( (u32)n );
+    out_spaces( (unsigned int)n );
 }
 
 void rtf_PREOL( void )
@@ -840,8 +840,8 @@ static void key_push( int key, int shift )
         key &= 0xFF00;                          /* a grey key: as the white one */
     }
     if ( kq_count < KEYQ ) {
-        keyq[(kq_head + kq_count) % KEYQ] = (u16)key;
-        keyshift[(kq_head + kq_count) % KEYQ] = (u8)shift;
+        keyq[(kq_head + kq_count) % KEYQ] = (uint16_t)key;
+        keyshift[(kq_head + kq_count) % KEYQ] = (uint8_t)shift;
         kq_count++;
     }
 }
@@ -964,7 +964,7 @@ static int trap_number( int key )
     return 0;
 }
 
-static u8 user_trap_scan[26], user_trap_shift[26];
+static uint8_t user_trap_scan[26], user_trap_shift[26];
 
 /* KEY n, CHR$(flags) + CHR$(scan): either Shift (1-3), Ctrl (4), Alt (8),
    NumLock (20h) and CapsLock (40h) must be as given - with CapsLock on, a
@@ -993,7 +993,7 @@ static int key_is_trapped( int key, int shift )
 }
 
 /* a trapped key out of the queue: -> 1 with its KEY number */
-int con_take_trapped_key( int *which, const u8 *armed )
+int con_take_trapped_key( int *which, const uint8_t *armed )
 {
     int i, n, j, key;
 
@@ -1048,16 +1048,16 @@ void rtf_INKEY( void )
 /* INPUT$(n): n characters, not shown */
 void rtf_INPUTS( void )
 {
-    s32 n = POP_L();
+    int32_t n = POP_L();
     STR *s;
-    s32 i;
+    int i;
     int key;
 
     if ( n < 1 || n > STR_MAX ) {
         vm_error( E_ILLEGAL_CALL );
     }
     con_flush();
-    s = qs_new( (u32)n );
+    s = qs_new( (unsigned int)n );
     PUSH_STR( s );                              /* on the stack: Ctrl+Break while waiting frees it */
     for ( i = 0; i < n; i++ ) {
         if ( in_scan >= 0 ) {
@@ -1127,11 +1127,11 @@ int con_read_line( char *buf, int max, int is_input )
         if ( ch == 8 ) {
             if ( pos > 0 ) {
                 pos--;
-                mem_cpy( buf + pos, buf + pos + 1, (u32)(len - pos - 1) );
+                mem_cpy( buf + pos, buf + pos + 1, (unsigned int)(len - pos - 1) );
                 len--;
                 for ( i = pos; i <= len; i++ ) {
                     int at = col0 - 1 + i;
-                    put_cell( row0 + at / cols, at % cols + 1, i < len ? (u8)buf[i] : ' ', attr );
+                    put_cell( row0 + at / cols, at % cols + 1, i < len ? (uint8_t)buf[i] : ' ', attr );
                 }
             }
             continue;
@@ -1145,11 +1145,11 @@ int con_read_line( char *buf, int max, int is_input )
             case 0x52:  insert = !insert; break;
             case 0x53:
                 if ( pos < len ) {
-                    mem_cpy( buf + pos, buf + pos + 1, (u32)(len - pos - 1) );
+                    mem_cpy( buf + pos, buf + pos + 1, (unsigned int)(len - pos - 1) );
                     len--;
                     for ( i = pos; i <= len; i++ ) {
                         int at = col0 - 1 + i;
-                        put_cell( row0 + at / cols, at % cols + 1, i < len ? (u8)buf[i] : ' ', attr );
+                        put_cell( row0 + at / cols, at % cols + 1, i < len ? (uint8_t)buf[i] : ' ', attr );
                     }
                 }
                 break;
@@ -1170,7 +1170,7 @@ int con_read_line( char *buf, int max, int is_input )
             }
         }
         if ( insert && len < max ) {
-            mem_cpy( buf + pos + 1, buf + pos, (u32)(len - pos) );
+            mem_cpy( buf + pos + 1, buf + pos, (unsigned int)(len - pos) );
             buf[pos] = (char)ch;
             len++;
         } else if ( pos < len ) {
@@ -1191,7 +1191,7 @@ int con_read_line( char *buf, int max, int is_input )
         }
         for ( i = pos; i < len; i++ ) {
             int at = col0 - 1 + i;
-            put_cell( row0 + at / cols, at % cols + 1, (u8)buf[i], attr );
+            put_cell( row0 + at / cols, at % cols + 1, (uint8_t)buf[i], attr );
         }
         pos++;
     }
@@ -1218,8 +1218,8 @@ int con_read_line( char *buf, int max, int is_input )
 
 static char  in_line[256];
 static struct {
-    u16 start, len;
-    u8  quoted;
+    uint16_t start, len;
+    uint8_t  quoted;
 } in_items[MAX_ITEMS];
 static int   in_count, in_next;
 static int   in_file;           /* INPUT #: the file, else 0 */
@@ -1263,8 +1263,8 @@ static int split_items( const char *line, int len, int want )
                 end--;
             }
         }
-        in_items[count].start = (u16)start;
-        in_items[count].len = (u16)(end - start);
+        in_items[count].start = (uint16_t)start;
+        in_items[count].len = (uint16_t)(end - start);
         count++;
         if ( pos >= len ) {
             break;
@@ -1282,7 +1282,7 @@ static int item_ok( int i, int c )
     double val;
     int type;
     const char *text = in_line + in_items[i].start;
-    u32 len = in_items[i].len;
+    unsigned int len = in_items[i].len;
 
     if ( c == '$' ) {
         return 1;
@@ -1382,12 +1382,12 @@ static char *item_buf( void )
 }
 
 /* the next item's text: from the line read, or from the file */
-static const char *next_item( u32 *len, int *quoted, int want_string )
+static const char *next_item( unsigned int *len, int *quoted, int want_string )
 {
     if ( in_file ) {
         char *fbuf = item_buf();
         int n = file_input_item( in_file, fbuf, ITEM_MAX, quoted, want_string );
-        *len = (u32)n;
+        *len = (unsigned int)n;
         return fbuf;
     }
     if ( in_next >= in_count ) {
@@ -1402,11 +1402,11 @@ static const char *next_item( u32 *len, int *quoted, int want_string )
 
 static double item_value( int *type )
 {
-    u32 len;
+    unsigned int len;
     int quoted;
     const char *text = next_item( &len, &quoted, 0 );
     double val;
-    u32 used;
+    unsigned int used;
 
     if ( len == 0 ) {
         *type = TY_INT;
@@ -1420,26 +1420,26 @@ static double item_value( int *type )
 
 void rtf_INITEMI( void )
 {
-    s16 *var = (s16 *)POP_A();
+    int16_t *var = (int16_t *)POP_A();
     int type;
     double v = fp_round( item_value( &type ) );
 
     if ( v < -32768.0 || v > 32767.0 ) {
         vm_error( E_OVERFLOW );
     }
-    *var = (s16)v;
+    *var = (int16_t)v;
 }
 
 void rtf_INITEML( void )
 {
-    s32 *var = (s32 *)POP_A();
+    int32_t *var = (int32_t *)POP_A();
     int type;
     double v = fp_round( item_value( &type ) );
 
     if ( v < -2147483648.0 || v > 2147483647.0 ) {
         vm_error( E_OVERFLOW );
     }
-    *var = (s32)v;
+    *var = (int32_t)v;
 }
 
 void rtf_INITEMS( void )
@@ -1465,7 +1465,7 @@ void rtf_INITEMD( void )
 void rtf_INITEMSTR( void )
 {
     STR **var = (STR **)POP_A();
-    u32 len;
+    unsigned int len;
     int quoted;
     const char *text = next_item( &len, &quoted, 1 );
     STR *old = *var;
@@ -1476,9 +1476,9 @@ void rtf_INITEMSTR( void )
 
 void rtf_INITEMFS( void )
 {
-    u32 width = (u32)POP_L();
+    unsigned int width = (unsigned int)POP_L();
     char *field = (char *)POP_A();
-    u32 len, n;
+    unsigned int len, n;
     int quoted;
     const char *text = next_item( &len, &quoted, 1 );
 
@@ -1490,7 +1490,7 @@ void rtf_INITEMFS( void )
 /* LINE INPUT: prompt, flags, the variable and its width (0 = a STRING) */
 void rtf_LINEIN( void )
 {
-    u32 width = (u32)POP_L();
+    unsigned int width = (unsigned int)POP_L();
     void *var = POP_A();
     int flags = (int)POP_L();
     STR *prompt = POP_STR();
@@ -1504,10 +1504,10 @@ void rtf_LINEIN( void )
     }
     if ( width == 0 ) {
         STR **slot = (STR **)var, *old = *slot;
-        *slot = qs_make( in_line, (u32)len );
+        *slot = qs_make( in_line, (unsigned int)len );
         qs_release( old );
     } else {
-        u32 n = (u32)len < width ? (u32)len : width;
+        unsigned int n = (unsigned int)len < width ? (unsigned int)len : width;
         mem_cpy( var, in_line, n );
         mem_set( (char *)var + n, ' ', width - n );
     }
@@ -1517,7 +1517,7 @@ int file_line_input( int num, char *buf, int max );
 
 void rtf_LINEINF( void )
 {
-    u32 width = (u32)POP_L();
+    unsigned int width = (unsigned int)POP_L();
     void *var = POP_A();
     int num = (int)POP_L();
     char *buf = item_buf();
@@ -1525,10 +1525,10 @@ void rtf_LINEINF( void )
 
     if ( width == 0 ) {
         STR **slot = (STR **)var, *old = *slot;
-        *slot = qs_make( buf, (u32)len );
+        *slot = qs_make( buf, (unsigned int)len );
         qs_release( old );
     } else {
-        u32 n = (u32)len < width ? (u32)len : width;
+        unsigned int n = (unsigned int)len < width ? (unsigned int)len : width;
         mem_cpy( var, buf, n );
         mem_set( (char *)var + n, ' ', width - n );
     }
@@ -1546,7 +1546,7 @@ void rtf_RANDASK( void )
         con_write( "Random-number seed (-32768 to 32767)? ", 38 );
         len = con_read_line( line, 255, 1 );
         con_newline();
-        if ( num_scan( line, (u32)len, &val, &type ) && val >= -32768.0 && val <= 32767.0 ) {
+        if ( num_scan( line, (unsigned int)len, &val, &type ) && val >= -32768.0 && val <= 32767.0 ) {
             break;
         }
         con_write( "Redo from start", 15 );
@@ -1570,7 +1570,7 @@ static void draw_keyline( void );
 
 void rtf_CLS( void )
 {
-    s32 how = POP_L();
+    int32_t how = POP_L();
 
     need( how >= -1 && how <= 2 );
     if ( gfx_mode() ) {
@@ -1606,7 +1606,7 @@ void rtf_CLS( void )
 void rtf_LOCATE( void )
 {
     int mask = (int)POP_L();
-    s32 stop = POP_L(), start = POP_L(), cursor = POP_L(), col = POP_L(), row = POP_L();
+    int32_t stop = POP_L(), start = POP_L(), cursor = POP_L(), col = POP_L(), row = POP_L();
 
     if ( mask & 1 ) {
         if ( view_set ) {
@@ -1640,7 +1640,7 @@ void rtf_LOCATE( void )
 void rtf_COLOR( void )
 {
     int mask = (int)POP_L();
-    s32 border = POP_L(), b = POP_L(), f = POP_L();
+    int32_t border = POP_L(), b = POP_L(), f = POP_L();
 
     (void)border;
     if ( gfx_mode() ) {
@@ -1651,7 +1651,7 @@ void rtf_COLOR( void )
             bg = (int)b;
         }
         gfx_set_colors( mask & 1 ? (int)f : -1, mask & 2 ? (int)b : -1 );
-        attr = (u8)gfx_text_attr( fg, bg );
+        attr = (uint8_t)gfx_text_attr( fg, bg );
         return;
     }
     if ( mask & 1 ) {
@@ -1665,7 +1665,7 @@ void rtf_COLOR( void )
     if ( mask & 4 ) {
         need( border >= 0 && border <= 15 );
     }
-    attr = (u8)(((bg & 7) << 4) | (fg & 15) | ((fg & 16) ? 0x80 : 0));
+    attr = (uint8_t)(((bg & 7) << 4) | (fg & 15) | ((fg & 16) ? 0x80 : 0));
 }
 
 int  gfx_width( int new_cols, int new_rows );
@@ -1674,7 +1674,7 @@ int  gfx_width( int new_cols, int new_rows );
 void rtf_WIDTH( void )
 {
     int mask = (int)POP_L();
-    s32 r = POP_L(), c = POP_L();
+    int32_t r = POP_L(), c = POP_L();
     int new_cols = mask & 1 ? (int)c : cols, new_rows = mask & 2 ? (int)r : rows;
 
     if ( gfx_mode() ) {
@@ -1705,7 +1705,7 @@ void rtf_WIDTH( void )
 
 void rtf_VIEWPRINT( void )
 {
-    s32 bottom = POP_L(), top = POP_L();
+    int32_t bottom = POP_L(), top = POP_L();
     int given = (int)POP_L();
 
     if ( !given ) {
@@ -1738,12 +1738,12 @@ void rtf_CSRLIN( void )
 void rtf_SCREENF( void )
 {
     int given = (int)POP_L();
-    s32 want_attr = POP_L(), col = POP_L(), row = POP_L();
-    u16 cell;
+    int32_t want_attr = POP_L(), col = POP_L(), row = POP_L();
+    uint16_t cell;
 
     (void)given;
     need( row >= 1 && row <= rows && col >= 1 && col <= cols );
-    cell = pages[apage][(u32)(row - 1) * (u32)cols + (u32)(col - 1)];
+    cell = pages[apage][(unsigned int)(row - 1) * (unsigned int)cols + (unsigned int)(col - 1)];
     if ( want_attr ) {
         PUSH_L( gfx_mode() ? 0 : cell >> 8 );
     } else {
@@ -1784,7 +1784,7 @@ int con_copy_page( int from, int to )
     if ( from < 0 || from >= npages || to < 0 || to >= npages ) {
         return 0;
     }
-    mem_cpy( pages[to], pages[from], (u32)rows * (u32)cols * sizeof( u16 ) );
+    mem_cpy( pages[to], pages[from], (unsigned int)rows * (unsigned int)cols * sizeof( uint16_t ) );
     if ( to == vpage ) {
         mark_all();
     }
@@ -1792,12 +1792,12 @@ int con_copy_page( int from, int to )
 }
 
 /* one cell of a text page, for PEEK and POKE at B800 */
-u16 *con_page_cells( int page )
+uint16_t *con_page_cells( int page )
 {
     return page >= 0 && page < npages ? pages[page] : NULL;
 }
 
-void con_page_changed( int page, u32 first, u32 count )
+void con_page_changed( int page, unsigned int first, unsigned int count )
 {
     if ( page == vpage && !gfx_mode() ) {
         mark( first, count );
@@ -1827,7 +1827,7 @@ static void draw_keyline( void )
         put_cell( rows, col, k == 10 ? '0' : '0' + k, 0x07 );
         s = softkeys[k];
         for ( i = 0; i < 6 && i < (int)QS_LEN( s ) && col + 1 + i <= cols; i++ ) {
-            int ch = (u8)s->text[i];
+            int ch = (uint8_t)s->text[i];
             put_cell( rows, col + 1 + i, ch == 13 ? 27 : ch, 0x70 );
         }
     }
@@ -1868,15 +1868,15 @@ void rtf_KEYONOFF( void )
 void rtf_KEYSET( void )
 {
     STR *s = POP_STR();
-    s32 n = POP_L();
+    int32_t n = POP_L();
 
     if ( n >= 15 && n <= 25 ) {
         if ( QS_LEN( s ) != 2 ) {
             qs_release( s );
             vm_error( E_ILLEGAL_CALL );
         }
-        user_trap_shift[n] = (u8)s->text[0];
-        user_trap_scan[n] = (u8)s->text[1];
+        user_trap_shift[n] = (uint8_t)s->text[0];
+        user_trap_scan[n] = (uint8_t)s->text[1];
         qs_release( s );
         return;
     }
@@ -1926,7 +1926,7 @@ void con_after_shell( void )
     }
     sys_screen_size( &srows, &scols );
     if ( srows == rows && scols == cols ) {
-        sys_get_cells( 0, pages[vpage], (u32)rows * (u32)cols );
+        sys_get_cells( 0, pages[vpage], (unsigned int)rows * (unsigned int)cols );
         sys_get_cursor( &row, &col );
         crow = row + 1;
         ccol = col + 1;
@@ -1941,11 +1941,11 @@ void con_after_shell( void )
 
 /* a byte of 0040:0049-0066 or 0040:0084-0086 (off is from 0400h), or
    -1 for one this does not answer; MACH.C's PEEK asks */
-int con_bda_byte( u32 off )
+int con_bda_byte( uint32_t off )
 {
-    static const u8 bios_mode[14] = { 3, 4, 6, 0, 0, 0, 0, 0x0D, 0x0E, 0x10, 0x0F, 0x11, 0x12, 0x13 };
+    static const uint8_t bios_mode[14] = { 3, 4, 6, 0, 0, 0, 0, 0x0D, 0x0E, 0x10, 0x0F, 0x11, 0x12, 0x13 };
     int mode = gfx_mode(), page, word = -1;
-    u32 page_size = (u32)rows * (u32)cols * 2;
+    unsigned int page_size = (unsigned int)rows * (unsigned int)cols * 2;
 
     page_size = page_size <= 2048 ? 2048 : page_size <= 4096 ? 4096 : 8192;
     switch ( off ) {
@@ -1958,7 +1958,7 @@ int con_bda_byte( u32 off )
         word = mode ? 0 : (int)page_size;
         break;
     case 0x4E: case 0x4F:
-        word = mode ? 0 : (int)(page_size * (u32)vpage);
+        word = mode ? 0 : (int)(page_size * (unsigned int)vpage);
         break;
     case 0x60:
         return cur_stop >= 0 ? cur_stop : 7;
@@ -1997,7 +1997,7 @@ int con_bda_byte( u32 off )
 void con_end_prompt( const char *text )
 {
     int save_page = apage, save_row = crow, save_col = ccol, save_wrap = wrapped, gpage = -1;
-    u8 save_attr = attr;
+    uint8_t save_attr = attr;
 
     if ( pages[0] == NULL ) {
         return;
@@ -2009,9 +2009,9 @@ void con_end_prompt( const char *text )
     wrapped = 0;                                /* the program's full last line owes no scroll here */
     crow = rows;
     ccol = 1;
-    attr = gfx_mode() ? (u8)gfx_text_attr( 15, 0 ) : 0x07;
+    attr = gfx_mode() ? (uint8_t)gfx_text_attr( 15, 0 ) : 0x07;
     while ( *text && ccol < cols ) {
-        con_putc( (u8)*text++ );
+        con_putc( (uint8_t)*text++ );
     }
     apage = save_page;
     if ( gpage >= 0 ) {

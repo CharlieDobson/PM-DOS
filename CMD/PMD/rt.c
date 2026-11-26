@@ -10,19 +10,19 @@
 /* memory and strings                                                  */
 /* ------------------------------------------------------------------ */
 
-void mem_set( void *dst, int val, u32 len )
+void mem_set( void *dst, int val, unsigned int len )
 {
-    u8 *cur = (u8 *)dst;
+    uint8_t *cur = (uint8_t *)dst;
 
     while ( len-- ) {
-        *cur++ = (u8)val;
+        *cur++ = (uint8_t)val;
     }
 }
 
-void mem_cpy( void *dst, const void *src, u32 len )
+void mem_cpy( void *dst, const void *src, unsigned int len )
 {
-    u8 *dcur = (u8 *)dst;
-    const u8 *scur = (const u8 *)src;
+    uint8_t *dcur = (uint8_t *)dst;
+    const uint8_t *scur = (const uint8_t *)src;
 
     if ( dcur < scur ) {
         while ( len-- ) {
@@ -37,9 +37,9 @@ void mem_cpy( void *dst, const void *src, u32 len )
     }
 }
 
-u32 str_len( const char *str )
+unsigned int str_len( const char *str )
 {
-    u32 len = 0;
+    unsigned int len = 0;
 
     while ( str[len] ) {
         len++;
@@ -57,9 +57,9 @@ char *str_cpy( char *dst, const char *src )
 }
 
 /* a copy that stops short of "max" bytes including the NUL */
-int str_cpyn( char *dst, const char *src, u32 max )
+int str_cpyn( char *dst, const char *src, unsigned int max )
 {
-    u32 len = str_len( src );
+    unsigned int len = str_len( src );
 
     if ( len + 1 > max ) {
         return 0;
@@ -68,9 +68,9 @@ int str_cpyn( char *dst, const char *src, u32 max )
     return 1;
 }
 
-int str_catn( char *dst, const char *src, u32 max )
+int str_catn( char *dst, const char *src, unsigned int max )
 {
-    u32 have = str_len( dst );
+    unsigned int have = str_len( dst );
 
     if ( have >= max ) {
         return 0;
@@ -112,7 +112,7 @@ int str_icmp( const char *lhs, const char *rhs )
     }
 }
 
-int str_nicmp( const char *lhs, const char *rhs, u32 len )
+int str_nicmp( const char *lhs, const char *rhs, unsigned int len )
 {
     int lch, rch;
 
@@ -157,13 +157,13 @@ int str_cmp( const char *lhs, const char *rhs )
         lhs++;
         rhs++;
     }
-    return (int)(u8)*lhs - (int)(u8)*rhs;
+    return (int)(uint8_t)*lhs - (int)(uint8_t)*rhs;
 }
 
-int mem_cmp( const void *lhs, const void *rhs, u32 len )
+int mem_cmp( const void *lhs, const void *rhs, unsigned int len )
 {
-    const u8 *lcur = (const u8 *)lhs;
-    const u8 *rcur = (const u8 *)rhs;
+    const uint8_t *lcur = (const uint8_t *)lhs;
+    const uint8_t *rcur = (const uint8_t *)rhs;
 
     for ( ; len; len--, lcur++, rcur++ ) {
         if ( *lcur != *rcur ) {
@@ -173,13 +173,13 @@ int mem_cmp( const void *lhs, const void *rhs, u32 len )
     return 0;
 }
 
-u32 dec_parse( const char *str, int *ok )
+unsigned int dec_parse( const char *str, int *ok )
 {
-    u32 val = 0;
+    unsigned int val = 0;
 
     *ok = 0;
     while ( *str >= '0' && *str <= '9' ) {
-        val = val * 10 + (u32)(*str - '0');
+        val = val * 10 + (unsigned int)(*str - '0');
         *ok = 1;
         str++;
     }
@@ -189,7 +189,7 @@ u32 dec_parse( const char *str, int *ok )
     return val;
 }
 
-char *fmt_dec( u32 val, int width, char *buf )
+char *fmt_dec( unsigned int val, int width, char *buf )
 {
     char digits[12];
     int count = 0, pos = 0;
@@ -213,7 +213,7 @@ char *fmt_dec( u32 val, int width, char *buf )
 /* ------------------------------------------------------------------ */
 
 typedef struct HBLK {
-    u32          size;          /* whole block including this header */
+    unsigned int size;          /* whole block including this header */
     struct HBLK *next;          /* free list link (free blocks only) */
 } HBLK;
 
@@ -235,20 +235,20 @@ static void heap_insert( HBLK *blk )
     }
     blk->next = *link;
     *link = blk;
-    if ( blk->next && (u8 *)blk + blk->size == (u8 *)blk->next ) {
+    if ( blk->next && (uint8_t *)blk + blk->size == (uint8_t *)blk->next ) {
         blk->size += blk->next->size;
         blk->next = blk->next->next;
     }
-    if ( prev && (u8 *)prev + prev->size == (u8 *)blk ) {
+    if ( prev && (uint8_t *)prev + prev->size == (uint8_t *)blk ) {
         prev->size += blk->size;
         prev->next = blk->next;
     }
 }
 
-void *try_alloc( u32 size )
+void *try_alloc( unsigned int size )
 {
     HBLK **link, *blk, *rest;
-    u32 need, chunk;
+    unsigned int need, chunk;
     void *mem;
     int pass;
 
@@ -262,7 +262,7 @@ void *try_alloc( u32 size )
                 continue;
             }
             if ( blk->size - need >= MIN_SPLIT ) {
-                rest = (HBLK *)((u8 *)blk + need);
+                rest = (HBLK *)((uint8_t *)blk + need);
                 rest->size = blk->size - need;
                 rest->next = blk->next;
                 *link = rest;
@@ -270,7 +270,7 @@ void *try_alloc( u32 size )
             } else {
                 *link = blk->next;
             }
-            return (u8 *)blk + HDR;
+            return (uint8_t *)blk + HDR;
         }
         if ( pass ) {
             break;
@@ -293,7 +293,7 @@ void *try_alloc( u32 size )
 
 /* Only for what the program cannot start without: anything later uses
    try_alloc and says "no memory" instead, so an unsaved file survives. */
-void *xalloc( u32 size )
+void *xalloc( unsigned int size )
 {
     void *ptr = try_alloc( size );
 
@@ -307,7 +307,7 @@ void *xalloc( u32 size )
 void xfree( void *ptr )
 {
     if ( ptr != NULL ) {
-        heap_insert( (HBLK *)((u8 *)ptr - HDR) );
+        heap_insert( (HBLK *)((uint8_t *)ptr - HDR) );
     }
 }
 
@@ -315,9 +315,9 @@ void xfree( void *ptr )
 /* searching memory                                                    */
 /* ------------------------------------------------------------------ */
 
-int mem_ifind( const u8 *hay, u32 len, const char *needle )
+int mem_ifind( const uint8_t *hay, unsigned int len, const char *needle )
 {
-    u32 nlen = str_len( needle ), pos, at;
+    unsigned int nlen = str_len( needle ), pos, at;
     int first;
 
     if ( nlen == 0 || nlen > len ) {
@@ -349,8 +349,8 @@ void fmt_group_set( int ch )
 }
 
 typedef struct {
-    char *buf;
-    u32   max, len;
+    char        *buf;
+    unsigned int max, len;
 } FOUT;
 
 static void out_ch( FOUT *out, int ch )
@@ -383,7 +383,7 @@ static void out_text( FOUT *out, const char *text, int len, int width, int left,
 }
 
 /* a number into "digits", backwards; returns how many characters */
-static int num_digits( u32 val, u32 base, int upper, int group, char *digits )
+static int num_digits( uint32_t val, unsigned int base, int upper, int group, char *digits )
 {
     static const char lower_set[] = "0123456789abcdef";
     static const char upper_set[] = "0123456789ABCDEF";
@@ -401,13 +401,13 @@ static int num_digits( u32 val, u32 base, int upper, int group, char *digits )
     return count;
 }
 
-int vfmt( char *buf, u32 max, const char *fmt, char *args )
+int vfmt( char *buf, unsigned int max, const char *fmt, char *args )
 {
     FOUT out;
     char digits[20], text[20];
     const char *str;
     int left, zero, group, width, count, index, neg;
-    u32 val;
+    uint32_t val;
 
     out.buf = buf;
     out.max = max;
@@ -464,11 +464,11 @@ int vfmt( char *buf, u32 max, const char *fmt, char *args )
         case 'u':
         case 'x':
         case 'X':
-            val = VA_NEXT( args, u32 );
+            val = VA_NEXT( args, uint32_t );
             neg = 0;
-            if ( *fmt == 'd' && (s32)val < 0 ) {
+            if ( *fmt == 'd' && (int32_t)val < 0 ) {
                 neg = 1;
-                val = (u32)(-(s32)val);
+                val = (uint32_t)(-(int32_t)val);
             }
             count = num_digits( val, *fmt == 'x' || *fmt == 'X' ? 16 : 10, *fmt == 'X',
                                 group && *fmt != 'x' && *fmt != 'X', digits );
@@ -498,7 +498,7 @@ int vfmt( char *buf, u32 max, const char *fmt, char *args )
     return (int)out.len;
 }
 
-int __cdecl sfmt( char *buf, u32 max, const char *fmt, ... )
+int __cdecl sfmt( char *buf, unsigned int max, const char *fmt, ... )
 {
     return vfmt( buf, max, fmt, VA_START( fmt ) );
 }

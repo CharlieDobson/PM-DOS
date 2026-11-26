@@ -28,9 +28,9 @@ int wd_failed( const WDOC *doc )
 }
 
 /* room for "need" items of "size" bytes in an array that doubles */
-static int grow( WDOC *doc, void **array, u32 *cap, u32 need, u32 size )
+static int grow( WDOC *doc, void **array, unsigned int *cap, unsigned int need, unsigned int size )
 {
-    u32 want;
+    unsigned int want;
     void *fresh;
 
     if ( need <= *cap ) {
@@ -84,11 +84,11 @@ int pap_set_tabs( PAP *pap, const WTAB *tabs, int count )
         count = MAX_TABS;
     }
     if ( count > 0 ) {
-        fresh = (WTAB *)try_alloc( (u32)count * sizeof( WTAB ) );
+        fresh = (WTAB *)try_alloc( (unsigned int)count * sizeof( WTAB ) );
         if ( fresh == NULL ) {
             return 0;
         }
-        mem_cpy( fresh, tabs, (u32)count * sizeof( WTAB ) );
+        mem_cpy( fresh, tabs, (unsigned int)count * sizeof( WTAB ) );
         /* in order of position: there are few, and they mostly are */
         for ( index = 1; index < count; index++ ) {
             hold = fresh[index];
@@ -102,7 +102,7 @@ int pap_set_tabs( PAP *pap, const WTAB *tabs, int count )
     }
     xfree( pap->tabs );
     pap->tabs = fresh;
-    pap->ntabs = (u8)count;
+    pap->ntabs = (uint8_t)count;
     return 1;
 }
 
@@ -203,7 +203,7 @@ static void para_free( WPARA *para )
 
 static void story_free( STORY *story )
 {
-    u32 index;
+    unsigned int index;
 
     for ( index = 0; index < story->count; index++ ) {
         para_free( story->para[index] );
@@ -215,7 +215,7 @@ static void story_free( STORY *story )
 
 void wd_free( WDOC *doc )
 {
-    u32 index;
+    unsigned int index;
 
     if ( doc == NULL ) {
         return;
@@ -258,7 +258,7 @@ void wd_set_aux( WDOC *doc, void *aux, void (*aux_free)( void *aux ) )
 #define PAPER_LEAST     1440
 
 /* two margins that leave an inch of paper between them, at least */
-static void margins_fit( s32 *lead, s32 *trail, s32 paper, s32 usual )
+static void margins_fit( int *lead, int *trail, int paper, int usual )
 {
     if ( *lead < 0 || *lead > PAPER_MOST ) {
         *lead = usual;
@@ -274,7 +274,7 @@ static void margins_fit( s32 *lead, s32 *trail, s32 paper, s32 usual )
 void wd_finish( WDOC *doc )
 {
     PAGESETUP *page = &doc->page;
-    u32 index;
+    unsigned int index;
 
     /* a file can say anything about its paper: what is kept is a sheet
        that exists, with room on it for a line of text */
@@ -311,7 +311,7 @@ void wd_finish( WDOC *doc )
 
 static int name_has( const char *name, const char *part )
 {
-    return mem_ifind( (const u8 *)name, str_len( name ), part ) >= 0;
+    return mem_ifind( (const uint8_t *)name, str_len( name ), part ) >= 0;
 }
 
 static int guess_fixed( const char *name )
@@ -320,7 +320,7 @@ static int guess_fixed( const char *name )
         "Courier", "Mono", "Consol", "Fixed", "Terminal", "Letter Gothic",
         "Prestige", "Line Printer", "Typewriter", "OCR", "Elite", "Pica"
     };
-    u32 index;
+    unsigned int index;
 
     for ( index = 0; index < sizeof( fixed ) / sizeof( fixed[0] ); index++ ) {
         if ( name_has( name, fixed[index] ) ) {
@@ -340,7 +340,7 @@ static int guess_family( const char *name, int fixed )
         "Times", "Roman", "Serif", "Garamond", "Book", "Georgia", "Palatino",
         "Century", "Cambria", "Dutch", "Tms", "Charter", "Bodoni", "Caslon"
     };
-    u32 index;
+    unsigned int index;
 
     if ( name_has( name, "Symbol" ) || name_has( name, "Dingbat" ) || name_has( name, "Wingding" ) ) {
         return FAM_SYMBOL;
@@ -365,7 +365,7 @@ int wd_font( WDOC *doc, const char *name, int family, int fixed )
 {
     char clean[FONT_NAME_LEN];
     WFONT *font;
-    u32 index, len = 0;
+    unsigned int index, len = 0;
 
     /* ASCII, no control characters, no more than fits */
     while ( name != NULL && *name && len < FONT_NAME_LEN - 1 ) {
@@ -396,11 +396,11 @@ int wd_font( WDOC *doc, const char *name, int family, int fixed )
     if ( fixed < 0 ) {
         fixed = family == FAM_MODERN || guess_fixed( clean );
     }
-    font->fixed = (u8)(fixed != 0);
+    font->fixed = (uint8_t)(fixed != 0);
     if ( family <= FAM_ANY || family > FAM_SYMBOL ) {
         family = guess_family( clean, fixed );
     }
-    font->family = (u8)family;
+    font->family = (uint8_t)family;
     return (int)doc->nfont++;
 }
 
@@ -408,11 +408,11 @@ int wd_font( WDOC *doc, const char *name, int family, int fixed )
 /* character properties, each kept once                                */
 /* ------------------------------------------------------------------ */
 
-static u32 chp_hash_of( const CHP *chp )
+static uint32_t chp_hash_of( const CHP *chp )
 {
-    u32 hash = 2166136261UL;
-    const u8 *raw = (const u8 *)chp;
-    u32 index;
+    uint32_t hash = 2166136261UL;
+    const uint8_t *raw = (const uint8_t *)chp;
+    unsigned int index;
 
     for ( index = 0; index < sizeof( CHP ); index++ ) {
         hash = (hash ^ raw[index]) * 16777619UL;
@@ -420,32 +420,32 @@ static u32 chp_hash_of( const CHP *chp )
     return hash;
 }
 
-static void hash_place( WDOC *doc, u32 id )
+static void hash_place( WDOC *doc, unsigned int id )
 {
-    u32 mask = doc->chp_hash_cap - 1;
-    u32 slot = chp_hash_of( &doc->chp[id] ) & mask;
+    unsigned int mask = doc->chp_hash_cap - 1;
+    unsigned int slot = chp_hash_of( &doc->chp[id] ) & mask;
 
     while ( doc->chp_hash[slot] ) {
         slot = (slot + 1) & mask;
     }
-    doc->chp_hash[slot] = (u16)(id + 1);
+    doc->chp_hash[slot] = (uint16_t)(id + 1);
 }
 
 static int hash_room( WDOC *doc )
 {
-    u16 *fresh;
-    u32 cap, index;
+    uint16_t *fresh;
+    unsigned int cap, index;
 
     if ( doc->chp_hash_cap >= (doc->nchp + 1) * 2 ) {
         return 1;
     }
     cap = doc->chp_hash_cap ? doc->chp_hash_cap * 2 : 64;
-    fresh = (u16 *)try_alloc( cap * sizeof( u16 ) );
+    fresh = (uint16_t *)try_alloc( cap * sizeof( uint16_t ) );
     if ( fresh == NULL ) {
         fail( doc );
         return 0;
     }
-    mem_set( fresh, 0, cap * sizeof( u16 ) );
+    mem_set( fresh, 0, cap * sizeof( uint16_t ) );
     xfree( doc->chp_hash );
     doc->chp_hash = fresh;
     doc->chp_hash_cap = cap;
@@ -455,10 +455,10 @@ static int hash_room( WDOC *doc )
     return 1;
 }
 
-u16 wd_chp( WDOC *doc, const CHP *chp )
+uint16_t wd_chp( WDOC *doc, const CHP *chp )
 {
     CHP clean = *chp;
-    u32 mask, slot, id;
+    unsigned int mask, slot, id;
 
     clean.spare = 0;
     if ( clean.font >= doc->nfont ) {
@@ -476,14 +476,14 @@ u16 wd_chp( WDOC *doc, const CHP *chp )
         mask = doc->chp_hash_cap - 1;
         slot = chp_hash_of( &clean ) & mask;
         while ( doc->chp_hash[slot] ) {
-            id = (u32)doc->chp_hash[slot] - 1;
+            id = (unsigned int)doc->chp_hash[slot] - 1;
             if ( mem_cmp( &doc->chp[id], &clean, sizeof( CHP ) ) == 0 ) {
-                return (u16)id;
+                return (uint16_t)id;
             }
             slot = (slot + 1) & mask;
         }
     }
-    if ( doc->nchp >= 0xFFFE ) {        /* every number a u16 has is in use */
+    if ( doc->nchp >= 0xFFFE ) {        /* every number a uint16_t has is in use */
         doc->lost |= LOST_TEXT;
         return 0;
     }
@@ -494,10 +494,10 @@ u16 wd_chp( WDOC *doc, const CHP *chp )
     id = doc->nchp++;
     doc->chp[id] = clean;
     hash_place( doc, id );
-    return (u16)id;
+    return (uint16_t)id;
 }
 
-const CHP *wd_chp_get( const WDOC *doc, u16 id )
+const CHP *wd_chp_get( const WDOC *doc, uint16_t id )
 {
     return &doc->chp[id < doc->nchp ? id : 0];
 }
@@ -508,9 +508,9 @@ const CHP *wd_chp_get( const WDOC *doc, u16 id )
 
 int wd_style( WDOC *doc, const char *name, int kind )
 {
-    static const u16 head_size[6] = { 32, 28, 26, 24, 24, 24 };
+    static const uint16_t head_size[6] = { 32, 28, 26, 24, 24, 24 };
     WSTYLE *style;
-    u32 index;
+    unsigned int index;
 
     if ( kind < 0 || kind > STY_OTHER ) {
         kind = STY_OTHER;
@@ -533,7 +533,7 @@ int wd_style( WDOC *doc, const char *name, int kind )
     for ( index = 0; index < STYLE_NAME_LEN - 1 && name[index]; index++ ) {
         style->name[index] = (char)(name[index] >= 0x20 && name[index] < 0x7F ? name[index] : '?');
     }
-    style->kind = (u8)kind;
+    style->kind = (uint8_t)kind;
     if ( kind >= STY_HEADING1 && kind <= STY_HEADING6 ) {
         style->chp.flags |= CF_BOLD;
         style->chp.size = head_size[kind - STY_HEADING1];
@@ -560,7 +560,7 @@ int wd_style( WDOC *doc, const char *name, int kind )
 /* paragraphs                                                          */
 /* ------------------------------------------------------------------ */
 
-WPARA *wd_para_insert( WDOC *doc, STORY *story, u32 index, const PAP *pap )
+WPARA *wd_para_insert( WDOC *doc, STORY *story, unsigned int index, const PAP *pap )
 {
     WPARA *para;
 
@@ -601,7 +601,7 @@ WPARA *wd_para_add( WDOC *doc, STORY *story, const PAP *pap )
     return wd_para_insert( doc, story, story->count, pap );
 }
 
-void wd_para_remove( WDOC *doc, STORY *story, u32 index )
+void wd_para_remove( WDOC *doc, STORY *story, unsigned int index )
 {
     (void)doc;
     if ( index >= story->count ) {
@@ -613,10 +613,10 @@ void wd_para_remove( WDOC *doc, STORY *story, u32 index )
     story->count--;
 }
 
-static int para_room( WDOC *doc, WPARA *para, u32 need )
+static int para_room( WDOC *doc, WPARA *para, unsigned int need )
 {
-    u16 *text, *attr;
-    u32 cap;
+    uint16_t *text, *attr;
+    unsigned int cap;
 
     if ( need <= para->cap ) {
         return 1;
@@ -630,13 +630,13 @@ static int para_room( WDOC *doc, WPARA *para, u32 need )
         cap *= 2;
     }
     /* both or neither: one that grew alone is only a bigger block */
-    text = (u16 *)try_realloc( para->text, cap * sizeof( u16 ) );
+    text = (uint16_t *)try_realloc( para->text, cap * sizeof( uint16_t ) );
     if ( text == NULL ) {
         fail( doc );
         return 0;
     }
     para->text = text;
-    attr = (u16 *)try_realloc( para->attr, cap * sizeof( u16 ) );
+    attr = (uint16_t *)try_realloc( para->attr, cap * sizeof( uint16_t ) );
     if ( attr == NULL ) {
         fail( doc );
         return 0;
@@ -654,9 +654,9 @@ static void lay_stale( WPARA *para )
 }
 
 /* room made at "off" for "len" units, the objects after it moved along */
-static int text_open( WDOC *doc, WPARA *para, u32 *off, u32 len )
+static int text_open( WDOC *doc, WPARA *para, unsigned int *off, unsigned int len )
 {
-    u32 index, tail;
+    unsigned int index, tail;
 
     if ( doc->failed || para == NULL ) {
         return 0;
@@ -668,8 +668,8 @@ static int text_open( WDOC *doc, WPARA *para, u32 *off, u32 len )
         return 0;
     }
     tail = para->len - *off;
-    mem_cpy( para->text + *off + len, para->text + *off, tail * sizeof( u16 ) );
-    mem_cpy( para->attr + *off + len, para->attr + *off, tail * sizeof( u16 ) );
+    mem_cpy( para->text + *off + len, para->text + *off, tail * sizeof( uint16_t ) );
+    mem_cpy( para->attr + *off + len, para->attr + *off, tail * sizeof( uint16_t ) );
     para->len += len;
     for ( index = 0; index < para->nanch; index++ ) {
         if ( para->anch[index].off >= *off ) {
@@ -682,14 +682,14 @@ static int text_open( WDOC *doc, WPARA *para, u32 *off, u32 len )
 
 /* a WCH_OBJ that comes in as text has no object behind it: it is the
    "no such character" mark instead */
-static u16 plain_unit( u16 unit )
+static uint16_t plain_unit( uint16_t unit )
 {
-    return unit == WCH_OBJ ? (u16)0xFFFD : unit;
+    return unit == WCH_OBJ ? (uint16_t)0xFFFD : unit;
 }
 
-int wd_text_insert( WDOC *doc, WPARA *para, u32 off, const u16 *text, u32 len, u16 chp )
+int wd_text_insert( WDOC *doc, WPARA *para, unsigned int off, const uint16_t *text, unsigned int len, uint16_t chp )
 {
-    u32 index;
+    unsigned int index;
 
     if ( len == 0 ) {
         return !doc->failed;
@@ -707,9 +707,9 @@ int wd_text_insert( WDOC *doc, WPARA *para, u32 off, const u16 *text, u32 len, u
     return 1;
 }
 
-int wd_text_insert2( WDOC *doc, WPARA *para, u32 off, const u16 *text, const u16 *attr, u32 len )
+int wd_text_insert2( WDOC *doc, WPARA *para, unsigned int off, const uint16_t *text, const uint16_t *attr, unsigned int len )
 {
-    u32 index;
+    unsigned int index;
 
     if ( len == 0 ) {
         return !doc->failed;
@@ -719,14 +719,14 @@ int wd_text_insert2( WDOC *doc, WPARA *para, u32 off, const u16 *text, const u16
     }
     for ( index = 0; index < len; index++ ) {
         para->text[off + index] = plain_unit( text[index] );
-        para->attr[off + index] = (u16)(attr[index] < doc->nchp ? attr[index] : 0);
+        para->attr[off + index] = (uint16_t)(attr[index] < doc->nchp ? attr[index] : 0);
     }
     return 1;
 }
 
-void wd_text_delete( WDOC *doc, WPARA *para, u32 off, u32 len )
+void wd_text_delete( WDOC *doc, WPARA *para, unsigned int off, unsigned int len )
 {
-    u32 index, kept = 0, end;
+    unsigned int index, kept = 0, end;
 
     (void)doc;
     if ( para == NULL || off >= para->len || len == 0 ) {
@@ -736,8 +736,8 @@ void wd_text_delete( WDOC *doc, WPARA *para, u32 off, u32 len )
         len = para->len - off;
     }
     end = off + len;
-    mem_cpy( para->text + off, para->text + end, (para->len - end) * sizeof( u16 ) );
-    mem_cpy( para->attr + off, para->attr + end, (para->len - end) * sizeof( u16 ) );
+    mem_cpy( para->text + off, para->text + end, (para->len - end) * sizeof( uint16_t ) );
+    mem_cpy( para->attr + off, para->attr + end, (para->len - end) * sizeof( uint16_t ) );
     para->len -= len;
     for ( index = 0; index < para->nanch; index++ ) {
         if ( para->anch[index].off >= end ) {
@@ -751,10 +751,10 @@ void wd_text_delete( WDOC *doc, WPARA *para, u32 off, u32 len )
     lay_stale( para );
 }
 
-int wd_text_restore( WDOC *doc, WPARA *para, u32 off, const u16 *text, const u16 *attr,
-                     u32 len, const WANCH *anch, u32 nanch )
+int wd_text_restore( WDOC *doc, WPARA *para, unsigned int off, const uint16_t *text, const uint16_t *attr,
+                     unsigned int len, const WANCH *anch, unsigned int nanch )
 {
-    u32 index, place, which = 0;
+    unsigned int index, place, which = 0;
 
     if ( len == 0 ) {
         return !doc->failed;
@@ -769,7 +769,7 @@ int wd_text_restore( WDOC *doc, WPARA *para, u32 off, const u16 *text, const u16
     for ( place = 0; place < para->nanch && para->anch[place].off < off; place++ ) {
     }
     for ( index = 0; index < len; index++ ) {
-        para->attr[off + index] = (u16)(attr[index] < doc->nchp ? attr[index] : 0);
+        para->attr[off + index] = (uint16_t)(attr[index] < doc->nchp ? attr[index] : 0);
         if ( text[index] != WCH_OBJ ) {
             para->text[off + index] = text[index];
             continue;
@@ -798,9 +798,9 @@ void wd_para_touch( WPARA *para )
     lay_stale( para );
 }
 
-u32 wd_run( const WPARA *para, u32 off )
+unsigned int wd_run( const WPARA *para, unsigned int off )
 {
-    u32 end = off;
+    unsigned int end = off;
 
     if ( off >= para->len ) {
         return 0;
@@ -829,15 +829,15 @@ static int obj_new( WDOC *doc )
     return (int)doc->nobj++;
 }
 
-int wd_image_new( WDOC *doc, const u8 *data, u32 len, int fmt, s32 width, s32 height )
+int wd_image_new( WDOC *doc, const uint8_t *data, uint32_t len, int fmt, int width, int height )
 {
-    u8 *copy;
+    uint8_t *copy;
     int obj;
 
     if ( doc->failed || data == NULL || len == 0 ) {
         return -1;
     }
-    copy = (u8 *)try_alloc( len );
+    copy = (uint8_t *)try_alloc( len );
     if ( copy == NULL ) {
         /* a picture too big to keep is a picture lost, not a document lost */
         doc->lost |= LOST_IMAGES;
@@ -850,7 +850,7 @@ int wd_image_new( WDOC *doc, const u8 *data, u32 len, int fmt, s32 width, s32 he
         return -1;
     }
     doc->obj[obj].kind = OBJ_IMAGE;
-    doc->obj[obj].fmt = (u8)fmt;
+    doc->obj[obj].fmt = (uint8_t)fmt;
     doc->obj[obj].data = copy;
     doc->obj[obj].len = len;
     doc->obj[obj].width = width > 0 ? width : 1440;
@@ -878,24 +878,24 @@ int wd_note_new( WDOC *doc, int kind )
         return -1;
     }
     doc->obj[obj].kind = OBJ_NOTE;
-    doc->obj[obj].fmt = (u8)kind;
+    doc->obj[obj].fmt = (uint8_t)kind;
     doc->obj[obj].story = story;
     return obj;
 }
 
 STORY *wd_note_story( WDOC *doc, int obj )
 {
-    if ( obj < 0 || (u32)obj >= doc->nobj || doc->obj[obj].kind != OBJ_NOTE ) {
+    if ( obj < 0 || (unsigned int)obj >= doc->nobj || doc->obj[obj].kind != OBJ_NOTE ) {
         return NULL;
     }
     return doc->obj[obj].story;
 }
 
-int wd_obj_put( WDOC *doc, WPARA *para, u32 off, int obj, u16 chp )
+int wd_obj_put( WDOC *doc, WPARA *para, unsigned int off, int obj, uint16_t chp )
 {
-    u32 index;
+    unsigned int index;
 
-    if ( obj < 0 || (u32)obj >= doc->nobj ) {
+    if ( obj < 0 || (unsigned int)obj >= doc->nobj ) {
         return 0;
     }
     if ( !grow( doc, (void **)&para->anch, &para->anch_cap, para->nanch + 1, sizeof( WANCH ) ) ) {
@@ -905,19 +905,19 @@ int wd_obj_put( WDOC *doc, WPARA *para, u32 off, int obj, u16 chp )
         return 0;
     }
     para->text[off] = WCH_OBJ;
-    para->attr[off] = (u16)(chp < doc->nchp ? chp : 0);
+    para->attr[off] = (uint16_t)(chp < doc->nchp ? chp : 0);
     for ( index = para->nanch; index > 0 && para->anch[index - 1].off > off; index-- ) {
         para->anch[index] = para->anch[index - 1];
     }
     para->anch[index].off = off;
-    para->anch[index].obj = (u32)obj;
+    para->anch[index].obj = (unsigned int)obj;
     para->nanch++;
     return 1;
 }
 
-int wd_obj_at( const WPARA *para, u32 off )
+int wd_obj_at( const WPARA *para, unsigned int off )
 {
-    u32 index;
+    unsigned int index;
 
     for ( index = 0; index < para->nanch; index++ ) {
         if ( para->anch[index].off == off ) {
@@ -949,7 +949,7 @@ static int wb_open( WBUILD *wb )
     return wb->para != NULL;
 }
 
-static u16 wb_chp( WBUILD *wb )
+static uint16_t wb_chp( WBUILD *wb )
 {
     wb->chp.spare = 0;
     if ( !wb->chp_known || mem_cmp( &wb->chp, &wb->chp_was, sizeof( CHP ) ) != 0 ) {
@@ -960,16 +960,16 @@ static u16 wb_chp( WBUILD *wb )
     return wb->chp_id;
 }
 
-void wb_text( WBUILD *wb, const u16 *text, u32 len )
+void wb_text( WBUILD *wb, const uint16_t *text, unsigned int len )
 {
     if ( len && wb_open( wb ) ) {
         wd_text_insert( wb->doc, wb->para, wb->para->len, text, len, wb_chp( wb ) );
     }
 }
 
-void wb_char( WBUILD *wb, u32 code )
+void wb_char( WBUILD *wb, uint32_t code )
 {
-    u16 pair[2];
+    uint16_t pair[2];
 
     if ( code == 0 ) {
         return;                         /* no file means a NUL as text */
@@ -978,29 +978,29 @@ void wb_char( WBUILD *wb, u32 code )
         if ( code >= 0xD800 && code <= 0xDFFF ) {
             code = 0xFFFD;
         }
-        pair[0] = (u16)code;
+        pair[0] = (uint16_t)code;
         wb_text( wb, pair, 1 );
     } else if ( code <= 0x10FFFFUL ) {
         code -= 0x10000UL;
-        pair[0] = (u16)(0xD800 + (code >> 10));
-        pair[1] = (u16)(0xDC00 + (code & 0x3FF));
+        pair[0] = (uint16_t)(0xD800 + (code >> 10));
+        pair[1] = (uint16_t)(0xDC00 + (code & 0x3FF));
         wb_text( wb, pair, 2 );
     }
 }
 
-void wb_utf8( WBUILD *wb, const u8 *text, u32 len )
+void wb_utf8( WBUILD *wb, const uint8_t *text, unsigned int len )
 {
-    const u8 *end = text + len;
+    const uint8_t *end = text + len;
 
     while ( text < end ) {
         wb_char( wb, utf8_get( &text, end ) );
     }
 }
 
-void wb_bytes( WBUILD *wb, const u8 *text, u32 len, int codepage )
+void wb_bytes( WBUILD *wb, const uint8_t *text, unsigned int len, int codepage )
 {
-    u16 run[128];
-    u32 used = 0;
+    uint16_t run[128];
+    unsigned int used = 0;
 
     if ( codepage == CP_UTF8 ) {
         wb_utf8( wb, text, len );

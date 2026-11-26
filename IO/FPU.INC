@@ -90,6 +90,7 @@ CR4_OSXMM       EQU     00000400h
 EFL_AC          EQU     00040000h               ; can be changed: a 486
 EFL_ID          EQU     00200000h               ; ...and this one: a CPUID
 
+CPUF_VME        EQU     00000002h               ; CPUID's EDX: v86_vmeinit
 CPUF_MMX        EQU     00800000h               ; CPUID's EDX
 CPUF_FXSR       EQU     01000000h
 CPUF_SSE        EQU     02000000h

@@ -47,7 +47,7 @@ static void lines_init( LINES *lines, int cap )
 {
     lines->n = 0;
     lines->cap = cap < 16 ? 16 : cap;
-    lines->line = (char **)xalloc( sizeof( char * ) * (u32)lines->cap );
+    lines->line = (char **)xalloc( sizeof( char * ) * (uint32_t)lines->cap );
 }
 
 static void lines_free( LINES *lines )
@@ -70,7 +70,7 @@ static void lines_room( LINES *lines )
     if ( lines->n < lines->cap ) {
         return;
     }
-    more = (char **)xalloc( sizeof( char * ) * (u32)lines->cap * 2 );
+    more = (char **)xalloc( sizeof( char * ) * (uint32_t)lines->cap * 2 );
     for ( i = 0; i < lines->n; i++ ) {
         more[i] = lines->line[i];
     }
@@ -106,8 +106,9 @@ static void lines_set( LINES *lines, int at, const char *text )
 /* a file's lines; 0 = read (an absent file is no lines, and read) */
 static int lines_read( LINES *lines, const char *path )
 {
-    u16 handle, done, i, count = 1;
-    u32 size;
+    uint16_t handle, done;
+    unsigned int i, count = 1;
+    uint32_t size;
     char *text, *line, *end;
 
     lines_init( lines, 16 );
@@ -119,7 +120,7 @@ static int lines_read( LINES *lines, const char *path )
         return 1;
     }
     text = (char *)xalloc( size + 1 );
-    if ( plat_read( handle, text, (u16)size, &done ) ) {
+    if ( plat_read( handle, text, (uint16_t)size, &done ) ) {
         plat_close( handle );
         xfree( text );
         return 1;
@@ -154,7 +155,7 @@ static int lines_read( LINES *lines, const char *path )
 
 static int lines_write( LINES *lines, const char *path )
 {
-    u16 handle, done;
+    uint16_t handle, done;
     int i, rc = 0;
 
     if ( plat_create( path, &handle ) ) {
@@ -162,7 +163,7 @@ static int lines_write( LINES *lines, const char *path )
     }
     for ( i = 0; i < lines->n && rc == 0; i++ ) {
         int len = str_len( lines->line[i] );
-        if ( plat_write( handle, lines->line[i], (u16)len, &done ) || done != (u16)len ||
+        if ( plat_write( handle, lines->line[i], (uint16_t)len, &done ) || done != (uint16_t)len ||
              plat_write( handle, "\r\n", 2, &done ) || done != 2 ) {
             rc = 1;
         }
@@ -190,7 +191,7 @@ static void cfg_keyword( const char *line, char *word, int max )
 
     line = skip_blanks( line );
     while ( *line && *line != '=' && *line != ' ' && *line != '\t' && len < max - 1 ) {
-        word[len++] = (char)ch_upper( (u8)*line++ );
+        word[len++] = (char)ch_upper( (uint8_t)*line++ );
     }
     word[len] = 0;
 }
@@ -302,7 +303,7 @@ static int named_in( char **list, int count, const char *name )
 static void rem_out( LINES *lines, int at )
 {
     int len = str_len( lines->line[at] ) + 5;
-    char *line = (char *)xalloc( (u32)len );
+    char *line = (char *)xalloc( (uint32_t)len );
 
     str_cpyn( line, "REM ", len );
     str_catn( line, lines->line[at], len );
@@ -364,7 +365,7 @@ static void fill_dosdir( char *out, const char *in, int max )
 
 static int dir_exists( const char *dir )
 {
-    u16 attr;
+    uint16_t attr;
 
     return plat_get_attr( dir, &attr ) == 0 && (attr & FA_DIR);
 }
@@ -372,7 +373,7 @@ static int dir_exists( const char *dir )
 static int has_command( const char *dir, const char *name )
 {
     char path[PATHLEN];
-    u16 attr;
+    uint16_t attr;
 
     path_join( path, dir, name, sizeof( path ) );
     return plat_get_attr( path, &attr ) == 0;
@@ -426,7 +427,7 @@ void cfg_read_current( void )
             int n = 0;
             cmd = skip_blanks( cmd + 4 );
             while ( n < 2 && *cmd && *cmd != ',' && *cmd != ' ' ) {
-                code[n++] = (char)ch_upper( (u8)*cmd++ );
+                code[n++] = (char)ch_upper( (uint8_t)*cmd++ );
             }
             code[n] = 0;
             kb = inf_keyboard( code, 0 );
@@ -489,7 +490,7 @@ static int write_template( char **tmpl, int count, const char *name, int is_cfg 
     LINES lines;
     char path[PATHLEN], old[PATHLEN], line[LINELEN];
     int i, rc;
-    u16 attr;
+    uint16_t attr;
 
     lines_init( &lines, 16 );
     for ( i = 0; i < count; i++ ) {
@@ -549,7 +550,7 @@ static void device_path( LINES *lines, int at, const char *val, const char *name
         end++;
     }
     size = (int)(val - line) + str_len( opt.dosdir ) + 1 + str_len( name ) + str_len( end ) + 1;
-    made = (char *)xalloc( (u32)size );
+    made = (char *)xalloc( (uint32_t)size );
     str_cpyn( made, line, (int)(val - line) + 1 );
     str_catn( made, opt.dosdir, size );
     str_catn( made, "\\", size );
@@ -693,7 +694,7 @@ static void path_first( LINES *lines, int at, const char *how, const char *list 
     int len = str_len( how ) + str_len( opt.dosdir ) + 1 + str_len( list ) + 1;
     int olen = str_len( tgt.olddir ), i;
 
-    line = (char *)xalloc( (u32)len + 1 );
+    line = (char *)xalloc( (uint32_t)len + 1 );
     sfmt( line, len, "%s%s%s%s", how, opt.dosdir, *list ? ";" : "", list );
     if ( len - 1 > BATCH_LINE && olen && str_icmp( tgt.olddir, opt.dosdir ) ) {
         /* the old directory, as a whole entry of the list */
@@ -704,7 +705,7 @@ static void path_first( LINES *lines, int at, const char *how, const char *list 
                 int rest = str_len( list + i + olen ), size;
                 size = str_len( how ) + i + str_len( opt.dosdir ) + rest + 1;
                 if ( size - 1 <= BATCH_LINE ) {
-                    old = (char *)xalloc( (u32)size );
+                    old = (char *)xalloc( (uint32_t)size );
                     str_cpyn( old, how, size );
                     str_catn( old, list, str_len( how ) + i + 1 );
                     str_catn( old, opt.dosdir, size );

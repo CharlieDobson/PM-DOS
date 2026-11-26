@@ -21,7 +21,7 @@
 #include "dec.h"
 
 /* what code page 437 has from 80h to FFh */
-static const u16 cp437_high[128] = {
+static const uint16_t cp437_high[128] = {
     0x00C7, 0x00FC, 0x00E9, 0x00E2, 0x00E4, 0x00E0, 0x00E5, 0x00E7,
     0x00EA, 0x00EB, 0x00E8, 0x00EF, 0x00EE, 0x00EC, 0x00C4, 0x00C5,
     0x00C9, 0x00E6, 0x00C6, 0x00F4, 0x00F6, 0x00F2, 0x00FB, 0x00F9,
@@ -46,7 +46,7 @@ static const char latin1_plain[65] =
     "AAAAAAACEEEEIIIIDNOOOOOxOUUUUYPs"
     "aaaaaaaceeeeiiiidnooooo/ouuuuypy";
 
-int tag_437( u32 uni )
+int tag_437( uint32_t uni )
 {
     int i;
 
@@ -85,7 +85,7 @@ int tag_437( u32 uni )
 }
 
 /* One character onto the end, if there is room for it and the 0 */
-static void put_char( char *dst, u32 max, u32 *len, u32 uni )
+static void put_char( char *dst, unsigned int max, unsigned int *len, uint32_t uni )
 {
     if ( uni < 0x20 || uni == 0x7F || (uni >= 0x80 && uni < 0xA0) ) {
         return;
@@ -96,17 +96,17 @@ static void put_char( char *dst, u32 max, u32 *len, u32 uni )
 }
 
 /* the 0, with the blanks before it taken off */
-static void finish( char *dst, u32 len )
+static void finish( char *dst, unsigned int len )
 {
-    while ( len > 0 && (dst[len - 1] == ' ' || (u8)dst[len - 1] == 0xFF) ) {
+    while ( len > 0 && (dst[len - 1] == ' ' || (uint8_t)dst[len - 1] == 0xFF) ) {
         len--;
     }
     dst[len] = 0;
 }
 
-void tag_latin1( char *dst, u32 max, const u8 *src, u32 len )
+void tag_latin1( char *dst, unsigned int max, const uint8_t *src, unsigned int len )
 {
-    u32 i, out = 0;
+    unsigned int i, out = 0;
 
     if ( max == 0 ) {
         return;
@@ -117,9 +117,11 @@ void tag_latin1( char *dst, u32 max, const u8 *src, u32 len )
     finish( dst, out );
 }
 
-void tag_utf8( char *dst, u32 max, const u8 *src, u32 len )
+void tag_utf8( char *dst, unsigned int max, const uint8_t *src, unsigned int len )
 {
-    u32 i = 0, out = 0, uni, need, k;
+    unsigned int i = 0, out = 0;
+    uint32_t uni;
+    unsigned int need, k;
 
     if ( max == 0 ) {
         return;
@@ -164,9 +166,10 @@ void tag_utf8( char *dst, u32 max, const u8 *src, u32 len )
     finish( dst, out );
 }
 
-void tag_utf16( char *dst, u32 max, const u8 *src, u32 len, int big_endian )
+void tag_utf16( char *dst, unsigned int max, const uint8_t *src, unsigned int len, int big_endian )
 {
-    u32 i, out = 0, unit;
+    unsigned int i, out = 0;
+    uint32_t unit;
 
     if ( max == 0 ) {
         return;

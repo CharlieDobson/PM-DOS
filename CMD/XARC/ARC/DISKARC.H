@@ -21,21 +21,21 @@
 #include "szarc.h"      /* SzProgress, and the shared SZ_ERR_* result codes */
 
 typedef struct {
-    char   name[SZ_MAX_NAME];   /* image-relative path (back-slashes)       */
-    UInt32 size;                /* file size in bytes                       */
-    UInt32 packed;              /* == size (FAT stores files uncompressed)  */
-    UInt32 crc;                 /* unused (FAT has no per-file CRC)          */
-    int    methodCode;          /* always 0 (stored)                        */
-    UInt16 modDate, modTime;    /* MS-DOS packed modification date/time     */
-    UInt32 attrib;              /* DOS attribute bits (R/H/S/A/D)           */
-    int    isDir;               /* directory entry                          */
-    UInt32 firstCluster;        /* start cluster of the chain (0 = empty)   */
+    char     name[SZ_MAX_NAME];  /* image-relative path (back-slashes)      */
+    uint32_t size;               /* file size in bytes                      */
+    uint32_t packed;             /* == size (FAT stores files uncompressed) */
+    uint32_t crc;                /* unused (FAT has no per-file CRC)         */
+    int      methodCode;         /* always 0 (stored)                       */
+    uint16_t modDate, modTime;   /* MS-DOS packed modification date/time    */
+    uint32_t attrib;             /* DOS attribute bits (R/H/S/A/D)          */
+    int      isDir;              /* directory entry                         */
+    uint32_t firstCluster;       /* start cluster of the chain (0 = empty)  */
 
     /* Where the entry's own directory record lies, for deleting it: the
      * first cluster of the directory holding it (0 = the root) and the
      * slot of its 8.3 record there. */
-    UInt32 dirCluster;
-    UInt32 slot;
+    uint32_t dirCluster;
+    uint32_t slot;
 } DiskEntry;
 
 typedef struct DiskArchive DiskArchive;
@@ -47,7 +47,7 @@ int  DiskProbe( const char *path );
 
 /* Same probe against an in-memory image (e.g. the decompressed payload of a
  * WinImage .imz), inspecting only the first sector. */
-int  DiskProbeBuf( const unsigned char *buf, UInt32 len );
+int  DiskProbeBuf( const uint8_t *buf, uint32_t len );
 
 /* Open and parse the filesystem tree.  *out must be released with
  * DiskClose().  Returns SZ_OK or an SZ_ERR_* code (SZ_ERR_SIG if not a
@@ -57,7 +57,7 @@ int  DiskOpen( const char *path, DiskArchive **out );
 /* Open an image already held in memory (a .imz's decompressed .ima).  If
  * ownBuf is non-zero DiskClose() frees buf; otherwise the caller keeps
  * ownership and must outlive the DiskArchive.  Same return codes as DiskOpen. */
-int  DiskOpenMemory( unsigned char *buf, UInt32 len, int ownBuf,
+int  DiskOpenMemory( uint8_t *buf, uint32_t len, int ownBuf,
                      DiskArchive **out );
 
 int  DiskNumEntries( DiskArchive *d );
@@ -81,7 +81,7 @@ void DiskClose( DiskArchive *d );
  * ArcDeleteItems in ARCFILE.H; the arguments are set out in ARCFILE.C,
  * except that 'path' (the image, to be opened for writing) stands where
  * the other formats take the new archive, and NULL means a check. */
-int  DiskDeleteWrite( DiskArchive *d, const Byte *del, const char *path,
+int  DiskDeleteWrite( DiskArchive *d, const uint8_t *del, const char *path,
                       ArcCompProgress prog, void *user, const char **why );
 
 #endif /* DISKARC_H */

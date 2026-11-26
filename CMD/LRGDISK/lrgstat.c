@@ -18,6 +18,7 @@
  *==================================================================*/
 #include <windows.h>
 #include <string.h>
+#include <stdint.h>
 
 /*--------------------------------------------------------------------
  * The account LRGDISK gives of itself: lrgdisk.asm's LI_*, LIC_* and
@@ -25,53 +26,53 @@
  *------------------------------------------------------------------*/
 #pragma pack( 1 )
 typedef struct {
-    WORD    data;               /* the cable's data port */
-    WORD    bm;                 /* its bus-master ports, 0 none */
-    BYTE    flags;              /* CF_* */
-    BYTE    ours;               /* bit n: unit n is LRGDISK's */
-    BYTE    irq;
-    BYTE    spare;
-    DWORD   resets;             /* resets DOS programs gave the cable */
-    DWORD   lent;               /* times the cable went to a DOS program */
+    uint16_t data;              /* the cable's data port */
+    uint16_t bm;                /* its bus-master ports, 0 none */
+    uint8_t  flags;             /* CF_* */
+    uint8_t  ours;              /* bit n: unit n is LRGDISK's */
+    uint8_t  irq;
+    uint8_t  spare;
+    uint32_t resets;            /* resets DOS programs gave the cable */
+    uint32_t lent;              /* times the cable went to a DOS program */
 } LICABLE;
 
 typedef struct {
-    BYTE    disk;               /* the BIOS's number, 80h to 83h; 0 none */
-    BYTE    cable;
-    BYTE    unit;               /* 0 master, 1 slave */
-    BYTE    mode;               /* 0 CHS, 1 LBA, 2 LBA and LBA48 */
-    BYTE    xfer;               /* the DMA mode in force; 0 PIO */
-    BYTE    mult;               /* sectors a block; 0 one */
-    BYTE    io32;
-    BYTE    spare;
-    DWORD   lastSector;
-    DWORD   lastSectorHigh;
-    DWORD   cyls;               /* the BIOS's highest cylinder plus 2 */
-    DWORD   heads;
-    DWORD   spt;
-    BYTE    xfer0;              /* xfer and mult as start-up left them */
-    BYTE    mult0;
-    BYTE    multMax;            /* the most sectors a block the drive takes */
-    BYTE    multSource;         /* 1 the drive's own setting, 2 LRGDISK's */
-    BYTE    whyDma;             /* WD_*, WB_*, W3_*: 0 when in use */
-    BYTE    whyBlock;
-    BYTE    why32;
-    BYTE    spare2;
-    char    model[40];
-    DWORD   count[16];          /* UC_* */
+    uint8_t  disk;              /* the BIOS's number, 80h to 83h; 0 none */
+    uint8_t  cable;
+    uint8_t  unit;              /* 0 master, 1 slave */
+    uint8_t  mode;              /* 0 CHS, 1 LBA, 2 LBA and LBA48 */
+    uint8_t  xfer;              /* the DMA mode in force; 0 PIO */
+    uint8_t  mult;              /* sectors a block; 0 one */
+    uint8_t  io32;
+    uint8_t  spare;
+    uint32_t lastSector;
+    uint32_t lastSectorHigh;
+    uint32_t cyls;              /* the BIOS's highest cylinder plus 2 */
+    uint32_t heads;
+    uint32_t spt;
+    uint8_t  xfer0;             /* xfer and mult as start-up left them */
+    uint8_t  mult0;
+    uint8_t  multMax;           /* the most sectors a block the drive takes */
+    uint8_t  multSource;        /* 1 the drive's own setting, 2 LRGDISK's */
+    uint8_t  whyDma;            /* WD_*, WB_*, W3_*: 0 when in use */
+    uint8_t  whyBlock;
+    uint8_t  why32;
+    uint8_t  spare2;
+    char     model[40];
+    uint32_t count[16];         /* UC_* */
 } LIUNIT;
 
 typedef struct {
-    WORD    size;
-    WORD    version;
-    WORD    flags;              /* LIF_* */
-    WORD    bmBase;
-    DWORD   pollLooks;
-    WORD    lostMs;
-    BYTE    burst;
-    BYTE    blockMax;
-    LICABLE cable[2];
-    LIUNIT  unit[4];
+    uint16_t size;
+    uint16_t version;
+    uint16_t flags;             /* LIF_* */
+    uint16_t bmBase;
+    uint32_t pollLooks;
+    uint16_t lostMs;
+    uint8_t  burst;
+    uint8_t  blockMax;
+    LICABLE  cable[2];
+    LIUNIT   unit[4];
 } LIACCOUNT;
 #pragma pack()
 
@@ -124,9 +125,9 @@ typedef struct {
 #define UC_FAILED       15
 
 /* lrgapi.asm */
-extern unsigned long __cdecl LrgEntry( void );
-extern unsigned __cdecl LrgVersion( unsigned long entry, unsigned __far *size );
-extern unsigned __cdecl LrgAccount( unsigned long entry, void __far *buf, unsigned size );
+extern uint32_t __cdecl LrgEntry( void );
+extern uint16_t __cdecl LrgVersion( uint32_t entry, uint16_t __far *size );
+extern uint16_t __cdecl LrgAccount( uint32_t entry, void __far *buf, uint16_t size );
 
 /*--------------------------------------------------------------------
  * What there is to show
@@ -163,7 +164,7 @@ typedef struct {
 } TALLY;
 
 static HINSTANCE    g_inst;
-static unsigned long g_entry;           /* the driver's API, 0 none */
+static uint32_t     g_entry;            /* the driver's API, 0 none */
 static int          g_looked;           /* ...and it has been asked for */
 static int          g_state;
 static LIACCOUNT    g_acc;
@@ -213,7 +214,7 @@ static void FmtNum( unsigned long value, char *out )
 }
 
 /* A drive's sectors, from its last sector's number */
-static void FmtSectors( unsigned long lastSector, char *out )
+static void FmtSectors( uint32_t lastSector, char *out )
 {
     if ( lastSector == 0xFFFFFFFFUL ) {
         GroupDigits( "4294967296", out );
@@ -223,7 +224,7 @@ static void FmtSectors( unsigned long lastSector, char *out )
 }
 
 /* ...and its size: megabytes, or gigabytes with a tenth from 10GB up */
-static void FmtSize( unsigned long lastSector, char *out )
+static void FmtSize( uint32_t lastSector, char *out )
 {
     unsigned long megabytes = ( lastSector >> 11 ) + ( ( ( lastSector & 2047 ) + 1 ) >> 11 );
     char number[20];
@@ -239,7 +240,7 @@ static void FmtSize( unsigned long lastSector, char *out )
     }
 }
 
-static void FmtXfer( BYTE xfer, char *out )
+static void FmtXfer( uint8_t xfer, char *out )
 {
     if ( xfer & 0x40 ) {
         wsprintf( out, "Ultra DMA mode %u", (unsigned)( xfer & 7 ) );
@@ -258,27 +259,27 @@ static void FmtXfer( BYTE xfer, char *out )
    screen once.  The shipped program has none of this. */
 static int g_demo;
 
-static void DemoUnit( LIACCOUNT *acc, int place, const char *model, int mode, unsigned long lastSector,
+static void DemoUnit( LIACCOUNT *acc, int place, const char *model, int mode, uint32_t lastSector,
                       int xfer, int xfer0, int whyDma, int mult, int mult0, int source, int whyBlock,
                       int io32, int why32 )
 {
     LIUNIT *unit = &acc->unit[place];
     int i;
 
-    unit->disk = (BYTE)( 0x80 + place );
-    unit->cable = (BYTE)( place >> 1 );
-    unit->unit = (BYTE)( place & 1 );
-    unit->mode = (BYTE)mode;
-    unit->xfer = (BYTE)xfer;
-    unit->xfer0 = (BYTE)xfer0;
-    unit->whyDma = (BYTE)whyDma;
-    unit->mult = (BYTE)mult;
-    unit->mult0 = (BYTE)mult0;
+    unit->disk = (uint8_t)( 0x80 + place );
+    unit->cable = (uint8_t)( place >> 1 );
+    unit->unit = (uint8_t)( place & 1 );
+    unit->mode = (uint8_t)mode;
+    unit->xfer = (uint8_t)xfer;
+    unit->xfer0 = (uint8_t)xfer0;
+    unit->whyDma = (uint8_t)whyDma;
+    unit->mult = (uint8_t)mult;
+    unit->mult0 = (uint8_t)mult0;
     unit->multMax = 16;
-    unit->multSource = (BYTE)source;
-    unit->whyBlock = (BYTE)whyBlock;
-    unit->io32 = (BYTE)io32;
-    unit->why32 = (BYTE)why32;
+    unit->multSource = (uint8_t)source;
+    unit->whyBlock = (uint8_t)whyBlock;
+    unit->io32 = (uint8_t)io32;
+    unit->why32 = (uint8_t)why32;
     unit->lastSector = lastSector;
     unit->cyls = 1025;
     unit->heads = 255;
@@ -340,9 +341,9 @@ static void Demo( LIACCOUNT *acc )
 
 static int Query( LIACCOUNT *acc )
 {
-    unsigned size = 0;
-    unsigned version;
-    unsigned got;
+    uint16_t size = 0;
+    uint16_t version;
+    uint16_t got;
 
 #ifdef LRGSTAT_DEMO
     if ( g_demo ) {

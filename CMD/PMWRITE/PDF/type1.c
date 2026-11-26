@@ -18,7 +18,7 @@
 #include "gfx.h"
 
 typedef struct {
-    u32 off, len;
+    uint32_t off, len;
 } T1SPAN;
 
 typedef struct {
@@ -27,32 +27,32 @@ typedef struct {
 } T1CHAR;
 
 typedef struct {
-    POOL   *pool;
-    u8     *plain;              /* the private part, deciphered */
-    u32     plain_len;
-    T1SPAN *subrs;
-    u32     nsubrs;
-    T1CHAR *chars;
-    u32     nchars;
-    int     len_iv;
-    int     units;
+    POOL    *pool;
+    uint8_t *plain;             /* the private part, deciphered */
+    uint32_t plain_len;
+    T1SPAN  *subrs;
+    uint32_t nsubrs;
+    T1CHAR  *chars;
+    uint32_t nchars;
+    int      len_iv;
+    int      units;
     const char *builtin[256];   /* its own encoding; NULL means the standard one */
-    int     has_builtin;
+    int      has_builtin;
 } T1;
 
 typedef struct {
-    T1  *font;
-    fx   stack[32];
-    int  sp;
-    fx   ps[8];                 /* what an other-subroutine left to be popped */
-    int  ps_count;
-    fx   xpos, ypos;
-    fx   off_x, off_y;          /* where an accent goes */
-    fx   side;                  /* the left side bearing */
-    fx   flex[14];
-    int  flexing, flex_count;
-    int  depth, done;
-    u32  budget;
+    T1          *font;
+    fx           stack[32];
+    int          sp;
+    fx           ps[8];         /* what an other-subroutine left to be popped */
+    int          ps_count;
+    fx           xpos, ypos;
+    fx           off_x, off_y;  /* where an accent goes */
+    fx           side;          /* the left side bearing */
+    fx           flex[14];
+    int          flexing, flex_count;
+    int          depth, done;
+    unsigned int budget;
 } T1RUN;
 
 static void t1_exec( T1RUN *run, const T1SPAN *span );
@@ -67,9 +67,9 @@ static int is_space( int ch )
 }
 
 /* the next word at *pos, up to "end": where it starts and its length */
-static int word_next( const u8 *text, u32 end, u32 *pos, u32 *start, u32 *len )
+static int word_next( const uint8_t *text, uint32_t end, uint32_t *pos, uint32_t *start, uint32_t *len )
 {
-    u32 at = *pos;
+    uint32_t at = *pos;
 
     while ( at < end && is_space( text[at] ) ) {
         at++;
@@ -93,15 +93,15 @@ static int word_next( const u8 *text, u32 end, u32 *pos, u32 *start, u32 *len )
     return 1;
 }
 
-static int word_is( const u8 *text, u32 start, u32 len, const char *want )
+static int word_is( const uint8_t *text, uint32_t start, uint32_t len, const char *want )
 {
     return str_len( want ) == len && mem_cmp( text + start, want, len ) == 0;
 }
 
-static s32 word_int( const u8 *text, u32 start, u32 len )
+static int32_t word_int( const uint8_t *text, uint32_t start, uint32_t len )
 {
-    s32 val = 0;
-    u32 at = start;
+    int32_t val = 0;
+    uint32_t at = start;
     int neg = 0;
 
     if ( at < start + len && text[at] == '-' ) {
@@ -114,7 +114,7 @@ static s32 word_int( const u8 *text, u32 start, u32 len )
     return neg ? -val : val;
 }
 
-static const char *word_keep( T1 *font, const u8 *text, u32 start, u32 len )
+static const char *word_keep( T1 *font, const uint8_t *text, uint32_t start, uint32_t len )
 {
     char *copy = (char *)pool_alloc( font->pool, len + 1 );
 
@@ -138,9 +138,9 @@ static int hex_digit( int ch )
 }
 
 /* the part before eexec: the encoding, and how big an em is */
-static void read_clear( T1 *font, const u8 *text, u32 end )
+static void read_clear( T1 *font, const uint8_t *text, uint32_t end )
 {
-    u32 pos = 0, start, len, digits, at;
+    uint32_t pos = 0, start, len, digits, at;
     int code, scale, dot;
     REAL first;
 
@@ -154,7 +154,7 @@ static void read_clear( T1 *font, const u8 *text, u32 end )
                     if ( text[at] == '.' ) {
                         dot = 1;
                     } else if ( text[at] >= '0' && text[at] <= '9' && digits < 100000000UL ) {
-                        digits = digits * 10 + (u32)(text[at] - '0');
+                        digits = digits * 10 + (uint32_t)(text[at] - '0');
                         scale += dot;
                     }
                 }
@@ -198,8 +198,8 @@ static void read_clear( T1 *font, const u8 *text, u32 end )
 /* the private part, deciphered: the subroutines and the charstrings */
 static void read_private( T1 *font )
 {
-    const u8 *text = font->plain;
-    u32 end = font->plain_len, pos = 0, start, len, count, index, size;
+    const uint8_t *text = font->plain;
+    uint32_t end = font->plain_len, pos = 0, start, len, count, index, size;
     int mode = 0;
     T1SPAN span;
 
@@ -210,7 +210,7 @@ static void read_private( T1 *font )
             }
         } else if ( word_is( text, start, len, "/Subrs" ) && font->subrs == NULL ) {
             if ( word_next( text, end, &pos, &start, &len ) ) {
-                count = (u32)word_int( text, start, len );
+                count = (uint32_t)word_int( text, start, len );
                 if ( count > 0 && count < 65536UL ) {
                     font->subrs = (T1SPAN *)pool_alloc( font->pool, count * sizeof( T1SPAN ) );
                     font->nsubrs = count;
@@ -219,7 +219,7 @@ static void read_private( T1 *font )
             }
         } else if ( word_is( text, start, len, "/CharStrings" ) && font->chars == NULL ) {
             if ( word_next( text, end, &pos, &start, &len ) ) {
-                count = (u32)word_int( text, start, len );
+                count = (uint32_t)word_int( text, start, len );
                 if ( count > 0 && count < 65536UL ) {
                     font->chars = (T1CHAR *)pool_alloc( font->pool, count * sizeof( T1CHAR ) );
                     font->nchars = 0;
@@ -237,7 +237,7 @@ static void read_private( T1 *font )
                         if ( !word_next( text, end, &pos, &start, &len ) ) {
                             break;
                         }
-                        size = (u32)word_int( text, start, len );
+                        size = (uint32_t)word_int( text, start, len );
                         if ( !word_next( text, end, &pos, &start, &len ) ) {
                             break;                  /* RD, or -| */
                         }
@@ -259,11 +259,11 @@ static void read_private( T1 *font )
             if ( !word_next( text, end, &pos, &start, &len ) ) {
                 break;
             }
-            index = (u32)word_int( text, start, len );
+            index = (uint32_t)word_int( text, start, len );
             if ( !word_next( text, end, &pos, &start, &len ) ) {
                 break;
             }
-            size = (u32)word_int( text, start, len );
+            size = (uint32_t)word_int( text, start, len );
             if ( !word_next( text, end, &pos, &start, &len ) ) {
                 break;
             }
@@ -280,11 +280,11 @@ static void read_private( T1 *font )
     }
 }
 
-void *t1_open( POOL *pool, u8 *data, u32 len )
+void *t1_open( POOL *pool, uint8_t *data, uint32_t len )
 {
     T1 *font = (T1 *)pool_alloc( pool, sizeof( T1 ) );
-    u32 at, start = 0, count = 0, out;
-    u16 key = 55665U;
+    uint32_t at, start = 0, count = 0, out;
+    uint16_t key = 55665U;
     int found, hex = 1, hi = -1, val, ch;
 
     font->pool = pool;
@@ -294,8 +294,8 @@ void *t1_open( POOL *pool, u8 *data, u32 len )
     if ( len > 6 && data[0] == 0x80 && data[1] == 1 ) {
         out = 0;
         for ( at = 0; at + 6 <= len && data[at] == 0x80 && data[at + 1] != 3; ) {
-            count = (u32)data[at + 2] | ((u32)data[at + 3] << 8) | ((u32)data[at + 4] << 16) |
-                    ((u32)data[at + 5] << 24);
+            count = (uint32_t)data[at + 2] | ((uint32_t)data[at + 3] << 8) | ((uint32_t)data[at + 4] << 16) |
+                    ((uint32_t)data[at + 5] << 24);
             at += 6;
             if ( count > len - at ) {
                 count = len - at;
@@ -310,8 +310,8 @@ void *t1_open( POOL *pool, u8 *data, u32 len )
     if ( found < 0 ) {
         return NULL;
     }
-    read_clear( font, data, (u32)found );
-    start = (u32)found + 5;
+    read_clear( font, data, (uint32_t)found );
+    start = (uint32_t)found + 5;
     while ( start < len && (data[start] == ' ' || data[start] == '\t' || data[start] == '\r' ||
                             data[start] == '\n') ) {
         start++;
@@ -322,7 +322,7 @@ void *t1_open( POOL *pool, u8 *data, u32 len )
             hex = 0;
         }
     }
-    font->plain = (u8 *)pool_alloc( pool, len - start + 1 );
+    font->plain = (uint8_t *)pool_alloc( pool, len - start + 1 );
     out = 0;
     for ( at = start; at < len; at++ ) {
         ch = data[at];
@@ -338,8 +338,8 @@ void *t1_open( POOL *pool, u8 *data, u32 len )
             ch = hi * 16 + val;
             hi = -1;
         }
-        font->plain[out++] = (u8)(ch ^ (key >> 8));
-        key = (u16)((ch + key) * 52845U + 22719U);
+        font->plain[out++] = (uint8_t)(ch ^ (key >> 8));
+        key = (uint16_t)((ch + key) * 52845U + 22719U);
     }
     if ( out < 4 ) {
         return NULL;
@@ -361,7 +361,7 @@ int t1_units( void *prog )
 int t1_glyph_named( void *prog, const char *name )
 {
     T1 *font = (T1 *)prog;
-    u32 index;
+    unsigned int index;
 
     for ( index = 0; index < font->nchars; index++ ) {
         if ( font->chars[index].name[0] == name[0] && str_cmp( font->chars[index].name, name ) == 0 ) {
@@ -438,13 +438,13 @@ static void t1_curve( T1RUN *run, fx dx1, fx dy1, fx dx2, fx dy2, fx dx3, fx dy3
 
 static void t1_exec( T1RUN *run, const T1SPAN *span )
 {
-    static u8 code[4096];           /* one level's charstring, deciphered */
+    static uint8_t code[4096];      /* one level's charstring, deciphered */
     T1 *font = run->font;
-    u8 *prog;
+    uint8_t *prog;
     fx *st = run->stack;
-    u32 len = span->len, at, skip = font->len_iv < 0 ? 0 : (u32)font->len_iv;
-    u16 key = 4330U;
-    s32 big, below;
+    uint32_t len = span->len, at, skip = font->len_iv < 0 ? 0 : (uint32_t)font->len_iv;
+    uint16_t key = 4330U;
+    int32_t big, below;
     int b0, other, count, index;
     T1SPAN sub;
 
@@ -455,16 +455,16 @@ static void t1_exec( T1RUN *run, const T1SPAN *span )
        has its own copy: the first in the static buffer, the rest in
        the page's memory */
     len -= skip;
-    prog = run->depth == 0 && len <= sizeof( code ) ? code : (u8 *)pool_big( doc.page_pool, len );
+    prog = run->depth == 0 && len <= sizeof( code ) ? code : (uint8_t *)pool_big( doc.page_pool, len );
     if ( font->len_iv < 0 ) {
         mem_cpy( prog, font->plain + span->off, len );
     } else {
         for ( at = 0; at < span->len; at++ ) {
             b0 = font->plain[span->off + at];
             if ( at >= skip ) {
-                prog[at - skip] = (u8)(b0 ^ (key >> 8));
+                prog[at - skip] = (uint8_t)(b0 ^ (key >> 8));
             }
-            key = (u16)((b0 + key) * 52845U + 22719U);
+            key = (uint16_t)((b0 + key) * 52845U + 22719U);
         }
     }
 
@@ -491,8 +491,8 @@ static void t1_exec( T1RUN *run, const T1SPAN *span )
                 /* four bytes.  A number too large for the stack is
                    always the top of a fraction - "100000 1000 div" - so
                    the fraction is taken whole when it is */
-                big = at + 4 <= len ? (s32)(((u32)prog[at] << 24) | ((u32)prog[at + 1] << 16) |
-                                            ((u32)prog[at + 2] << 8) | prog[at + 3]) : 0;
+                big = at + 4 <= len ? (int32_t)(((uint32_t)prog[at] << 24) | ((uint32_t)prog[at + 1] << 16) |
+                                                ((uint32_t)prog[at + 2] << 8) | prog[at + 3]) : 0;
                 at += 4;
                 if ( big > 32767 || big < -32767 ) {
                     below = 0;
@@ -582,7 +582,7 @@ static void t1_exec( T1RUN *run, const T1SPAN *span )
                 break;
             }
             index = (int)FX_FLOOR( st[--run->sp] );
-            if ( index >= 0 && (u32)index < font->nsubrs && font->subrs[index].len ) {
+            if ( index >= 0 && (uint32_t)index < font->nsubrs && font->subrs[index].len ) {
                 sub = font->subrs[index];
                 run->depth++;
                 t1_exec( run, &sub );
@@ -675,7 +675,7 @@ out:
     }
 }
 
-int t1_outline( void *prog, u32 gid )
+int t1_outline( void *prog, uint32_t gid )
 {
     static T1RUN run;
     T1 *font = (T1 *)prog;

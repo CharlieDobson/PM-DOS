@@ -526,13 +526,13 @@ static int tui_progress( void *user, int idx, int total, const char *name )
     len = (int)strlen( line );
     shorten_tail( nm, PB_ROOM - len, name );
     strcat( line, nm );
-    return prog_update( line, (u32)(idx + 1), (u32)(total > 0 ? total : 1) );
+    return prog_update( line, (uint32_t)(idx + 1), (uint32_t)(total > 0 ? total : 1) );
 }
 
 /* finding the files (no total yet), packing them by KB of input, and
    clearing the Archive attribute with the bar full */
 static int tui_comp_progress( void *user, int idx, int total, const char *name,
-                              UInt32 done_kb, UInt32 total_kb )
+                              uint32_t done_kb, uint32_t total_kb )
 {
     char line[PB_ROOM + 2], nm[PB_ROOM + 2];
     int len;
@@ -557,7 +557,7 @@ static int tui_comp_progress( void *user, int idx, int total, const char *name,
 /* Delete: the name the backend passes - an entry copied across, one
    going, or "" - and the work in KB; a total of 0 is an empty bar */
 static int tui_del_progress( void *user, int idx, int total, const char *name,
-                             UInt32 done_kb, UInt32 total_kb )
+                             uint32_t done_kb, uint32_t total_kb )
 {
     char line[PB_ROOM + 2];
 
@@ -1013,7 +1013,7 @@ static void default_archive_name( const int *rows, int n, int fmt, char *dst, in
 static void compress_report( ArcCompJob *job, const char *archive, int rc )
 {
     char text[SZ_MAX_NAME * 2 + 640], shown[48], prob[52], b1[NUM_FMT_MAX], b2[NUM_FMT_MAX];
-    UInt32 in, out, pct;
+    uint32_t in, out, pct;
     int skipped;
 
     shorten_tail( shown, 40, base_name( archive ) );
@@ -1241,8 +1241,8 @@ static int cwd_still_there( void )
             name++;
         }
         for ( pos = 0; pos < len && name[pos]; pos++ ) {
-            if ( (name[pos] == '/' ? '\\' : toupper( (u8)name[pos] ))
-                 != (cwd[pos] == '/' ? '\\' : toupper( (u8)cwd[pos] )) ) {
+            if ( (name[pos] == '/' ? '\\' : toupper( (unsigned char)name[pos] ))
+                 != (cwd[pos] == '/' ? '\\' : toupper( (unsigned char)cwd[pos] )) ) {
                 break;
             }
         }
@@ -1380,7 +1380,7 @@ static void act_delete( void )
     if ( nrows == 1 ) {
         sprintf( text, "Delete %s from %s?", shown, arc_name );
     } else {
-        sprintf( text, "Delete these %s items from %s?", NumFmt( (UInt32)nrows, num ), arc_name );
+        sprintf( text, "Delete these %s items from %s?", NumFmt( (uint32_t)nrows, num ), arc_name );
     }
     if ( has_dir ) {
         strcat( text, "\n\nA folder is deleted with everything in it." );
@@ -1463,7 +1463,7 @@ static int looks_like_archive( const char *name )
         return 0;
     }
     for ( len = 0; len < 7 && dot[len]; len++ ) {
-        up[len] = (char)toupper( (u8)dot[len] );
+        up[len] = (char)toupper( (unsigned char)dot[len] );
     }
     up[len] = 0;
     for ( at = 0; known[at]; at++ ) {
@@ -1664,7 +1664,7 @@ static int is_probably_text( const char *name )
         return 1;
     }
     for ( len = 0; len < 7 && dot[len]; len++ ) {
-        up[len] = (char)toupper( (u8)dot[len] );
+        up[len] = (char)toupper( (unsigned char)dot[len] );
     }
     up[len] = 0;
     for ( at = 0; known[at]; at++ ) {
@@ -2010,8 +2010,8 @@ static void act_info( void )
 {
     char info[640], vol_line[48], mem_line[96], tot[NUM_FMT_MAX], pk[NUM_FMT_MAX];
     char nb[NUM_FMT_MAX], hb[NUM_FMT_MAX];
-    u64 total = 0, packed = 0;
-    UInt32 need_kb = 0, have_kb = 0, size;
+    uint64_t total = 0, packed = 0;
+    uint32_t need_kb = 0, have_kb = 0, size;
     int at, count, dirs = 0, vols;
 
     if ( g_arc == NULL ) {

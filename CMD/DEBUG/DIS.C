@@ -17,16 +17,16 @@
 #include "debug.h"
 
 typedef struct {
-    const u8 *p;            /* the bytes */
-    ADDR      at;           /* where they are */
-    u32       pos;          /* how many used */
-    int       opsize;       /* 16 or 32: operand size now */
-    int       adsize;       /* 16 or 32: address size now */
-    int       seg;          /* a segment-override register, or -1 */
-    int       rep;          /* 0, 0xF2, 0xF3 */
-    int       use32;        /* a native program: 386 decoding */
-    int       x87;          /* 16-bit: an 8087 instruction 6.22 names */
-    DISASM   *out;
+    const uint8_t *p;       /* the bytes */
+    ADDR           at;      /* where they are */
+    unsigned int   pos;     /* how many used */
+    int            opsize;  /* 16 or 32: operand size now */
+    int            adsize;  /* 16 or 32: address size now */
+    int            seg;     /* a segment-override register, or -1 */
+    int            rep;     /* 0, 0xF2, 0xF3 */
+    int            use32;   /* a native program: 386 decoding */
+    int            x87;     /* 16-bit: an 8087 instruction 6.22 names */
+    DISASM        *out;
 } DEC;
 
 static const char *r8[]  = { "AL","CL","DL","BL","AH","CH","DH","BH" };
@@ -35,11 +35,11 @@ static const char *r32[] = { "EAX","ECX","EDX","EBX","ESP","EBP","ESI","EDI" };
 static const char *sreg[]= { "ES","CS","SS","DS","FS","GS","??","??" };
 static const char *base16[] = { "BX+SI","BX+DI","BP+SI","BP+DI","SI","DI","BP","BX" };
 
-static void decode_fpu( DEC *d, u8 op );
+static void decode_fpu( DEC *d, uint8_t op );
 static void decode_0f( DEC *d );
 
 /* a general register's current value, for an effective address */
-static u32 reg_val( int which )
+static uint32_t reg_val( int which )
 {
     switch ( which ) {
     case 0: return cpu.eax;
@@ -53,22 +53,22 @@ static u32 reg_val( int which )
     return cpu.edi;
 }
 
-static u8 fetch( DEC *d )
+static uint8_t fetch( DEC *d )
 {
     return d->p[d->pos++];
 }
 
-static u16 fetch16( DEC *d )
+static uint16_t fetch16( DEC *d )
 {
-    u16 v = (u16)( d->p[d->pos] | ( d->p[d->pos + 1] << 8 ) );
+    uint16_t v = (uint16_t)( d->p[d->pos] | ( d->p[d->pos + 1] << 8 ) );
     d->pos += 2;
     return v;
 }
 
-static u32 fetch32( DEC *d )
+static uint32_t fetch32( DEC *d )
 {
-    u32 v = d->p[d->pos] | ( (u32)d->p[d->pos+1] << 8 ) |
-            ( (u32)d->p[d->pos+2] << 16 ) | ( (u32)d->p[d->pos+3] << 24 );
+    uint32_t v = d->p[d->pos] | ( (uint32_t)d->p[d->pos+1] << 8 ) |
+            ( (uint32_t)d->p[d->pos+2] << 16 ) | ( (uint32_t)d->p[d->pos+3] << 24 );
     d->pos += 4;
     return v;
 }
@@ -89,7 +89,7 @@ static void op_str( const char *s )
     ops[oplen] = 0;
 }
 
-static void op_hex( u32 val, int digits )
+static void op_hex( uint32_t val, int digits )
 {
     int shift;
 
@@ -116,12 +116,12 @@ static void set_mnem( const char *s )
 /* ------------------------------------------------------------------ */
 
 typedef struct {
-    int reg;                /* the reg field */
-    int is_mem;
-    int rm;                 /* mod==11: the register */
-    int seg;                /* a memory operand's segment register */
-    u32 off;                /* ...its displacement or address */
-    int has_off;            /* ...there is a usable effective offset */
+    int      reg;           /* the reg field */
+    int      is_mem;
+    int      rm;            /* mod==11: the register */
+    int      seg;           /* a memory operand's segment register */
+    uint32_t off;           /* ...its displacement or address */
+    int      has_off;       /* ...there is a usable effective offset */
 } MODRM;
 
 static int default_seg( int rm16, int mod )
@@ -146,9 +146,9 @@ static void open_mem( DEC *d )
 
 static void decode_modrm( DEC *d, MODRM *m, int size )
 {
-    u8  modrm = fetch( d );
-    int mod = modrm >> 6;
-    int rm = modrm & 7;
+    uint8_t modrm = fetch( d );
+    int     mod = modrm >> 6;
+    int     rm = modrm & 7;
 
     m->reg = ( modrm >> 3 ) & 7;
     m->has_off = 0;
@@ -163,9 +163,9 @@ static void decode_modrm( DEC *d, MODRM *m, int size )
 
     if ( d->adsize == 32 ) {
         int base = -1, index = -1, scale = 0;
-        u32 disp = 0;
+        uint32_t disp = 0;
         if ( rm == 4 ) {                /* SIB */
-            u8 sib = fetch( d );
+            uint8_t sib = fetch( d );
             scale = sib >> 6;
             index = ( sib >> 3 ) & 7;
             base = sib & 7;
@@ -185,7 +185,7 @@ static void decode_modrm( DEC *d, MODRM *m, int size )
         } else {
             base = rm;
         }
-        if ( mod == 1 ) disp = (u32)(s32)(s8)fetch( d );
+        if ( mod == 1 ) disp = (uint32_t)(int32_t)(int8_t)fetch( d );
         else if ( mod == 2 ) disp = fetch32( d );
         m->seg = d->seg >= 0 ? d->seg : ( base == 5 || base == 4 ? 2 : 3 );
         m->off = disp + ( base >= 0 ? reg_val( base ) : 0 ) +
@@ -202,9 +202,9 @@ static void decode_modrm( DEC *d, MODRM *m, int size )
                 if ( scale ) { op_str( "*" ); op_hex( 1 << scale, 1 ); }
                 first = 0;
             }
-            if ( mod == 1 && !first && (s32)disp < 0 ) {
+            if ( mod == 1 && !first && (int32_t)disp < 0 ) {
                 op_str( "-" );                  /* signed, as in 16-bit code */
-                op_hex( (u32)( -(s32)disp ), 2 );
+                op_hex( (uint32_t)( -(int32_t)disp ), 2 );
             } else if ( mod == 1 || mod == 2 || first || base < 0 ) {
                 if ( !first ) op_str( "+" );
                 op_hex( mod == 1 ? disp & 0xFF : disp, mod == 1 ? 2 : 8 );
@@ -238,7 +238,7 @@ disp_done:
     {
         /* the effective offset, from the registers as they are now, so
            R and U can show "seg:off=value" as 6.22 does */
-        u32 ea = 0;
+        uint32_t ea = 0;
         switch ( rm ) {
         case 0: ea = reg_val( 3 ) + reg_val( 6 ); break;    /* BX+SI */
         case 1: ea = reg_val( 3 ) + reg_val( 7 ); break;    /* BX+DI */
@@ -250,7 +250,7 @@ disp_done:
         case 7: ea = reg_val( 3 ); break;                   /* BX */
         }
         if ( mod == 1 ) {
-            u8 b = fetch( d );
+            uint8_t b = fetch( d );
             /* a byte displacement is signed: [BP+DI-02], as 6.22 shows */
             if ( b >= 0x80 ) {
                 op_str( "-" );
@@ -259,12 +259,12 @@ disp_done:
                 op_str( "+" );
                 op_hex( b, 2 );
             }
-            ea += (u32)(s32)(s8)b;
+            ea += (uint32_t)(int32_t)(int8_t)b;
         } else if ( mod == 2 ) {
-            u16 w = fetch16( d );
+            uint16_t w = fetch16( d );
             op_str( "+" );
             op_hex( w, 4 );
-            ea += (u32)(s32)(s16)w;
+            ea += (uint32_t)(int32_t)(int16_t)w;
         }
         m->off = ea & 0xFFFF;
         m->has_off = 1;
@@ -332,10 +332,10 @@ static void two_rm( DEC *d, const char *name, int dir, int size )
 
 static void imm_rm( DEC *d, const char *name, int size, int immsize, int sign )
 {
-    MODRM m;
-    char  rmbuf[40];
-    int   save = oplen;
-    u32   imm;
+    MODRM    m;
+    char     rmbuf[40];
+    int      save = oplen;
+    uint32_t imm;
 
     set_mnem( name );
     decode_modrm( d, &m, size );
@@ -373,7 +373,7 @@ static void imm_rm( DEC *d, const char *name, int size, int immsize, int sign )
     if ( m.is_mem ) note_mem( d, &m, size );
 }
 
-static u32 rel_target( DEC *d, s32 disp )
+static uint32_t rel_target( DEC *d, int32_t disp )
 {
     return ( d->at.off + d->pos + disp );
 }
@@ -386,9 +386,9 @@ static const char *reg_name( int which, int size );
 
 static void decode_one( DEC *d )
 {
-    u8  op;
-    MODRM m;
-    int sz;
+    uint8_t op;
+    MODRM   m;
+    int     sz;
 
     mnem[0] = 0;
     ops[0] = 0;
@@ -477,7 +477,7 @@ static void decode_one( DEC *d )
     if ( op >= 0x50 && op <= 0x57 ) { set_mnem( "PUSH" ); op_str( reg_name( op - 0x50, sz ) ); goto done; }
     if ( op >= 0x58 && op <= 0x5F ) { set_mnem( "POP" ); op_str( reg_name( op - 0x58, sz ) ); goto done; }
     if ( op >= 0x70 && op <= 0x7F ) {
-        s8 disp = (s8)fetch( d );
+        int8_t disp = (int8_t)fetch( d );
         set_mnem( jcc[op - 0x70] );
         op_hex( rel_target( d, disp ) & ( sz == 32 ? 0xFFFFFFFFUL : 0xFFFF ), sz == 32 ? 8 : 4 );
         d->out->kind = DK_JUMP;
@@ -496,8 +496,8 @@ static void decode_one( DEC *d )
     switch ( op ) {
     case 0x80: case 0x81: case 0x82: case 0x83: {
         /* group 1: the family is the reg field */
-        int save = oplen, immsz;
-        u8  modrm = d->p[d->pos];
+        int     save = oplen, immsz;
+        uint8_t modrm = d->p[d->pos];
         const char *name = grp1[( modrm >> 3 ) & 7];
         oplen = save;
         if ( op == 0x81 ) immsz = sz;
@@ -550,8 +550,8 @@ static void decode_one( DEC *d )
     case 0x98: set_mnem( sz == 32 ? "CWDE" : "CBW" ); break;
     case 0x99: set_mnem( sz == 32 ? "CDQ" : "CWD" ); break;
     case 0x9A: {
-        u32 off = sz == 32 ? fetch32( d ) : fetch16( d );
-        u16 seg = fetch16( d );
+        uint32_t off = sz == 32 ? fetch32( d ) : fetch16( d );
+        uint16_t seg = fetch16( d );
         set_mnem( "CALL" );
         op_hex( seg, 4 ); op_str( ":" ); op_hex( off, sz == 32 ? 8 : 4 );
         d->out->kind = DK_CALL;
@@ -591,10 +591,10 @@ static void decode_one( DEC *d )
     case 0xCE: set_mnem( "INTO" ); d->out->kind = DK_INT; break;
     case 0xCF: set_mnem( sz == 32 ? "IRETD" : "IRET" ); break;
     case 0xD0: case 0xD1: case 0xD2: case 0xD3: {
-        int save = oplen; char rmbuf[40];
-        u8  modrm = d->p[d->pos];
+        int     save = oplen; char rmbuf[40];
+        uint8_t modrm = d->p[d->pos];
         const char *name = grp2[( modrm >> 3 ) & 7];
-        int osz = ( op & 1 ) ? sz : 8;
+        int     osz = ( op & 1 ) ? sz : 8;
         set_mnem( name );
         decode_modrm( d, &m, osz );
         mem_cpy( rmbuf, ops + save, oplen - save + 1 );
@@ -607,23 +607,23 @@ static void decode_one( DEC *d )
         break;
     }
     /* base 10 is shown bare, as 6.22 shows it; any other base after it */
-    case 0xD4: { u8 b = fetch( d ); set_mnem( "AAM" ); if ( b != 0x0A ) op_hex( b, 2 ); break; }
-    case 0xD5: { u8 b = fetch( d ); set_mnem( "AAD" ); if ( b != 0x0A ) op_hex( b, 2 ); break; }
+    case 0xD4: { uint8_t b = fetch( d ); set_mnem( "AAM" ); if ( b != 0x0A ) op_hex( b, 2 ); break; }
+    case 0xD5: { uint8_t b = fetch( d ); set_mnem( "AAD" ); if ( b != 0x0A ) op_hex( b, 2 ); break; }
     case 0xD7: set_mnem( "XLAT" ); break;
     case 0xD8: case 0xD9: case 0xDA: case 0xDB:
     case 0xDC: case 0xDD: case 0xDE: case 0xDF:
         decode_fpu( d, op );
         break;
-    case 0xE0: set_mnem( "LOOPNZ" ); op_hex( rel_target( d, (s8)fetch( d ) ), 4 ); d->out->kind = DK_LOOP; break;
-    case 0xE1: set_mnem( "LOOPZ" ); op_hex( rel_target( d, (s8)fetch( d ) ), 4 ); d->out->kind = DK_LOOP; break;
-    case 0xE2: set_mnem( "LOOP" ); op_hex( rel_target( d, (s8)fetch( d ) ), 4 ); d->out->kind = DK_LOOP; break;
-    case 0xE3: set_mnem( sz == 32 ? "JECXZ" : "JCXZ" ); op_hex( rel_target( d, (s8)fetch( d ) ), 4 ); d->out->kind = DK_JUMP; break;
+    case 0xE0: set_mnem( "LOOPNZ" ); op_hex( rel_target( d, (int8_t)fetch( d ) ), 4 ); d->out->kind = DK_LOOP; break;
+    case 0xE1: set_mnem( "LOOPZ" ); op_hex( rel_target( d, (int8_t)fetch( d ) ), 4 ); d->out->kind = DK_LOOP; break;
+    case 0xE2: set_mnem( "LOOP" ); op_hex( rel_target( d, (int8_t)fetch( d ) ), 4 ); d->out->kind = DK_LOOP; break;
+    case 0xE3: set_mnem( sz == 32 ? "JECXZ" : "JCXZ" ); op_hex( rel_target( d, (int8_t)fetch( d ) ), 4 ); d->out->kind = DK_JUMP; break;
     case 0xE4: set_mnem( "IN" ); op_str( "AL," ); op_hex( fetch( d ), 2 ); break;
     case 0xE5: set_mnem( "IN" ); op_str( sz == 32 ? "EAX," : "AX," ); op_hex( fetch( d ), 2 ); break;
     case 0xE6: set_mnem( "OUT" ); op_hex( fetch( d ), 2 ); op_str( ",AL" ); break;
     case 0xE7: set_mnem( "OUT" ); op_hex( fetch( d ), 2 ); op_str( sz == 32 ? ",EAX" : ",AX" ); break;
     case 0xE8: {
-        s32 disp = sz == 32 ? (s32)fetch32( d ) : (s32)(s16)fetch16( d );
+        int32_t disp = sz == 32 ? (int32_t)fetch32( d ) : (int32_t)(int16_t)fetch16( d );
         set_mnem( "CALL" );
         op_hex( rel_target( d, disp ) & ( sz == 32 ? 0xFFFFFFFFUL : 0xFFFF ), sz == 32 ? 8 : 4 );
         d->out->kind = DK_CALL;
@@ -631,21 +631,21 @@ static void decode_one( DEC *d )
         break;
     }
     case 0xE9: {
-        s32 disp = sz == 32 ? (s32)fetch32( d ) : (s32)(s16)fetch16( d );
+        int32_t disp = sz == 32 ? (int32_t)fetch32( d ) : (int32_t)(int16_t)fetch16( d );
         set_mnem( "JMP" );
         op_hex( rel_target( d, disp ) & ( sz == 32 ? 0xFFFFFFFFUL : 0xFFFF ), sz == 32 ? 8 : 4 );
         d->out->kind = DK_JUMP;
         break;
     }
     case 0xEA: {
-        u32 off = sz == 32 ? fetch32( d ) : fetch16( d );
-        u16 seg = fetch16( d );
+        uint32_t off = sz == 32 ? fetch32( d ) : fetch16( d );
+        uint16_t seg = fetch16( d );
         set_mnem( "JMP" );
         op_hex( seg, 4 ); op_str( ":" ); op_hex( off, sz == 32 ? 8 : 4 );
         d->out->kind = DK_JUMP;
         break;
     }
-    case 0xEB: set_mnem( "JMP" ); op_hex( rel_target( d, (s8)fetch( d ) ) & 0xFFFF, 4 ); d->out->kind = DK_JUMP; break;
+    case 0xEB: set_mnem( "JMP" ); op_hex( rel_target( d, (int8_t)fetch( d ) ) & 0xFFFF, 4 ); d->out->kind = DK_JUMP; break;
     case 0xEC: set_mnem( "IN" ); op_str( "AL,DX" ); break;
     case 0xED: set_mnem( "IN" ); op_str( sz == 32 ? "EAX,DX" : "AX,DX" ); break;
     case 0xEE: set_mnem( "OUT" ); op_str( "DX,AL" ); break;
@@ -654,10 +654,10 @@ static void decode_one( DEC *d )
     case 0xF4: set_mnem( "HLT" ); break;
     case 0xF5: set_mnem( "CMC" ); break;
     case 0xF6: case 0xF7: {
-        int save = oplen; char rmbuf[40];
-        u8  modrm = d->p[d->pos];
-        int reg = ( modrm >> 3 ) & 7;
-        int osz = ( op & 1 ) ? sz : 8;
+        int     save = oplen; char rmbuf[40];
+        uint8_t modrm = d->p[d->pos];
+        int     reg = ( modrm >> 3 ) & 7;
+        int     osz = ( op & 1 ) ? sz : 8;
         set_mnem( grp3[reg] );
         decode_modrm( d, &m, osz );
         mem_cpy( rmbuf, ops + save, oplen - save + 1 );
@@ -680,10 +680,10 @@ static void decode_one( DEC *d )
     case 0xFC: set_mnem( "CLD" ); break;
     case 0xFD: set_mnem( "STD" ); break;
     case 0xFE: case 0xFF: {
-        int save = oplen; char rmbuf[40];
-        u8  modrm = d->p[d->pos];
-        int reg = ( modrm >> 3 ) & 7;
-        int osz = ( op & 1 ) ? sz : 8;
+        int     save = oplen; char rmbuf[40];
+        uint8_t modrm = d->p[d->pos];
+        int     reg = ( modrm >> 3 ) & 7;
+        int     osz = ( op & 1 ) ? sz : 8;
         static const char *g5[] = { "INC","DEC","CALL","CALL","JMP","JMP","PUSH","???" };
         set_mnem( g5[reg] );
         decode_modrm( d, &m, osz );
@@ -724,10 +724,10 @@ done:
 /* the public call                                                     */
 /* ------------------------------------------------------------------ */
 
-void disasm( ADDR addr, const u8 *code, int use32, DISASM *dis )
+void disasm( ADDR addr, const uint8_t *code, int use32, DISASM *dis )
 {
-    DEC d;
-    u8  buf[DIS_MAX * 2];
+    DEC     d;
+    uint8_t buf[DIS_MAX * 2];
 
     mem_set( dis, 0, sizeof( *dis ) );
     dis->mem_seg = -1;
@@ -790,8 +790,8 @@ void disasm( ADDR addr, const u8 *code, int use32, DISASM *dis )
    the registers were shown (REGS.C, show_regs). */
 void cmd_unassemble( void )
 {
-    ADDR addr;
-    u32  len, done = 0;
+    ADDR     addr;
+    uint32_t len, done = 0;
 
     addr = next_unasm;
     get_range( &addr, &len, cpu.cs, 0x20, 0 );
@@ -809,7 +809,7 @@ void cmd_unassemble( void )
            prefixes is the most one instruction can have, and a segment
            full of them must not go round for ever. */
         while ( done < len || ( prefix && run < 15 ) ) {
-            u8 code[DIS_MAX];
+            uint8_t code[DIS_MAX];
             DISASM dis;
 
             show_insn( addr, 0 );
@@ -831,11 +831,11 @@ void cmd_unassemble( void )
    value */
 void show_insn( ADDR addr, int with_mem )
 {
-    u8     code[DIS_MAX];
-    DISASM dis;
-    u32    i;
-    int    mnem_col = mode == MODE_NAT ? 40 : 24;   /* where the mnemonic sits */
-    int    end_col  = mnem_col + 39;                /* and where the line ends */
+    uint8_t      code[DIS_MAX];
+    DISASM       dis;
+    unsigned int i;
+    int          mnem_col = mode == MODE_NAT ? 40 : 24;  /* where the mnemonic sits */
+    int          end_col  = mnem_col + 39;               /* and where the line ends */
 
     mem_read( addr, code, DIS_MAX );
     disasm( addr, code, mode == MODE_NAT, &dis );
@@ -843,7 +843,7 @@ void show_insn( ADDR addr, int with_mem )
        grow with the mnemonic (RET's is 63, XCHG's 64) - and an 8087
        line, with its TAB in front, to 60 in all */
     if ( mode != MODE_NAT ) {
-        u32 k = 0;
+        unsigned int k = 0;
         while ( dis.text[k] && dis.text[k] != '\t' ) {
             k++;
         }
@@ -858,9 +858,9 @@ void show_insn( ADDR addr, int with_mem )
     out_str( dis.text );
     out_pad( end_col );
     if ( with_mem && dis.mem_seg >= 0 ) {
-        ADDR m;
-        u8   v[4], ok[4];
-        u32  n = (u32)dis.mem_size;
+        ADDR         m;
+        uint8_t      v[4], ok[4];
+        unsigned int n = (unsigned int)dis.mem_size;
         m.seg = dis.mem_seg == 0 ? cpu.es : dis.mem_seg == 1 ? cpu.cs :
                 dis.mem_seg == 2 ? cpu.ss : dis.mem_seg == 3 ? cpu.ds :
                 dis.mem_seg == 4 ? cpu.fs : cpu.gs;
@@ -875,7 +875,7 @@ void show_insn( ADDR addr, int with_mem )
         mem_get( m, v, n, ok );
         if ( dis.mem_size == 1 ) out_hex( v[0], 2 );
         else if ( dis.mem_size == 2 ) out_hex( v[0] | ( v[1] << 8 ), 4 );
-        else out_hex( v[0] | ( (u32)v[1] << 8 ) | ( (u32)v[2] << 16 ) | ( (u32)v[3] << 24 ), 8 );
+        else out_hex( v[0] | ( (uint32_t)v[1] << 8 ) | ( (uint32_t)v[2] << 16 ) | ( (uint32_t)v[3] << 24 ), 8 );
     }
     out_nl();
 }

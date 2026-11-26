@@ -57,32 +57,32 @@
 #define SH_KEYS         0x0F
 
 typedef struct {
-    u8   attr;
-    u32  size;
-    u16  date, time;
-    char name[PATH_MAX];        /* the long name - the 8.3 when there is none */
-    char alias[14];
+    uint8_t  attr;
+    uint32_t size;
+    uint16_t date, time;
+    char     name[PATH_MAX];    /* the long name - the 8.3 when there is none */
+    char     alias[14];
 } FINDREC;
 
-int   sys_init( void );
-const char *sys_cmdline( void );
-const char *sys_getenv( const char *name );
-const char *sys_environment( void );        /* the block itself */
-void  sys_exit( int code );
-void *sys_mem_alloc( u32 size );
-u32   sys_mem_largest( void );
-void  sys_break_install( void );
-void  sys_stdout( const char *buf, u32 len );
-int   sys_stdin_is_console( void );
-int   sys_stdin_byte( void );               /* -1 at the end */
-int   sys_fpu_present( void );
-int   sys_exec( const char *program, const char *tail, const char *env );  /* DOS error; env NULL: QBasic's own */
-const char *sys_shell( void );             /* the command interpreter, for SHELL */
+int          sys_init( void );
+const char  *sys_cmdline( void );
+const char  *sys_getenv( const char *name );
+const char  *sys_environment( void );       /* the block itself */
+void         sys_exit( int code );
+void        *sys_mem_alloc( unsigned int size );
+unsigned int sys_mem_largest( void );
+void         sys_break_install( void );
+void         sys_stdout( const char *buf, unsigned int len );
+int          sys_stdin_is_console( void );
+int          sys_stdin_byte( void );        /* -1 at the end */
+int          sys_fpu_present( void );
+int          sys_exec( const char *program, const char *tail, const char *env ); /* DOS error; env NULL: QBasic's own */
+const char  *sys_shell( void );             /* the command interpreter, for SHELL */
 
 /* the screen */
 void  sys_screen_size( int *rows, int *cols );
-void  sys_put_cells( u32 first, const u16 *cells, u32 count );
-void  sys_get_cells( u32 first, u16 *cells, u32 count );
+void  sys_put_cells( unsigned int first, const uint16_t *cells, unsigned int count );
+void  sys_get_cells( unsigned int first, uint16_t *cells, unsigned int count );
 void  sys_cursor( int row, int col );
 void  sys_get_cursor( int *row, int *col );
 #define CUR_HIDE        0
@@ -94,15 +94,15 @@ int   sys_set_lines( int lines );               /* -> rows now */
 int   sys_text_mode( int mode, int lines );     /* 21h/F0h AL=0Ch: 0-3, 7 */
 
 /* graphics: 21h/F1h AL=1Fh */
-int   sys_video_set( u32 mode, u32 *selector, u32 *bytes, u32 *pitch );
+int   sys_video_set( uint32_t mode, uint32_t *selector, uint32_t *bytes, uint32_t *pitch );
 void  sys_video_restore( void );
-int   sys_video_palette( int first, int count, const u8 *entries );    /* B G R 0 */
-int   sys_video_palette_get( int first, int count, u8 *entries );
-int   sys_peek( u32 addr, void *buf, u32 len ); /* the first megabyte: 1 = read */
-void  __cdecl vid_put( u32 selector, u32 offset, const void *src, u32 len );
-void  __cdecl vid_fill( u32 selector, u32 offset, u32 value, u32 len );
-void  __cdecl port_out( u32 port, u32 value );
-u32   __cdecl port_in( u32 port );
+int   sys_video_palette( int first, int count, const uint8_t *entries ); /* B G R 0 */
+int   sys_video_palette_get( int first, int count, uint8_t *entries );
+int   sys_peek( uint32_t addr, void *buf, unsigned int len ); /* the first megabyte: 1 = read */
+void  __cdecl vid_put( uint32_t selector, uint32_t offset, const void *src, unsigned int len );
+void  __cdecl vid_fill( uint32_t selector, uint32_t offset, uint32_t value, unsigned int len );
+void  __cdecl port_out( uint32_t port, uint32_t value );
+uint32_t   __cdecl port_in( uint32_t port );
 
 /* the keyboard: a key is AL = ASCII, AH = scan code */
 #define KW_NOWAIT       0x01    /* sys_key_wait: look, and come back */
@@ -113,11 +113,11 @@ int   sys_key_read( int *shift_now );
 int   sys_shift( void );
 
 /* the time */
-u32   sys_hundredths( void );   /* the time of day */
-void  sys_date( int *year, int *month, int *day );
-void  sys_time( int *hour, int *minute, int *second, int *hundredth );
-int   sys_set_date( int year, int month, int day );
-int   sys_set_time( int hour, int minute, int second );
+uint32_t sys_hundredths( void ); /* the time of day */
+void     sys_date( int *year, int *month, int *day );
+void     sys_time( int *hour, int *minute, int *second, int *hundredth );
+int      sys_set_date( int year, int month, int day );
+int      sys_set_time( int hour, int minute, int second );
 
 /* the mouse: INT 33h, positions in the driver's virtual pixels */
 int   sys_mouse_reset( void );  /* -> buttons, 0 for no mouse; hides it */
@@ -133,34 +133,34 @@ void  sys_mouse_inject( int buttons );  /* test mode: buttons as if pressed */
 #define OPEN_WRITE      1
 #define OPEN_RW         2
 int   sys_lfn( void );
-int   sys_open( const char *path, int mode, u32 *handle );
-int   sys_open_read( const char *path, u32 *handle );
-int   sys_open_write( const char *path, u32 *handle );    /* devices too */
-int   sys_create( const char *path, u32 *handle );
-int   sys_read( u32 handle, void *buf, u32 len, u32 *done );
-int   sys_write( u32 handle, const void *buf, u32 len, u32 *done );
-int   sys_close( u32 handle );
-int   sys_seek( u32 handle, u32 pos );
-int   sys_tell( u32 handle, u32 *pos );
-int   sys_file_size( u32 handle, u32 *size );   /* and back to the start */
-int   sys_size_keep( u32 handle, u32 *size );   /* the position kept */
-int   sys_truncate( u32 handle );               /* the file ends here */
-int   sys_rewind( u32 handle );
-int   sys_is_device( u32 handle );
-int   sys_get_attr( const char *path, u16 *attr );
+int   sys_open( const char *path, int mode, uint32_t *handle );
+int   sys_open_read( const char *path, uint32_t *handle );
+int   sys_open_write( const char *path, uint32_t *handle ); /* devices too */
+int   sys_create( const char *path, uint32_t *handle );
+int   sys_read( uint32_t handle, void *buf, unsigned int len, unsigned int *done );
+int   sys_write( uint32_t handle, const void *buf, unsigned int len, unsigned int *done );
+int   sys_close( uint32_t handle );
+int   sys_seek( uint32_t handle, uint32_t pos );
+int   sys_tell( uint32_t handle, uint32_t *pos );
+int   sys_file_size( uint32_t handle, uint32_t *size );  /* and back to the start */
+int   sys_size_keep( uint32_t handle, uint32_t *size );  /* the position kept */
+int   sys_truncate( uint32_t handle );                   /* the file ends here */
+int   sys_rewind( uint32_t handle );
+int   sys_is_device( uint32_t handle );
+int   sys_get_attr( const char *path, uint16_t *attr );
 int   sys_delete( const char *path );
 int   sys_rename( const char *from, const char *to );
 int   sys_mkdir( const char *path );
 int   sys_rmdir( const char *path );
-int   sys_find_first( const char *pattern, u16 attrs, FINDREC *rec, u32 *handle );
-int   sys_find_next( u32 handle, FINDREC *rec );
-void  sys_find_close( u32 handle );
+int   sys_find_first( const char *pattern, uint16_t attrs, FINDREC *rec, uint32_t *handle );
+int   sys_find_next( uint32_t handle, FINDREC *rec );
+void  sys_find_close( uint32_t handle );
 int   sys_get_drive( void );
 void  sys_set_drive( int drv );
 int   sys_drive_valid( int drv );
 int   sys_get_cwd( int drv, char *buf );    /* "DIR\SUB", no drive, no lead '\' */
 int   sys_chdir( const char *path );
 int   sys_truename( const char *path, char *out, int form );
-int   sys_disk_free( int drv, u32 *bytes );
+int   sys_disk_free( int drv, uint32_t *bytes );
 
 #endif

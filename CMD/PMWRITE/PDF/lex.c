@@ -15,10 +15,10 @@
 
 #define MAX_DEPTH   48
 
-static OBJ *stack;              /* arrays and dictionaries being collected */
-static u32  stack_len, stack_cap;
-static u8  *text;               /* a string or a name being collected */
-static u32  text_len, text_cap;
+static OBJ         *stack;      /* arrays and dictionaries being collected */
+static unsigned int stack_len, stack_cap;
+static uint8_t     *text;       /* a string or a name being collected */
+static unsigned int text_len, text_cap;
 
 static int lex_value( LEX *lex, OBJ *out, int depth );
 
@@ -61,7 +61,7 @@ int lex_skip_ws( IN *in )
 static void stack_push( const OBJ *obj )
 {
     OBJ *grown;
-    u32 cap;
+    unsigned int cap;
 
     if ( stack_len == stack_cap ) {
         cap = stack_cap ? stack_cap * 2 : 256;
@@ -96,12 +96,12 @@ void lex_done( void )
 
 static void text_put( int ch )
 {
-    u8 *grown;
-    u32 cap;
+    uint8_t *grown;
+    unsigned int cap;
 
     if ( text_len == text_cap ) {
         cap = text_cap ? text_cap * 2 : 1024;
-        grown = (u8 *)xalloc( cap );
+        grown = (uint8_t *)xalloc( cap );
         if ( text ) {
             mem_cpy( grown, text, text_len );
             xfree( text );
@@ -109,17 +109,17 @@ static void text_put( int ch )
         text = grown;
         text_cap = cap;
     }
-    text[text_len++] = (u8)ch;
+    text[text_len++] = (uint8_t)ch;
 }
 
 /* what was collected, as a string of the pool's, with a NUL after it */
 static void text_keep( LEX *lex, OBJ *out, int type )
 {
-    u8 *copy = (u8 *)pool_alloc( lex->pool, text_len + 1 );
+    uint8_t *copy = (uint8_t *)pool_alloc( lex->pool, text_len + 1 );
 
     mem_cpy( copy, text, text_len );
     copy[text_len] = 0;
-    out->type = (u8)type;
+    out->type = (uint8_t)type;
     out->u.str.ptr = copy;
     out->u.str.len = text_len;
     if ( type == T_STR && lex->crypt ) {
@@ -263,7 +263,7 @@ static void lex_array( LEX *lex, OBJ *out, int depth )
 {
     OBJ item;
     ARR *arr;
-    u32 base = stack_len, count;
+    unsigned int base = stack_len, count;
     int type;
 
     for ( ;; ) {
@@ -297,7 +297,7 @@ static void lex_dict( LEX *lex, OBJ *out, int depth )
 {
     OBJ key, val;
     DICT *dict;
-    u32 base = stack_len, count, index;
+    unsigned int base = stack_len, count, index;
     int type;
 
     for ( ;; ) {
@@ -344,7 +344,7 @@ static void lex_dict( LEX *lex, OBJ *out, int depth )
    are kept; the rest only move the point. */
 static int lex_number( const char *word, OBJ *out )
 {
-    u32 digits = 0, whole = 0;
+    uint32_t digits = 0, whole = 0;
     int neg = 0, kept = 0, scale = 0, dot = 0, any = 0, fits = 1, dig;
 
     if ( *word == '+' ) {
@@ -358,14 +358,14 @@ static int lex_number( const char *word, OBJ *out )
             dig = *word - '0';
             any = 1;
             if ( !dot ) {
-                if ( whole > (0x7FFFFFFFUL - (u32)dig) / 10 ) {
+                if ( whole > (0x7FFFFFFFUL - (uint32_t)dig) / 10 ) {
                     fits = 0;
                 } else {
-                    whole = whole * 10 + (u32)dig;
+                    whole = whole * 10 + (uint32_t)dig;
                 }
             }
             if ( kept < 9 ) {
-                digits = digits * 10 + (u32)dig;
+                digits = digits * 10 + (uint32_t)dig;
                 if ( digits ) {
                     kept++;
                 }
@@ -388,7 +388,7 @@ static int lex_number( const char *word, OBJ *out )
     }
     if ( !dot && fits ) {
         out->type = T_INT;
-        out->u.ival = neg ? -(s32)whole : (s32)whole;
+        out->u.ival = neg ? -(int32_t)whole : (int32_t)whole;
     } else {
         out->type = T_REAL;
         out->u.real = real_dec( digits, scale );
@@ -404,7 +404,7 @@ static int lex_number( const char *word, OBJ *out )
 static void lex_word( LEX *lex, int first )
 {
     IN *in = lex->in;
-    u32 len = 0;
+    unsigned int len = 0;
     int ch = first;
 
     for ( ;; ) {
@@ -423,7 +423,7 @@ static void lex_word( LEX *lex, int first )
 static void lex_op( LEX *lex, OBJ *out )
 {
     out->type = T_OP;
-    out->u.str.ptr = (u8 *)lex->word;
+    out->u.str.ptr = (uint8_t *)lex->word;
     out->u.str.len = str_len( lex->word );
 }
 
@@ -534,7 +534,7 @@ maybe_ref:
         if ( ch == 'R' ) {
             in->cur++;
             out->type = T_REF;
-            out->gen = (u16)second.u.ival;
+            out->gen = (uint16_t)second.u.ival;
             return T_REF;
         }
     }

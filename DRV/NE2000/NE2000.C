@@ -69,25 +69,25 @@
 /* the processor: ports and the interrupt flag, in ring 0           */
 /* ---------------------------------------------------------------- */
 
-u8   inb( u16 port );
+uint8_t  inb( uint16_t port );
 #pragma aux inb = "in al,dx" parm [dx] value [al] modify exact [al];
-u16  inw( u16 port );
+uint16_t inw( uint16_t port );
 #pragma aux inw = "in ax,dx" parm [dx] value [ax] modify exact [ax];
-void outb( u16 port, u8 value );
+void     outb( uint16_t port, uint8_t value );
 #pragma aux outb = "out dx,al" parm [dx] [al] modify exact [];
-void outw( u16 port, u16 value );
+void     outw( uint16_t port, uint16_t value );
 #pragma aux outw = "out dx,ax" parm [dx] [ax] modify exact [];
-void insb( u16 port, void *buf, u32 bytes );
+void     insb( uint16_t port, void *buf, unsigned int bytes );
 #pragma aux insb = "rep insb" parm [dx] [edi] [ecx] modify exact [edi ecx];
-void insw( u16 port, void *buf, u32 words );
+void     insw( uint16_t port, void *buf, unsigned int words );
 #pragma aux insw = "rep insw" parm [dx] [edi] [ecx] modify exact [edi ecx];
-void outsb( u16 port, const void *buf, u32 bytes );
+void     outsb( uint16_t port, const void *buf, unsigned int bytes );
 #pragma aux outsb = "rep outsb" parm [dx] [esi] [ecx] modify exact [esi ecx];
-void outsw( u16 port, const void *buf, u32 words );
+void     outsw( uint16_t port, const void *buf, unsigned int words );
 #pragma aux outsw = "rep outsw" parm [dx] [esi] [ecx] modify exact [esi ecx];
-u32  int_off( void );
+uint32_t int_off( void );
 #pragma aux int_off = "pushfd" "pop eax" "cli" value [eax] modify exact [eax];
-void int_back( u32 flags );
+void     int_back( uint32_t flags );
 #pragma aux int_back = "push eax" "popfd" parm [eax] modify exact [];
 
 /* ---------------------------------------------------------------- */
@@ -173,39 +173,39 @@ void int_back( u32 flags );
                                            the longest frame, rounded */
 #define PROBE_WAIT  4                   /* ticks a line may take */
 
-static u16  port;                       /* the card's first port */
-static u8   irq = NIC_NOIRQ;            /* its line, or polled */
-static u8   word;                       /* 16-bit transfers */
-static u8   bus;                        /* NICB_* */
-static u32  pciaddr;
-static u8   mac[6];
-static u8   tx_page, rx_start, rx_stop;
-static u8   running;                    /* set up and started */
-static u8   parked;                     /* Windows has the machine */
-static u8   probing;                    /* the line is being looked for */
-static volatile u8 probe_line = NIC_NOIRQ; /* ...and this one answered,
-                                           written by the handler */
-static u8   polled;                     /* the clock reads the card */
-static u8   tick_seen;                  /* the clock saw the card asking
+static uint16_t port;                   /* the card's first port */
+static uint8_t  irq = NIC_NOIRQ;        /* its line, or polled */
+static unsigned char word;              /* 16-bit transfers */
+static uint8_t  bus;                    /* NICB_* */
+static uint32_t pciaddr;
+static uint8_t  mac[6];
+static uint8_t  tx_page, rx_start, rx_stop;
+static unsigned char running;           /* set up and started */
+static unsigned char parked;            /* Windows has the machine */
+static unsigned char probing;           /* the line is being looked for */
+static volatile uint8_t probe_line = NIC_NOIRQ; /* ...and this one answered,
+                                                written by the handler */
+static unsigned char polled;            /* the clock reads the card */
+static unsigned char tick_seen;         /* the clock saw the card asking
                                            last tick too */
-static char card_name[32];
+static char     card_name[32];
 
-static u8  *queue;                      /* QN + 1 slots: the last is
+static uint8_t *queue;                  /* QN + 1 slots: the last is
                                            where a frame goes when the
                                            queue is full */
-static u32  q_head, q_tail;
-static volatile u32 q_count;            /* the handler raises it */
-static u8   txbuf[1536];                /* a frame padded, on its way
+static unsigned int q_head, q_tail;
+static volatile unsigned int q_count;   /* the handler raises it */
+static uint8_t  txbuf[1536];            /* a frame padded, on its way
                                            to the card */
 
 static NIC_STATBLOCK stats;
 
 /* the options on the DEVICE= line */
-static u32  opt_port;                   /* /P:, 0 for none */
-static u32  opt_irq = NIC_NOIRQ;        /* /I: */
+static uint32_t opt_port;               /* /P:, 0 for none */
+static uint32_t opt_irq = NIC_NOIRQ;    /* /I: */
 
 /* the PCI cards that are an NE2000 behind their first base register */
-static const struct { u16 vendor, device; const char *name; } pci_cards[] = {
+static const struct { uint16_t vendor, device; const char *name; } pci_cards[] = {
     { 0x10EC, 0x8029, "RTL8029AS" },
     { 0x1050, 0x0940, "Winbond W89C940" },
     { 0x11F6, 0x1401, "Compex RL2000" },
@@ -218,17 +218,17 @@ static const struct { u16 vendor, device; const char *name; } pci_cards[] = {
     { 0,      0,      0 }
 };
 
-static const u16 isa_ports[] = { 0x300, 0x280, 0x320, 0x340, 0x360, 0 };
+static const uint16_t isa_ports[] = { 0x300, 0x280, 0x320, 0x340, 0x360, 0 };
 
 /* the lines an NE2000 can be jumpered to, tried in this order */
-static const u8 probe_lines[] = { 3, 4, 5, 9, 10, 11, 12, 15, 0 };
+static const uint8_t probe_lines[] = { 3, 4, 5, 9, 10, 11, 12, 15, 0 };
 
 static void str_cpy( char *to, const char *from );
 static void str_cat( char *to, const char *from );
-static void str_hex( char *to, u32 value, int digits );
-static void str_dec( char *to, u32 value );
-static void mem_copy( void *to, const void *from, u32 len );
-static void mem_zero( void *to, u32 len );
+static void str_hex( char *to, uint32_t value, int digits );
+static void str_dec( char *to, unsigned int value );
+static void mem_copy( void *to, const void *from, unsigned int len );
+static void mem_zero( void *to, unsigned int len );
 
 /* ---------------------------------------------------------------- */
 /* the card's memory, through the remote DMA port                    */
@@ -236,13 +236,13 @@ static void mem_zero( void *to, u32 len );
 
 /* the card is running or in loopback: the chip must be started for
    its DMA to move, which is why set-up puts it in loopback first */
-static void remote_read( u16 addr, void *buf, u32 len )
+static void remote_read( uint16_t addr, void *buf, unsigned int len )
 {
     outb( port + NE_CR, CR_PAGE0 | CR_RD2 | CR_STA );
-    outb( port + NE_RBCR0, (u8)len );
-    outb( port + NE_RBCR1, (u8)( len >> 8 ) );
-    outb( port + NE_RSAR0, (u8)addr );
-    outb( port + NE_RSAR1, (u8)( addr >> 8 ) );
+    outb( port + NE_RBCR0, (uint8_t)len );
+    outb( port + NE_RBCR1, (uint8_t)( len >> 8 ) );
+    outb( port + NE_RSAR0, (uint8_t)addr );
+    outb( port + NE_RSAR1, (uint8_t)( addr >> 8 ) );
     outb( port + NE_CR, CR_PAGE0 | CR_RD0 | CR_STA );
     if ( word ) {
         insw( port + NE_DATA, buf, ( len + 1 ) / 2 );
@@ -255,16 +255,16 @@ static void remote_read( u16 addr, void *buf, u32 len )
 /* a write, and the wait for the chip to say it has it all: on a card
    that never says so the frame may still go, so the wait is counted
    and not believed */
-static int remote_write( u16 addr, const void *buf, u32 len )
+static int remote_write( uint16_t addr, const void *buf, unsigned int len )
 {
-    u32 n;
+    unsigned int n;
 
     outb( port + NE_CR, CR_PAGE0 | CR_RD2 | CR_STA );
     outb( port + NE_ISR, ISR_RDC );
-    outb( port + NE_RBCR0, (u8)len );
-    outb( port + NE_RBCR1, (u8)( len >> 8 ) );
-    outb( port + NE_RSAR0, (u8)addr );
-    outb( port + NE_RSAR1, (u8)( addr >> 8 ) );
+    outb( port + NE_RBCR0, (uint8_t)len );
+    outb( port + NE_RBCR1, (uint8_t)( len >> 8 ) );
+    outb( port + NE_RSAR0, (uint8_t)addr );
+    outb( port + NE_RSAR1, (uint8_t)( addr >> 8 ) );
     outb( port + NE_CR, CR_PAGE0 | CR_RD1 | CR_STA );
     if ( word ) {
         outsw( port + NE_DATA, buf, len / 2 );
@@ -282,14 +282,14 @@ static int remote_write( u16 addr, const void *buf, u32 len )
 /* the receive queue                                                 */
 /* ---------------------------------------------------------------- */
 
-static u8 *q_slot( u32 index )
+static uint8_t *q_slot( unsigned int index )
 {
     return queue + index * QSLOT;
 }
 
 /* the slot the next frame is read into: the tail, or the spare when
    the queue is full (the frame is then dropped, and counted) */
-static u8 *q_fill_slot( void )
+static uint8_t *q_fill_slot( void )
 {
     return q_slot( q_count == QN ? QN : q_tail );
 }
@@ -301,22 +301,22 @@ static u8 *q_fill_slot( void )
 #define BQN         8                   /* frames a binding's queue holds */
 
 static struct {
-    u8   used;
-    u8   dsap;                          /* with type 0: an 802.3 frame's DSAP */
-    u16  type;                          /* an Ethernet type, or 0 */
-    u8  *q;                             /* BQN slots of QSLOT */
-    u32  head, tail;
-    volatile u32 count;
+    unsigned char used;
+    uint8_t  dsap;                      /* with type 0: an 802.3 frame's DSAP */
+    uint16_t type;                      /* an Ethernet type, or 0 */
+    uint8_t *q;                         /* BQN slots of QSLOT */
+    unsigned int head, tail;
+    volatile unsigned int count;
 } binds[NIC_BINDS];
 
 /* which binding wants this frame, or -1 */
-static int bind_match( const u8 *frame, u32 len )
+static int bind_match( const uint8_t *frame, unsigned int len )
 {
-    u16 type;
+    uint16_t type;
     int i;
 
     if ( len < NIC_HDRLEN + 1 ) return -1;
-    type = (u16)( ( (u16)frame[12] << 8 ) | frame[13] );
+    type = (uint16_t)( ( (uint16_t)frame[12] << 8 ) | frame[13] );
     for ( i = 0; i < NIC_BINDS; i++ ) {
         if ( !binds[i].used ) continue;
         if ( binds[i].type ? type == binds[i].type
@@ -325,16 +325,16 @@ static int bind_match( const u8 *frame, u32 len )
     return -1;
 }
 
-static void bind_put( int b, const u8 *frame, u32 len )
+static void bind_put( int b, const uint8_t *frame, unsigned int len )
 {
-    u8 *slot;
+    uint8_t *slot;
 
     if ( binds[b].count == BQN ) {
         stats.rxdropped++;
         return;
     }
     slot = binds[b].q + binds[b].tail * QSLOT;
-    *(u16 *)slot = (u16)len;
+    *(uint16_t *)slot = (uint16_t)len;
     mem_copy( slot + 2, frame, len );
     binds[b].tail = ( binds[b].tail + 1 ) % BQN;
     binds[b].count++;
@@ -342,7 +342,7 @@ static void bind_put( int b, const u8 *frame, u32 len )
     stats.rxbytes += len;
 }
 
-static void q_filled( u32 len )
+static void q_filled( unsigned int len )
 {
     int b = bind_match( q_fill_slot() + 2, len );
 
@@ -354,7 +354,7 @@ static void q_filled( u32 len )
         stats.rxdropped++;
         return;
     }
-    *(u16 *)q_slot( q_tail ) = (u16)len;
+    *(uint16_t *)q_slot( q_tail ) = (uint16_t)len;
     q_tail = ( q_tail + 1 ) % QN;
     q_count++;
     stats.rxframes++;
@@ -377,7 +377,7 @@ static void card_stop( void )
    the status register.  1 if it did */
 static int card_reset( void )
 {
-    u32 n;
+    unsigned int n;
 
     outb( port + NE_RESET, inb( port + NE_RESET ) );
     for ( n = 0; n < SPIN_RESET; n++ ) {
@@ -392,12 +392,12 @@ static int card_reset( void )
    the station address is a usable one; mac[] and word are set */
 static int card_prom( int try_word )
 {
-    u8 prom[32];
+    uint8_t prom[32];
     int i, doubled, pair;
 
-    word = (u8)try_word;
+    word = (unsigned char)try_word;
     outb( port + NE_CR, CR_PAGE0 | CR_RD2 | CR_STP );
-    outb( port + NE_DCR, (u8)( DCR_FT1 | DCR_LS | ( word ? DCR_WTS : 0 ) ) );
+    outb( port + NE_DCR, (uint8_t)( DCR_FT1 | DCR_LS | ( word ? DCR_WTS : 0 ) ) );
     outb( port + NE_RBCR0, 0 );
     outb( port + NE_RBCR1, 0 );
     outb( port + NE_IMR, 0 );
@@ -447,7 +447,7 @@ static void card_setup( void )
     int i;
 
     outb( port + NE_CR, CR_PAGE0 | CR_RD2 | CR_STP );
-    outb( port + NE_DCR, (u8)( DCR_FT1 | DCR_LS | ( word ? DCR_WTS : 0 ) ) );
+    outb( port + NE_DCR, (uint8_t)( DCR_FT1 | DCR_LS | ( word ? DCR_WTS : 0 ) ) );
     outb( port + NE_RBCR0, 0 );
     outb( port + NE_RBCR1, 0 );
     outb( port + NE_RCR, RCR_MON );
@@ -464,13 +464,13 @@ static void card_setup( void )
        functional address 03-00-00-00-00-01 is a multicast, so a card that is
        to carry NetBEUI must accept multicast, not only broadcast */
     for ( i = 0; i < 8; i++ ) outb( port + NE_MAR0 + i, 0xFF );
-    outb( port + NE_CURR, (u8)( rx_start + 1 ) );
+    outb( port + NE_CURR, (uint8_t)( rx_start + 1 ) );
     outb( port + NE_CR, CR_PAGE0 | CR_RD2 | CR_STP );
     outb( port + NE_CR, CR_PAGE0 | CR_RD2 | CR_STA );
     outb( port + NE_ISR, 0xFF );
-    outb( port + NE_IMR, (u8)( polled ? 0 : IMR_WANTED ) );
+    outb( port + NE_IMR, (uint8_t)( polled ? 0 : IMR_WANTED ) );
     outb( port + NE_TCR, 0 );
-    outb( port + NE_RCR, (u8)( RCR_AB | RCR_AM ) );
+    outb( port + NE_RCR, (uint8_t)( RCR_AB | RCR_AM ) );
     running = 1;
 }
 
@@ -480,22 +480,22 @@ static void card_setup( void )
    chip moves while this runs */
 static void card_drain( void )
 {
-    u8  curr, bnry, next, hdr[4];
-    u16 count, addr, first;
-    u32 len, n;
-    u8 *slot;
+    uint8_t  curr, bnry, next, hdr[4];
+    uint16_t count, addr, first;
+    unsigned int len, n;
+    uint8_t *slot;
 
     for ( n = 0; n < 64; n++ ) {
         outb( port + NE_CR, CR_PAGE1 | CR_RD2 | CR_STA );
         curr = inb( port + NE_CURR );
         outb( port + NE_CR, CR_PAGE0 | CR_RD2 | CR_STA );
         bnry = inb( port + NE_BNRY );
-        next = (u8)( bnry + 1 );
+        next = (uint8_t)( bnry + 1 );
         if ( next >= rx_stop ) next = rx_start;
         if ( next == curr ) break;
 
-        remote_read( (u16)next << 8, hdr, 4 );
-        count = (u16)( hdr[2] | ( hdr[3] << 8 ) );
+        remote_read( (uint16_t)next << 8, hdr, 4 );
+        count = (uint16_t)( hdr[2] | ( hdr[3] << 8 ) );
         /* a frame that is whole, of a length a frame can have, whose
            next page is in the ring: anything else is a ring the chip
            and the driver no longer agree about, and it is started
@@ -506,26 +506,26 @@ static void card_drain( void )
             outb( port + NE_CR, CR_PAGE0 | CR_RD2 | CR_STP );
             outb( port + NE_BNRY, rx_start );
             outb( port + NE_CR, CR_PAGE1 | CR_RD2 | CR_STP );
-            outb( port + NE_CURR, (u8)( rx_start + 1 ) );
+            outb( port + NE_CURR, (uint8_t)( rx_start + 1 ) );
             outb( port + NE_CR, CR_PAGE0 | CR_RD2 | CR_STA );
             break;
         }
         len = count - 4;
         slot = q_fill_slot() + 2;
-        addr = (u16)( ( (u16)next << 8 ) + 4 );
+        addr = (uint16_t)( ( (uint16_t)next << 8 ) + 4 );
         /* the ring wraps at PSTOP and the chip's DMA may or may not:
            a frame that crosses it is read in two pieces that do not */
-        first = (u16)( ( (u16)rx_stop << 8 ) - addr );
+        first = (uint16_t)( ( (uint16_t)rx_stop << 8 ) - addr );
         if ( len > first ) {
             remote_read( addr, slot, first );
-            remote_read( (u16)rx_start << 8, slot + first, len - first );
+            remote_read( (uint16_t)rx_start << 8, slot + first, len - first );
         } else {
             remote_read( addr, slot, len );
         }
         q_filled( len );
         /* BNRY trails the page after the frame by one, as the chip
            wants it; the page before the ring's first is its last */
-        outb( port + NE_BNRY, (u8)( hdr[1] == rx_start ? rx_stop - 1 : hdr[1] - 1 ) );
+        outb( port + NE_BNRY, (uint8_t)( hdr[1] == rx_start ? rx_stop - 1 : hdr[1] - 1 ) );
     }
 }
 
@@ -533,7 +533,7 @@ static void card_drain( void )
    in progress is sent again afterwards */
 static void card_overflow( void )
 {
-    u32 n;
+    unsigned int n;
     int resend;
 
     stats.overflows++;
@@ -556,9 +556,10 @@ static void card_overflow( void )
 /* a frame to the wire.  Interrupts off, so that the handler's reads
    of the ring do not land in the middle of this write.  1 if the
    card took it */
-static int card_send( const u8 *frame, u32 len )
+static int card_send( const uint8_t *frame, unsigned int len )
 {
-    u32 n, loaded, flags;
+    unsigned int n, loaded;
+    uint32_t flags;
     int ok;
 
     mem_copy( txbuf, frame, len );
@@ -576,10 +577,10 @@ static int card_send( const u8 *frame, u32 len )
         int_back( flags );
         return 0;
     }
-    ok = remote_write( (u16)tx_page << 8, txbuf, loaded );
+    ok = remote_write( (uint16_t)tx_page << 8, txbuf, loaded );
     outb( port + NE_TPSR, tx_page );
-    outb( port + NE_TBCR0, (u8)len );
-    outb( port + NE_TBCR1, (u8)( len >> 8 ) );
+    outb( port + NE_TBCR0, (uint8_t)len );
+    outb( port + NE_TBCR1, (uint8_t)( len >> 8 ) );
     outb( port + NE_CR, CR_PAGE0 | CR_RD2 | CR_TXP | CR_STA );
     stats.txframes++;
     stats.txbytes += len;
@@ -592,9 +593,9 @@ static int card_send( const u8 *frame, u32 len )
    1 if any of it was the card's */
 static int card_service( void )
 {
-    u8  isr;
-    u32 n;
-    int mine = 0;
+    uint8_t  isr;
+    unsigned int n;
+    int      mine = 0;
 
     for ( n = 0; n < 8; n++ ) {
         outb( port + NE_CR, CR_PAGE0 | CR_RD2 | CR_STA );
@@ -630,13 +631,13 @@ static int card_service( void )
    1 with port, pciaddr, irq and card_name set */
 static int find_pci( void )
 {
-    REGS r;
-    int  i;
-    u32  addr;
+    REGS     r;
+    int      i;
+    uint32_t addr;
 
     for ( i = 0; pci_cards[i].vendor; i++ ) {
         mem_zero( &r, sizeof( r ) );
-        r.eax = (u32)BUS_PCIID << 8;
+        r.eax = (uint32_t)BUS_PCIID << 8;
         r.ecx = pci_cards[i].vendor;
         r.edx = pci_cards[i].device;
         r.esi = 0;
@@ -644,31 +645,31 @@ static int find_pci( void )
         addr = r.ebx;
 
         mem_zero( &r, sizeof( r ) );
-        r.eax = (u32)BUS_PCIBAR << 8;
+        r.eax = (uint32_t)BUS_PCIBAR << 8;
         r.ebx = addr;
         r.edx = 0;
         if ( !nds_bus( &r ) || !( r.edx & BARF_IO ) || r.eax == 0 ) continue;
-        port = (u16)( r.eax & ~3L );
+        port = (uint16_t)( r.eax & ~3L );
 
         /* the function's I/O decoding, switched on if the BIOS left
            it off: bit 0 of the command register */
         mem_zero( &r, sizeof( r ) );
-        r.eax = (u32)BUS_PCIREAD << 8;
+        r.eax = (uint32_t)BUS_PCIREAD << 8;
         r.ebx = addr;
         r.edx = 0x0204;
         if ( nds_bus( &r ) && !( r.eax & 1 ) ) {
             r.ecx = r.eax | 1;
-            r.eax = (u32)BUS_PCIWRITE << 8;
+            r.eax = (uint32_t)BUS_PCIWRITE << 8;
             r.ebx = addr;
             r.edx = 0x0204;
             nds_bus( &r );
         }
 
         mem_zero( &r, sizeof( r ) );
-        r.eax = (u32)BUS_PCIIRQ << 8;
+        r.eax = (uint32_t)BUS_PCIIRQ << 8;
         r.ebx = addr;
         irq = NIC_NOIRQ;
-        if ( nds_bus( &r ) && ( r.eax & 0xFF ) != 0 && ( r.eax & 0xFF ) < 16 ) irq = (u8)r.eax;
+        if ( nds_bus( &r ) && ( r.eax & 0xFF ) != 0 && ( r.eax & 0xFF ) < 16 ) irq = (uint8_t)r.eax;
 
         pciaddr = addr;
         bus = NICB_PCI;
@@ -686,28 +687,28 @@ static int find_pci( void )
    Plug and Play BIOS has switched on already is taken where it is.
    1 with port, irq (or NIC_NOIRQ, to be found) and card_name set,
    and the card probed */
-static const u8 pnp_rtl8019[4] = { 0x4A, 0x8C, 0x80, 0x19 };   /* RTL8019 */
-static const u8 pnp_ne2000[4]  = { 0x41, 0xD0, 0x80, 0xD6 };   /* PNP80D6 */
-static const u8 pnp_irq_pref[] = { 10, 11, 5, 9, 3, 15, 12, 4, 0 };
+static const uint8_t pnp_rtl8019[4] = { 0x4A, 0x8C, 0x80, 0x19 };  /* RTL8019 */
+static const uint8_t pnp_ne2000[4]  = { 0x41, 0xD0, 0x80, 0xD6 };  /* PNP80D6 */
+static const uint8_t pnp_irq_pref[] = { 10, 11, 5, 9, 3, 15, 12, 4, 0 };
 
-static int mem_same( const void *a, const void *b, u32 len );
+static int mem_same( const void *a, const void *b, unsigned int len );
 
-static int pnp_id_ours( const u8 *id )
+static int pnp_id_ours( const uint8_t *id )
 {
     return mem_same( id, pnp_rtl8019, 4 ) || mem_same( id, pnp_ne2000, 4 );
 }
 
 static int find_pnp( void )
 {
-    REGS r;
-    u8  *res, *regs, pairs[12], tag;
-    u32  cards, csn, len, pos, size, kind;
-    u32  io_min, io_max, io_align, irq_mask;
-    int  ours, is_rtl, devices, i, line;
-    u16  choice;
+    REGS     r;
+    uint8_t *res, *regs, pairs[12], tag;
+    unsigned int cards, csn, len, pos, size, kind;
+    uint32_t io_min, io_max, io_align, irq_mask;
+    int      ours, is_rtl, devices, i, line;
+    uint16_t choice;
 
     mem_zero( &r, sizeof( r ) );
-    r.eax = (u32)BUS_PNPHERE << 8;
+    r.eax = (uint32_t)BUS_PNPHERE << 8;
     if ( !nds_bus( &r ) || r.eax == 0 ) return 0;
     cards = r.eax;
     res = nds_alloc( 2048 + 256 );
@@ -716,9 +717,9 @@ static int find_pnp( void )
 
     for ( csn = 1; csn <= cards; csn++ ) {
         mem_zero( &r, sizeof( r ) );
-        r.eax = (u32)BUS_PNPRES << 8;
+        r.eax = (uint32_t)BUS_PNPRES << 8;
         r.edx = csn;
-        r.edi = (u32)res;
+        r.edi = (uint32_t)res;
         r.ecx = 2048;
         if ( !nds_bus( &r ) || r.ecx < 9 ) continue;
         len = r.ecx;
@@ -736,7 +737,7 @@ static int find_pnp( void )
             tag = res[pos++];
             if ( tag & 0x80 ) {                 /* a large item: skipped */
                 if ( pos + 2 > len ) break;
-                size = res[pos] | ( (u32)res[pos + 1] << 8 );
+                size = res[pos] | ( (uint32_t)res[pos + 1] << 8 );
                 pos += 2 + size;
                 continue;
             }
@@ -752,18 +753,18 @@ static int find_pnp( void )
                 if ( devices == 1 && size >= 4 && pnp_id_ours( res + pos ) ) ours = 1;
                 break;
             case 4:                             /* a line */
-                if ( devices == 1 && size >= 2 && irq_mask == 0 ) irq_mask = res[pos] | ( (u32)res[pos + 1] << 8 );
+                if ( devices == 1 && size >= 2 && irq_mask == 0 ) irq_mask = res[pos] | ( (uint32_t)res[pos + 1] << 8 );
                 break;
             case 8:                             /* a port range */
                 if ( devices == 1 && size >= 7 && io_align == 0 ) {
-                    io_min = res[pos + 1] | ( (u32)res[pos + 2] << 8 );
-                    io_max = res[pos + 3] | ( (u32)res[pos + 4] << 8 );
+                    io_min = res[pos + 1] | ( (uint32_t)res[pos + 2] << 8 );
+                    io_max = res[pos + 3] | ( (uint32_t)res[pos + 4] << 8 );
                     io_align = res[pos + 5] ? res[pos + 5] : 1;
                 }
                 break;
             case 9:                             /* a port range of one */
                 if ( devices == 1 && size >= 3 && io_align == 0 ) {
-                    io_min = io_max = res[pos] | ( (u32)res[pos + 1] << 8 );
+                    io_min = io_max = res[pos] | ( (uint32_t)res[pos + 1] << 8 );
                     io_align = 1;
                 }
                 break;
@@ -775,23 +776,23 @@ static int find_pnp( void )
 
         /* on already, where a BIOS put it? */
         mem_zero( &r, sizeof( r ) );
-        r.eax = (u32)BUS_PNPREGS << 8;
+        r.eax = (uint32_t)BUS_PNPREGS << 8;
         r.edx = csn;                            /* DH = device 0 */
-        r.edi = (u32)regs;
+        r.edi = (uint32_t)regs;
         if ( nds_bus( &r ) && ( regs[0x30] & 1 ) && ( regs[0x60] | regs[0x61] ) ) {
-            choice = (u16)( ( (u16)regs[0x60] << 8 ) | regs[0x61] );
+            choice = (uint16_t)( ( (uint16_t)regs[0x60] << 8 ) | regs[0x61] );
             line = regs[0x70] & 15;
         } else {
             if ( io_align == 0 ) continue;
             /* 300h when the range allows it, else the range's first;
                the first line the card allows that nothing here has */
-            choice = (u16)io_min;
+            choice = (uint16_t)io_min;
             if ( io_min <= 0x300 && 0x300 <= io_max && ( ( 0x300 - io_min ) % io_align ) == 0 ) choice = 0x300;
             line = 0;
             for ( i = 0; pnp_irq_pref[i]; i++ ) {
                 if ( !( irq_mask & ( 1L << pnp_irq_pref[i] ) ) ) continue;
                 mem_zero( &r, sizeof( r ) );
-                r.eax = (u32)BUS_IRQSTAT << 8;
+                r.eax = (uint32_t)BUS_IRQSTAT << 8;
                 r.edx = pnp_irq_pref[i];
                 if ( nds_bus( &r ) && ( r.eax & ( IRQF_KERNEL | IRQF_HOOKED | IRQF_OPEN | IRQF_DEAD ) ) ) continue;
                 line = pnp_irq_pref[i];
@@ -800,21 +801,21 @@ static int find_pnp( void )
             /* off, the port and the line, on: a device is moved with
                its decoding off, as the specification says */
             pairs[0] = 0x30;  pairs[1] = 0;
-            pairs[2] = 0x60;  pairs[3] = (u8)( choice >> 8 );
-            pairs[4] = 0x61;  pairs[5] = (u8)choice;
-            pairs[6] = 0x70;  pairs[7] = (u8)line;
+            pairs[2] = 0x60;  pairs[3] = (uint8_t)( choice >> 8 );
+            pairs[4] = 0x61;  pairs[5] = (uint8_t)choice;
+            pairs[6] = 0x70;  pairs[7] = (uint8_t)line;
             pairs[8] = 0x71;  pairs[9] = 2;
             pairs[10] = 0x30; pairs[11] = 1;
             mem_zero( &r, sizeof( r ) );
-            r.eax = (u32)BUS_PNPSET << 8;
+            r.eax = (uint32_t)BUS_PNPSET << 8;
             r.edx = csn;
-            r.esi = (u32)pairs;
+            r.esi = (uint32_t)pairs;
             r.ecx = 6;
             if ( !nds_bus( &r ) ) continue;
         }
         port = choice;
         if ( !card_probe() ) continue;
-        irq = line ? (u8)line : NIC_NOIRQ;
+        irq = line ? (uint8_t)line : NIC_NOIRQ;
         bus = NICB_ISA;
         str_cpy( card_name, is_rtl ? "RTL8019AS (ISA PnP)" : "NE2000 (ISA PnP)" );
         nds_free( res );
@@ -830,7 +831,7 @@ static int find_isa( void )
     int i;
 
     if ( opt_port ) {
-        port = (u16)opt_port;
+        port = (uint16_t)opt_port;
         if ( !card_probe() ) return 0;
     } else {
         for ( i = 0; isa_ports[i]; i++ ) {
@@ -849,10 +850,10 @@ static int find_isa( void )
    Interrupts on; INIT is the one entry that may wait */
 static void find_irq( void )
 {
-    u8  hooked[16];
-    u8  dummy[2];
-    u32 t0;
-    int i;
+    unsigned char hooked[16];
+    uint8_t  dummy[2];
+    uint32_t t0;
+    int      i;
 
     mem_zero( hooked, sizeof( hooked ) );
     probing = 1;
@@ -890,9 +891,9 @@ static void find_irq( void )
 /* the DEVICE= line: /P:port (hex) and /I:line                       */
 /* ---------------------------------------------------------------- */
 
-static u32 num_after( const char *text, int hex, u32 none )
+static uint32_t num_after( const char *text, int hex, uint32_t none )
 {
-    u32 value = 0;
+    uint32_t value = 0;
     int digits = 0, digit;
     char ch;
 
@@ -905,11 +906,22 @@ static u32 num_after( const char *text, int hex, u32 none )
         } else {
             break;
         }
-        value = value * ( hex ? 16 : 10 ) + digit;
+        if ( value > 0x0FFFFFFFUL ) {
+            value = 0xFFFFFFFFUL;               /* too long: stays too big */
+        } else {
+            value = value * ( hex ? 16 : 10 ) + digit;
+        }
         digits++;
     }
     /* 300h and 0x300 are both 300h */
     return digits ? value : none;
+}
+
+/* a /P: port no card can have: 00-FFh are the motherboard's, and a
+   port number has 16 bits.  0 is no /P: at all. */
+static int port_bad( uint32_t port )
+{
+    return port != 0 && ( port < 0x100 || port > 0xFFFF );
 }
 
 static void parse_line( const char *line )
@@ -968,6 +980,10 @@ static void say_card( const char *lead )
 int __cdecl nd_init( const char *line )
 {
     parse_line( line );
+    if ( port_bad( opt_port ) ) {
+        nds_print( "NE2000.SYS: the /P: port must be from 100 to FFFF\r\n" );
+        return 1;
+    }
 
     /* the card */
     if ( opt_port ) {
@@ -1005,13 +1021,13 @@ int __cdecl nd_init( const char *line )
     }
 
     /* the line: /I:, the PCI function's own, or found */
-    if ( opt_irq != NIC_NOIRQ ) irq = (u8)opt_irq;
+    if ( opt_irq != NIC_NOIRQ ) irq = (uint8_t)opt_irq;
     if ( irq != NIC_NOIRQ ) {
         if ( !nds_irqhook( irq ) ) irq = NIC_NOIRQ;
     } else if ( bus == NICB_ISA ) {
         find_irq();
     }
-    polled = (u8)( irq == NIC_NOIRQ );
+    polled = (unsigned char)( irq == NIC_NOIRQ );
     /* the clock: the whole service when polled, a look at the card
        otherwise, for an interrupt that was lost */
     nds_tickhook();
@@ -1023,7 +1039,7 @@ int __cdecl nd_init( const char *line )
 
 void __cdecl nd_park( int back )
 {
-    u32 flags;
+    uint32_t flags;
 
     flags = int_off();
     if ( !back ) {
@@ -1045,9 +1061,9 @@ void __cdecl nd_halt( void )
     running = 0;
 }
 
-int __cdecl nd_irq( u32 line )
+int __cdecl nd_irq( uint32_t line )
 {
-    u8 isr;
+    uint8_t isr;
 
     if ( probing ) {
         outb( port + NE_CR, CR_PAGE0 | CR_RD2 | CR_STA );
@@ -1055,7 +1071,7 @@ int __cdecl nd_irq( u32 line )
         if ( !( isr & ISR_RDC ) ) return 0;
         outb( port + NE_IMR, 0 );
         outb( port + NE_ISR, 0xFF );
-        probe_line = (u8)line;
+        probe_line = (uint8_t)line;
         return 1;
     }
     if ( !running ) return 0;
@@ -1072,7 +1088,7 @@ int __cdecl nd_irq( u32 line )
    which a service from here would turn into a stray at the handler */
 void __cdecl nd_tick( void )
 {
-    u8 isr;
+    uint8_t isr;
 
     if ( !running || probing ) return;
     if ( polled ) {
@@ -1093,12 +1109,13 @@ void __cdecl nd_tick( void )
     }
 }
 
-int __cdecl nd_call( u32 fn, void *buf, u32 len, u32 *answer )
+int __cdecl nd_call( uint32_t fn, void *buf, uint32_t len, uint32_t *answer )
 {
     NIC_INFOBLOCK *info;
     NIC_STATBLOCK *st;
-    u32 flags, got;
-    u8 *slot;
+    uint32_t flags;
+    unsigned int got;
+    uint8_t *slot;
 
     switch ( fn ) {
     case NIC_INFO:
@@ -1111,7 +1128,7 @@ int __cdecl nd_call( u32 fn, void *buf, u32 len, u32 *answer )
         info->mtu = 1500;
         info->port = port;
         info->irq = irq;
-        info->flags = (u8)( ( polled ? NICF_POLLED : 0 ) | ( word ? NICF_WORD : 0 ) );
+        info->flags = (uint8_t)( ( polled ? NICF_POLLED : 0 ) | ( word ? NICF_WORD : 0 ) );
         info->pciaddr = pciaddr;
         str_cpy( info->name, card_name );
         *answer = NICI_LEN;
@@ -1120,7 +1137,7 @@ int __cdecl nd_call( u32 fn, void *buf, u32 len, u32 *answer )
     case NIC_SEND:
         if ( len < NIC_MINFRAME || len > NIC_MAXFRAME ) return ERR_BADLEN;
         if ( !running ) return ERR_GENERAL;
-        if ( !card_send( (const u8 *)buf, len ) ) return ERR_GENERAL;
+        if ( !card_send( (const uint8_t *)buf, len ) ) return ERR_GENERAL;
         *answer = len;
         return 0;
 
@@ -1133,7 +1150,7 @@ int __cdecl nd_call( u32 fn, void *buf, u32 len, u32 *answer )
             return 0;
         }
         slot = q_slot( q_head );
-        got = *(u16 *)slot;
+        got = *(uint16_t *)slot;
         mem_copy( buf, slot + 2, got < len ? got : len );
         flags = int_off();
         q_head = ( q_head + 1 ) % QN;
@@ -1143,12 +1160,12 @@ int __cdecl nd_call( u32 fn, void *buf, u32 len, u32 *answer )
         return 0;
 
     case NIC_BIND: {
-        u8 *req = (u8 *)buf;
-        u16 type;
+        uint8_t *req = (uint8_t *)buf;
+        uint16_t type;
         int i;
 
         if ( len < NICB_LEN ) return ERR_BADLEN;
-        type = *(u16 *)req;
+        type = *(uint16_t *)req;
         for ( i = 0; i < NIC_BINDS && binds[i].used; i++ ) ;
         if ( i == NIC_BINDS ) return ERR_GENERAL;
         binds[i].q = nds_alloc( BQN * QSLOT );
@@ -1160,15 +1177,15 @@ int __cdecl nd_call( u32 fn, void *buf, u32 len, u32 *answer )
         flags = int_off();
         binds[i].used = 1;              /* the handler may use it from now */
         int_back( flags );
-        *answer = (u32)( i + 1 );
+        *answer = (uint32_t)( i + 1 );
         return 0;
     }
 
     case NIC_RECVB: {
-        u32 b;
+        uint32_t b;
 
         if ( len < 4 ) return ERR_BADLEN;
-        b = *(u32 *)buf;
+        b = *(uint32_t *)buf;
         if ( b < 1 || b > NIC_BINDS || !binds[b - 1].used ) return ERR_BADDATA;
         b--;
         if ( binds[b].count == 0 ) {
@@ -1176,8 +1193,8 @@ int __cdecl nd_call( u32 fn, void *buf, u32 len, u32 *answer )
             return 0;
         }
         slot = binds[b].q + binds[b].head * QSLOT;
-        got = *(u16 *)slot;
-        mem_copy( (u8 *)buf + 4, slot + 2, got < len - 4 ? got : len - 4 );
+        got = *(uint16_t *)slot;
+        mem_copy( (uint8_t *)buf + 4, slot + 2, got < len - 4 ? got : len - 4 );
         flags = int_off();
         binds[b].head = ( binds[b].head + 1 ) % BQN;
         binds[b].count--;
@@ -1214,7 +1231,7 @@ static void str_cat( char *to, const char *from )
     str_cpy( to, from );
 }
 
-static void str_hex( char *to, u32 value, int digits )
+static void str_hex( char *to, uint32_t value, int digits )
 {
     int shift;
 
@@ -1225,7 +1242,7 @@ static void str_hex( char *to, u32 value, int digits )
     *to = 0;
 }
 
-static void str_dec( char *to, u32 value )
+static void str_dec( char *to, unsigned int value )
 {
     char digits[12];
     int  n = 0;
@@ -1239,25 +1256,25 @@ static void str_dec( char *to, u32 value )
     *to = 0;
 }
 
-static void mem_copy( void *to, const void *from, u32 len )
+static void mem_copy( void *to, const void *from, unsigned int len )
 {
-    u8 *t = (u8 *)to;
-    const u8 *f = (const u8 *)from;
+    uint8_t *t = (uint8_t *)to;
+    const uint8_t *f = (const uint8_t *)from;
 
     while ( len-- ) *t++ = *f++;
 }
 
-static void mem_zero( void *to, u32 len )
+static void mem_zero( void *to, unsigned int len )
 {
-    u8 *t = (u8 *)to;
+    uint8_t *t = (uint8_t *)to;
 
     while ( len-- ) *t++ = 0;
 }
 
-static int mem_same( const void *a, const void *b, u32 len )
+static int mem_same( const void *a, const void *b, unsigned int len )
 {
-    const u8 *p = (const u8 *)a;
-    const u8 *q = (const u8 *)b;
+    const uint8_t *p = (const uint8_t *)a;
+    const uint8_t *q = (const uint8_t *)b;
 
     while ( len-- ) {
         if ( *p++ != *q++ ) return 0;

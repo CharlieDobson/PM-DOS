@@ -17,14 +17,14 @@
 
 typedef struct GLYPH GLYPH;
 struct GLYPH {
-    GLYPH *next;
-    FONT  *font;
-    u32    code;
-    s32    ma, mb, mc, md;
-    s16    left, top;               /* the map's corner, from the origin's pixel */
-    s16    width, height;
-    u8     phase;
-    u8     bits[3];
+    GLYPH   *next;
+    FONT    *font;
+    uint32_t code;
+    int32_t  ma, mb, mc, md;
+    int16_t  left, top;             /* the map's corner, from the origin's pixel */
+    int16_t  width, height;
+    uint8_t  phase;
+    uint8_t  bits[3];
 };
 
 #define BUCKETS     512
@@ -33,11 +33,11 @@ struct GLYPH {
 
 GLYPHOUT gout;
 
-static GLYPH *buckets[BUCKETS];
-static POOL  *keep;
-static u32    kept;
-static PATH   gpath;
-static int    busy;                 /* a glyph is in hand: the cache stays */
+static GLYPH       *buckets[BUCKETS];
+static POOL        *keep;
+static unsigned int kept;
+static PATH         gpath;
+static int          busy;           /* a glyph is in hand: the cache stays */
 
 /* ------------------------------------------------------------------ */
 /* where an outline goes                                               */
@@ -130,21 +130,21 @@ void glyph_page_begin( void )
 }
 
 typedef struct {
-    u8  *bits;
-    int  x0, y0, width;
+    uint8_t *bits;
+    int      x0, y0, width;
 } MAPCTX;
 
-static void map_row( void *ctx, int ypos, int x0, int x1, const u8 *cov )
+static void map_row( void *ctx, int ypos, int x0, int x1, const uint8_t *cov )
 {
     MAPCTX *map = (MAPCTX *)ctx;
 
-    mem_cpy( map->bits + (u32)(ypos - map->y0) * (u32)map->width + (u32)(x0 - map->x0), cov,
-             (u32)(x1 - x0) );
+    mem_cpy( map->bits + (uint32_t)(ypos - map->y0) * (uint32_t)map->width + (uint32_t)(x0 - map->x0), cov,
+             (uint32_t)(x1 - x0) );
 }
 
 /* the outline of "code" into gpath and from there to the rasteriser:
    0 if there is nothing to draw */
-static int outline_edges( FONT *font, u32 code )
+static int outline_edges( FONT *font, uint32_t code )
 {
     STROKE stroke;
     fx pen = 0;
@@ -170,7 +170,7 @@ static int outline_edges( FONT *font, u32 code )
     return !ras_empty();
 }
 
-static s32 mag( s32 val )
+static int32_t mag( int32_t val )
 {
     return val < 0 ? -val : val;
 }
@@ -182,13 +182,14 @@ static s32 mag( s32 val )
  * have been given to the rasteriser instead, placed at (xpos, ypos) and
  * waiting to be scanned.
  */
-static GLYPH *glyph_find( FONT *font, u32 code, fx xpos, fx ypos, const s32 *mat, int *direct )
+static GLYPH *glyph_find( FONT *font, uint32_t code, fx xpos, fx ypos, const int32_t *mat, int *direct )
 {
     GLYPH *glyph;
     MAPCTX map;
     fx bx0, by0, bx1, by1;
-    s32 across = mag( mat[0] ) + mag( mat[2] ), down = mag( mat[1] ) + mag( mat[3] );
-    u32 hash, size;
+    int32_t across = mag( mat[0] ) + mag( mat[2] ), down = mag( mat[1] ) + mag( mat[3] );
+    uint32_t hash;
+    unsigned int size;
     int em, phase, x0, y0, x1, y1;
 
     *direct = 0;
@@ -204,8 +205,8 @@ static GLYPH *glyph_find( FONT *font, u32 code, fx xpos, fx ypos, const s32 *mat
         return NULL;
     }
     phase = (int)((xpos >> 14) & 3);
-    hash = (code * 31 + (u32)font->key * 7 + (u32)(mat[0] >> 6) + (u32)(mat[3] >> 6) * 5 +
-            (u32)phase * 131 + (u32)font) & (BUCKETS - 1);
+    hash = (code * 31 + (uint32_t)font->key * 7 + (uint32_t)(mat[0] >> 6) + (uint32_t)(mat[3] >> 6) * 5 +
+            (uint32_t)phase * 131 + (uint32_t)font) & (BUCKETS - 1);
     for ( glyph = buckets[hash]; glyph; glyph = glyph->next ) {
         if ( glyph->font == font && glyph->code == code && glyph->phase == phase &&
              glyph->ma == mat[0] && glyph->mb == mat[1] && glyph->mc == mat[2] && glyph->md == mat[3] ) {
@@ -230,7 +231,7 @@ static GLYPH *glyph_find( FONT *font, u32 code, fx xpos, fx ypos, const s32 *mat
             return NULL;
         }
     }
-    size = sizeof( GLYPH ) + (u32)(x1 - x0) * (u32)(y1 - y0);
+    size = sizeof( GLYPH ) + (unsigned int)(x1 - x0) * (unsigned int)(y1 - y0);
     if ( kept + size > KEEP_BYTES ) {
         glyph_flush();
     }
@@ -241,15 +242,15 @@ static GLYPH *glyph_find( FONT *font, u32 code, fx xpos, fx ypos, const s32 *mat
     kept += size;
     glyph->font = font;
     glyph->code = code;
-    glyph->phase = (u8)phase;
+    glyph->phase = (uint8_t)phase;
     glyph->ma = mat[0];
     glyph->mb = mat[1];
     glyph->mc = mat[2];
     glyph->md = mat[3];
-    glyph->left = (s16)x0;
-    glyph->top = (s16)y0;
-    glyph->width = (s16)(x1 - x0);
-    glyph->height = (s16)(y1 - y0);
+    glyph->left = (int16_t)x0;
+    glyph->top = (int16_t)y0;
+    glyph->width = (int16_t)(x1 - x0);
+    glyph->height = (int16_t)(y1 - y0);
     if ( glyph->width ) {
         map.bits = glyph->bits;
         map.x0 = x0;
@@ -262,7 +263,7 @@ static GLYPH *glyph_find( FONT *font, u32 code, fx xpos, fx ypos, const s32 *mat
     return glyph;
 }
 
-static void glyph_put( FONT *font, u32 code, fx xpos, fx ypos, const s32 *mat, CANVAS *cv,
+static void glyph_put( FONT *font, uint32_t code, fx xpos, fx ypos, const int32_t *mat, CANVAS *cv,
                        const CLIP *clip, const PAINT *paint )
 {
     GLYPH *glyph;
@@ -282,11 +283,11 @@ static void glyph_put( FONT *font, u32 code, fx xpos, fx ypos, const s32 *mat, C
     iy = (int)FX_ROUND( ypos );
     for ( row = 0; row < glyph->height; row++ ) {
         paint_row( cv, clip, paint, iy + glyph->top + row, ix + glyph->left,
-                   ix + glyph->left + glyph->width, glyph->bits + (u32)row * (u32)glyph->width );
+                   ix + glyph->left + glyph->width, glyph->bits + (uint32_t)row * (uint32_t)glyph->width );
     }
 }
 
-void glyph_draw( FONT *font, u32 code, fx xpos, fx ypos, const s32 *mat, CANVAS *cv,
+void glyph_draw( FONT *font, uint32_t code, fx xpos, fx ypos, const int32_t *mat, CANVAS *cv,
                  const CLIP *clip, const PAINT *paint )
 {
     busy++;
@@ -297,11 +298,11 @@ void glyph_draw( FONT *font, u32 code, fx xpos, fx ypos, const s32 *mat, CANVAS 
 /* The glyph as rows of coverage, for a caller that does its own
    painting: the rows and the part of each that lie inside the
    rectangle, which is the caller's whole picture or less. */
-void glyph_cover( FONT *font, u32 code, fx xpos, fx ypos, const s32 *mat, int x0, int y0,
+void glyph_cover( FONT *font, uint32_t code, fx xpos, fx ypos, const int32_t *mat, int x0, int y0,
                   int x1, int y1, ROWFN fn, void *ctx )
 {
     GLYPH *glyph;
-    const u8 *bits;
+    const uint8_t *bits;
     int direct, ypos_row, left, right, row;
 
     if ( font->kind == FT_TYPE3 || x0 >= x1 || y0 >= y1 ) {
@@ -321,7 +322,7 @@ void glyph_cover( FONT *font, u32 code, fx xpos, fx ypos, const s32 *mat, int x0
             if ( ypos_row < y0 || ypos_row >= y1 || left >= x1 || right <= x0 ) {
                 continue;
             }
-            bits = glyph->bits + (u32)row * (u32)glyph->width;
+            bits = glyph->bits + (uint32_t)row * (uint32_t)glyph->width;
             fn( ctx, ypos_row, left < x0 ? x0 : left, right > x1 ? x1 : right,
                 left < x0 ? bits + (x0 - left) : bits );
         }

@@ -86,7 +86,7 @@ void fe_phase( int phase )
     }
 }
 
-void fe_progress( u32 done, u32 total )
+void fe_progress( unsigned int done, unsigned int total )
 {
     (void)done;
     (void)total;
@@ -181,7 +181,7 @@ void fe_surface_begin( void )
 {
 }
 
-void fe_surface_at( u32 clus, u32 count, int bad )
+void fe_surface_at( uint32_t clus, uint32_t count, int bad )
 {
     (void)clus;
     (void)count;
@@ -206,7 +206,7 @@ void fe_drive_end( int more )
     tx_free( &text );
 }
 
-void fe_all_end( int drives, u32 found, u32 fixed )
+void fe_all_end( int drives, unsigned int found, unsigned int fixed )
 {
     char line[160];
 

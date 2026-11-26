@@ -30,8 +30,10 @@
 MBRW_LEN        EQU     1B8h            ; the boot code of a master boot
                                         ; record, and nothing past it: 1B8h
                                         ; is where the disk identity lives
-MAX_DISKS       EQU     8               ; the ceiling on what F1h/0Ch may
-                                        ; report.  It answers with the real
+MAX_DISKS       EQU     MAX_PHYS + USB_MAXUNITS ; the ceiling on what
+                                        ; F1h/0Ch may report, 12: the hard
+                                        ; disks 80h-87h and the USB units
+                                        ; 88h-8Bh.  It answers with the real
                                         ; number; this only bounds the loop
 
 SEC_BYTES       EQU     512

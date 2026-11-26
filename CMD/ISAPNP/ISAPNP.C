@@ -40,13 +40,11 @@
  * few routines a library would have supplied are at the bottom.
  */
 
-typedef unsigned char  u8;
-typedef unsigned short u16;
-typedef unsigned long  u32;
+#include <stdint.h>
 
 typedef struct {
-    u32 eax, ebx, ecx, edx, esi, edi;
-    u32 flags;                  /* in: bit 0 = CF before the INT */
+    uint32_t eax, ebx, ecx, edx, esi, edi;
+    uint32_t flags;             /* in: bit 0 = CF before the INT */
 } REGS;
 
 void __cdecl int21( REGS *regs );
@@ -104,13 +102,13 @@ void __cdecl int21( REGS *regs );
 
 /* one thing a device needs */
 typedef struct {
-    u8  kind;                   /* RK_* */
-    u8  ports;                  /* I/O: how many */
-    u8  decode16;               /* ...and it decodes all sixteen bits */
-    u16 mask;                   /* IRQ: lines, DMA: channels */
-    u32 low, high;              /* I/O, memory: lowest and highest base */
-    u32 step;                   /* ...and the distance between bases */
-    u32 size;                   /* memory: bytes */
+    uint8_t  kind;              /* RK_* */
+    uint8_t  ports;             /* I/O: how many */
+    uint8_t  decode16;          /* ...and it decodes all sixteen bits */
+    uint16_t mask;              /* IRQ: lines, DMA: channels */
+    uint32_t low, high;         /* I/O, memory: lowest and highest base */
+    uint32_t step;              /* ...and the distance between bases */
+    uint32_t size;              /* memory: bytes */
 } DESC;
 
 /* one set of them */
@@ -120,50 +118,50 @@ typedef struct {
 } OPTION;
 
 typedef struct {
-    u8     number;              /* the logical device's */
-    u8     id[4];               /* EISA ID */
-    u8     compat[4];           /* the first compatible ID, or zeroes */
-    char   name[48];
-    OPTION before;              /* outside any dependent function, */
-    OPTION after;               /* before them and after them */
-    int    nfunc;
-    OPTION func[MAX_FUNCS];     /* the alternatives */
-    u8     regs[256];           /* as they are now */
+    uint8_t number;             /* the logical device's */
+    uint8_t id[4];              /* EISA ID */
+    uint8_t compat[4];          /* the first compatible ID, or zeroes */
+    char    name[48];
+    OPTION  before;             /* outside any dependent function, */
+    OPTION  after;              /* before them and after them */
+    int     nfunc;
+    OPTION  func[MAX_FUNCS];    /* the alternatives */
+    uint8_t regs[256];          /* as they are now */
 } DEVICE;
 
 typedef struct {
-    u8     csn;
-    u8     ident[9];
-    char   name[48];
-    int    ndev;
-    DEVICE dev[MAX_DEVS];
+    uint8_t csn;
+    uint8_t ident[9];
+    char    name[48];
+    int     ndev;
+    DEVICE  dev[MAX_DEVS];
 } CARD;
 
 /* what a device has been given, or is to be */
 typedef struct {
-    int nio, nirq, ndma, nmem;
-    u16 io[MAX_IO];
-    u8  irq[MAX_IRQ];
-    u8  dma[MAX_DMA];
-    u32 mem[MAX_MEM];
-    int on, off;
+    int      nio, nirq, ndma, nmem;
+    uint16_t io[MAX_IO];
+    uint8_t  irq[MAX_IRQ];
+    uint8_t  dma[MAX_DMA];
+    uint32_t mem[MAX_MEM];
+    int      on, off;
 } SETTING;
 
-static CARD   *card;
-static u8     *resbuf;
-static int     ncards;
-static u8      plog[PLOG_LEN];
-static u32     used_lo[MAX_USED], used_hi[MAX_USED];
-static u8      used_ten[MAX_USED];
-static int     nused;
-static u16     irq_used;
-static u8      dma_used;
-static int     changed;
-static char    tail[160];
-static char   *argv[32];
-static int     argc;
-static u8      out_buf[OUT_BUF];
-static u32     out_len;
+static CARD        *card;
+static uint8_t     *resbuf;
+static int          ncards;
+static uint8_t      plog[PLOG_LEN];
+static uint32_t     used_lo[MAX_USED], used_hi[MAX_USED];
+static uint8_t      used_ten[MAX_USED];
+static int          nused;
+static uint16_t     irq_used;
+static uint8_t      dma_used;
+static int          changed;
+static char         tail[160];
+static char        *argv[32];
+static int          argc;
+static uint8_t      out_buf[OUT_BUF];
+static unsigned int out_len;
 
 static const char hexdig[] = "0123456789ABCDEF";
 
@@ -188,32 +186,32 @@ static const char msg_help[] =
 /* small routines a C library would have supplied                    */
 /* ---------------------------------------------------------------- */
 
-static u32 str_len( const char *str )
+static unsigned int str_len( const char *str )
 {
-    u32 len = 0;
+    unsigned int len = 0;
 
     while ( str[len] ) len++;
     return len;
 }
 
-static void mem_set( void *dst, u8 val, u32 len )
+static void mem_set( void *dst, uint8_t val, unsigned int len )
 {
-    u8 *at = (u8 *)dst;
+    uint8_t *at = (uint8_t *)dst;
 
     while ( len-- ) *at++ = val;
 }
 
-static void mem_cpy( void *dst, const void *src, u32 len )
+static void mem_cpy( void *dst, const void *src, unsigned int len )
 {
-    u8 *to = (u8 *)dst;
-    const u8 *from = (const u8 *)src;
+    uint8_t *to = (uint8_t *)dst;
+    const uint8_t *from = (const uint8_t *)src;
 
     while ( len-- ) *to++ = *from++;
 }
 
-static u8 up( u8 ch )
+static uint8_t up( uint8_t ch )
 {
-    return (u8)(ch >= 'a' && ch <= 'z' ? ch - 32 : ch);
+    return (uint8_t)(ch >= 'a' && ch <= 'z' ? ch - 32 : ch);
 }
 
 static void clear( REGS *regs )
@@ -234,7 +232,7 @@ static void out_flush( void )
         regs.eax = 0x4000;
         regs.ebx = 1;
         regs.ecx = out_len;
-        regs.edx = (u32)out_buf;
+        regs.edx = (uint32_t)out_buf;
         int21( &regs );
         out_len = 0;
     }
@@ -253,7 +251,7 @@ static void pnp_exit( int code )
 static void out_ch( char ch )
 {
     if ( out_len == OUT_BUF ) out_flush();
-    out_buf[out_len++] = (u8)ch;
+    out_buf[out_len++] = (uint8_t)ch;
 }
 
 static void out_str( const char *str )
@@ -266,14 +264,14 @@ static void out_nl( void )
     out_str( "\r\n" );
 }
 
-static void out_hex( u32 val, int digits )
+static void out_hex( uint32_t val, int digits )
 {
     int i;
 
     for ( i = digits - 1; i >= 0; i-- ) out_ch( hexdig[(val >> (i * 4)) & 15] );
 }
 
-static void out_dec( u32 val )
+static void out_dec( unsigned int val )
 {
     char buf[12];
     int at = 11;
@@ -287,15 +285,15 @@ static void out_dec( u32 val )
 }
 
 /* a field padded with blanks to a width */
-static void out_pad( const char *str, u32 width )
+static void out_pad( const char *str, unsigned int width )
 {
-    u32 len = str_len( str );
+    unsigned int len = str_len( str );
 
     out_str( str );
     while ( len++ < width ) out_ch( ' ' );
 }
 
-static void *mem_alloc( u32 size )
+static void *mem_alloc( unsigned int size )
 {
     REGS regs;
 
@@ -312,29 +310,29 @@ static void *mem_alloc( u32 size )
 
 static int bus_call( int func, REGS *regs )
 {
-    regs->eax = 0xF112 | ((u32)func << 16);
+    regs->eax = 0xF112 | ((uint32_t)func << 16);
     int21( regs );
     return !CF( *regs );
 }
 
-static int pnp_regs( u8 csn, u8 ldn, u8 *regs256 )
+static int pnp_regs( uint8_t csn, uint8_t ldn, uint8_t *regs256 )
 {
     REGS regs;
 
     clear( &regs );
-    regs.edx = csn | ((u32)ldn << 8);
-    regs.edi = (u32)regs256;
+    regs.edx = csn | ((uint32_t)ldn << 8);
+    regs.edi = (uint32_t)regs256;
     return bus_call( BUS_PNPREGS, &regs );
 }
 
-static int pnp_set( u8 csn, u8 ldn, const u8 *pairs, int count )
+static int pnp_set( uint8_t csn, uint8_t ldn, const uint8_t *pairs, int count )
 {
     REGS regs;
 
     clear( &regs );
-    regs.edx = csn | ((u32)ldn << 8);
-    regs.esi = (u32)pairs;
-    regs.ecx = (u32)count;
+    regs.edx = csn | ((uint32_t)ldn << 8);
+    regs.esi = (uint32_t)pairs;
+    regs.ecx = (uint32_t)count;
     return bus_call( BUS_PNPSET, &regs );
 }
 
@@ -343,7 +341,7 @@ static int pnp_set( u8 csn, u8 ldn, const u8 *pairs, int count )
 /* ---------------------------------------------------------------- */
 
 /* what one of a card's IDs is called: three letters and four digits */
-static void id_text( const u8 *id, char *text )
+static void id_text( const uint8_t *id, char *text )
 {
     text[0] = (char)('@' + ((id[0] >> 2) & 31));
     text[1] = (char)('@' + (((id[0] & 3) << 3) | (id[1] >> 5)));
@@ -355,7 +353,7 @@ static void id_text( const u8 *id, char *text )
     text[7] = 0;
 }
 
-static DESC *add_desc( OPTION *opt, u8 kind )
+static DESC *add_desc( OPTION *opt, uint8_t kind )
 {
     DESC *desc;
 
@@ -366,9 +364,9 @@ static DESC *add_desc( OPTION *opt, u8 kind )
     return desc;
 }
 
-static void set_name( char *name, const u8 *text, u32 len )
+static void set_name( char *name, const uint8_t *text, unsigned int len )
 {
-    u32 i;
+    unsigned int i;
 
     if ( len > 47 ) len = 47;
     for ( i = 0; i < len && text[i]; i++ ) name[i] = (char)text[i];
@@ -380,20 +378,20 @@ static void set_name( char *name, const u8 *text, u32 len )
    can be given.  The descriptors outside the dependent functions come
    before them or after them, and their registers are numbered in that
    order, which is the specification's: the order they are written. */
-static void parse_card( CARD *crd, const u8 *data, u32 len )
+static void parse_card( CARD *crd, const uint8_t *data, unsigned int len )
 {
-    u32 pos = 9, size;
+    unsigned int pos = 9, size;
     DEVICE *dev = NULL;
     OPTION *opt = NULL;
-    const u8 *body;
+    const uint8_t *body;
     DESC *desc;
-    u8 tag, kind;
+    uint8_t tag, kind;
 
     while ( pos < len ) {
         tag = data[pos++];
         if ( tag & 0x80 ) {
             if ( pos + 2 > len ) break;
-            size = data[pos] | ((u32)data[pos + 1] << 8);
+            size = data[pos] | ((uint32_t)data[pos + 1] << 8);
             pos += 2;
             if ( pos + size > len ) break;
             body = data + pos;
@@ -409,11 +407,11 @@ static void parse_card( CARD *crd, const u8 *data, u32 len )
             case 0x81:                  /* a 24-bit memory range */
                 desc = add_desc( opt, RK_MEM );
                 if ( desc && size >= 9 ) {
-                    desc->low = ((u32)body[1] | ((u32)body[2] << 8)) << 8;
-                    desc->high = ((u32)body[3] | ((u32)body[4] << 8)) << 8;
-                    desc->step = (u32)body[5] | ((u32)body[6] << 8);
+                    desc->low = ((uint32_t)body[1] | ((uint32_t)body[2] << 8)) << 8;
+                    desc->high = ((uint32_t)body[3] | ((uint32_t)body[4] << 8)) << 8;
+                    desc->step = (uint32_t)body[5] | ((uint32_t)body[6] << 8);
                     if ( desc->step == 0 ) desc->step = 0x10000;
-                    desc->size = ((u32)body[7] | ((u32)body[8] << 8)) << 8;
+                    desc->size = ((uint32_t)body[7] | ((uint32_t)body[8] << 8)) << 8;
                 }
                 break;
             case 0x85:                  /* 32-bit memory: taken as a range */
@@ -424,7 +422,7 @@ static void parse_card( CARD *crd, const u8 *data, u32 len )
             }
             continue;
         }
-        kind = (u8)((tag >> 3) & 15);
+        kind = (uint8_t)((tag >> 3) & 15);
         size = tag & 7;
         if ( pos + size > len ) break;
         body = data + pos;
@@ -438,7 +436,7 @@ static void parse_card( CARD *crd, const u8 *data, u32 len )
             }
             dev = &crd->dev[crd->ndev];
             mem_set( dev, 0, sizeof( *dev ) );
-            dev->number = (u8)crd->ndev++;
+            dev->number = (uint8_t)crd->ndev++;
             mem_cpy( dev->id, body, 4 );
             opt = &dev->before;
             break;
@@ -447,7 +445,7 @@ static void parse_card( CARD *crd, const u8 *data, u32 len )
             break;
         case 4:                         /* an IRQ */
             desc = add_desc( opt, RK_IRQ );
-            if ( desc && size >= 2 ) desc->mask = (u16)(body[0] | (body[1] << 8));
+            if ( desc && size >= 2 ) desc->mask = (uint16_t)(body[0] | (body[1] << 8));
             break;
         case 5:                         /* a DMA channel */
             desc = add_desc( opt, RK_DMA );
@@ -468,17 +466,17 @@ static void parse_card( CARD *crd, const u8 *data, u32 len )
         case 8:                         /* a range of ports */
             desc = add_desc( opt, RK_IO );
             if ( desc && size >= 7 ) {
-                desc->low = body[1] | ((u32)body[2] << 8);
-                desc->high = body[3] | ((u32)body[4] << 8);
+                desc->low = body[1] | ((uint32_t)body[2] << 8);
+                desc->high = body[3] | ((uint32_t)body[4] << 8);
                 desc->step = body[5] ? body[5] : 1;
                 desc->ports = body[6];
-                desc->decode16 = (u8)(body[0] & 1);
+                desc->decode16 = (uint8_t)(body[0] & 1);
             }
             break;
         case 9:                         /* ports at one address */
             desc = add_desc( opt, RK_IO );
             if ( desc && size >= 3 ) {
-                desc->low = (body[0] | ((u32)body[1] << 8)) & 0x3FF;
+                desc->low = (body[0] | ((uint32_t)body[1] << 8)) & 0x3FF;
                 desc->high = desc->low;
                 desc->step = 1;
                 desc->ports = body[2];
@@ -491,7 +489,7 @@ static void parse_card( CARD *crd, const u8 *data, u32 len )
 }
 
 /* card csn's resource data and every device's registers into card */
-static int read_card( u8 csn )
+static int read_card( uint8_t csn )
 {
     REGS regs;
     int i;
@@ -500,7 +498,7 @@ static int read_card( u8 csn )
     card->csn = csn;
     clear( &regs );
     regs.edx = csn;
-    regs.edi = (u32)resbuf;
+    regs.edi = (uint32_t)resbuf;
     regs.ecx = RES_BUF;
     if ( !bus_call( BUS_PNPRES, &regs ) || regs.ecx < 9 ) return FALSE;
     mem_cpy( card->ident, resbuf, 9 );
@@ -513,7 +511,7 @@ static int read_card( u8 csn )
 
 /* how many of a kind the device has registers for: as many as its own
    resource data describes, which is the most any one choice of it uses */
-static int how_many( const DEVICE *dev, u8 kind )
+static int how_many( const DEVICE *dev, uint8_t kind )
 {
     const OPTION *opts[2];
     int most = 0, f, nf, n, i, j;
@@ -544,27 +542,27 @@ static int how_many( const DEVICE *dev, u8 kind )
 static void current( const DEVICE *dev, SETTING *set )
 {
     int i, count;
-    u32 val;
+    uint32_t val;
 
     mem_set( set, 0, sizeof( *set ) );
     count = how_many( dev, RK_IO );
     for ( i = 0; i < count && i < MAX_IO; i++ ) {
-        val = ((u32)dev->regs[R_IO0 + i * 2] << 8) | dev->regs[R_IO0 + i * 2 + 1];
-        if ( val ) set->io[set->nio++] = (u16)val;
+        val = ((uint32_t)dev->regs[R_IO0 + i * 2] << 8) | dev->regs[R_IO0 + i * 2 + 1];
+        if ( val ) set->io[set->nio++] = (uint16_t)val;
     }
     count = how_many( dev, RK_IRQ );
     for ( i = 0; i < count && i < MAX_IRQ; i++ ) {
         val = dev->regs[R_IRQ0 + i * 2] & 15;
-        if ( val ) set->irq[set->nirq++] = (u8)val;
+        if ( val ) set->irq[set->nirq++] = (uint8_t)val;
     }
     count = how_many( dev, RK_DMA );
     for ( i = 0; i < count && i < MAX_DMA; i++ ) {
         val = dev->regs[R_DMA0 + i] & 7;
-        if ( val != 4 ) set->dma[set->ndma++] = (u8)val;
+        if ( val != 4 ) set->dma[set->ndma++] = (uint8_t)val;
     }
     count = how_many( dev, RK_MEM );
     for ( i = 0; i < count && i < MAX_MEM; i++ ) {
-        val = (((u32)dev->regs[R_MEM0 + i * 8] << 8) | dev->regs[R_MEM0 + i * 8 + 1]) << 8;
+        val = (((uint32_t)dev->regs[R_MEM0 + i * 8] << 8) | dev->regs[R_MEM0 + i * 8 + 1]) << 8;
         if ( val ) set->mem[set->nmem++] = val;
     }
 }
@@ -589,16 +587,16 @@ static int kernels( const CARD *crd, const DEVICE *dev )
 /* ten = TRUE if whatever is there decodes only ten bits of the address,
    as an ISA card does unless it says otherwise, and answers at every
    copy of its ports 400h apart */
-static void use_io( u32 low, u32 count, int ten )
+static void use_io( uint32_t low, uint32_t count, int ten )
 {
     if ( count == 0 || nused == MAX_USED ) return;
     used_lo[nused] = low;
     used_hi[nused] = low + count - 1;
-    used_ten[nused] = (u8)ten;
+    used_ten[nused] = (uint8_t)ten;
     nused++;
 }
 
-static int overlap( u32 alow, u32 ahigh, u32 blow, u32 bhigh )
+static int overlap( uint32_t alow, uint32_t ahigh, uint32_t blow, uint32_t bhigh )
 {
     return alow <= bhigh && blow <= ahigh;
 }
@@ -606,9 +604,9 @@ static int overlap( u32 alow, u32 ahigh, u32 blow, u32 bhigh )
 /* The same ports, or the same ports in ten bits when either side looks
    at no more than ten: a card at 220h that decodes ten bits is at 620h
    as well, and one that decodes sixteen is not. */
-static int io_free( u32 low, u32 count, int ten )
+static int io_free( uint32_t low, uint32_t count, int ten )
 {
-    u32 high, low10;
+    uint32_t high, low10;
     int i;
 
     if ( count == 0 ) return TRUE;
@@ -657,15 +655,15 @@ static void use_setting( const SETTING *set, const DEVICE *dev )
             use_io( set->io[i], 8, TRUE );
         }
     }
-    for ( i = 0; i < set->nirq; i++ ) irq_used |= (u16)(1 << set->irq[i]);
-    for ( i = 0; i < set->ndma; i++ ) dma_used |= (u8)(1 << set->dma[i]);
+    for ( i = 0; i < set->nirq; i++ ) irq_used |= (uint16_t)(1 << set->irq[i]);
+    for ( i = 0; i < set->ndma; i++ ) dma_used |= (uint8_t)(1 << set->dma[i]);
 }
 
 /* Everything an AT has, and everything the kernel can say about the
    rest of the machine. */
 static void machine_used( void )
 {
-    static const u16 fixed[] = {
+    static const uint16_t fixed[] = {
         0x000, 0x20,  0x020, 0x20,  0x040, 0x20,  0x060, 0x10,  0x070, 0x10,
         0x080, 0x20,  0x0A0, 0x20,  0x0C0, 0x20,  0x0F0, 0x10,
         0x170, 8,     0x1F0, 8,     0x376, 2,     0x3F6, 2,
@@ -687,19 +685,19 @@ static void machine_used( void )
        DOS driver has unmasked */
     for ( i = 0; i < 16; i++ ) {
         clear( &regs );
-        regs.edx = (u32)i;
+        regs.edx = (uint32_t)i;
         if ( bus_call( BUS_IRQSTAT, &regs ) ) {
-            if ( regs.eax & (IRQF_KERNEL | IRQF_HOOKED | IRQF_BOXWANT) ) irq_used |= (u16)(1 << i);
+            if ( regs.eax & (IRQF_KERNEL | IRQF_HOOKED | IRQF_BOXWANT) ) irq_used |= (uint16_t)(1 << i);
         }
     }
 
     /* the lines the PCI cards were routed to */
     clear( &regs );
     if ( bus_call( BUS_PCIHERE, &regs ) && (regs.eax & 1) ) {
-        u32 count = regs.ecx;
-        u32 n;
+        unsigned int count = regs.ecx;
+        unsigned int n;
         for ( n = 0; n < count; n++ ) {
-            u32 addr;
+            uint32_t addr;
             clear( &regs );
             regs.esi = n;
             if ( !bus_call( BUS_PCIENUM, &regs ) ) break;
@@ -707,14 +705,14 @@ static void machine_used( void )
             clear( &regs );
             regs.ebx = addr;
             if ( bus_call( BUS_PCIIRQ, &regs ) ) {
-                if ( (regs.eax & 0xFF00) && (regs.eax & 0xFF) < 16 ) irq_used |= (u16)(1 << (regs.eax & 0xFF));
+                if ( (regs.eax & 0xFF00) && (regs.eax & 0xFF) < 16 ) irq_used |= (uint16_t)(1 << (regs.eax & 0xFF));
             }
         }
     }
 
     /* the DMA channels the kernel keeps for a bus master */
     clear( &regs );
-    if ( bus_call( BUS_DMASTAT, &regs ) ) dma_used |= (u8)regs.ebx;
+    if ( bus_call( BUS_DMASTAT, &regs ) ) dma_used |= (uint8_t)regs.ebx;
 }
 
 /* The serial and printer ports: all four of one and all three of the
@@ -724,8 +722,8 @@ static void machine_used( void )
    to prevent.  The seven addresses are no loss. */
 static void ports_used( void )
 {
-    static const u16 com[] = { 0x3F8, 0x2F8, 0x3E8, 0x2E8 };
-    static const u16 lpt[] = { 0x378, 0x278, 0x3BC };
+    static const uint16_t com[] = { 0x3F8, 0x2F8, 0x3E8, 0x2E8 };
+    static const uint16_t lpt[] = { 0x378, 0x278, 0x3BC };
     int i;
 
     for ( i = 0; i < 4; i++ ) use_io( com[i], 8, TRUE );
@@ -739,11 +737,11 @@ static void ports_used( void )
 /* The order IRQs are tried in: the ones nothing on a PC is wired to
    first, then the ones that are spare only if their usual owner is not
    there. */
-static const u8 irq_order[] = { 5, 10, 11, 9, 15, 7, 12, 3, 4, 14 };
+static const uint8_t irq_order[] = { 5, 10, 11, 9, 15, 7, 12, 3, 4, 14 };
 
 static int choose_desc( const DESC *desc, SETTING *set )
 {
-    u32 base;
+    uint32_t base;
     int i;
 
     switch ( desc->kind ) {
@@ -755,7 +753,7 @@ static int choose_desc( const DESC *desc, SETTING *set )
         }
         for ( base = desc->low; base <= desc->high && base < 0x10000; base += desc->step ) {
             if ( io_free( base, desc->ports, !desc->decode16 ) ) {
-                set->io[set->nio++] = (u16)base;
+                set->io[set->nio++] = (uint16_t)base;
                 use_io( base, desc->ports, !desc->decode16 );
                 return TRUE;
             }
@@ -769,10 +767,10 @@ static int choose_desc( const DESC *desc, SETTING *set )
             return TRUE;
         }
         for ( i = 0; i < (int)sizeof( irq_order ); i++ ) {
-            u8 line = irq_order[i];
+            uint8_t line = irq_order[i];
             if ( (desc->mask & (1 << line)) && !(irq_used & (1 << line)) ) {
                 set->irq[set->nirq++] = line;
-                irq_used |= (u16)(1 << line);
+                irq_used |= (uint16_t)(1 << line);
                 return TRUE;
             }
         }
@@ -785,8 +783,8 @@ static int choose_desc( const DESC *desc, SETTING *set )
         }
         for ( i = 0; i < 8; i++ ) {
             if ( (desc->mask & (1 << i)) && !(dma_used & (1 << i)) ) {
-                set->dma[set->ndma++] = (u8)i;
-                dma_used |= (u8)(1 << i);
+                set->dma[set->ndma++] = (uint8_t)i;
+                dma_used |= (uint8_t)(1 << i);
                 return TRUE;
             }
         }
@@ -821,11 +819,11 @@ static int needs_mem( const OPTION *opt )
    on the way is given back before the next is tried. */
 static int choose( const DEVICE *dev, SETTING *set, int *memory )
 {
-    u32 save_lo[MAX_USED], save_hi[MAX_USED];
-    u8 save_ten[MAX_USED];
+    uint32_t save_lo[MAX_USED], save_hi[MAX_USED];
+    uint8_t save_ten[MAX_USED];
     int save_n = nused, f, nf;
-    u16 save_irq = irq_used;
-    u8 save_dma = dma_used;
+    uint16_t save_irq = irq_used;
+    uint8_t save_dma = dma_used;
 
     mem_cpy( save_lo, used_lo, sizeof( save_lo ) );
     mem_cpy( save_hi, used_hi, sizeof( save_hi ) );
@@ -862,10 +860,10 @@ static int choose( const DEVICE *dev, SETTING *set, int *memory )
    switched off, as the specification says it must be. */
 static int apply( const CARD *crd, const DEVICE *dev, const SETTING *set )
 {
-    u8 pairs[64 * 2];
+    uint8_t pairs[64 * 2];
     int count = 0, i;
 
-#define PUT( reg, val )  ( pairs[count * 2] = (u8)(reg), pairs[count * 2 + 1] = (u8)(val), count++ )
+#define PUT( reg, val )  ( pairs[count * 2] = (uint8_t)(reg), pairs[count * 2 + 1] = (uint8_t)(val), count++ )
 
     /* As many of each register as the device has - or as were given,
        for a device whose resource data says less than it means - and
@@ -876,7 +874,7 @@ static int apply( const CARD *crd, const DEVICE *dev, const SETTING *set )
         int has = how_many( dev, RK_IO );
         if ( set->nio > has ) has = set->nio;
         for ( i = 0; i < has && i < MAX_IO; i++ ) {
-            u16 port = (u16)(i < set->nio ? set->io[i] : 0);
+            uint16_t port = (uint16_t)(i < set->nio ? set->io[i] : 0);
             PUT( R_IO0 + i * 2, port >> 8 );
             PUT( R_IO0 + i * 2 + 1, port & 0xFF );
         }
@@ -953,8 +951,8 @@ static void list_card( void )
     id_text( card->ident, text );
     out_str( text );
     out_str( "  serial " );
-    out_hex( ((u32)card->ident[7] << 24) | ((u32)card->ident[6] << 16)
-           | ((u32)card->ident[5] << 8) | card->ident[4], 8 );
+    out_hex( ((uint32_t)card->ident[7] << 24) | ((uint32_t)card->ident[6] << 16)
+           | ((uint32_t)card->ident[5] << 8) | card->ident[4], 8 );
     if ( card->name[0] ) {
         out_str( "  " );
         out_str( card->name );
@@ -990,14 +988,14 @@ static void list_card( void )
 static void split_args( void )
 {
     REGS regs;
-    u8 *psp;
-    u32 len, i;
+    uint8_t *psp;
+    unsigned int len, i;
     char *in, *out;
 
     clear( &regs );
     regs.eax = 0x6200;
     int21( &regs );
-    psp = (u8 *)regs.ebx;
+    psp = (uint8_t *)regs.ebx;
     len = psp[0x80];
     if ( len > 127 ) len = 127;
     for ( i = 0; i < len; i++ ) tail[i] = (char)psp[0x81 + i];
@@ -1018,15 +1016,15 @@ static void split_args( void )
 
 /* a number in base 10 or 16 at *text, which is moved past it; FALSE if
    there are no digits */
-static int get_num( const char **text, int base, u32 *val )
+static int get_num( const char **text, int base, uint32_t *val )
 {
     const char *at = *text;
-    u32 num = 0;
+    uint32_t num = 0;
     int digits = 0;
 
     for ( ;; ) {
-        u8 ch = up( (u8)*at );
-        u32 dig;
+        uint8_t ch = up( (uint8_t)*at );
+        uint32_t dig;
         if ( ch >= '0' && ch <= '9' ) {
             dig = ch - '0';
         } else if ( base == 16 && ch >= 'A' && ch <= 'F' ) {
@@ -1034,12 +1032,12 @@ static int get_num( const char **text, int base, u32 *val )
         } else {
             break;
         }
-        if ( dig >= (u32)base ) break;
+        if ( dig >= (uint32_t)base ) break;
         num = num * base + dig;
         digits++;
         at++;
     }
-    if ( base == 16 && up( (u8)*at ) == 'H' ) at++;
+    if ( base == 16 && up( (uint8_t)*at ) == 'H' ) at++;
     *text = at;
     *val = num;
     return digits > 0;
@@ -1049,7 +1047,7 @@ static int get_num( const char **text, int base, u32 *val )
 static const char *keyword( const char *word, const char *name )
 {
     while ( *name ) {
-        if ( up( (u8)*word ) != (u8)*name ) return NULL;
+        if ( up( (uint8_t)*word ) != (uint8_t)*name ) return NULL;
         word++;
         name++;
     }
@@ -1061,26 +1059,26 @@ static const char *keyword( const char *word, const char *name )
 static int parse_setting( const char *word, SETTING *set )
 {
     const char *at;
-    u32 val;
+    uint32_t val;
 
     if ( (at = keyword( word, "IO=" )) != NULL ) {
         do {
             if ( set->nio == MAX_IO || !get_num( &at, 16, &val ) || val > 0xFFFF ) return FALSE;
-            set->io[set->nio++] = (u16)val;
+            set->io[set->nio++] = (uint16_t)val;
         } while ( *at++ == ',' );
         return at[-1] == 0;
     }
     if ( (at = keyword( word, "IRQ=" )) != NULL ) {
         do {
             if ( set->nirq == MAX_IRQ || !get_num( &at, 10, &val ) || val > 15 ) return FALSE;
-            set->irq[set->nirq++] = (u8)val;
+            set->irq[set->nirq++] = (uint8_t)val;
         } while ( *at++ == ',' );
         return at[-1] == 0;
     }
     if ( (at = keyword( word, "DMA=" )) != NULL ) {
         do {
             if ( set->ndma == MAX_DMA || !get_num( &at, 10, &val ) || val > 7 ) return FALSE;
-            set->dma[set->ndma++] = (u8)val;
+            set->dma[set->ndma++] = (uint8_t)val;
         } while ( *at++ == ',' );
         return at[-1] == 0;
     }
@@ -1122,9 +1120,9 @@ static void do_list( void )
     int c;
 
     for ( c = 1; c <= ncards; c++ ) {
-        if ( !read_card( (u8)c ) ) {
+        if ( !read_card( (uint8_t)c ) ) {
             out_str( "Card " );
-            out_dec( (u32)c );
+            out_dec( (unsigned int)c );
             out_str( "  does not answer" );
             out_nl();
             continue;
@@ -1150,7 +1148,7 @@ static void do_auto( void )
     machine_used();
     ports_used();
     for ( c = 1; c <= ncards; c++ ) {
-        if ( !read_card( (u8)c ) ) continue;
+        if ( !read_card( (uint8_t)c ) ) continue;
         for ( i = 0; i < card->ndev; i++ ) {
             if ( !is_on( &card->dev[i] ) ) continue;
             current( &card->dev[i], &set );
@@ -1159,12 +1157,12 @@ static void do_auto( void )
     }
 
     for ( c = 1; c <= ncards; c++ ) {
-        if ( !read_card( (u8)c ) ) continue;
+        if ( !read_card( (uint8_t)c ) ) continue;
         for ( i = 0; i < card->ndev; i++ ) {
             DEVICE *dev = &card->dev[i];
             if ( is_on( dev ) || kernels( card, dev ) ) continue;
             any = TRUE;
-            out_dec( (u32)c );
+            out_dec( (unsigned int)c );
             out_ch( '.' );
             out_dec( dev->number );
             out_str( "  " );
@@ -1193,7 +1191,7 @@ static int do_one( int argn )
 {
     SETTING set;
     const char *at = argv[argn];
-    u32 cnum, dnum;
+    unsigned int cnum, dnum;
     int i;
 
     if ( !get_num( &at, 10, &cnum ) || *at++ != '.' || !get_num( &at, 10, &dnum ) || *at ) {
@@ -1207,11 +1205,11 @@ static int do_one( int argn )
             return 1;
         }
     }
-    if ( cnum == 0 || cnum > (u32)ncards || !read_card( (u8)cnum ) ) {
+    if ( cnum == 0 || cnum > (unsigned int)ncards || !read_card( (uint8_t)cnum ) ) {
         say( "There is no such card", argv[argn] );
         return 1;
     }
-    if ( dnum >= (u32)card->ndev ) {
+    if ( dnum >= (unsigned int)card->ndev ) {
         say( "That card has no such device", argv[argn] );
         return 1;
     }
@@ -1245,7 +1243,7 @@ static int do_one( int argn )
         say( "The device could not be set", argv[argn] );
         return 1;
     }
-    read_card( (u8)cnum );
+    read_card( (uint8_t)cnum );
     list_card();
     return 0;
 }
@@ -1272,7 +1270,7 @@ void __cdecl dos_entry( void )
 
     clear( &regs );
     regs.eax = 0xF115;          /* the probe log: whose IDE port is whose */
-    regs.edi = (u32)plog;
+    regs.edi = (uint32_t)plog;
     int21( &regs );
 
     clear( &regs );
@@ -1290,7 +1288,7 @@ void __cdecl dos_entry( void )
 
     if ( argc == 0 ) {
         do_list();
-    } else if ( argv[0][0] == '/' && up( (u8)argv[0][1] ) == 'A' && argv[0][2] == 0 && argc == 1 ) {
+    } else if ( argv[0][0] == '/' && up( (uint8_t)argv[0][1] ) == 'A' && argv[0][2] == 0 && argc == 1 ) {
         do_auto();
     } else if ( argv[0][0] != '/' ) {
         code = do_one( 0 );

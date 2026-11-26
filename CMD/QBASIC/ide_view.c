@@ -48,7 +48,7 @@ static LINE *cur_line( VIEW *view )
     return doc_line( view->doc, view->line );
 }
 
-static u32 line_end( VIEW *view, u32 line )
+static unsigned int line_end( VIEW *view, unsigned int line )
 {
     LINE *text = doc_line( view->doc, line );
 
@@ -64,10 +64,10 @@ POS view_pos( VIEW *view )
     return pos;
 }
 
-static u32 snap( VIEW *view, u32 line, u32 col )
+static unsigned int snap( VIEW *view, unsigned int line, unsigned int col )
 {
     LINE *text = doc_line( view->doc, line );
-    u32 index = doc_index_of( view->doc, text, col );
+    unsigned int index = doc_index_of( view->doc, text, col );
 
     return index < text->len ? doc_col_of( view->doc, text, index ) : col;
 }
@@ -80,8 +80,8 @@ void view_keep_visible( VIEW *view )
 
     if ( view->line < view->top ) {
         view->top = view->line;
-    } else if ( view->line >= view->top + (u32)rows ) {
-        view->top = view->line - (u32)rows + 1;
+    } else if ( view->line >= view->top + (unsigned int)rows ) {
+        view->top = view->line - (unsigned int)rows + 1;
     }
     if ( view->col < view->left ) {
         view->left = view->col > 58 ? view->col - 58 : 0;
@@ -156,7 +156,7 @@ int view_has_sel( VIEW *view )
     return view->sel && (view->sel_line != view->line || view->sel_col != view->col);
 }
 
-static POS clamp_pos( VIEW *view, u32 line, u32 col )
+static POS clamp_pos( VIEW *view, unsigned int line, unsigned int col )
 {
     LINE *text = doc_line( view->doc, line );
     POS pos;
@@ -183,7 +183,7 @@ void view_sel_range( VIEW *view, POS *from, POS *to )
     }
 }
 
-void view_goto( VIEW *view, u32 line, u32 col, int select )
+void view_goto( VIEW *view, unsigned int line, unsigned int col, int select )
 {
     if ( select ) {
         if ( !view->sel ) {
@@ -254,7 +254,7 @@ void view_delete_sel( VIEW *view )
     }
 }
 
-int view_insert_text( VIEW *view, const char *text, u32 len )
+int view_insert_text( VIEW *view, const char *text, unsigned int len )
 {
     POS pos;
 
@@ -282,7 +282,7 @@ static void draw_title( VIEW *view, int is_active )
 {
     char title[80];
     int len, at, top = view->row == 1 && !help_shown();
-    u8 corner = pal.frame;
+    uint8_t corner = pal.frame;
 
     scr_fill( view->row, 0, scr_cols, 0xC4, pal.frame );
     scr_ch( view->row, 0, top ? 0xDA : 0xC3, corner );
@@ -308,11 +308,11 @@ static void draw_title( VIEW *view, int is_active )
     }
 }
 
-static void draw_line( VIEW *view, int row, u32 line, POS *from, POS *to, int has_sel )
+static void draw_line( VIEW *view, int row, unsigned int line, POS *from, POS *to, int has_sel )
 {
-    u32 col = 0, index = 0, sel_end;
+    unsigned int col = 0, index = 0, sel_end;
     LINE *text;
-    u8 attr, base = pal.text;
+    uint8_t attr, base = pal.text;
     int ch, width, tab, screen, cur_col = -1, cur_len = 0;
 
     if ( line < view->doc->count ) {
@@ -331,7 +331,7 @@ static void draw_line( VIEW *view, int row, u32 line, POS *from, POS *to, int ha
         return;
     }
     while ( index < text->len && col < view->left + TEXT_COLS ) {
-        ch = (u8)text->text[index];
+        ch = (uint8_t)text->text[index];
         tab = ch == '\t';
         width = tab ? (int)((col / tab_size + 1) * tab_size - col) : 1;
         attr = base;
@@ -353,8 +353,8 @@ static void draw_line( VIEW *view, int row, u32 line, POS *from, POS *to, int ha
     }
     if ( cur_col >= 0 ) {
         /* the statement to run next, and one blank after it */
-        u32 from_col = doc_col_of( view->doc, text, (u32)cur_col );
-        u32 to_col = doc_col_of( view->doc, text, (u32)cur_col + (u32)cur_len ) + 1;
+        unsigned int from_col = doc_col_of( view->doc, text, (unsigned int)cur_col );
+        unsigned int to_col = doc_col_of( view->doc, text, (unsigned int)cur_col + (unsigned int)cur_len ) + 1;
         for ( col = from_col; col < to_col; col++ ) {
             if ( col >= view->left && col < view->left + TEXT_COLS ) {
                 scr_recolor( row, 1 + (int)(col - view->left), 1,
@@ -375,14 +375,14 @@ static void draw_line( VIEW *view, int row, u32 line, POS *from, POS *to, int ha
 static int vthumb( VIEW *view )
 {
     int rows = view_text_rows( view );
-    u32 count = view->doc->count;
+    unsigned int count = view->doc->count;
 
-    return count > 1 ? (int)(view->line * (u32)(rows - 3) / (count - 1)) : 0;
+    return count > 1 ? (int)(view->line * (unsigned int)(rows - 3) / (count - 1)) : 0;
 }
 
 static int hthumb( VIEW *view )
 {
-    u32 left = view->left > 178 ? 178 : view->left;
+    unsigned int left = view->left > 178 ? 178 : view->left;
 
     return 2 + (int)(left * 75 / 178);
 }
@@ -427,7 +427,7 @@ void view_draw( VIEW *view, int is_active )
     draw_title( view, is_active );
     for ( row = 0; row < rows; row++ ) {
         scr_ch( view->row + 1 + row, 0, 0xB3, pal.frame );
-        draw_line( view, view->row + 1 + row, view->top + (u32)row, &from, &to, has_sel );
+        draw_line( view, view->row + 1 + row, view->top + (unsigned int)row, &from, &to, has_sel );
         scr_ch( view->row + 1 + row, scr_cols - 1, 0xB3, pal.frame );
     }
     if ( view->bars ) {
@@ -449,24 +449,24 @@ static int is_word( int ch )
            || ch == '_' || ch == '.' || ch == '$' || ch == '%' || ch == '&' || ch == '!' || ch == '#';
 }
 
-void view_word_at( VIEW *view, char *out, u32 max )
+void view_word_at( VIEW *view, char *out, unsigned int max )
 {
     LINE *text = cur_line( view );
-    u32 index = doc_index_of( view->doc, text, view->col ), start, end;
+    unsigned int index = doc_index_of( view->doc, text, view->col ), start, end;
 
     out[0] = 0;
     if ( index > text->len ) {
         return;
     }
-    if ( index == text->len || !is_word( (u8)text->text[index] ) ) {
-        if ( index == 0 || !is_word( (u8)text->text[index - 1] ) ) {
+    if ( index == text->len || !is_word( (uint8_t)text->text[index] ) ) {
+        if ( index == 0 || !is_word( (uint8_t)text->text[index - 1] ) ) {
             return;
         }
         index--;
     }
-    for ( start = index; start > 0 && is_word( (u8)text->text[start - 1] ); start-- ) {
+    for ( start = index; start > 0 && is_word( (uint8_t)text->text[start - 1] ); start-- ) {
     }
-    for ( end = index; end < text->len && is_word( (u8)text->text[end] ); end++ ) {
+    for ( end = index; end < text->len && is_word( (uint8_t)text->text[end] ); end++ ) {
     }
     if ( end - start >= max ) {
         end = start + max - 1;
@@ -482,11 +482,11 @@ void view_word_at( VIEW *view, char *out, u32 max )
 static TOKEN check_toks[256];
 
 /* the names on a line, learnt as spelt there: -> 1 if one changed */
-static int learn_names( const char *text, u32 len )
+static int learn_names( const char *text, unsigned int len )
 {
     int count, i, changed_any = 0, col;
     const char *msg;
-    u32 nlen;
+    unsigned int nlen;
 
     count = lex_line( text, len, check_toks, 256, &col, &msg );
     for ( i = 0; i < count; i++ ) {
@@ -502,7 +502,7 @@ static int learn_names( const char *text, u32 len )
 }
 
 /* one line put in QBasic's form, as it stands; 0 if it will not lex */
-static int relist( DOC *doc, u32 line )
+static int relist( DOC *doc, unsigned int line )
 {
     static char out[MAX_LINE + 64];
     LINE *ln = doc_line( doc, line );
@@ -529,7 +529,7 @@ static int relist( DOC *doc, u32 line )
 static void relist_all( void )
 {
     int t;
-    u32 line;
+    unsigned int line;
 
     for ( t = 0; t < ptext.ntexts; t++ ) {
         for ( line = 0; line < ptext.texts[t]->count; line++ ) {
@@ -543,7 +543,7 @@ static void relist_all( void )
 void view_learn_program( void )
 {
     int t;
-    u32 line;
+    unsigned int line;
     LINE *ln;
 
     names_reset();
@@ -559,7 +559,7 @@ void view_learn_program( void )
 /* SUB name or FUNCTION name, typed in the module: the line goes to a
    new procedure of its own, with a blank line and its END, and the
    window shows it there.  -> 1 if it did */
-static int split_off_proc( VIEW *view, u32 line )
+static int split_off_proc( VIEW *view, unsigned int line )
 {
     LINE *ln = doc_line( view->doc, line );
     char name[NAME_MAX + 2], heading[MAX_LINE + 1];
@@ -574,7 +574,7 @@ static int split_off_proc( VIEW *view, u32 line )
         return 1;
     }
     {
-        u32 len = ln->len > MAX_LINE ? MAX_LINE : ln->len;
+        unsigned int len = ln->len > MAX_LINE ? MAX_LINE : ln->len;
         mem_cpy( heading, ln->text, len );
         heading[len] = 0;
     }
@@ -586,7 +586,7 @@ static int split_off_proc( VIEW *view, u32 line )
     doc = ptext.texts[text];
     /* the heading as it was typed, parameters and all, and a blank line */
     {
-        u32 at;
+        unsigned int at;
         for ( at = 0; at < doc->count; at++ ) {
             LINE *hl = doc_line( doc, at );
             if ( hl->len >= 3 && (ch_upper( hl->text[0] ) == 'S' || ch_upper( hl->text[0] ) == 'F') ) {
@@ -615,7 +615,7 @@ int view_leave_line( VIEW *view )
     static char out[MAX_LINE + 64];
     CERR err;
     LINE *ln;
-    u32 line = view->line;
+    unsigned int line = view->line;
 
     if ( !view->dirty || view->text < 0 ) {
         view->dirty = 0;
@@ -637,13 +637,13 @@ int view_leave_line( VIEW *view )
         view->err_line = (int)line;
         view->sel = 1;
         view->sel_line = line;
-        view->sel_col = doc_col_of( view->doc, ln, (u32)err.col );
+        view->sel_col = doc_col_of( view->doc, ln, (unsigned int)err.col );
         view->line = line;
-        view->col = doc_col_of( view->doc, ln, (u32)(err.col + (err.len > 0 ? err.len : 1)) );
+        view->col = doc_col_of( view->doc, ln, (unsigned int)(err.col + (err.len > 0 ? err.len : 1)) );
         view_keep_visible( view );
         msg_box( err.msg, MB_OK, 1 );
         view->sel = 0;
-        view->col = doc_col_of( view->doc, ln, (u32)err.col );
+        view->col = doc_col_of( view->doc, ln, (unsigned int)err.col );
         view->want = view->col;
         view_keep_visible( view );
         return 0;
@@ -668,37 +668,37 @@ static int is_word_ch( int ch )
            || ch == '_' || ch >= 0x80;
 }
 
-static void word_right( VIEW *view, u32 *line, u32 *col )
+static void word_right( VIEW *view, unsigned int *line, unsigned int *col )
 {
     LINE *text = doc_line( view->doc, *line );
-    u32 index = doc_index_of( view->doc, text, *col );
+    unsigned int index = doc_index_of( view->doc, text, *col );
 
-    while ( index < text->len && is_word_ch( (u8)text->text[index] ) ) {
+    while ( index < text->len && is_word_ch( (uint8_t)text->text[index] ) ) {
         index++;
     }
-    while ( index < text->len && !is_word_ch( (u8)text->text[index] ) ) {
+    while ( index < text->len && !is_word_ch( (uint8_t)text->text[index] ) ) {
         index++;
     }
     if ( index >= text->len && *line + 1 < view->doc->count ) {
         (*line)++;
         text = doc_line( view->doc, *line );
         index = 0;
-        while ( index < text->len && !is_word_ch( (u8)text->text[index] ) ) {
+        while ( index < text->len && !is_word_ch( (uint8_t)text->text[index] ) ) {
             index++;
         }
     }
     *col = doc_col_of( view->doc, text, index );
 }
 
-static void word_left( VIEW *view, u32 *line, u32 *col )
+static void word_left( VIEW *view, unsigned int *line, unsigned int *col )
 {
     LINE *text = doc_line( view->doc, *line );
-    u32 index = doc_index_of( view->doc, text, *col );
+    unsigned int index = doc_index_of( view->doc, text, *col );
 
     if ( index > text->len ) {
         index = text->len;
     }
-    while ( index > 0 && !is_word_ch( (u8)text->text[index - 1] ) ) {
+    while ( index > 0 && !is_word_ch( (uint8_t)text->text[index - 1] ) ) {
         index--;
     }
     if ( index == 0 ) {
@@ -709,11 +709,11 @@ static void word_left( VIEW *view, u32 *line, u32 *col )
         (*line)--;
         text = doc_line( view->doc, *line );
         index = text->len;
-        while ( index > 0 && !is_word_ch( (u8)text->text[index - 1] ) ) {
+        while ( index > 0 && !is_word_ch( (uint8_t)text->text[index - 1] ) ) {
             index--;
         }
     }
-    while ( index > 0 && is_word_ch( (u8)text->text[index - 1] ) ) {
+    while ( index > 0 && is_word_ch( (uint8_t)text->text[index - 1] ) ) {
         index--;
     }
     *col = doc_col_of( view->doc, text, index );
@@ -723,9 +723,9 @@ static int move_key( VIEW *view, int key )
 {
     int select = (key & K_SHIFT) != 0;
     int rows = view_text_rows( view );
-    u32 line = view->line, col = view->col, keep_want = 1, end;
+    unsigned int line = view->line, col = view->col, keep_want = 1, end;
     LINE *text;
-    u32 index;
+    unsigned int index;
 
     switch ( key & ~K_SHIFT ) {
     case K_LEFT:
@@ -776,18 +776,18 @@ static int move_key( VIEW *view, int key )
         break;
     case K_PGUP:
     case CTRL( 'R' ):
-        line = line > (u32)(rows - 1) ? line - (u32)(rows - 1) : 0;
-        view->top = view->top > (u32)(rows - 1) ? view->top - (u32)(rows - 1) : 0;
+        line = line > (unsigned int)(rows - 1) ? line - (unsigned int)(rows - 1) : 0;
+        view->top = view->top > (unsigned int)(rows - 1) ? view->top - (unsigned int)(rows - 1) : 0;
         col = snap( view, line, view->want );
         break;
     case K_PGDN:
     case CTRL( 'C' ):
-        line += (u32)(rows - 1);
+        line += (unsigned int)(rows - 1);
         if ( line >= view->doc->count ) {
             line = view->doc->count - 1;
         }
-        if ( view->top + (u32)(rows - 1) < view->doc->count ) {
-            view->top += (u32)(rows - 1);
+        if ( view->top + (unsigned int)(rows - 1) < view->doc->count ) {
+            view->top += (unsigned int)(rows - 1);
         }
         col = snap( view, line, view->want );
         break;
@@ -816,8 +816,8 @@ static int move_key( VIEW *view, int key )
         if ( view->top > 0 ) {
             view->top--;
         }
-        if ( line >= view->top + (u32)rows ) {
-            line = view->top + (u32)rows - 1;
+        if ( line >= view->top + (unsigned int)rows ) {
+            line = view->top + (unsigned int)rows - 1;
             col = snap( view, line, view->want );
         }
         break;
@@ -886,7 +886,7 @@ static void new_line( VIEW *view )
     LINE *text;
     POS pos;
     char buf[81];
-    u32 indent = 0, tail;
+    unsigned int indent = 0, tail;
 
     view_delete_sel( view );
     text = cur_line( view );
@@ -928,7 +928,7 @@ static void back_space( VIEW *view )
 {
     LINE *text;
     POS from, to;
-    u32 end;
+    unsigned int end;
 
     if ( view_has_sel( view ) ) {
         view_delete_sel( view );
@@ -1013,7 +1013,7 @@ static void delete_char( VIEW *view )
 static void delete_word( VIEW *view )
 {
     POS from = view_pos( view ), to;
-    u32 line = view->line, col = view->col;
+    unsigned int line = view->line, col = view->col;
 
     word_right( view, &line, &col );
     to = clamp_pos( view, line, col );
@@ -1035,7 +1035,7 @@ static void cut_line( VIEW *view, int rest_only )
 {
     POS from, to;
     char *text;
-    u32 len;
+    unsigned int len;
 
     view->sel = 0;
     from.line = view->line;
@@ -1077,7 +1077,7 @@ static void cut_line( VIEW *view, int rest_only )
 static int shift_block( VIEW *view, int out )
 {
     POS from, to, at;
-    u32 line, last, remove;
+    unsigned int line, last, remove;
     LINE *text;
     char spaces[32];
 
@@ -1096,7 +1096,7 @@ static int shift_block( VIEW *view, int out )
         at.col = 0;
         if ( out ) {
             remove = 0;
-            while ( remove < text->len && remove < (u32)tab_size && text->text[remove] == ' ' ) {
+            while ( remove < text->len && remove < (unsigned int)tab_size && text->text[remove] == ' ' ) {
                 remove++;
             }
             if ( remove ) {
@@ -1105,7 +1105,7 @@ static int shift_block( VIEW *view, int out )
                 doc_delete( view->doc, at, end );
             }
         } else if ( text->len ) {
-            doc_insert( view->doc, &at, spaces, (u32)(tab_size < 32 ? tab_size : 32) );
+            doc_insert( view->doc, &at, spaces, (unsigned int)(tab_size < 32 ? tab_size : 32) );
         }
     }
     view->sel = 1;
@@ -1125,7 +1125,7 @@ static int shift_block( VIEW *view, int out )
 
 static void tab_key( VIEW *view, int back )
 {
-    u32 col = view->col, stop;
+    unsigned int col = view->col, stop;
     char spaces[32];
 
     if ( shift_block( view, back ) ) {
@@ -1168,7 +1168,7 @@ static int prefixed( VIEW *view, int first, int key )
         view_goto( view, view->top, snap( view, view->top, view->want ), 0 );
         break;
     case 'X':
-        view_goto( view, view->top + (u32)view_text_rows( view ) - 1, view->want, 0 );
+        view_goto( view, view->top + (unsigned int)view_text_rows( view ) - 1, view->want, 0 );
         view->col = snap( view, view->line, view->want );
         break;
     case 'Y': cut_line( view, 1 ); break;
@@ -1228,7 +1228,7 @@ static int edit_key( VIEW *view, int key )
         return 1;
     case CTRL( 'N' ):
         {
-            u32 line = view->line, col = view->col;
+            unsigned int line = view->line, col = view->col;
             view_insert_text( view, "\n", 1 );
             view_goto( view, line, col, 0 );
         }
@@ -1257,7 +1257,7 @@ static int edit_key( VIEW *view, int key )
 
 int view_key( VIEW *view, int key )
 {
-    u32 old_line = view->line, now_line, now_col, now_want;
+    unsigned int old_line = view->line, now_line, now_col, now_want;
     int was_dirty = view->dirty, done;
     DOC *old_doc = view->doc;
 
@@ -1337,7 +1337,7 @@ void view_mouse_to( VIEW *view, int row, int col, int select )
 {
     int rows = view_text_rows( view );
     int text_row = row - view->row - 1, text_col = col - 1;
-    u32 line;
+    unsigned int line;
 
     if ( text_row < 0 ) {
         text_row = 0;
@@ -1351,25 +1351,25 @@ void view_mouse_to( VIEW *view, int row, int col, int select )
     if ( text_col >= TEXT_COLS ) {
         text_col = TEXT_COLS - 1;
     }
-    line = view->top + (u32)text_row;
+    line = view->top + (unsigned int)text_row;
     if ( line >= view->doc->count ) {
         line = view->doc->count - 1;
     }
-    view_goto( view, line, snap( view, line, view->left + (u32)text_col ), select );
+    view_goto( view, line, snap( view, line, view->left + (unsigned int)text_col ), select );
     view->want = view->col;
 }
 
 void view_select_word( VIEW *view )
 {
     LINE *text = cur_line( view );
-    u32 index = doc_index_of( view->doc, text, view->col ), start, end;
+    unsigned int index = doc_index_of( view->doc, text, view->col ), start, end;
 
-    if ( index >= text->len || !is_word_ch( (u8)text->text[index] ) ) {
+    if ( index >= text->len || !is_word_ch( (uint8_t)text->text[index] ) ) {
         return;
     }
-    for ( start = index; start > 0 && is_word_ch( (u8)text->text[start - 1] ); start-- ) {
+    for ( start = index; start > 0 && is_word_ch( (uint8_t)text->text[start - 1] ); start-- ) {
     }
-    for ( end = index; end < text->len && is_word_ch( (u8)text->text[end] ); end++ ) {
+    for ( end = index; end < text->len && is_word_ch( (uint8_t)text->text[end] ); end++ ) {
     }
     view->sel = 1;
     view->sel_line = view->line;
@@ -1382,7 +1382,7 @@ void view_select_word( VIEW *view )
 void view_scroll_part( VIEW *view, int part, int row, int col )
 {
     int rows = view_text_rows( view ), first = view->row + 1, at;
-    u32 count = view->doc->count, line;
+    unsigned int count = view->doc->count, line;
 
     switch ( part ) {
     case VH_UP:
@@ -1408,7 +1408,7 @@ void view_scroll_part( VIEW *view, int part, int row, int col )
         if ( at > rows - 3 ) {
             at = rows - 3;
         }
-        line = (u32)at * (count - 1) / (u32)(rows - 3);
+        line = (unsigned int)at * (count - 1) / (unsigned int)(rows - 3);
         view_goto( view, line, snap( view, line, view->want ), 0 );
         break;
     case VH_LEFT:
@@ -1443,7 +1443,7 @@ void view_scroll_part( VIEW *view, int part, int row, int col )
         if ( at > 75 ) {
             at = 75;
         }
-        view->left = (u32)at * 178 / 75;
+        view->left = (unsigned int)at * 178 / 75;
         view_goto( view, view->line, view->left, 0 );
         view->want = view->col;
         break;

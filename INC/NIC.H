@@ -21,13 +21,13 @@
                                  LIVE (not polled) so it asserts on receive,
                                  for the WfW bridge to field through VPICD;
                                  answer 1 if it is running */
-#define NIC_BIND     7        /* buf -> NICB_LEN bytes: a u16 Ethernet type at
+#define NIC_BIND     7        /* buf -> NICB_LEN bytes: a uint16_t Ethernet type at
                                  +0, or 0 and an 802.2 DSAP at +2.  The frames
                                  that match go to a queue of their own, read by
                                  NIC_RECVB, and not to NIC_RECV's; answer the
                                  binding, 1..NIC_BINDS.  ERR_GENERAL when every
                                  binding is taken */
-#define NIC_RECVB    8        /* buf -> a u32 binding at +0, room for a frame
+#define NIC_RECVB    8        /* buf -> a uint32_t binding at +0, room for a frame
                                  at +4 (len counts both); answer the frame's
                                  length copied to +4, 0 for none */
 
@@ -40,16 +40,16 @@
 
 /* NIC_INFO's buffer (NICI_*) */
 typedef struct {
-    u8  mac[6];
-    u8  kind;                 /* NICK_* */
-    u8  bus;                  /* NICB_* */
-    u16 mtu;                  /* 1500 */
-    u16 port;                 /* the first I/O port, or 0 */
-    u8  irq;                  /* the line, or NIC_NOIRQ */
-    u8  flags;                /* NICF_* */
-    u16 spare;
-    u32 pciaddr;              /* BUS_PCIENUM's address, 0 on ISA */
-    char name[32];            /* ASCIIZ */
+    uint8_t  mac[6];
+    uint8_t  kind;            /* NICK_* */
+    uint8_t  bus;             /* NICB_* */
+    uint16_t mtu;             /* 1500 */
+    uint16_t port;            /* the first I/O port, or 0 */
+    uint8_t  irq;             /* the line, or NIC_NOIRQ */
+    uint8_t  flags;           /* NICF_* */
+    uint16_t spare;
+    uint32_t pciaddr;         /* BUS_PCIENUM's address, 0 on ISA */
+    char     name[32];        /* ASCIIZ */
 } NIC_INFOBLOCK;
 
 #define NICI_LEN     52
@@ -66,13 +66,13 @@ typedef struct {
 
 /* NIC_STATS' buffer (NICS_*) */
 typedef struct {
-    u32 rxframes, rxbytes;
-    u32 txframes, txbytes;
-    u32 rxdropped;            /* lost for a full queue */
-    u32 rxerrors, txerrors;   /* the card's */
-    u32 overflows;            /* the card's buffer ran over */
-    u32 irqs;                 /* interrupts that were the card's */
-    u32 queued;               /* waiting now */
+    uint32_t rxframes, rxbytes;
+    uint32_t txframes, txbytes;
+    uint32_t rxdropped;           /* lost for a full queue */
+    uint32_t rxerrors, txerrors;  /* the card's */
+    uint32_t overflows;           /* the card's buffer ran over */
+    uint32_t irqs;                /* interrupts that were the card's */
+    uint32_t queued;              /* waiting now */
 } NIC_STATBLOCK;
 
 #define NICS_LEN     40

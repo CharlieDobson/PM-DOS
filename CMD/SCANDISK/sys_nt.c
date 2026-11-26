@@ -28,42 +28,42 @@
 #define WINAPI __stdcall
 typedef void *HANDLE;
 typedef struct {
-    u16 wYear, wMonth, wDayOfWeek, wDay;
-    u16 wHour, wMinute, wSecond, wMilliseconds;
+    uint16_t wYear, wMonth, wDayOfWeek, wDay;
+    uint16_t wHour, wMinute, wSecond, wMilliseconds;
 } SYSTEMTIME;
 
-HANDLE WINAPI GetStdHandle( u32 std_handle );
-int    WINAPI WriteFile( HANDLE file, const void *buf, u32 len, u32 *written, void *overlapped );
-int    WINAPI ReadFile( HANDLE file, void *buf, u32 len, u32 *got, void *overlapped );
-u32    WINAPI GetFileType( HANDLE file );
-char * WINAPI GetCommandLineA( void );
-void   WINAPI ExitProcess( u32 code );
-HANDLE WINAPI CreateFileA( const char *name, u32 acc, u32 share, void *sa, u32 disp, u32 flags,
-                           HANDLE templ );
-int    WINAPI CloseHandle( HANDLE handle );
-u32    WINAPI SetFilePointer( HANDLE file, s32 lo, s32 *hi, u32 method );
-u32    WINAPI GetFileSize( HANDLE file, u32 *hi );
-int    WINAPI FlushFileBuffers( HANDLE file );
-u32    WINAPI GetFileAttributesA( const char *name );
-void * WINAPI VirtualAlloc( void *addr, u32 size, u32 type, u32 prot );
-void   WINAPI GetLocalTime( SYSTEMTIME *now );
-u32    WINAPI GetTickCount( void );
-u32    WINAPI GetEnvironmentVariableA( const char *name, char *buf, u32 size );
+HANDLE   WINAPI GetStdHandle( uint32_t std_handle );
+int      WINAPI WriteFile( HANDLE file, const void *buf, uint32_t len, uint32_t *written, void *overlapped );
+int      WINAPI ReadFile( HANDLE file, void *buf, uint32_t len, uint32_t *got, void *overlapped );
+uint32_t WINAPI GetFileType( HANDLE file );
+char *   WINAPI GetCommandLineA( void );
+void     WINAPI ExitProcess( uint32_t code );
+HANDLE   WINAPI CreateFileA( const char *name, uint32_t acc, uint32_t share, void *sa, uint32_t disp, uint32_t flags,
+                             HANDLE templ );
+int      WINAPI CloseHandle( HANDLE handle );
+uint32_t WINAPI SetFilePointer( HANDLE file, int32_t lo, int32_t *hi, uint32_t method );
+uint32_t WINAPI GetFileSize( HANDLE file, uint32_t *hi );
+int      WINAPI FlushFileBuffers( HANDLE file );
+uint32_t WINAPI GetFileAttributesA( const char *name );
+void *   WINAPI VirtualAlloc( void *addr, uint32_t size, uint32_t type, uint32_t prot );
+void     WINAPI GetLocalTime( SYSTEMTIME *now );
+uint32_t WINAPI GetTickCount( void );
+uint32_t WINAPI GetEnvironmentVariableA( const char *name, char *buf, uint32_t size );
 
-#define STD_INPUT   ((u32)-10)
-#define STD_OUTPUT  ((u32)-11)
+#define STD_INPUT   ((uint32_t)-10)
+#define STD_OUTPUT  ((uint32_t)-11)
 #define BAD_HANDLE  ((HANDLE)-1)
 #define FTYPE_CHAR  2
 #define MAX_IMG     4
 #define FIRST_DRIVE 2
 
-static char   tail[1024];
-static HANDLE img[MAX_IMG];
-static u32    img_bps[MAX_IMG];
-static u32    img_base[MAX_IMG];       /* where the volume starts: a partition */
-static int    nimg, img_ro;
-static char   img_cwd[260];
-static char   undo_dir[260], boot_dir[260] = ".";
+static char     tail[1024];
+static HANDLE   img[MAX_IMG];
+static uint32_t img_bps[MAX_IMG];
+static uint32_t img_base[MAX_IMG];     /* where the volume starts: a partition */
+static int      nimg, img_ro;
+static char     img_cwd[260];
+static char     undo_dir[260], boot_dir[260] = ".";
 
 int main( void )
 {
@@ -79,8 +79,8 @@ static void err( const char *msg )
 static int harness_option( const char *tok )
 {
     const char *cur;
-    u8 sec[512];
-    u32 got;
+    uint8_t sec[512];
+    uint32_t got;
 
     if ( tok[1] == 0 ) {
         return -1;
@@ -180,7 +180,7 @@ const char *sys_getenv( const char *name )
     static char value[4][512];
     static int next;
     char *buf = value[next];
-    u32 len = GetEnvironmentVariableA( name, buf, 512 );
+    uint32_t len = GetEnvironmentVariableA( name, buf, 512 );
 
     if ( len == 0 || len >= 512 ) {
         return NULL;
@@ -191,10 +191,10 @@ const char *sys_getenv( const char *name )
 
 void sys_exit( int code )
 {
-    ExitProcess( (u32)code );
+    ExitProcess( (uint32_t)code );
 }
 
-void *sys_mem_alloc( u32 size )
+void *sys_mem_alloc( unsigned int size )
 {
     return VirtualAlloc( NULL, size, 0x3000, 4 );
 }
@@ -208,9 +208,9 @@ int sys_break_take( void )
     return 0;
 }
 
-void sys_stdout( const char *buf, u32 len )
+void sys_stdout( const char *buf, unsigned int len )
 {
-    u32 written;
+    uint32_t written;
 
     WriteFile( GetStdHandle( STD_OUTPUT ), buf, len, &written, NULL );
 }
@@ -222,8 +222,8 @@ int sys_stdin_is_console( void )
 
 int sys_stdin_byte( void )
 {
-    u32 got;
-    u8 ch;
+    uint32_t got;
+    uint8_t ch;
 
     if ( !ReadFile( GetStdHandle( STD_INPUT ), &ch, 1, &got, NULL ) || got == 0 ) {
         return -1;
@@ -253,24 +253,24 @@ int sys_read_line( char *buf, int max )
     }
     buf[len] = 0;
     if ( !console ) {
-        sys_stdout( buf, (u32)len );
+        sys_stdout( buf, (unsigned int)len );
         sys_stdout( "\r\n", 2 );
     }
     return (eof && len == 0) ? -1 : len;
 }
 
-u32 sys_hundredths( void )
+uint32_t sys_hundredths( void )
 {
     return GetTickCount() / 10 % 8640000ul;
 }
 
-void sys_get_datetime( u16 *dos_date, u16 *dos_time )
+void sys_get_datetime( uint16_t *dos_date, uint16_t *dos_time )
 {
     SYSTEMTIME now;
 
     GetLocalTime( &now );
-    *dos_date = (u16)(((now.wYear - 1980) << 9) | (now.wMonth << 5) | now.wDay);
-    *dos_time = (u16)((now.wHour << 11) | (now.wMinute << 5) | (now.wSecond / 2));
+    *dos_date = (uint16_t)(((now.wYear - 1980) << 9) | (now.wMonth << 5) | now.wDay);
+    *dos_time = (uint16_t)((now.wHour << 11) | (now.wMinute << 5) | (now.wSecond / 2));
 }
 
 void sys_get_country( COUNTRY *ctry )
@@ -327,7 +327,7 @@ int sys_get_cwd( int drv, char *buf, int max )
     return 0;
 }
 
-int sys_get_bpb( int drv, u8 *sector )
+int sys_get_bpb( int drv, uint8_t *sector )
 {
     (void)drv;
     (void)sector;
@@ -347,22 +347,22 @@ void sys_unlock( int drv, int fat32 )
     (void)fat32;
 }
 
-static int seek_sec( int which, u32 lba )
+static int seek_sec( int which, uint32_t lba )
 {
     U64 off;
-    s32 hi;
-    u32 pos;
+    int32_t hi;
+    uint32_t pos;
 
     off.whole = mul32( lba + img_base[which], img_bps[which] );
-    hi = (s32)off.parts.hi;
-    pos = SetFilePointer( img[which], (s32)off.parts.lo, &hi, 0 );
+    hi = (int32_t)off.parts.hi;
+    pos = SetFilePointer( img[which], (int32_t)off.parts.lo, &hi, 0 );
     return (pos == 0xFFFFFFFFul && off.parts.lo != 0xFFFFFFFFul) ? -1 : 0;
 }
 
-int sys_read_sec( int drv, u32 lba, u32 count, u32 bps, void *buf )
+int sys_read_sec( int drv, uint32_t lba, uint32_t count, uint32_t bps, void *buf )
 {
     int which = img_of( drv );
-    u32 got;
+    uint32_t got;
 
     (void)bps;
     if ( which < 0 || seek_sec( which, lba ) != 0 ) {
@@ -375,10 +375,10 @@ int sys_read_sec( int drv, u32 lba, u32 count, u32 bps, void *buf )
     return 0;
 }
 
-int sys_write_sec( int drv, u32 lba, u32 count, u32 bps, const void *buf, int kind )
+int sys_write_sec( int drv, uint32_t lba, uint32_t count, uint32_t bps, const void *buf, int kind )
 {
     int which = img_of( drv );
-    u32 put;
+    uint32_t put;
 
     (void)bps;
     (void)kind;
@@ -427,7 +427,7 @@ static int host_path( const char *path, char *out )
     return 0;
 }
 
-static int open_as( const char *path, u32 access, u32 disp, u32 *handle )
+static int open_as( const char *path, uint32_t access, uint32_t disp, uint32_t *handle )
 {
     char host[300];
     HANDLE file;
@@ -439,31 +439,31 @@ static int open_as( const char *path, u32 access, u32 disp, u32 *handle )
     if ( file == BAD_HANDLE ) {
         return 2;
     }
-    *handle = (u32)file;
+    *handle = (uint32_t)file;
     return 0;
 }
 
-int sys_open_read( const char *path, u32 *handle )
+int sys_open_read( const char *path, uint32_t *handle )
 {
     return open_as( path, 0x80000000ul, 3, handle );
 }
 
-int sys_open_rw( const char *path, u32 *handle )
+int sys_open_rw( const char *path, uint32_t *handle )
 {
     return open_as( path, 0xC0000000ul, 3, handle );
 }
 
-int sys_create( const char *path, u32 *handle )
+int sys_create( const char *path, uint32_t *handle )
 {
     return open_as( path, 0xC0000000ul, 2, handle );
 }
 
-int sys_read( u32 handle, void *buf, u32 len, u32 *done )
+int sys_read( uint32_t handle, void *buf, unsigned int len, unsigned int *done )
 {
     return ReadFile( (HANDLE)handle, buf, len, done, NULL ) ? 0 : 30;
 }
 
-int sys_write( u32 handle, const void *buf, u32 len, u32 *done )
+int sys_write( uint32_t handle, const void *buf, unsigned int len, unsigned int *done )
 {
     if ( !WriteFile( (HANDLE)handle, buf, len, done, NULL ) ) {
         return 29;
@@ -471,29 +471,29 @@ int sys_write( u32 handle, const void *buf, u32 len, u32 *done )
     return *done < len ? 112 : 0;
 }
 
-int sys_close( u32 handle )
+int sys_close( uint32_t handle )
 {
     return CloseHandle( (HANDLE)handle ) ? 0 : 6;
 }
 
-int sys_file_size( u32 handle, u32 *size )
+int sys_file_size( uint32_t handle, uint32_t *size )
 {
     *size = GetFileSize( (HANDLE)handle, NULL );
     SetFilePointer( (HANDLE)handle, 0, NULL, 0 );
     return *size == 0xFFFFFFFFul ? 5 : 0;
 }
 
-int sys_seek( u32 handle, u32 pos )
+int sys_seek( uint32_t handle, uint32_t pos )
 {
-    return SetFilePointer( (HANDLE)handle, (s32)pos, NULL, 0 ) == 0xFFFFFFFFul ? 25 : 0;
+    return SetFilePointer( (HANDLE)handle, (int32_t)pos, NULL, 0 ) == 0xFFFFFFFFul ? 25 : 0;
 }
 
-int sys_seek_end( u32 handle )
+int sys_seek_end( uint32_t handle )
 {
     return SetFilePointer( (HANDLE)handle, 0, NULL, 2 ) == 0xFFFFFFFFul ? 25 : 0;
 }
 
-int sys_commit( u32 handle )
+int sys_commit( uint32_t handle )
 {
     return FlushFileBuffers( (HANDLE)handle ) ? 0 : 29;
 }

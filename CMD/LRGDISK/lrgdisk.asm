@@ -189,6 +189,23 @@
 ; looking, errors, commands the time-out had to take up.  Nothing can
 ; be changed through it.  LRGSTAT.EXE is the program that asks.
 ;
+; ONE THING THAT IS NOT THE DISK'S: VSHARE AND ECX.  Windows for
+; Workgroups 3.11's VSHARE.386 asks _Allocate_Global_V86_Data_Area for
+; fourteen bytes at its Device_Init and copies ECX bytes into the
+; answer, taking ECX to be the fourteen still.  The service is a C
+; one and promises nothing about ECX.  The size is what it leaves
+; there when the bytes come out of a gap below the first free page,
+; which is the usual thing; when the 960 bytes VSHARE asked for just
+; before (sixteen file table entries, always that many) have used the
+; gap to its last byte ECX comes back as an address, the copy runs off
+; the end of what is mapped, and Windows stops on two blank lines
+; before its logo.  One position in 256 of WIN386's loader does that;
+; twenty more leave ECX nought and VSHARE's fourteen bytes unwritten.
+; MS-DOS has it as PM-DOS has.  LRGDISK starts before VSHARE, so it
+; hooks the service (ld_gv86) and hands ECX back as the size asked
+; for, whichever way the bytes were found.  Only while LRGDISK is
+; loaded: with no drive of its own it is not (rmi_refuse).
+;
 ; HOW IT IS BUILT.  An LE VxD as the Windows 3.1 DDK's LINK386 makes
 ; one: locked code and data, code discarded after start-up, a 16-bit
 ; real-mode start-up object as the module's entry, and the descriptor
@@ -249,6 +266,7 @@ S_END_NEST_EXEC         EQU     00010086h
 S_HOOK_DEVICE_SERVICE   EQU     00010090h
 S_SIMULATE_IO           EQU     00010094h
 S_INSTALL_IO_HANDLER    EQU     00010096h
+S_ALLOC_GLOBAL_V86      EQU     000100A8h       ; C convention, start-up only
 S_GET_PROFILE_BOOLEAN   EQU     000100B1h       ; start-up only
 S_FATAL_ERROR_HANDLER   EQU     000100BEh
 S_GET_TIME              EQU     000100CFh       ; Get_Last_Updated_System_Time
@@ -530,7 +548,7 @@ CF_OTHER        EQU     02h             ; ...and something it does not
 ;---------------------------------------------------------------------
 LD_DEVICE_ID    EQU     4C44h           ; "LD": what INT 2Fh AX=1684h is
                                         ; asked for
-LD_VERSION      EQU     0104h
+LD_VERSION      EQU     0105h
 
 LI_SIZE         EQU     00h             ; dw bytes in the whole account
 LI_VERSION      EQU     02h             ; dw LD_VERSION
@@ -551,6 +569,8 @@ LIF_SERIAL      EQU     0010h           ; the two cables one at a time
 LIF_PCIIDE      EQU     0020h           ; the controller is a PCI one
 LIF_CMD640      EQU     0040h           ; ...and a CMD640
 LIF_INT13       EQU     0080h           ; INT13.386's translation is hooked
+LIF_GV86        EQU     0100h           ; ...and the VMM's V86 data service
+                                        ; (ld_gv86)
 LIF_TRACE       EQU     8000h           ; a build that traces (LRG_TRACE)
 
 LIC_DATA        EQU     00h             ; dw the cable's data port
@@ -801,7 +821,7 @@ _LDATA  SEGMENT
 LRGDISK_DDB     dd      0
                 dw      030Ah                   ; the DDK's version
                 dw      LD_DEVICE_ID
-                db      1, 4                    ; LRGDISK 1.4
+                db      1, 5                    ; LRGDISK 1.5
                 dw      0
                 db      'LRGDISK '
                 dd      00D000000h              ; after VPICD (0C000000h);
@@ -842,6 +862,8 @@ ld_info         db      LI_TOTAL dup (0) ; the account, put together for
 ld_warned       db      0               ; the port message has been shown
 ld_tell         db      0               ; ld_vmio refused a command: say so
 ld_prev13       dd      0               ; Int13_Translate_VM_Int, hooked
+ld_prevgv86     dd      0               ; _Allocate_Global_V86_Data_Area,
+                                        ; hooked
 ld_rawbios      db      0               ; ld_xlate: an INT 13h of LRGDISK's
                                         ; own, for the BIOS itself
 ld_ptes         dd      20 dup (0)      ; a region's page table entries
@@ -891,6 +913,23 @@ lc_dev:
         jmp     ld_devinit
 lc_other:
         clc
+        ret
+
+;---------------------------------------------------------------------
+; ld_gv86 - _Allocate_Global_V86_Data_Area, hooked: the VMM's own
+; service with the caller's two arguments, and then ECX = the first of
+; the two, the size asked for - what WfW 3.11's VSHARE.386 copies by
+; (see the top of the file).  A C service: the arguments are the
+; caller's to remove, EAX is the answer, EDX the VMM's to spoil.  Here,
+; not in the start-up code, because the VMM's table goes on naming it
+; when the start-up code is gone.
+;---------------------------------------------------------------------
+ld_gv86:
+        push    dword ptr [esp+8]       ; the flags
+        push    dword ptr [esp+8]       ; the size (ESP is 4 lower now)
+        call    dword ptr [ld_prevgv86]
+        add     esp,8
+        mov     ecx,[esp+4]
         ret
 
 ;---------------------------------------------------------------------
@@ -3809,6 +3848,17 @@ ENDIF
         TRCHEX  edx, 8
         TRC     13
         TRC     10
+        ; VSHARE and ECX (ld_gv86): the VMM's service, hooked now, well
+        ; before VSHARE's Device_Init calls it
+        mov     eax,S_ALLOC_GLOBAL_V86
+        mov     esi,OFFSET FLAT:ld_gv86
+        VXDCALL S_HOOK_DEVICE_SERVICE
+        jc      ldi_nogv86
+        mov     [ld_prevgv86],esi
+        or      word ptr [ld_liflags],LIF_GV86
+ldi_nogv86:
+        mov     edx,[ld_ref]
+
         xor     al,al                   ; the whole-driver bits, each
         test    dl,RF_SERIAL            ; noted for the account as well
         jz      ldi_serial              ; (ld_liflags)
@@ -7046,7 +7096,7 @@ k_poll          db      'LRGDISKPOLL', 0
 k_io32          db      'LRGDISK32BITIO', 0
 rv_fname        db      'C:\LRGDISK.TXT', 0
 
-m_hello         db      'LRGDISK 1.4', 13, 10, 0
+m_hello         db      'LRGDISK 1.5', 13, 10, 0
 m_oldwin        db      'Windows 3.1 or later is needed.', 13, 10, 0
 m_nodisk        db      'The BIOS reports no hard disk.', 13, 10, 0
 m_no2f          db      'DOS does not answer INT 2Fh AH=13h.', 13, 10, 0

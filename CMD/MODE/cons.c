@@ -38,15 +38,15 @@
 
 /* 440Ch's display block, CL = 7Fh and 5Fh */
 typedef struct {
-    u8  level;                  /* 0                                    */
-    u8  res1;
-    u16 size;                   /* 14, the bytes after this             */
-    u16 flags;                  /* 1 = background intensity, not blink  */
-    u8  kind;                   /* 1 text, 2 graphics                   */
-    u8  res2;
-    u16 colours;                /* 16, or 0 for mono                    */
-    u16 width, height;          /* pixels, FFFFh in text                */
-    u16 cols, rows;
+    uint8_t  level;             /* 0                                    */
+    uint8_t  res1;
+    uint16_t size;              /* 14, the bytes after this             */
+    uint16_t flags;             /* 1 = background intensity, not blink  */
+    uint8_t  kind;              /* 1 text, 2 graphics                   */
+    uint8_t  res2;
+    uint16_t colours;           /* 16, or 0 for mono                    */
+    uint16_t width, height;     /* pixels, FFFFh in text                */
+    uint16_t cols, rows;
 } DISPINFO;
 
 #define GE_NOTSUPP  29          /* the driver's 0Ah: not on this adapter */
@@ -63,9 +63,9 @@ static int is_cpword( const ITEM *it )
 
 /* a number keyword: 6.22 called a value that was not a number a format
    error and one out of range an invalid parameter */
-static int key_num( const ITEM *it, u32 lo, u32 hi, int *out )
+static int key_num( const ITEM *it, unsigned int lo, unsigned int hi, int *out )
 {
-    u32 num;
+    unsigned int num;
 
     if ( val_num( it, &num ) ) {
         return err_format( it );
@@ -436,10 +436,10 @@ void con_set( const REQ *rq )
     if ( rq->ccols || rq->crows ) {
         if ( ansi_get( &info ) ) {
             if ( rq->crows ) {
-                info.rows = (u16)rq->crows;
+                info.rows = (uint16_t)rq->crows;
             }
             if ( rq->ccols ) {
-                info.cols = (u16)rq->ccols;
+                info.cols = (uint16_t)rq->ccols;
                 equip_cols( rq->ccols );
             }
             ansi_set( &info );
@@ -481,7 +481,7 @@ void display_set( const REQ *rq )
     case DM_40:
     case DM_80:
         if ( ansi_get( &info ) ) {
-            info.cols = (u16)rq->dmode;
+            info.cols = (uint16_t)rq->dmode;
             ansi_set( &info );
             equip_cols( rq->dmode );
         } else {
@@ -492,11 +492,11 @@ void display_set( const REQ *rq )
 
     if ( rq->crows ) {
         if ( ansi_get( &info ) ) {
-            info.rows = (u16)rq->crows;
+            info.rows = (uint16_t)rq->crows;
             if ( rq->dmode != DM_NONE ) {
-                info.cols = (u16)(rq->dmode == DM_BW40 || rq->dmode == DM_CO40 ||
-                                  rq->dmode == DM_40 ? 40 : 80);
-                info.colours = (u16)(rq->dmode == DM_MONO ? 0 : 16);
+                info.cols = (uint16_t)(rq->dmode == DM_BW40 || rq->dmode == DM_CO40 ||
+                                       rq->dmode == DM_40 ? 40 : 80);
+                info.colours = (uint16_t)(rq->dmode == DM_MONO ? 0 : 16);
             }
             ansi_set( &info );
         } else {
@@ -531,13 +531,13 @@ void con_status( void )
         screen_size( &cols, &rows );
     }
     if ( text ) {
-        num_str( num, (u32)cols );
+        num_str( num, (unsigned int)cols );
         out_line( M_COLUMNS, num, NULL );
         if ( rows < 10 ) {
             num[0] = ' ';
-            num_str( num + 1, (u32)rows );
+            num_str( num + 1, (unsigned int)rows );
         } else {
-            num_str( num, (u32)rows );
+            num_str( num, (unsigned int)rows );
         }
         out_line( M_LINES, num, NULL );
     } else {

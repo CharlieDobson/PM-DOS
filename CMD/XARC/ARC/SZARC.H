@@ -18,17 +18,17 @@
 #include <stdio.h>      /* FILE */
 
 typedef struct {
-    char   name[SZ_MAX_NAME];   /* archive-relative path (back-slashes)     */
-    UInt32 size;                /* uncompressed size in bytes               */
-    UInt32 crc;                 /* expected CRC-32 (valid if hasCrc)        */
-    int    hasCrc;
-    int    isDir;               /* directory entry                          */
-    int    folderIndex;         /* coded folder, or -1 for dir/empty file   */
-    UInt32 offsetInFolder;      /* byte offset within the folder's stream   */
-    UInt32 mtimeLo, mtimeHi;    /* last-modified FILETIME (valid if hasMtime)*/
-    int    hasMtime;
-    UInt32 attrib;              /* Windows file attributes (valid if hasAttr)*/
-    int    hasAttrib;
+    char     name[SZ_MAX_NAME];  /* archive-relative path (back-slashes)    */
+    uint32_t size;               /* uncompressed size in bytes              */
+    uint32_t crc;                /* expected CRC-32 (valid if hasCrc)       */
+    int      hasCrc;
+    int      isDir;              /* directory entry                         */
+    int      folderIndex;        /* coded folder, or -1 for dir/empty file  */
+    uint32_t offsetInFolder;     /* byte offset within the folder's stream  */
+    uint32_t mtimeLo, mtimeHi;   /* last-modified FILETIME (valid if hasMtime)*/
+    int      hasMtime;
+    uint32_t attrib;             /* Windows file attributes (valid if hasAttr)*/
+    int      hasAttrib;
 } SzEntry;
 
 typedef struct SzArchive SzArchive;
@@ -75,7 +75,7 @@ int  SzNeedsPassword( SzArchive *a );
 int  SzGetNumEntries( SzArchive *a );
 
 /* Peak bytes one extraction needs; see ArcMemNeeded in ARCFILE.H. */
-UInt32 SzMemNeeded( SzArchive *a );
+uint32_t SzMemNeeded( SzArchive *a );
 
 /* Volumes joined at open: 1 for an ordinary file, N for a .7z.001/.002/... set. */
 int  SzVolumeCount( SzArchive *a );
@@ -88,7 +88,7 @@ const char *SzEntryMethod( SzArchive *a, int index );
 /* Packed (compressed) size attributed to an entry.  7z packs per folder, so
  * this is the folder's pack size reported on the first member of each folder,
  * and 0xFFFFFFFF (unknown) for the rest and for directory/empty entries. */
-UInt32 SzEntryPacked( SzArchive *a, int index );
+uint32_t SzEntryPacked( SzArchive *a, int index );
 
 /* Extract every entry beneath destDir, recreating sub-directories and
  * verifying CRCs.  Returns SZ_OK or an SZ_ERR_* code. */
@@ -106,7 +106,7 @@ void SzClose( SzArchive *a );
 /* Delete entries - ArcDeleteItems in ARCFILE.H; the arguments are set out
  * in ARCFILE.C.  Whole folders are copied or dropped; a folder that keeps
  * only some of its files is decoded and those compressed again. */
-int  SzDeleteWrite( SzArchive *a, const Byte *del, FILE *out,
+int  SzDeleteWrite( SzArchive *a, const uint8_t *del, FILE *out,
                     ArcCompProgress prog, void *user, const char **why );
 
 /* Human-readable text for an SZ_* result code. */

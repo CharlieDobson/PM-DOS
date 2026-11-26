@@ -34,48 +34,48 @@
 #include "types.h"
 
 /* (a * b) >> 32 */
-s32 fx_mulhi( s32 a, s32 b );
+int32_t fx_mulhi( int32_t a, int32_t b );
 #pragma aux fx_mulhi = \
     "imul edx" \
     parm [eax] [edx] value [edx] modify exact [eax edx] nomemory;
 
 /* (a * b) >> 31: a Q31 times a Q31 is a Q31 */
-s32 fx_mul31( s32 a, s32 b );
+int32_t fx_mul31( int32_t a, int32_t b );
 #pragma aux fx_mul31 = \
     "imul edx" \
     "shld edx,eax,1" \
     parm [eax] [edx] value [edx] modify exact [eax edx] nomemory;
 
 /* (a * b) >> 30 */
-s32 fx_mul30( s32 a, s32 b );
+int32_t fx_mul30( int32_t a, int32_t b );
 #pragma aux fx_mul30 = \
     "imul edx" \
     "shrd eax,edx,30" \
     parm [eax] [edx] value [eax] modify exact [eax edx] nomemory;
 
 /* (a * b) >> 28 */
-s32 fx_mul28( s32 a, s32 b );
+int32_t fx_mul28( int32_t a, int32_t b );
 #pragma aux fx_mul28 = \
     "imul edx" \
     "shrd eax,edx,28" \
     parm [eax] [edx] value [eax] modify exact [eax edx] nomemory;
 
 /* (a * b) >> 24 */
-s32 fx_mul24( s32 a, s32 b );
+int32_t fx_mul24( int32_t a, int32_t b );
 #pragma aux fx_mul24 = \
     "imul edx" \
     "shrd eax,edx,24" \
     parm [eax] [edx] value [eax] modify exact [eax edx] nomemory;
 
 /* (a * b) >> 16 */
-s32 fx_mul16( s32 a, s32 b );
+int32_t fx_mul16( int32_t a, int32_t b );
 #pragma aux fx_mul16 = \
     "imul edx" \
     "shrd eax,edx,16" \
     parm [eax] [edx] value [eax] modify exact [eax edx] nomemory;
 
 /* (a * b) >> shift, shift 1 to 31 */
-s32 fx_mulsh( s32 a, s32 b, int shift );
+int32_t fx_mulsh( int32_t a, int32_t b, int shift );
 #pragma aux fx_mulsh = \
     "imul edx" \
     "shrd eax,edx,cl" \
@@ -85,21 +85,21 @@ s32 fx_mulsh( s32 a, s32 b, int shift );
    the quotient must fit in 32 bits: a * b / c with a, b < 2^31 and
    c > |a| or c > |b| always does.  For scaling a position by a ratio:
    fx_muldiv( frames, 1000, rate ) is milliseconds. */
-s32 fx_muldiv( s32 a, s32 b, s32 c );
+int32_t fx_muldiv( int32_t a, int32_t b, int32_t c );
 #pragma aux fx_muldiv = \
     "imul edx" \
     "idiv ecx" \
     parm [eax] [edx] [ecx] value [eax] modify exact [eax edx] nomemory;
 
 /* the same, unsigned */
-u32 fx_umuldiv( u32 a, u32 b, u32 c );
+uint32_t fx_umuldiv( uint32_t a, uint32_t b, uint32_t c );
 #pragma aux fx_umuldiv = \
     "mul edx" \
     "div ecx" \
     parm [eax] [edx] [ecx] value [eax] modify exact [eax edx] nomemory;
 
 /* the number of the highest bit set (0 to 31); x must not be 0 */
-int fx_topbit( u32 x );
+int fx_topbit( uint32_t x );
 #pragma aux fx_topbit = \
     "bsr eax,eax" \
     parm [eax] value [eax] modify exact [eax] nomemory;

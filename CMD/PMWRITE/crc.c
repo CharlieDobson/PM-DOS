@@ -11,7 +11,7 @@
  */
 #include "crc.h"
 
-static const u32 crc_table[256] = {
+static const uint32_t crc_table[256] = {
     0x00000000UL, 0x77073096UL, 0xEE0E612CUL, 0x990951BAUL,
     0x076DC419UL, 0x706AF48FUL, 0xE963A535UL, 0x9E6495A3UL,
     0x0EDB8832UL, 0x79DCB8A4UL, 0xE0D5E91EUL, 0x97D2D988UL,
@@ -78,7 +78,7 @@ static const u32 crc_table[256] = {
     0xB40BBE37UL, 0xC30C8EA1UL, 0x5A05DF1BUL, 0x2D02EF8DUL
 };
 
-u32 crc32_update( u32 crc, const u8 *data, u32 len )
+uint32_t crc32_update( uint32_t crc, const uint8_t *data, uint32_t len )
 {
     crc = ~crc;
     while ( len-- ) {
@@ -90,9 +90,9 @@ u32 crc32_update( u32 crc, const u8 *data, u32 len )
 #define ADLER_BASE      65521UL
 #define ADLER_RUN       5552
 
-u32 adler32_update( u32 adler, const u8 *data, u32 len )
+uint32_t adler32_update( uint32_t adler, const uint8_t *data, uint32_t len )
 {
-    u32 low = adler & 0xFFFF, high = (adler >> 16) & 0xFFFF, part;
+    uint32_t low = adler & 0xFFFF, high = (adler >> 16) & 0xFFFF, part;
 
     while ( len ) {
         part = len > ADLER_RUN ? ADLER_RUN : len;

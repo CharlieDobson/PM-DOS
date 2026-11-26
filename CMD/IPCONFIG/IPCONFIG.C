@@ -23,27 +23,27 @@
 #define RENEW_WAIT  1000                /* hundredths: how long /RENEW waits */
 #define REG_WAIT    1500                /* ...and /REGISTERDNS */
 
-static u32  if_len;                     /* how much SOCK_IFSTAT gave: an older
+static unsigned if_len;                 /* how much SOCK_IFSTAT gave: an older
                                            TCPIP.SYS gives no SOCKIF_LEN3 part */
 
 /* the country's way with dates and times (21h/38h) */
-static u32  date_fmt;                   /* 0 m-d-y, 1 d-m-y, 2 y-m-d */
-static char date_sep = '-';
-static char time_sep = ':';
-static int  time_24;
+static unsigned date_fmt;               /* 0 m-d-y, 1 d-m-y, 2 y-m-d */
+static char     date_sep = '-';
+static char     time_sep = ':';
+static int      time_24;
 
 static void get_country( void )
 {
-    REGS regs;
-    u8   buf[34];
+    REGS    regs;
+    uint8_t buf[34];
 
     sl_memzero( buf, sizeof( buf ) );
     sl_memzero( &regs, sizeof( regs ) );
     regs.eax = 0x3800;
-    regs.edx = (u32)buf;
+    regs.edx = (uint32_t)buf;
     int21( &regs );
     if ( CF( regs ) ) return;
-    date_fmt = (u32)buf[0] | ( (u32)buf[1] << 8 );
+    date_fmt = (uint32_t)buf[0] | ( (uint32_t)buf[1] << 8 );
     if ( date_fmt > 2 ) date_fmt = 0;
     if ( buf[11] ) date_sep = (char)buf[11];
     if ( buf[13] ) time_sep = (char)buf[13];
@@ -51,14 +51,14 @@ static void get_country( void )
 }
 
 /* the socket call, with the error kept */
-static int sock_call( u32 fn, void *buf, u32 len, u32 *answer )
+static int sock_call( uint32_t fn, void *buf, uint32_t len, uint32_t *answer )
 {
     REGS regs;
 
     sl_memzero( &regs, sizeof( regs ) );
     regs.eax = ( fn << 16 ) | 0xF126;
     regs.ecx = len;
-    regs.edi = (u32)buf;
+    regs.edi = (uint32_t)buf;
     int21( &regs );
     if ( CF( regs ) ) return (int)( regs.eax & 0xFFFF );
     if ( answer ) *answer = regs.eax;
@@ -67,7 +67,7 @@ static int sock_call( u32 fn, void *buf, u32 len, u32 *answer )
 
 static int get_if( SOCK_IF *info )
 {
-    u32 got = 0;
+    uint32_t got = 0;
 
     sl_memzero( info, SOCKIF_LEN3 );
     if ( sock_call( SOCK_IFSTAT, info, SOCKIF_LEN3, &got ) != 0 ) return 0;
@@ -79,9 +79,9 @@ static int get_if( SOCK_IF *info )
 /* dates: days since 1970-01-01, and back                            */
 /* ---------------------------------------------------------------- */
 
-static u32 days_from_civil( u32 year, u32 month, u32 day )
+static uint32_t days_from_civil( uint32_t year, uint32_t month, uint32_t day )
 {
-    u32 era, yoe, doy, doe;
+    uint32_t era, yoe, doy, doe;
 
     if ( month <= 2 ) year--;
     era = year / 400;
@@ -91,9 +91,9 @@ static u32 days_from_civil( u32 year, u32 month, u32 day )
     return era * 146097UL + doe - 719468UL;
 }
 
-static void civil_from_days( u32 days, u32 *year, u32 *month, u32 *day )
+static void civil_from_days( uint32_t days, uint32_t *year, uint32_t *month, uint32_t *day )
 {
-    u32 z, era, doe, yoe, doy, mp;
+    uint32_t z, era, doe, yoe, doy, mp;
 
     z = days + 719468UL;
     era = z / 146097UL;
@@ -108,10 +108,10 @@ static void civil_from_days( u32 days, u32 *year, u32 *month, u32 *day )
 }
 
 /* the clock now, as seconds since 1970 */
-static u32 clock_now( void )
+static uint32_t clock_now( void )
 {
     REGS regs;
-    u32 year, month, day, hour, minute, second;
+    uint32_t year, month, day, hour, minute, second;
 
     sl_memzero( &regs, sizeof( regs ) );
     regs.eax = 0x2A00;
@@ -132,15 +132,15 @@ static u32 clock_now( void )
            hour * 3600UL + minute * 60UL + second;
 }
 
-static void put2( u32 value )
+static void put2( uint32_t value )
 {
     if ( value < 10 ) sl_putc( '0' );
     sl_putu( value );
 }
 
-static void put_when( u32 secs )
+static void put_when( uint32_t secs )
 {
-    u32 year, month, day, sod, hour;
+    uint32_t year, month, day, sod, hour;
 
     civil_from_days( secs / 86400UL, &year, &month, &day );
     sod = secs % 86400UL;
@@ -168,7 +168,7 @@ static void put_when( u32 secs )
 
 static void label( const char *name )
 {
-    u32 len = sl_strlen( name );
+    unsigned int len = sl_strlen( name );
 
     sl_puts( "   " );
     sl_puts( name );
@@ -179,7 +179,7 @@ static void label( const char *name )
     sl_puts( ": " );
 }
 
-static void line_ip( const char *name, u32 ip )
+static void line_ip( const char *name, uint32_t ip )
 {
     label( name );
     sl_putip( ip );
@@ -187,9 +187,9 @@ static void line_ip( const char *name, u32 ip )
 }
 
 /* one more address under the last, in the column label() leaves */
-static void more_ip( u32 ip )
+static void more_ip( uint32_t ip )
 {
-    u32 col;
+    unsigned int col;
 
     if ( ip == 0 ) return;
     for ( col = 0; col < 3 + 28 + 2; col++ ) sl_putc( ' ' );
@@ -276,8 +276,8 @@ static void show( const SOCK_IF *info, int all )
     }
 
     if ( info->up && info->dhcp == DHS_BOUND ) {
-        u32 now = clock_now();
-        u32 got = now - info->leaseage;
+        uint32_t now = clock_now();
+        uint32_t got = now - info->leaseage;
 
         label( "Lease Obtained" );
         put_when( got );
@@ -296,7 +296,7 @@ static void show( const SOCK_IF *info, int all )
 /* /RELEASE and /RENEW                                               */
 /* ---------------------------------------------------------------- */
 
-static int lease_op( u32 op, SOCK_IF *info )
+static int lease_op( uint32_t op, SOCK_IF *info )
 {
     int err = sock_call( SOCK_DHCP, &op, sizeof( op ), NULL );
 
@@ -328,8 +328,8 @@ static int do_release( void )
 static int do_renew( void )
 {
     SOCK_IF info;
-    u32 start;
-    u16 acks;
+    uint32_t start;
+    uint16_t acks;
     int had;
 
     if ( !get_if( &info ) ) return 0;
@@ -358,7 +358,7 @@ static int do_renew( void )
 static int do_regdns( void )
 {
     SOCK_IF info;
-    u32 op = DHCPOP_REGDNS, start;
+    uint32_t op = DHCPOP_REGDNS, start;
 
     if ( !get_if( &info ) ) return 0;
     if ( if_len < SOCKIF_LEN3 ) {
@@ -412,7 +412,7 @@ static void finish( int code )
 
     sl_flush();
     sl_memzero( &regs, sizeof( regs ) );
-    regs.eax = 0x4C00 | (u32)( code & 0xFF );
+    regs.eax = 0x4C00 | (uint32_t)( code & 0xFF );
     int21( &regs );
 }
 

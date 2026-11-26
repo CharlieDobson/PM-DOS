@@ -47,10 +47,10 @@ static const char *why( int rc )
     return "unknown error";
 }
 
-static u8 *read_file( const char *path, u32 *len )
+static uint8_t *read_file( const char *path, uint32_t *len )
 {
     FILE *file = fopen( path, "rb" );
-    u8 *data;
+    uint8_t *data;
     long size;
 
     if ( file == NULL ) {
@@ -60,7 +60,7 @@ static u8 *read_file( const char *path, u32 *len )
     fseek( file, 0, SEEK_END );
     size = ftell( file );
     fseek( file, 0, SEEK_SET );
-    data = (u8 *)malloc( (size_t)size + 1 );
+    data = (uint8_t *)malloc( (size_t)size + 1 );
     if ( data == NULL || fread( data, 1, (size_t)size, file ) != (size_t)size ) {
         fprintf( stderr, "PWHOST: cannot read %s\n", path );
         fclose( file );
@@ -68,12 +68,12 @@ static u8 *read_file( const char *path, u32 *len )
         return NULL;
     }
     fclose( file );
-    *len = (u32)size;
+    *len = (uint32_t)size;
     return data;
 }
 
 /* a file's bytes as a document: NULL, with the reason said */
-static WDOC *load_bytes( const u8 *data, u32 len, const char *name, int quiet )
+static WDOC *load_bytes( const uint8_t *data, uint32_t len, const char *name, int quiet )
 {
     WDOC *doc;
     int id, rc;
@@ -107,8 +107,8 @@ static WDOC *load_bytes( const u8 *data, u32 len, const char *name, int quiet )
 static WDOC *load_file( const char *path, int quiet )
 {
     WDOC *doc;
-    u8 *data;
-    u32 len;
+    uint8_t *data;
+    uint32_t len;
 
     data = read_file( path, &len );
     if ( data == NULL ) {
@@ -161,8 +161,8 @@ static int cmd_formats( void )
 
 static int cmd_detect( const char *path )
 {
-    u8 *data;
-    u32 len;
+    uint8_t *data;
+    uint32_t len;
     int id;
 
     data = read_file( path, &len );
@@ -179,8 +179,8 @@ static int cmd_dump( const char *path, const char *out_path )
 {
     WDOC *doc = load_file( path, 1 );
     OUT *out;
-    u8 *text;
-    u32 len;
+    uint8_t *text;
+    uint32_t len;
 
     if ( doc == NULL ) {
         return 2;
@@ -237,9 +237,9 @@ static int cmd_conv( const char *in_path, const char *out_path, const char *tag,
 }
 
 /* where two dumps part: the line, and both versions of it */
-static int compare( const u8 *one, u32 one_len, const u8 *two, u32 two_len )
+static int compare( const uint8_t *one, uint32_t one_len, const uint8_t *two, uint32_t two_len )
 {
-    u32 pos = 0, line = 1, start = 0, end;
+    unsigned int pos = 0, line = 1, start = 0, end;
 
     while ( pos < one_len && pos < two_len && one[pos] == two[pos] ) {
         if ( one[pos] == '\n' ) {
@@ -265,8 +265,8 @@ static int cmd_rt( const char *in_path, const char *tag, const char *variant_tex
 {
     WDOC *doc, *back;
     OUT *file_out, *dump1, *dump2;
-    u8 *bytes, *text1, *text2;
-    u32 len, len1, len2;
+    uint8_t *bytes, *text1, *text2;
+    uint32_t len, len1, len2;
     char name[32];
     int id, variant, rc, differ;
 

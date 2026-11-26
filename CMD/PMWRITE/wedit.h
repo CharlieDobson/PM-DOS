@@ -29,9 +29,9 @@ int   we_end( WDOC *doc, WPOS caret );          /* 0 = no memory: taken back */
 void  we_begin_more( WDOC *doc, STORY *story, WPOS caret, int kind );
 
 /* text at a place, which moves past it.  No paragraph ends in "text". */
-void  we_insert( WDOC *doc, STORY *story, WPOS *pos, const u16 *text, u32 len, u16 chp );
+void  we_insert( WDOC *doc, STORY *story, WPOS *pos, const uint16_t *text, unsigned int len, uint16_t chp );
 /* an object of the document's, as one character */
-void  we_insert_obj( WDOC *doc, STORY *story, WPOS *pos, int obj, u16 chp );
+void  we_insert_obj( WDOC *doc, STORY *story, WPOS *pos, int obj, uint16_t chp );
 /* the paragraph ended at a place, which becomes the start of the new one */
 void  we_split( WDOC *doc, STORY *story, WPOS *pos );
 /* everything from one place up to another, paragraph ends and all */
@@ -39,34 +39,34 @@ void  we_delete( WDOC *doc, STORY *story, WPOS from, WPOS to );
 /* an empty table of "rows" by "cols" cells, "width" wide in all, put in
    at a place - which becomes its first cell.  Text after the place
    goes below the table.  Nothing happens inside another table. */
-void  we_insert_table( WDOC *doc, STORY *story, WPOS *pos, int rows, int cols, s32 width );
+void  we_insert_table( WDOC *doc, STORY *story, WPOS *pos, int rows, int cols, int width );
 /* an empty row after the row that paragraph "row_end" ends; *pos is put in its first cell */
-void  we_add_row( WDOC *doc, STORY *story, u32 row_end, WPOS *pos );
+void  we_add_row( WDOC *doc, STORY *story, unsigned int row_end, WPOS *pos );
 /* ...and one above the row paragraph "pi" is in */
-void  we_add_row_above( WDOC *doc, STORY *story, u32 pi, WPOS *pos );
+void  we_add_row_above( WDOC *doc, STORY *story, unsigned int pi, WPOS *pos );
 
 /* the row paragraph "pi" is in: its first paragraph and its last, which
    has the row's TROW.  0 if "pi" is not in a table's row. */
-int   we_row_of( const STORY *story, u32 pi, u32 *first, u32 *end );
+int   we_row_of( const STORY *story, unsigned int pi, unsigned int *first, unsigned int *end );
 /* which of its row's cells paragraph "pi" is in, from 0: -1 if in none */
-int   we_cell_of( const STORY *story, u32 pi );
+int   we_cell_of( const STORY *story, unsigned int pi );
 
 /* the rows paragraphs "from" to "to" are in, taken out with what is in
    them; *pos is put where they were.  Both must be in one table. */
-void  we_delete_rows( WDOC *doc, STORY *story, u32 from, u32 to, WPOS *pos );
+void    we_delete_rows( WDOC *doc, STORY *story, unsigned int from, unsigned int to, WPOS *pos );
 /* an empty column beside the one paragraph "pi" is in - to its right if
    "after" - in every row of the table, as wide as that column; if the
    table would then pass "limit", every column is narrowed to fit.  *pos
    is put in the new cell of the row "pi" is in.  Nothing happens when a
    row already has MAX_CELLS cells. */
-void  we_insert_col( WDOC *doc, STORY *story, u32 pi, int after, s32 limit, WPOS *pos );
+void    we_insert_col( WDOC *doc, STORY *story, unsigned int pi, int after, int limit, WPOS *pos );
 /* the column paragraph "pi" is in, taken out of every row that has it;
    a row whose only column it is goes whole */
-void  we_delete_col( WDOC *doc, STORY *story, u32 pi, WPOS *pos );
+void    we_delete_col( WDOC *doc, STORY *story, unsigned int pi, WPOS *pos );
 /* how wide that column is in the row "pi" is in (0: not in a table),
    and the column made "width" wide in every row */
-s32   we_col_width( const STORY *story, u32 pi );
-void  we_set_col_width( WDOC *doc, STORY *story, u32 pi, s32 width );
+int     we_col_width( const STORY *story, unsigned int pi );
+void    we_set_col_width( WDOC *doc, STORY *story, unsigned int pi, int width );
 
 /* which parts of a CHP a change sets */
 #define CM_FONT         0x0001
@@ -74,12 +74,12 @@ void  we_set_col_width( WDOC *doc, STORY *story, u32 pi, s32 width );
 #define CM_COLOR        0x0004
 #define CM_HILITE       0x0008
 #define CM_FLAGS        0x0010  /* the CF_ bits in "flag_mask", and no others */
-void  we_set_chp( WDOC *doc, STORY *story, WPOS from, WPOS to, u32 mask, const CHP *value,
-                  u16 flag_mask );
+void  we_set_chp( WDOC *doc, STORY *story, WPOS from, WPOS to, uint32_t mask, const CHP *value,
+                  uint16_t flag_mask );
 /* one CHP with the same change made to it: what typing will use */
-void  chp_apply( CHP *chp, u32 mask, const CHP *value, u16 flag_mask );
+void  chp_apply( CHP *chp, uint32_t mask, const CHP *value, uint16_t flag_mask );
 /* 1 if every character from one place to another has all of "flags" */
-int   we_all_have( WDOC *doc, STORY *story, WPOS from, WPOS to, u16 flags );
+int   we_all_have( WDOC *doc, STORY *story, WPOS from, WPOS to, uint16_t flags );
 
 /* which parts of a PAP a change sets */
 #define PM_ALIGN        0x0001
@@ -93,8 +93,8 @@ int   we_all_have( WDOC *doc, STORY *story, WPOS from, WPOS to, u16 flags );
 #define PM_STYLE        0x0100
 #define PM_TABS         0x0200
 #define PM_FLAGS        0x0400  /* the PF_ bits in "flag_mask" */
-void  we_set_pap( WDOC *doc, STORY *story, u32 first, u32 last, u32 mask, const PAP *value,
-                  u16 flag_mask );
+void  we_set_pap( WDOC *doc, STORY *story, unsigned int first, unsigned int last, uint32_t mask, const PAP *value,
+                  uint16_t flag_mask );
 
 int   we_can_undo( const WDOC *doc );
 int   we_can_redo( const WDOC *doc );
@@ -107,7 +107,7 @@ void  we_forget( WDOC *doc );                   /* the history, not the document
 /* a number that is different after every change, undo and redo: how
    the screen knows to lay the document out again, and File > Save
    that there is something to save */
-u32   we_serial( const WDOC *doc );
+unsigned int we_serial( const WDOC *doc );
 
 /*
  * A piece of a document as a document of its own, which is what the
@@ -128,7 +128,7 @@ void  we_paste( WDOC *doc, STORY *story, WPOS *pos, WDOC *piece );
 /* from a place on (or back): 1 and where it starts, in one paragraph.
    The search stops at the story's end; the caller starts again from
    the other end if it wants to go round. */
-int   we_find( WDOC *doc, STORY *story, WPOS from, const u16 *what, u32 len, int flags, WPOS *at );
+int   we_find( WDOC *doc, STORY *story, WPOS from, const uint16_t *what, unsigned int len, int flags, WPOS *at );
 
 /* places */
 int   wpos_cmp( WPOS lhs, WPOS rhs );           /* <0, 0, >0 */

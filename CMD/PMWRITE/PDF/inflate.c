@@ -17,12 +17,12 @@
 #define FAST_MASK   ((1 << FAST_BITS) - 1)
 
 typedef struct {
-    u16 fast[1 << FAST_BITS];       /* length << 9 | symbol, 0 if longer */
-    u16 firstcode[16];
-    s32 maxcode[17];
-    u16 firstsymbol[16];
-    u8  size[288];
-    u16 value[288];
+    uint16_t fast[1 << FAST_BITS];  /* length << 9 | symbol, 0 if longer */
+    uint16_t firstcode[16];
+    int32_t  maxcode[17];
+    uint16_t firstsymbol[16];
+    uint8_t  size[288];
+    uint16_t value[288];
 } ZHUFF;
 
 #define M_HEAD      0
@@ -31,26 +31,26 @@ typedef struct {
 #define M_DONE      3
 
 typedef struct {
-    u32   bitbuf;
-    int   nbits;
-    int   mode, last, started;
-    int   src_ended;
-    u32   stored_left;
-    u32   copy_len, copy_dist;      /* a match not yet all copied */
-    u32   wpos;
-    ZHUFF zlen, zdist;
-    u8    window[WSIZE];
+    uint32_t bitbuf;
+    int      nbits;
+    int      mode, last, started;
+    int      src_ended;
+    uint32_t stored_left;
+    uint32_t copy_len, copy_dist;   /* a match not yet all copied */
+    uint32_t wpos;
+    ZHUFF    zlen, zdist;
+    uint8_t  window[WSIZE];
 } INFL;
 
-static const u16 len_base[31] = {
+static const uint16_t len_base[31] = {
     3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31, 35, 43, 51, 59, 67, 83, 99, 115,
     131, 163, 195, 227, 258, 0, 0 };
-static const u8 len_extra[31] = {
+static const uint8_t len_extra[31] = {
     0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0, 0, 0 };
-static const u16 dist_base[32] = {
+static const uint16_t dist_base[32] = {
     1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193, 257, 385, 513, 769, 1025, 1537,
     2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577, 0, 0 };
-static const u8 dist_extra[32] = {
+static const uint8_t dist_extra[32] = {
     0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12,
     13, 13, 0, 0 };
 
@@ -65,7 +65,7 @@ static int bit_reverse( int val, int bits )
     return out;
 }
 
-static int huff_build( ZHUFF *huff, const u8 *sizes, int count )
+static int huff_build( ZHUFF *huff, const uint8_t *sizes, int count )
 {
     int next_code[16], counts[17];
     int index, code = 0, sym = 0, len, slot, rev;
@@ -78,13 +78,13 @@ static int huff_build( ZHUFF *huff, const u8 *sizes, int count )
     counts[0] = 0;
     for ( index = 1; index < 16; index++ ) {
         next_code[index] = code;
-        huff->firstcode[index] = (u16)code;
-        huff->firstsymbol[index] = (u16)sym;
+        huff->firstcode[index] = (uint16_t)code;
+        huff->firstsymbol[index] = (uint16_t)sym;
         code += counts[index];
         if ( counts[index] && code - 1 >= (1 << index) ) {
             return 0;
         }
-        huff->maxcode[index] = (s32)code << (16 - index);
+        huff->maxcode[index] = (int32_t)code << (16 - index);
         code <<= 1;
         sym += counts[index];
     }
@@ -95,12 +95,12 @@ static int huff_build( ZHUFF *huff, const u8 *sizes, int count )
             continue;
         }
         slot = next_code[len] - huff->firstcode[len] + huff->firstsymbol[len];
-        huff->size[slot] = (u8)len;
-        huff->value[slot] = (u16)index;
+        huff->size[slot] = (uint8_t)len;
+        huff->value[slot] = (uint16_t)index;
         if ( len <= FAST_BITS ) {
             for ( rev = bit_reverse( next_code[len], len ); rev < (1 << FAST_BITS);
                   rev += 1 << len ) {
-                huff->fast[rev] = (u16)((len << 9) | index);
+                huff->fast[rev] = (uint16_t)((len << 9) | index);
             }
         }
         next_code[len]++;
@@ -118,14 +118,14 @@ static void need_bits( INFL *st, IN *src, int count )
             ch = 0;
             st->src_ended++;
         }
-        st->bitbuf |= (u32)ch << st->nbits;
+        st->bitbuf |= (uint32_t)ch << st->nbits;
         st->nbits += 8;
     }
 }
 
-static u32 get_bits( INFL *st, IN *src, int count )
+static uint32_t get_bits( INFL *st, IN *src, int count )
 {
-    u32 val;
+    uint32_t val;
 
     if ( count == 0 ) {
         return 0;
@@ -166,9 +166,9 @@ static int huff_decode( INFL *st, IN *src, ZHUFF *huff )
 
 static int dynamic_tables( INFL *st, IN *src )
 {
-    static const u8 order[19] = { 16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15 };
+    static const uint8_t order[19] = { 16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15 };
     ZHUFF *codes = &st->zdist;      /* borrowed: it is built last */
-    u8 lens[288 + 32 + 138], clens[19];
+    uint8_t lens[288 + 32 + 138], clens[19];
     int hlit = (int)get_bits( st, src, 5 ) + 257;
     int hdist = (int)get_bits( st, src, 5 ) + 1;
     int hclen = (int)get_bits( st, src, 4 ) + 4;
@@ -176,7 +176,7 @@ static int dynamic_tables( INFL *st, IN *src )
 
     mem_set( clens, 0, sizeof( clens ) );
     for ( index = 0; index < hclen; index++ ) {
-        clens[order[index]] = (u8)get_bits( st, src, 3 );
+        clens[order[index]] = (uint8_t)get_bits( st, src, 3 );
     }
     if ( !huff_build( codes, clens, 19 ) ) {
         return 0;
@@ -187,7 +187,7 @@ static int dynamic_tables( INFL *st, IN *src )
             return 0;
         }
         if ( sym < 16 ) {
-            lens[index++] = (u8)sym;
+            lens[index++] = (uint8_t)sym;
             continue;
         }
         fill = 0;
@@ -205,7 +205,7 @@ static int dynamic_tables( INFL *st, IN *src )
         if ( index + repeat > total ) {
             return 0;
         }
-        mem_set( lens + index, fill, (u32)repeat );
+        mem_set( lens + index, fill, (uint32_t)repeat );
         index += repeat;
     }
     return huff_build( &st->zlen, lens, hlit ) && huff_build( &st->zdist, lens + hlit, hdist );
@@ -213,7 +213,7 @@ static int dynamic_tables( INFL *st, IN *src )
 
 static void fixed_tables( INFL *st )
 {
-    u8 lens[288];
+    uint8_t lens[288];
 
     mem_set( lens, 8, 144 );
     mem_set( lens + 144, 9, 112 );
@@ -228,8 +228,8 @@ static int infl_fill( IN *in )
 {
     INFL *st = IN_STATE( in, INFL );
     IN *src = in->src;
-    u8 *win = st->window;
-    u32 wpos, start, from, count;
+    uint8_t *win = st->window;
+    uint32_t wpos, start, from, count;
     int sym, ch, first, second;
 
     if ( !st->started ) {
@@ -242,7 +242,7 @@ static int infl_fill( IN *in )
             return 0;
         }
         if ( (first & 0x0F) != 8 || ((first << 8) | second) % 31 != 0 ) {
-            st->bitbuf = (u32)first | ((u32)second << 8);
+            st->bitbuf = (uint32_t)first | ((uint32_t)second << 8);
             st->nbits = 16;
         } else if ( second & 0x20 ) {
             in_skip( src, 4 );
@@ -300,7 +300,7 @@ static int infl_fill( IN *in )
                 break;
             }
             if ( st->nbits ) {              /* what the bit reader had taken */
-                win[wpos++] = (u8)get_bits( st, src, 8 );
+                win[wpos++] = (uint8_t)get_bits( st, src, 8 );
                 st->stored_left--;
                 break;
             }
@@ -333,7 +333,7 @@ static int infl_fill( IN *in )
                 if ( sym >= 256 || sym < 0 ) {
                     break;
                 }
-                win[wpos++] = (u8)sym;
+                win[wpos++] = (uint8_t)sym;
                 if ( wpos == WSIZE ) {
                     sym = -2;
                     break;

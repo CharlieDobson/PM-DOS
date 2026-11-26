@@ -22,8 +22,8 @@
 /* Blocking I/O callbacks.
  *   send: write up to 'len' bytes; return bytes written (>0) or <0 on error.
  *   recv: read up to 'len' bytes; return >0 bytes, 0 on close, <0 on error.  */
-typedef int (*tls_send_fn)(void *ctx, const unsigned char *buf, int len);
-typedef int (*tls_recv_fn)(void *ctx, unsigned char *buf, int len);
+typedef int (*tls_send_fn)(void *ctx, const uint8_t *buf, int len);
+typedef int (*tls_recv_fn)(void *ctx, uint8_t *buf, int len);
 
 typedef struct tls_conn tls_conn;
 
@@ -39,7 +39,7 @@ void      tls_free(tls_conn *c);
  * If never called, the handshake performs no certificate validation.
  */
 void tls_set_verify(tls_conn *c, const char *host, const char *now14,
-                    const unsigned char *ca_der, int ca_len);
+                    const uint8_t *ca_der, int ca_len);
 
 /* Reason a handshake failed certificate validation (0 if not applicable). */
 int  tls_verify_error(tls_conn *c);
@@ -64,12 +64,12 @@ int tls_client_handshake(tls_conn *c, const char *host,
 #define TLS_HS_ERROR    (-1)
 
 void tls_hs_start(tls_conn *c, const char *host);          /* begin (queues CH on 1st pump) */
-int  tls_hs_feed(tls_conn *c, const unsigned char *data, int len); /* add inbound bytes */
+int  tls_hs_feed(tls_conn *c, const uint8_t *data, int len); /* add inbound bytes */
 int  tls_hs_pump(tls_conn *c);                             /* advance; WANT_READ/DONE/ERROR */
-int  tls_hs_out_ptr(tls_conn *c, unsigned char **ptr);     /* pending outbound: len + ptr */
+int  tls_hs_out_ptr(tls_conn *c, uint8_t **ptr);           /* pending outbound: len + ptr */
 void tls_hs_out_consume(tls_conn *c, int n);               /* mark n outbound bytes sent */
 int  tls_hs_pending_output(tls_conn *c);
-int  tls_hs_leftover(tls_conn *c, unsigned char **ptr);    /* inbound bytes past Finished */
+int  tls_hs_leftover(tls_conn *c, uint8_t **ptr);          /* inbound bytes past Finished */
 
 /* --------------------------------------------------------------------------
  * Introspection - read-only views of the negotiated connection, for hosts
@@ -82,13 +82,13 @@ int tls_is_established(const tls_conn *c);
 int tls_get_cert_count(const tls_conn *c);     /* certs the peer presented   */
 /* Copy chain[index] (0 = leaf) into 'out'.  Pass out=NULL to query the size.
    Returns the DER length, 0 if no such cert, -1 if 'outcap' is too small. */
-int tls_get_cert(const tls_conn *c, int index, unsigned char *out, int outcap);
+int tls_get_cert(const tls_conn *c, int index, uint8_t *out, int outcap);
 
 /* Application data over the established connection (blocking callbacks). */
 int tls_write_app(tls_conn *c, tls_send_fn send, void *ioctx,
-                  const unsigned char *data, int len);
+                  const uint8_t *data, int len);
 int tls_read_app(tls_conn *c, tls_recv_fn recv, void *ioctx,
-                 unsigned char *out, int outcap);   /* >0, 0=closed, <0=err */
+                 uint8_t *out, int outcap);         /* >0, 0=closed, <0=err */
 
 /* --------------------------------------------------------------------------
  * Buffer-oriented app-data crypto (for driving TLS from an async record
@@ -98,19 +98,19 @@ int tls_read_app(tls_conn *c, tls_recv_fn recv, void *ioctx,
 
 /* Encrypt one app-data fragment into a complete record.  Returns record
    length written to 'out', or -1. */
-int tls_app_encrypt(tls_conn *c, const unsigned char *in, int len,
-                    unsigned char *out, int outcap);
+int tls_app_encrypt(tls_conn *c, const uint8_t *in, int len,
+                    uint8_t *out, int outcap);
 
 /* Encrypt one fragment as an arbitrary content type (tls_app_encrypt is fixed
    at TLS_CT_APPLICATION_DATA).  Used to emit a protected close_notify alert.
    Returns the record length, or -1. */
 int tls_app_encrypt_type(tls_conn *c, int content_type,
-                         const unsigned char *in, int len,
-                         unsigned char *out, int outcap);
+                         const uint8_t *in, int len,
+                         uint8_t *out, int outcap);
 
 /* Decrypt one complete record.  Returns plaintext length (>=0) and sets
    *content_type, or -1 on MAC/parse failure. */
-int tls_app_decrypt(tls_conn *c, const unsigned char *rec, int reclen,
-                    unsigned char *out, int outcap, int *content_type);
+int tls_app_decrypt(tls_conn *c, const uint8_t *rec, int reclen,
+                    uint8_t *out, int outcap, int *content_type);
 
 #endif /* NETSPLOR_TLSHS_H */

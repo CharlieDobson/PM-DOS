@@ -7,8 +7,8 @@
 #include <string.h>
 
 void rsa_pubkey_init(rsa_pubkey *k,
-                     const unsigned char *n, int nlen,
-                     const unsigned char *e, int elen)
+                     const uint8_t *n, int nlen,
+                     const uint8_t *e, int elen)
 {
     bn_from_bytes(&k->n, n, nlen);
     bn_from_bytes(&k->e, e, elen);
@@ -16,7 +16,7 @@ void rsa_pubkey_init(rsa_pubkey *k,
 }
 
 void rsa_public_raw(const rsa_pubkey *k,
-                    const unsigned char *in, unsigned char *out)
+                    const uint8_t *in, uint8_t *out)
 {
     bignum m, c;
     bn_from_bytes(&m, in, k->klen);
@@ -25,10 +25,10 @@ void rsa_public_raw(const rsa_pubkey *k,
 }
 
 int rsa_pkcs1_encrypt(const rsa_pubkey *k,
-                      const unsigned char *msg, int mlen,
-                      const unsigned char *rnd, unsigned char *out)
+                      const uint8_t *msg, int mlen,
+                      const uint8_t *rnd, uint8_t *out)
 {
-    unsigned char em[BN_WORDS * 4];
+    uint8_t em[BN_WORDS * 4];
     int klen = k->klen, pslen, i;
 
     /* EM = 00 || 02 || PS || 00 || M ; PS must be >= 8 bytes. */
@@ -39,7 +39,7 @@ int rsa_pkcs1_encrypt(const rsa_pubkey *k,
     em[0] = 0x00;
     em[1] = 0x02;
     for (i = 0; i < pslen; i++) {
-        unsigned char b = rnd[i];
+        uint8_t b = rnd[i];
         if (b == 0x00)
             b = 0x01;                           /* PS bytes must be nonzero */
         em[2 + i] = b;
@@ -54,15 +54,15 @@ int rsa_pkcs1_encrypt(const rsa_pubkey *k,
 
 /* DER DigestInfo prefixes (RFC 8017 / PKCS#1 v2.2), the same 19 bytes for
    each SHA-2 hash but for the OID's last byte and the digest length. */
-static const unsigned char SHA256_DIGESTINFO[19] = {
+static const uint8_t SHA256_DIGESTINFO[19] = {
     0x30,0x31,0x30,0x0d,0x06,0x09,0x60,0x86,0x48,0x01,
     0x65,0x03,0x04,0x02,0x01,0x05,0x00,0x04,0x20
 };
-static const unsigned char SHA384_DIGESTINFO[19] = {
+static const uint8_t SHA384_DIGESTINFO[19] = {
     0x30,0x41,0x30,0x0d,0x06,0x09,0x60,0x86,0x48,0x01,
     0x65,0x03,0x04,0x02,0x02,0x05,0x00,0x04,0x30
 };
-static const unsigned char SHA512_DIGESTINFO[19] = {
+static const uint8_t SHA512_DIGESTINFO[19] = {
     0x30,0x51,0x30,0x0d,0x06,0x09,0x60,0x86,0x48,0x01,
     0x65,0x03,0x04,0x02,0x03,0x05,0x00,0x04,0x40
 };
@@ -70,11 +70,11 @@ static const unsigned char SHA512_DIGESTINFO[19] = {
 /* RSASSA-PKCS1-v1_5 verify for a SHA-2 digest of 32, 48 or 64 bytes:
    EM = 00 01 FF..FF 00 || DigestInfo || hash.  0 if valid, -1 otherwise. */
 int rsa_pkcs1_verify( const rsa_pubkey *k, int hlen,
-                      const unsigned char *hash,
-                      const unsigned char *sig, int siglen )
+                      const uint8_t *hash,
+                      const uint8_t *sig, int siglen )
 {
-    unsigned char em[BN_WORDS * 4];
-    const unsigned char *info;
+    uint8_t em[BN_WORDS * 4];
+    const uint8_t *info;
     int klen = k->klen, tlen, pslen, i;
 
     if ( hlen == 32 ) {
@@ -104,15 +104,15 @@ int rsa_pkcs1_verify( const rsa_pubkey *k, int hlen,
 }
 
 int rsa_pkcs1_verify_sha256(const rsa_pubkey *k,
-                            const unsigned char hash[32],
-                            const unsigned char *sig, int siglen)
+                            const uint8_t hash[32],
+                            const uint8_t *sig, int siglen)
 {
     return rsa_pkcs1_verify( k, 32, hash, sig, siglen );
 }
 
 /* One-shot hash of two pieces, by digest length: SHA-256, -384 or -512. */
-static void hash2( int hlen, const unsigned char *a, int alen,
-                   const unsigned char *b, int blen, unsigned char *out )
+static void hash2( int hlen, const uint8_t *a, int alen,
+                   const uint8_t *b, int blen, uint8_t *out )
 {
     if ( hlen == 32 ) {
         SHA256_CTX c;
@@ -138,15 +138,15 @@ static void hash2( int hlen, const unsigned char *a, int alen,
 }
 
 /* MGF1 mask generation (RFC 8017 App. B.2.1) over the same hash. */
-static void mgf1( int hlen, const unsigned char *seed, int seedlen,
-                  unsigned char *mask, int masklen )
+static void mgf1( int hlen, const uint8_t *seed, int seedlen,
+                  uint8_t *mask, int masklen )
 {
-    unsigned char cnt[4], md[64];
-    unsigned long counter = 0;
+    uint8_t cnt[4], md[64];
+    uint32_t counter = 0;
     int off = 0, n;
     while ( off < masklen ) {
-        cnt[0] = (unsigned char)( counter >> 24 ); cnt[1] = (unsigned char)( counter >> 16 );
-        cnt[2] = (unsigned char)( counter >> 8 );  cnt[3] = (unsigned char)counter;
+        cnt[0] = (uint8_t)( counter >> 24 ); cnt[1] = (uint8_t)( counter >> 16 );
+        cnt[2] = (uint8_t)( counter >> 8 );  cnt[3] = (uint8_t)counter;
         hash2( hlen, seed, seedlen, cnt, 4, md );
         n = masklen - off;
         if ( n > hlen ) n = hlen;
@@ -159,12 +159,12 @@ static void mgf1( int hlen, const unsigned char *seed, int seedlen,
    the only parameters TLS uses (rsa_pss_rsae_sha256/384/512).
    EMSA-PSS-VERIFY per RFC 8017 9.1.2.  Returns 0 if valid, -1 otherwise. */
 int rsa_pss_verify( const rsa_pubkey *k, int hlen,
-                    const unsigned char *hash,
-                    const unsigned char *sig, int siglen )
+                    const uint8_t *hash,
+                    const uint8_t *sig, int siglen )
 {
-    unsigned char full[BN_WORDS * 4];
-    unsigned char db[BN_WORDS * 4], mask[BN_WORDS * 4], zeros[8], hp[64];
-    const unsigned char *em, *H, *salt;
+    uint8_t full[BN_WORDS * 4];
+    uint8_t db[BN_WORDS * 4], mask[BN_WORDS * 4], zeros[8], hp[64];
+    const uint8_t *em, *H, *salt;
     int klen = k->klen, modbits, embits, emlen, maskbits;
     int sLen = hlen, dblen, i;
 
@@ -194,9 +194,9 @@ int rsa_pss_verify( const rsa_pubkey *k, int hlen,
 
     mgf1( hlen, H, hlen, mask, dblen );
     for ( i = 0; i < dblen; i++ ) {
-        db[i] = (unsigned char)( em[i] ^ mask[i] );
+        db[i] = (uint8_t)( em[i] ^ mask[i] );
     }
-    if ( maskbits > 0 ) db[0] = (unsigned char)( db[0] & ( 0xFF >> maskbits ) );
+    if ( maskbits > 0 ) db[0] = (uint8_t)( db[0] & ( 0xFF >> maskbits ) );
 
     /* DB = PS(0x00..) || 0x01 || salt */
     for ( i = 0; i < dblen - sLen - 1; i++ ) {
@@ -208,7 +208,7 @@ int rsa_pss_verify( const rsa_pubkey *k, int hlen,
     /* H' = Hash( 00*8 || mHash || salt ): mHash and salt are hlen each */
     memset( zeros, 0, 8 );
     {
-        unsigned char ms[128];
+        uint8_t ms[128];
         memcpy( ms, hash, hlen );
         memcpy( ms + hlen, salt, sLen );
         hash2( hlen, zeros, 8, ms, hlen + sLen, hp );
@@ -217,8 +217,8 @@ int rsa_pss_verify( const rsa_pubkey *k, int hlen,
 }
 
 int rsa_pss_verify_sha256(const rsa_pubkey *k,
-                          const unsigned char hash[32],
-                          const unsigned char *sig, int siglen)
+                          const uint8_t hash[32],
+                          const uint8_t *sig, int siglen)
 {
     return rsa_pss_verify( k, 32, hash, sig, siglen );
 }

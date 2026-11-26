@@ -33,23 +33,23 @@
 #define INV_2Q_Q30      379625062L      /* 1 / (2 * 1.41421) in Q30 */
 
 typedef struct {
-    s32 b0, b1, b2, a1, a2;             /* Q28, divided by a0 */
+    int32_t b0, b1, b2, a1, a2;         /* Q28, divided by a0 */
 } BIQUAD;
 
 static BIQUAD filt[EQ_BANDS];
 static int active[EQ_BANDS];
 static int nactive;
-static s32 hist_x1[EQ_BANDS][2], hist_x2[EQ_BANDS][2];
-static s32 hist_y1[EQ_BANDS][2], hist_y2[EQ_BANDS][2];
-static u32 pre_gain = 65536UL;          /* Q16 */
+static int32_t hist_x1[EQ_BANDS][2], hist_x2[EQ_BANDS][2];
+static int32_t hist_y1[EQ_BANDS][2], hist_y2[EQ_BANDS][2];
+static uint32_t pre_gain = 65536UL;     /* Q16 */
 static int nch = 2;
-static u32 rate_now;
-static s32 *work;
+static uint32_t rate_now;
+static int32_t *work;
 
 void eqtd_init( void )
 {
     if ( work == NULL ) {
-        work = (s32 *)try_alloc( MAX_FRAMES * 2 * sizeof( s32 ) );
+        work = (int32_t *)try_alloc( MAX_FRAMES * 2 * sizeof( int32_t ) );
     }
 }
 
@@ -61,10 +61,10 @@ void eqtd_done( void )
     }
 }
 
-void eqtd_set( const EQSET *eq, u32 rate, int channels )
+void eqtd_set( const EQSET *eq, uint32_t rate, int channels )
 {
-    s32 sinv, cosv, alpha, alpha_a, alpha_div, a0, b0, b2, a2;
-    u32 turn, gain;
+    int32_t sinv, cosv, alpha, alpha_a, alpha_div, a0, b0, b2, a2;
+    uint32_t turn, gain;
     int band;
 
     if ( rate != rate_now || channels != nch ) {
@@ -80,7 +80,7 @@ void eqtd_set( const EQSET *eq, u32 rate, int channels )
     if ( eq == NULL || !eq->on || rate < 8000 ) {
         return;
     }
-    pre_gain = eq_db_gain( (s32)eq->preamp * 128 );
+    pre_gain = eq_db_gain( (int32_t)eq->preamp * 128 );
     for ( band = 0; band < EQ_BANDS; band++ ) {
         if ( eq->band[band] == 0 ) {
             continue;
@@ -92,10 +92,10 @@ void eqtd_set( const EQSET *eq, u32 rate, int channels )
         }
         turn = fx_umuldiv( 125UL << band, 1UL << 30, rate );
         fx_sincos( turn, &sinv, &cosv );
-        gain = eq_db_gain( (s32)eq->band[band] * 64 );          /* A: half the decibels */
+        gain = eq_db_gain( (int32_t)eq->band[band] * 64 );      /* A: half the decibels */
         alpha = fx_mul30( sinv, INV_2Q_Q30 );
-        alpha_a = fx_mul16( alpha, (s32)gain );
-        alpha_div = fx_muldiv( alpha, 65536L, (s32)gain );
+        alpha_a = fx_mul16( alpha, (int32_t)gain );
+        alpha_div = fx_muldiv( alpha, 65536L, (int32_t)gain );
         a0 = 0x40000000L + alpha_div;
         b0 = 0x40000000L + alpha_a;
         b2 = 0x40000000L - alpha_a;
@@ -115,32 +115,32 @@ int eqtd_cost( void )
     return nactive * 5 + (pre_gain != 65536UL ? 1 : 0);
 }
 
-void eqtd_apply( s16 *pcm, u32 frames )
+void eqtd_apply( int16_t *pcm, unsigned int frames )
 {
-    u32 i, total, ch;
+    unsigned int i, total, ch;
     int k, band;
     const BIQUAD *bq;
-    s32 x, y, x1, x2, y1, y2, val;
+    int32_t x, y, x1, x2, y1, y2, val;
 
     if ( work == NULL || (nactive == 0 && pre_gain == 65536UL) ) {
         return;
     }
     while ( frames > 0 ) {
-        u32 now = frames < MAX_FRAMES ? frames : MAX_FRAMES;
+        unsigned int now = frames < MAX_FRAMES ? frames : MAX_FRAMES;
 
-        total = now * (u32)nch;
+        total = now * (unsigned int)nch;
         for ( i = 0; i < total; i++ ) {
-            work[i] = (s32)pcm[i] << 8;
+            work[i] = (int32_t)pcm[i] << 8;
         }
         for ( k = 0; k < nactive; k++ ) {
             bq = &filt[k];
             band = active[k];
-            for ( ch = 0; ch < (u32)nch; ch++ ) {
+            for ( ch = 0; ch < (unsigned int)nch; ch++ ) {
                 x1 = hist_x1[band][ch];
                 x2 = hist_x2[band][ch];
                 y1 = hist_y1[band][ch];
                 y2 = hist_y2[band][ch];
-                for ( i = ch; i < total; i += (u32)nch ) {
+                for ( i = ch; i < total; i += (unsigned int)nch ) {
                     x = work[i];
                     y = fx_mul28( bq->b0, x ) + fx_mul28( bq->b1, x1 ) + fx_mul28( bq->b2, x2 )
                         - fx_mul28( bq->a1, y1 ) - fx_mul28( bq->a2, y2 );
@@ -157,8 +157,8 @@ void eqtd_apply( s16 *pcm, u32 frames )
             }
         }
         for ( i = 0; i < total; i++ ) {
-            val = pre_gain == 65536UL ? work[i] >> 8 : fx_mulsh( work[i], (s32)pre_gain, 24 );
-            pcm[i] = (s16)FX_SAT16( val );
+            val = pre_gain == 65536UL ? work[i] >> 8 : fx_mulsh( work[i], (int32_t)pre_gain, 24 );
+            pcm[i] = (int16_t)FX_SAT16( val );
         }
         pcm += total;
         frames -= now;

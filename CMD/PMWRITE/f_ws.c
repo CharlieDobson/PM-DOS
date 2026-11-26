@@ -55,36 +55,36 @@ static const char *const ws_variants[] = {
 #define WT_SUPER    0x40
 
 /* the sixteen colors of a color sequence */
-static const u32 ws_colors[16] = {
+static const uint32_t ws_colors[16] = {
     0x000000UL, 0x0000AAUL, 0x00AA00UL, 0x00AAAAUL, 0xAA0000UL, 0xAA00AAUL, 0xAA5500UL, 0xAAAAAAUL,
     0x555555UL, 0x5555FFUL, 0x55FF55UL, 0x55FFFFUL, 0xFF5555UL, 0xFF55FFUL, 0xFFFF55UL, 0xFFFFFFUL
 };
 
 typedef struct {
-    const u8 *data;
-    u32   len;
-    WDOC *doc;
-    WBUILD wb;
-    int   new_era;          /* release 5 or later: it has the header */
-    int   depth;            /* in a note */
-    u32   toggles;          /* WT_* that are on */
-    u8    wunder;           /* .ul off: spaces are not underlined */
-    u8    skip_next;        /* the next character overprints: dropped */
-    u8    line_start;       /* at column 1 after a hard return */
-    u8    soft_seen;        /* the paragraph has spaces WordStar added */
-    u8    justify;          /* 0 not said, 1 .oj on, 2 .oj off */
-    u8    center;           /* .oc on */
-    u8    page_next;
-    u8    text_seen;        /* the body has text: the page is settled */
-    u8    omit_pn;          /* .op */
-    u8    hdr_seen, ftr_seen;       /* a bit for each line given */
-    s32   col;              /* a column's width, twips */
-    s32   po, lm, rm, pm;   /* page offset; margins from it; .pm or -1 */
-    s32   page_rm;          /* the right margin the page was settled with */
-    s32   mt, mb, pl;
+    const uint8_t *data;
+    uint32_t len;
+    WDOC    *doc;
+    WBUILD   wb;
+    int      new_era;         /* release 5 or later: it has the header */
+    int      depth;           /* in a note */
+    uint32_t toggles;         /* WT_* that are on */
+    uint8_t  wunder;          /* .ul off: spaces are not underlined */
+    uint8_t  skip_next;       /* the next character overprints: dropped */
+    uint8_t  line_start;      /* at column 1 after a hard return */
+    uint8_t  soft_seen;       /* the paragraph has spaces WordStar added */
+    uint8_t  justify;         /* 0 not said, 1 .oj on, 2 .oj off */
+    uint8_t  center;          /* .oc on */
+    uint8_t  page_next;
+    uint8_t  text_seen;       /* the body has text: the page is settled */
+    uint8_t  omit_pn;         /* .op */
+    uint8_t  hdr_seen, ftr_seen;    /* a bit for each line given */
+    int      col;             /* a column's width, twips */
+    int      po, lm, rm, pm;  /* page offset; margins from it; .pm or -1 */
+    int      page_rm;         /* the right margin the page was settled with */
+    int      mt, mb, pl;
 } WS;
 
-static void ws_run( WS *ws, u32 pos, u32 end, int mode );
+static void ws_run( WS *ws, uint32_t pos, uint32_t end, int mode );
 
 #define WSM_BODY    0
 #define WSM_HDRFTR  1       /* '#' is the page number */
@@ -93,7 +93,7 @@ static void ws_run( WS *ws, u32 pos, u32 end, int mode );
 /* ------------------------------------------------------------------ */
 /* is it WordStar                                                      */
 /* ------------------------------------------------------------------ */
-static int ws_header( const u8 *data, u32 len )
+static int ws_header( const uint8_t *data, uint32_t len )
 {
     return len >= 128 && data[0] == 0x1D && LE16( data + 1 ) == 0x7D && data[3] == 0 &&
            LE16( data + 125 ) == 0x7D && data[127] == 0x1D;
@@ -112,7 +112,7 @@ static const char ws_merge[] = "dfrvavsvdmcsfirpifeleigomaaw";
 
 static int ws_in_list( const char *list, int one, int two )
 {
-    u32 index;
+    unsigned int index;
 
     for ( index = 0; list[index]; index += 2 ) {
         if ( list[index] == one && list[index + 1] == two ) {
@@ -122,9 +122,10 @@ static int ws_in_list( const char *list, int one, int two )
     return 0;
 }
 
-static int ws_detect( const u8 *data, u32 len, const char *ext )
+static int ws_detect( const uint8_t *data, uint32_t len, const char *ext )
 {
-    u32 look = len < 4096 ? len : 4096, index, marks = 0, strong = 0;
+    uint32_t look = len < 4096 ? len : 4096;
+    unsigned int index, marks = 0, strong = 0;
     int by_name = str_cmp( ext, "WS" ) == 0 || str_cmp( ext, "WSD" ) == 0;
     int byte, one, two, at_start = 1, sure;
 
@@ -174,16 +175,16 @@ static int ws_detect( const u8 *data, u32 len, const char *ext )
 
 /* a length a dot command gives: "8" is columns or lines ("unit" twips
    each), "1.25"" inches.  -1 if there is no number. */
-static s32 ws_measure( const char *arg, s32 unit )
+static int ws_measure( const char *arg, int unit )
 {
-    u32 whole = 0, frac = 0, digits = 0, scale = 0;
+    unsigned int whole = 0, frac = 0, digits = 0, scale = 0;
 
     while ( *arg == ' ' ) {
         arg++;
     }
     while ( *arg >= '0' && *arg <= '9' ) {
         if ( whole < 10000 ) {
-            whole = whole * 10 + (u32)(*arg - '0');
+            whole = whole * 10 + (unsigned int)(*arg - '0');
         }
         arg++;
         digits++;
@@ -192,7 +193,7 @@ static s32 ws_measure( const char *arg, s32 unit )
         arg++;
         while ( *arg >= '0' && *arg <= '9' ) {
             if ( scale < 2 ) {
-                frac = frac * 10 + (u32)(*arg - '0');
+                frac = frac * 10 + (unsigned int)(*arg - '0');
                 scale++;
             }
             arg++;
@@ -209,12 +210,12 @@ static s32 ws_measure( const char *arg, s32 unit )
         if ( whole > 40 ) {
             whole = 40;
         }
-        return (s32)((whole * 100 + frac) * 1440 / 100);
+        return (int)((whole * 100 + frac) * 1440 / 100);
     }
     if ( whole > 1000 ) {
         whole = 1000;
     }
-    return (s32)whole * unit;
+    return (int)whole * unit;
 }
 
 static int ws_on( const char *arg, int otherwise )
@@ -233,7 +234,7 @@ static int ws_on( const char *arg, int otherwise )
 
 static void ws_looks( WS *ws )
 {
-    u16 flags = 0;
+    uint16_t flags = 0;
 
     if ( ws->toggles & (WT_BOLD | WT_DOUBLE) ) {
         flags |= CF_BOLD;
@@ -261,7 +262,7 @@ static void ws_looks( WS *ws )
 static void ws_settle( WS *ws )
 {
     PAGESETUP *page = &ws->doc->page;
-    s32 right;
+    int right;
 
     if ( ws->text_seen || ws->depth ) {
         return;
@@ -276,7 +277,7 @@ static void ws_settle( WS *ws )
     page->height = ws->pl;
 }
 
-static void ws_char( WS *ws, u32 code )
+static void ws_char( WS *ws, uint32_t code )
 {
     if ( ws->skip_next ) {
         ws->skip_next = 0;              /* it was struck over the one before */
@@ -289,7 +290,7 @@ static void ws_char( WS *ws, u32 code )
 static void ws_par( WS *ws )
 {
     PAP *pap = &ws->wb.pap;
-    s32 value;
+    int value;
 
     ws_settle( ws );
     value = ws->lm;
@@ -298,8 +299,8 @@ static void ws_par( WS *ws )
     pap->right = value < -14400 ? -14400 : value > 20000 ? 20000 : value;
     value = ws->pm >= 0 ? ws->pm - ws->lm : 0;
     pap->first = value < -20000 ? -20000 : value > 20000 ? 20000 : value;
-    pap->align = (u8)(ws->center ? AL_CENTER : ws->justify == 1 ? AL_JUSTIFY :
-                      ws->justify == 0 && ws->soft_seen ? AL_JUSTIFY : AL_LEFT);
+    pap->align = (uint8_t)(ws->center ? AL_CENTER : ws->justify == 1 ? AL_JUSTIFY :
+                           ws->justify == 0 && ws->soft_seen ? AL_JUSTIFY : AL_LEFT);
     pap->flags = 0;
     if ( ws->page_next && ws->depth == 0 ) {
         pap->flags = PF_PAGEBEFORE;
@@ -314,7 +315,7 @@ static void ws_par( WS *ws )
 static void ws_soft_return( WS *ws )
 {
     WPARA *para = ws->wb.para;
-    u16 last;
+    uint16_t last;
 
     if ( para == NULL || para->len == 0 ) {
         return;
@@ -337,11 +338,11 @@ static void ws_page( WS *ws )
 }
 
 /* text in another story, in the looks the text is in now */
-static void ws_sub( WS *ws, STORY *story, u32 pos, u32 end, int mode )
+static void ws_sub( WS *ws, STORY *story, uint32_t pos, uint32_t end, int mode )
 {
-    WBUILD keep_wb;
-    u32 keep_toggles = ws->toggles;
-    u8  keep_soft = ws->soft_seen, keep_skip = ws->skip_next, keep_start = ws->line_start;
+    WBUILD   keep_wb;
+    uint32_t keep_toggles = ws->toggles;
+    uint8_t  keep_soft = ws->soft_seen, keep_skip = ws->skip_next, keep_start = ws->line_start;
 
     if ( story == NULL || ws->depth >= WS_DEPTH ) {
         return;
@@ -371,27 +372,27 @@ static void ws_sub( WS *ws, STORY *story, u32 pos, u32 end, int mode )
 static void ws_tabs( WS *ws, const char *list, int ruler )
 {
     WTAB tabs[MAX_TABS];
-    u32 index;
-    s32 where;
+    unsigned int index;
+    int where;
     int count = 0, kind, inches;
 
     mem_set( tabs, 0, sizeof( tabs ) );
     if ( ruler ) {
         for ( index = 0; list[index] && index < 255; index++ ) {
             if ( list[index] == 'L' ) {
-                ws->lm = (s32)index * ws->col;
+                ws->lm = (int)index * ws->col;
             } else if ( list[index] == 'R' ) {
-                ws->rm = (s32)(index + 1) * ws->col;
+                ws->rm = (int)(index + 1) * ws->col;
             } else if ( list[index] == 'P' ) {
-                ws->pm = (s32)index * ws->col;
+                ws->pm = (int)index * ws->col;
             }
         }
         for ( index = 0; list[index] && index < 255; index++ ) {
             if ( (list[index] == '!' || list[index] == '#') && count < MAX_TABS ) {
-                where = (s32)index * ws->col - ws->lm;
+                where = (int)index * ws->col - ws->lm;
                 if ( where > 0 ) {
                     tabs[count].pos = where;
-                    tabs[count].kind = (u8)(list[index] == '#' ? TAB_DECIMAL : TAB_LEFT);
+                    tabs[count].kind = (uint8_t)(list[index] == '#' ? TAB_DECIMAL : TAB_LEFT);
                     count++;
                 }
             }
@@ -422,7 +423,7 @@ static void ws_tabs( WS *ws, const char *list, int ruler )
             where -= ws->lm;
             if ( where > 0 ) {
                 tabs[count].pos = where;
-                tabs[count].kind = (u8)kind;
+                tabs[count].kind = (uint8_t)kind;
                 count++;
             }
             list += index;
@@ -434,10 +435,10 @@ static void ws_tabs( WS *ws, const char *list, int ruler )
 }
 
 /* a header or footer line: .he is line 1, .h2 to .h5 the lines under it */
-static void ws_hdrftr( WS *ws, int footer, int line, u32 pos, u32 end )
+static void ws_hdrftr( WS *ws, int footer, int line, uint32_t pos, uint32_t end )
 {
     STORY *story = footer ? &ws->doc->footer : &ws->doc->header;
-    u8 *seen = footer ? &ws->ftr_seen : &ws->hdr_seen;
+    uint8_t *seen = footer ? &ws->ftr_seen : &ws->hdr_seen;
 
     while ( pos < end && (ws->data[pos] & 0x7F) == ' ' && pos + 1 < end && (ws->data[pos + 1] & 0x7F) == ' ' ) {
         pos++;                          /* spaces that only place the text */
@@ -448,7 +449,7 @@ static void ws_hdrftr( WS *ws, int footer, int line, u32 pos, u32 end )
     if ( line < 1 || line > 5 || (*seen & (1 << line)) || ws->depth != 0 ) {
         return;
     }
-    *seen |= (u8)(1 << line);
+    *seen |= (uint8_t)(1 << line);
     if ( pos < end ) {
         ws_sub( ws, story, pos, end, WSM_HDRFTR );
     }
@@ -456,9 +457,9 @@ static void ws_hdrftr( WS *ws, int footer, int line, u32 pos, u32 end )
 
 /* a dot command: its two letters, and the rest of its line in "arg"
    (and at "pos" to "end" in the file, for the ones whose text is text) */
-static int ws_dot( WS *ws, int one, int two, const char *arg, u32 pos, u32 end )
+static int ws_dot( WS *ws, int one, int two, const char *arg, uint32_t pos, uint32_t end )
 {
-    s32 value;
+    int value;
 
     if ( ws_in_list( ws_merge, one, two ) ) {
         return 0;                       /* merge print: it stays as text */
@@ -482,14 +483,14 @@ static int ws_dot( WS *ws, int one, int two, const char *arg, u32 pos, u32 end )
     } else if ( one == 'p' && two == 'm' ) {
         ws->pm = value <= 0 ? -1 : str_chr( arg, '"' ) != NULL ? value : value - ws->col;
     } else if ( one == 'l' && two == 's' && value >= WS_LINE && value <= 9 * WS_LINE ) {
-        ws->wb.pap.line = (u16)value;
+        ws->wb.pap.line = (uint16_t)value;
         ws->wb.pap.line_rule = LS_MULTIPLE;
     } else if ( one == 'l' && two == 'h' && value > 0 ) {
         value = value / ws->col * 30;   /* 48ths of an inch */
         if ( value == 240 ) {
             ws->wb.pap.line_rule = LS_MULTIPLE;
         } else if ( value >= 60 && value <= 2880 ) {
-            ws->wb.pap.line = (u16)value;
+            ws->wb.pap.line = (uint16_t)value;
             ws->wb.pap.line_rule = LS_EXACT;
         }
     } else if ( one == 'c' && two == 'w' && value > 0 ) {
@@ -507,17 +508,17 @@ static int ws_dot( WS *ws, int one, int two, const char *arg, u32 pos, u32 end )
         ws_hdrftr( ws, 1, two == 'o' ? 1 : two - '0', pos, end );
     } else if ( one == 'p' && two == 'n' ) {
         if ( value > 0 && value / ws->col <= 32000 ) {
-            ws->doc->page.first_page = (u16)(value / ws->col);
+            ws->doc->page.first_page = (uint16_t)(value / ws->col);
         }
         ws->omit_pn = 0;
     } else if ( one == 'o' && two == 'p' ) {
         ws->omit_pn = 1;
     } else if ( one == 'o' && two == 'j' ) {
-        ws->justify = (u8)(ws_on( arg, 1 ) ? 1 : 2);
+        ws->justify = (uint8_t)(ws_on( arg, 1 ) ? 1 : 2);
     } else if ( one == 'o' && two == 'c' ) {
-        ws->center = (u8)ws_on( arg, 1 );
+        ws->center = (uint8_t)ws_on( arg, 1 );
     } else if ( one == 'u' && two == 'l' ) {
-        ws->wunder = (u8)!ws_on( arg, 1 );
+        ws->wunder = (uint8_t)!ws_on( arg, 1 );
         ws_looks( ws );
     } else if ( one == 'r' && two == 'r' ) {
         while ( *arg == ' ' ) {
@@ -534,11 +535,13 @@ static int ws_dot( WS *ws, int one, int two, const char *arg, u32 pos, u32 end )
 
 /* the line at "pos" starts with a dot: a command that is read or
    dropped -> where the next line starts; 0 for one that is text */
-static u32 ws_dot_line( WS *ws, u32 pos, u32 end )
+static uint32_t ws_dot_line( WS *ws, uint32_t pos, uint32_t end )
 {
     char arg[256];
-    const u8 *data = ws->data;
-    u32 stop = pos, next, used = 0, index;
+    const uint8_t *data = ws->data;
+    uint32_t stop = pos, next;
+    unsigned int used = 0;
+    uint32_t index;
     int one, two;
 
     while ( stop < end && data[stop] != 0x0D && data[stop] != 0x0A && data[stop] != 0x1A && data[stop] != 0x8D ) {
@@ -572,10 +575,10 @@ static u32 ws_dot_line( WS *ws, u32 pos, u32 end )
 
 /* a font sequence: the height is the size, the typestyle's number and
    bits say what kind of face */
-static void ws_font( WS *ws, const u8 *body, u32 len )
+static void ws_font( WS *ws, const uint8_t *body, uint32_t len )
 {
     static const char *const face[4] = { "Arial", "Times New Roman", "Script", "Arial" };
-    u32 height, style, number;
+    uint32_t height, style, number;
     const char *name;
 
     if ( len < 6 ) {
@@ -593,17 +596,17 @@ static void ws_font( WS *ws, const u8 *body, u32 len )
     } else {
         name = face[(style >> 10) & 3];
     }
-    ws->wb.chp.font = (u16)wd_font( ws->doc, name, FAM_ANY, -1 );
+    ws->wb.chp.font = (uint16_t)wd_font( ws->doc, name, FAM_ANY, -1 );
     if ( height >= 40 && height <= 14400 ) {
-        ws->wb.chp.size = (u16)(height / 10);
+        ws->wb.chp.size = (uint16_t)(height / 10);
     }
 }
 
 /* a symmetrical sequence, whole: by its kind */
-static void ws_sequence( WS *ws, u32 pos, u32 count )
+static void ws_sequence( WS *ws, uint32_t pos, uint32_t count )
 {
-    const u8 *body = ws->data + pos + 4;
-    u32 len = count - 4, kind = ws->data[pos + 3];
+    const uint8_t *body = ws->data + pos + 4;
+    uint32_t len = count - 4, kind = ws->data[pos + 3];
     int obj;
 
     switch ( kind ) {
@@ -645,16 +648,16 @@ static void ws_sequence( WS *ws, u32 pos, u32 count )
     }
 }
 
-static void ws_toggle( WS *ws, u32 bit )
+static void ws_toggle( WS *ws, uint32_t bit )
 {
     ws->toggles ^= bit;
     ws_looks( ws );
 }
 
-static void ws_run( WS *ws, u32 pos, u32 end, int mode )
+static void ws_run( WS *ws, uint32_t pos, uint32_t end, int mode )
 {
-    const u8 *data = ws->data;
-    u32 code, count, next;
+    const uint8_t *data = ws->data;
+    uint32_t code, count, next;
 
     while ( pos < end ) {
         code = data[pos];
@@ -777,12 +780,12 @@ static void ws_run( WS *ws, u32 pos, u32 end, int mode )
     }
 }
 
-static int ws_load( const u8 *data, u32 len, WDOC *doc )
+static int ws_load( const uint8_t *data, uint32_t len, WDOC *doc )
 {
     WS ws;
     WPARA *para;
-    u32 start = 0;
-    u16 page_num = WCH_PAGENUM;
+    uint32_t start = 0;
+    uint16_t page_num = WCH_PAGENUM;
 
     mem_set( &ws, 0, sizeof( ws ) );
     ws.data = data;
@@ -806,7 +809,7 @@ static int ws_load( const u8 *data, u32 len, WDOC *doc )
     ws.line_start = 1;
 
     wb_init( &ws.wb, doc, &doc->body );
-    ws.wb.chp.font = (u16)wd_font( doc, "Courier New", FAM_MODERN, 1 );
+    ws.wb.chp.font = (uint16_t)wd_font( doc, "Courier New", FAM_MODERN, 1 );
     ws.wb.chp.size = 24;
     doc->style[0].chp = ws.wb.chp;
 
@@ -833,21 +836,21 @@ static int ws_load( const u8 *data, u32 len, WDOC *doc )
 /* writing                                                             */
 /* ------------------------------------------------------------------ */
 typedef struct {
-    WDOC *doc;
-    OUT  *out;
-    int   v7;               /* the 7.0 form */
-    int   depth;
-    u32   toggles;          /* on in the file */
-    int   held;             /* a letter not yet written: a space after it marks it */
-    u32   column;           /* how far along the line */
-    u32   width;            /* columns a line may have */
-    s32   lm, rm;           /* the margins last written, twips; -1 not yet */
-    s32   pm;
-    int   align;
-    u32   line;
-    u32   font_size;        /* 7.0: the font sequence last written */
-    int   font;
-    u32   notes;
+    WDOC        *doc;
+    OUT         *out;
+    int          v7;            /* the 7.0 form */
+    int          depth;
+    uint32_t     toggles;       /* on in the file */
+    int          held;          /* a letter not yet written: a space after it marks it */
+    unsigned int column;        /* how far along the line */
+    unsigned int width;         /* columns a line may have */
+    int          lm, rm;        /* the margins last written, twips; -1 not yet */
+    int          pm;
+    int          align;
+    uint32_t     line;
+    uint32_t     font_size;     /* 7.0: the font sequence last written */
+    int          font;
+    unsigned int notes;
 } WSS;
 
 static void wss_flush( WSS *ws )
@@ -873,7 +876,7 @@ static void wss_newline( WSS *ws, int soft )
 }
 
 /* a character of the text, in the file's form */
-static void wss_char( WSS *ws, u32 code )
+static void wss_char( WSS *ws, uint32_t code )
 {
     char bytes[8];
     int count, index;
@@ -890,23 +893,23 @@ static void wss_char( WSS *ws, u32 code )
     } else {
         count = cp_put( CP_437, code, bytes );
         for ( index = 0; index < count; index++ ) {
-            code = (u8)bytes[index];
+            code = (uint8_t)bytes[index];
             if ( code < 0x20 || (code >= 0x80 && (!ws->v7 || code == 0x8D || code == 0x8A || code == 0xA0)) ) {
                 wss_raw( ws, 0x1B );
-                out_byte( ws->out, (u8)bytes[index] );
+                out_byte( ws->out, (uint8_t)bytes[index] );
                 out_byte( ws->out, 0x1C );
             } else {
-                wss_raw( ws, (u8)bytes[index] );
+                wss_raw( ws, (uint8_t)bytes[index] );
             }
         }
     }
     ws->column++;
 }
 
-static void wss_toggles( WSS *ws, u32 want )
+static void wss_toggles( WSS *ws, uint32_t want )
 {
-    static const u8 code_of[7] = { 0x02, 0x04, 0x13, 0x19, 0x18, 0x16, 0x14 };
-    u32 index;
+    static const uint8_t code_of[7] = { 0x02, 0x04, 0x13, 0x19, 0x18, 0x16, 0x14 };
+    unsigned int index;
 
     for ( index = 0; index < 7; index++ ) {
         if ( (ws->toggles ^ want) & (1UL << index) ) {
@@ -916,21 +919,21 @@ static void wss_toggles( WSS *ws, u32 want )
     ws->toggles = want;
 }
 
-static u32 wss_toggles_of( u16 flags )
+static uint32_t wss_toggles_of( uint16_t flags )
 {
     return ((flags & CF_BOLD) ? WT_BOLD : 0) | ((flags & (CF_UNDER | CF_WUNDER | CF_DUNDER)) ? WT_UNDER : 0) |
            ((flags & CF_ITALIC) ? WT_ITALIC : 0) | ((flags & CF_STRIKE) ? WT_STRIKE : 0) |
            ((flags & CF_SUB) ? WT_SUB : 0) | ((flags & CF_SUPER) ? WT_SUPER : 0);
 }
 
-static void wss_seq_open( WSS *ws, int kind, u32 body_len )
+static void wss_seq_open( WSS *ws, int kind, uint32_t body_len )
 {
     wss_raw( ws, 0x1D );
     out_le16( ws->out, body_len + 4 );
     out_byte( ws->out, kind );
 }
 
-static void wss_seq_close( WSS *ws, u32 body_len )
+static void wss_seq_close( WSS *ws, uint32_t body_len )
 {
     out_le16( ws->out, body_len + 4 );
     out_byte( ws->out, 0x1D );
@@ -940,7 +943,7 @@ static void wss_seq_close( WSS *ws, u32 body_len )
 static void wss_font( WSS *ws, const CHP *chp )
 {
     const WFONT *font = &ws->doc->font[chp->font < ws->doc->nfont ? chp->font : 0];
-    u32 style;
+    uint32_t style;
 
     if ( !ws->v7 || (ws->font == (int)chp->font && ws->font_size == chp->size) ) {
         return;
@@ -954,8 +957,8 @@ static void wss_font( WSS *ws, const CHP *chp )
         style = 0xC600 | 5;
     }
     wss_seq_open( ws, 2, 12 );
-    out_le16( ws->out, (style & 0x8000) ? (u32)chp->size * 5 : 180 );
-    out_le16( ws->out, (u32)chp->size * 10 );
+    out_le16( ws->out, (style & 0x8000) ? (uint32_t)chp->size * 5 : 180 );
+    out_le16( ws->out, (uint32_t)chp->size * 10 );
     out_le16( ws->out, style );
     out_fill( ws->out, 0, 6 );
     wss_seq_close( ws, 12 );
@@ -963,7 +966,7 @@ static void wss_font( WSS *ws, const CHP *chp )
     ws->font_size = chp->size;
 }
 
-static void wss_dot( WSS *ws, const char *name, u32 value )
+static void wss_dot( WSS *ws, const char *name, uint32_t value )
 {
     wss_flush( ws );
     out_fmt( ws->out, ".%s %u\r\n", name, value );
@@ -975,8 +978,10 @@ static void wss_text( WSS *ws, WPARA *para, int hdrftr );
 static void wss_note( WSS *ws, const WOBJ *obj )
 {
     OUT *main_out = ws->out, *part;
-    u8  *bytes;
-    u32 len = 0, index, keep_toggles = ws->toggles, keep_size = ws->font_size;
+    uint8_t *bytes;
+    uint32_t len = 0;
+    unsigned int index;
+    uint32_t keep_toggles = ws->toggles, keep_size = ws->font_size;
     int keep_font = ws->font;
 
     if ( obj->story == NULL || ws->depth != 0 ) {
@@ -1036,7 +1041,9 @@ static void wss_text( WSS *ws, WPARA *para, int hdrftr )
 {
     WDOC *doc = ws->doc;
     const CHP *chp;
-    u32 pos = 0, run, stop, code, ahead, word;
+    unsigned int pos = 0, run, stop;
+    uint32_t code;
+    unsigned int ahead, word;
     int obj;
 
     while ( pos < para->len ) {
@@ -1086,7 +1093,7 @@ static void wss_text( WSS *ws, WPARA *para, int hdrftr )
                 break;
             case WCH_OBJ:
                 obj = wd_obj_at( para, pos - 1 );
-                if ( obj >= 0 && (u32)obj < doc->nobj && doc->obj[obj].kind == OBJ_NOTE && !hdrftr ) {
+                if ( obj >= 0 && (unsigned int)obj < doc->nobj && doc->obj[obj].kind == OBJ_NOTE && !hdrftr ) {
                     wss_note( ws, &doc->obj[obj] );
                 }
                 break;
@@ -1123,9 +1130,9 @@ static void wss_text( WSS *ws, WPARA *para, int hdrftr )
 
 static void wss_hdrftr( WSS *ws, STORY *story, const char *first, char rest )
 {
-    u32 index;
+    unsigned int index;
 
-    for ( index = 0; index < story->count && index < (u32)(ws->v7 ? 5 : 1); index++ ) {
+    for ( index = 0; index < story->count && index < (unsigned int)(ws->v7 ? 5 : 1); index++ ) {
         if ( index == 0 ) {
             out_fmt( ws->out, ".%s ", first );
         } else {
@@ -1142,8 +1149,8 @@ static void wss_hdrftr( WSS *ws, STORY *story, const char *first, char rest )
 static void wss_ruler( WSS *ws, const PAP *pap )
 {
     char ruler[256];
-    u32 left = (u32)(ws->lm > 0 ? ws->lm : 0) / WS_COL, right = (u32)(ws->rm > 0 ? ws->rm : 0) / WS_COL;
-    u32 index, column;
+    unsigned int left = (unsigned int)(ws->lm > 0 ? ws->lm : 0) / WS_COL, right = (unsigned int)(ws->rm > 0 ? ws->rm : 0) / WS_COL;
+    unsigned int index, column;
 
     if ( right < 2 || right > 250 || left + 1 >= right ) {
         return;
@@ -1153,7 +1160,7 @@ static void wss_ruler( WSS *ws, const PAP *pap )
     ruler[left] = 'L';
     ruler[right - 1] = 'R';
     for ( index = 0; index < pap->ntabs; index++ ) {
-        column = (u32)(ws->lm + pap->tabs[index].pos) / WS_COL;
+        column = (unsigned int)(ws->lm + pap->tabs[index].pos) / WS_COL;
         if ( pap->tabs[index].pos > 0 && column > left && column + 1 < right ) {
             ruler[column] = (char)(pap->tabs[index].kind == TAB_DECIMAL ? '#' : '!');
         }
@@ -1166,9 +1173,9 @@ static void wss_para( WSS *ws, WPARA *para )
 {
     PAGESETUP *page = &ws->doc->page;
     const PAP *pap = &para->pap;
-    s32 text_width = page->width - page->left - page->right;
-    s32 lm = pap->left > 0 ? pap->left : 0, rm = text_width - pap->right, pm;
-    u32 line;
+    int text_width = page->width - page->left - page->right;
+    int lm = pap->left > 0 ? pap->left : 0, rm = text_width - pap->right, pm;
+    uint32_t line;
     int align = pap->align == AL_CENTER ? AL_CENTER : pap->align == AL_JUSTIFY ? AL_JUSTIFY : AL_LEFT;
 
     if ( pap->flags & PF_PAGEBEFORE ) {
@@ -1180,11 +1187,11 @@ static void wss_para( WSS *ws, WPARA *para )
         rm = lm + 10 * WS_COL;
     }
     if ( lm != ws->lm ) {
-        wss_dot( ws, "lm", (u32)lm / WS_COL + 1 );
+        wss_dot( ws, "lm", (uint32_t)lm / WS_COL + 1 );
         ws->lm = lm;
     }
     if ( rm != ws->rm ) {
-        wss_dot( ws, "rm", (u32)rm / WS_COL );
+        wss_dot( ws, "rm", (uint32_t)rm / WS_COL );
         ws->rm = rm;
     }
     pm = pap->first ? lm + pap->first : -1;
@@ -1192,7 +1199,7 @@ static void wss_para( WSS *ws, WPARA *para )
         pm = 0;
     }
     if ( pm != ws->pm ) {
-        wss_dot( ws, "pm", pm < 0 ? 0 : (u32)pm / WS_COL + 1 );
+        wss_dot( ws, "pm", pm < 0 ? 0 : (uint32_t)pm / WS_COL + 1 );
         ws->pm = pm;
     }
     line = pap->line_rule == LS_MULTIPLE && pap->line >= WS_LINE ? (pap->line + WS_LINE / 2) / WS_LINE : 1;
@@ -1217,7 +1224,7 @@ static void wss_para( WSS *ws, WPARA *para )
     if ( pap->ntabs ) {
         wss_ruler( ws, pap );
     }
-    ws->width = (u32)(rm - lm) / WS_COL;
+    ws->width = (unsigned int)(rm - lm) / WS_COL;
     ws->column = 0;
     /* a dot in column 1 would be a command: a soft space goes before it */
     if ( para->len && para->text[0] == '.' ) {
@@ -1237,8 +1244,8 @@ static int ws_save( WDOC *doc, OUT *out, int variant )
     WSS ws;
     PAGESETUP *page = &doc->page;
     WPARA *para;
-    u32 index;
-    s32 text_width = page->width - page->left - page->right;
+    unsigned int index;
+    int text_width = page->width - page->left - page->right;
     int plain_number = 0;
 
     mem_set( &ws, 0, sizeof( ws ) );
@@ -1263,15 +1270,15 @@ static int ws_save( WDOC *doc, OUT *out, int variant )
         out_byte( out, 0x1D );
     }
     /* the page: lines, lines above and below, columns in, and wide */
-    wss_dot( &ws, "pl", (u32)(page->height + WS_LINE / 2) / WS_LINE );
-    wss_dot( &ws, "mt", (u32)(page->top > 0 ? page->top : 0) / WS_LINE );
-    wss_dot( &ws, "mb", (u32)(page->bottom > 0 ? page->bottom : 0) / WS_LINE );
-    wss_dot( &ws, "po", (u32)(page->left > 0 ? page->left : 0) / WS_COL );
+    wss_dot( &ws, "pl", (uint32_t)(page->height + WS_LINE / 2) / WS_LINE );
+    wss_dot( &ws, "mt", (uint32_t)(page->top > 0 ? page->top : 0) / WS_LINE );
+    wss_dot( &ws, "mb", (uint32_t)(page->bottom > 0 ? page->bottom : 0) / WS_LINE );
+    wss_dot( &ws, "po", (uint32_t)(page->left > 0 ? page->left : 0) / WS_COL );
     if ( text_width < 10 * WS_COL ) {
         text_width = 10 * WS_COL;
     }
-    wss_dot( &ws, "rm", (u32)text_width / WS_COL );
-    ws.rm = (s32)((u32)text_width / WS_COL) * WS_COL;
+    wss_dot( &ws, "rm", (uint32_t)text_width / WS_COL );
+    ws.rm = (int)((uint32_t)text_width / WS_COL) * WS_COL;
     if ( page->first_page > 1 ) {
         wss_dot( &ws, "pn", page->first_page );
     }

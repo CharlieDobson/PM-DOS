@@ -16,6 +16,10 @@ init:
         mov     sp,OFFSET init_top
         mov     ah,30h
         int     21h
+        cmp     bh,03h                  ; PMDOS_OEM: PM-DOS's kernel, and
+        jne     in_notpm                ; not RMDOS or another DOS - for
+        mov     byte ptr [on_pmdos],1   ; gc_prompt's 21h/F0h
+in_notpm:
         cmp     al,3
         jae     in_verok
         ; PM-DOS's own version is 0.x, which is below 3 and is not DOS

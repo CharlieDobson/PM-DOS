@@ -9,18 +9,18 @@
 #include "socklib.h"
 #include "smb2.h"
 
-static int smb_send( void *ctx, const unsigned char *buf, int len )
+static int smb_send( void *ctx, const uint8_t *buf, int len )
 {
-    return sl_send( (int)ctx, buf, (u32)len, 2000 );
+    return sl_send( (int)ctx, buf, (uint32_t)len, 2000 );
 }
-static int smb_recv( void *ctx, unsigned char *buf, int len )
+static int smb_recv( void *ctx, uint8_t *buf, int len )
 {
-    return sl_recvwait( (int)ctx, buf, (u32)len, 2000 );
+    return sl_recvwait( (int)ctx, buf, (uint32_t)len, 2000 );
 }
 
 static smb2_client g_cl;
 
-static void put_hex16( u32 value )
+static void put_hex16( uint32_t value )
 {
     static const char hex[] = "0123456789ABCDEF";
     sl_putc( hex[( value >> 12 ) & 0xF] );
@@ -28,13 +28,13 @@ static void put_hex16( u32 value )
     sl_putc( hex[( value >> 4 ) & 0xF] );
     sl_putc( hex[value & 0xF] );
 }
-static void put_hex32( u32 value )
+static void put_hex32( uint32_t value )
 {
     put_hex16( value >> 16 );
     put_hex16( value & 0xFFFF );
 }
 
-static void on_entry( void *user, const char *name, int isdir, unsigned long size )
+static void on_entry( void *user, const char *name, int isdir, uint32_t size )
 {
     (void)user;
     sl_puts( "  " );
@@ -53,7 +53,7 @@ void __cdecl dos_entry( void )
     char       **argv;
     int          argc;
     const char  *server = NULL, *share = NULL, *user = NULL, *pass = NULL, *domain = "";
-    u32          ip;
+    uint32_t     ip;
     int          handle, rc;
 
     argc = sl_args( &argv );
@@ -87,7 +87,7 @@ void __cdecl dos_entry( void )
         sl_sclose( handle ); sl_flush(); return;
     }
 
-    sl_puts( "connected: dialect 0x" ); put_hex16( (u32)smb2_dialect( &g_cl ) );
+    sl_puts( "connected: dialect 0x" ); put_hex16( (uint32_t)smb2_dialect( &g_cl ) );
     sl_puts( ", signing " ); sl_puts( g_cl.signing_mode == 3 ? "AES-CMAC" : "HMAC-SHA256" );
     sl_puts( "\r\nlisting \\\\" ); sl_puts( server ); sl_puts( "\\" ); sl_puts( share ); sl_puts( ":\r\n" );
 

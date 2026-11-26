@@ -37,16 +37,16 @@
 
 /* names, each ended by its NUL, back to back */
 typedef struct {
-    char *buf;
-    u32   used, cap, count;
+    char        *buf;
+    unsigned int used, cap, count;
 } NLIST;
 
-static const u8 graf_line[4]  = { 0xC0, 0xC4, 0xC3, 0xB3 };
-static const u8 graf_ascii[4] = { '\\', '-', '+', '|' };
+static const uint8_t graf_line[4]  = { 0xC0, 0xC4, 0xC3, 0xB3 };
+static const uint8_t graf_ascii[4] = { '\\', '-', '+', '|' };
 
 /* The three buffers come from the heap, so that they are not zeroes in
    the file: TREE.EXE goes on the boot diskette, which is full. */
-static const u8 *graf;
+static const uint8_t *graf;
 static char    *path;               /* PATH_MAX: the directory being read, '\'-ended */
 static char    *line;               /* LINE_MAX: the columns so far, then the rest */
 static FINDREC *rec;                /* one search at a time, so one record */
@@ -55,7 +55,7 @@ static int     failed;              /* a search went wrong: stop */
 static int     too_deep;            /* a directory was not entered */
 
 /* line[0 .. len) and CR LF, in one write; ^C ends the program here */
-static void emit( u32 len )
+static void emit( unsigned int len )
 {
     line[len] = '\r';
     line[len + 1] = '\n';
@@ -72,7 +72,7 @@ static int is_dots( const char *name )
 
 static void list_add( NLIST *list, const char *name )
 {
-    u32 need = str_len( name ) + 1;
+    unsigned int need = str_len( name ) + 1;
     char *grown;
 
     if ( list->used + need > list->cap ) {
@@ -99,15 +99,15 @@ static int search_end( int rc )
 }
 
 /* "path" + "*.*" for a search; the caller made sure it fits */
-static void set_pattern( u32 plen )
+static void set_pattern( unsigned int plen )
 {
     mem_cpy( path + plen, "*.*", 4 );
 }
 
 /* the subdirectories of "path", in the directory's order */
-static int list_dirs( u32 plen, NLIST *list )
+static int list_dirs( unsigned int plen, NLIST *list )
 {
-    u32 handle;
+    uint32_t handle;
     int rc;
 
     set_pattern( plen );
@@ -127,9 +127,10 @@ static int list_dirs( u32 plen, NLIST *list )
 }
 
 /* /F: the files of "path" at column "col", and the line after them */
-static int draw_files( u32 plen, u32 col, int subdirs )
+static int draw_files( unsigned int plen, unsigned int col, int subdirs )
 {
-    u32 handle, nlen;
+    uint32_t handle;
+    unsigned int nlen;
     int rc, any = 0;
 
     set_pattern( plen );
@@ -160,11 +161,11 @@ static int draw_files( u32 plen, u32 col, int subdirs )
 
 /* The directory in "path" (plen characters, '\'-ended), drawn from
    column "col"; "level" directories below the start. */
-static void walk_dir( u32 plen, u32 col, u32 level )
+static void walk_dir( unsigned int plen, unsigned int col, unsigned int level )
 {
     NLIST list;
     const char *name;
-    u32 pos = 0, nlen, i;
+    unsigned int pos = 0, nlen, i;
     int last;
 
     mem_set( &list, 0, sizeof( list ) );
@@ -207,7 +208,7 @@ static void walk_dir( u32 plen, u32 col, u32 level )
 
 int walk_tree( const char *dir )
 {
-    u32 plen;
+    unsigned int plen;
 
     graf = opt.ascii ? graf_ascii : graf_line;
     path = (char *)xalloc( PATH_MAX );

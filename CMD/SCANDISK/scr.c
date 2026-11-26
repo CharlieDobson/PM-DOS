@@ -50,12 +50,12 @@ PALETTE pal;
 int scr_rows = 25, scr_cols = 80;
 int gfx_on;
 
-static CELL *want;              /* the screen as it should be */
-static CELL *shown;             /* the screen as it was last given */
-static u16 *dos_screen;         /* what ScanDisk started on */
-static int  dos_rows, dos_cols, dos_row, dos_col;
-static int  cur_row, cur_col, cur_kind = CUR_LINE;
-static int  shown_row = -1, shown_col = -1, shown_kind = -1;
+static CELL     *want;          /* the screen as it should be */
+static CELL     *shown;         /* the screen as it was last given */
+static uint16_t *dos_screen;    /* what ScanDisk started on */
+static int       dos_rows, dos_cols, dos_row, dos_col;
+static int       cur_row, cur_col, cur_kind = CUR_LINE;
+static int       shown_row = -1, shown_col = -1, shown_kind = -1;
 
 /* ------------------------------------------------------------------ */
 /* colours                                                             */
@@ -67,9 +67,9 @@ static int  shown_row = -1, shown_col = -1, shown_kind = -1;
 #define ATTR_MODE       0x30    /* the mode register, the screen left on */
 #define ATTR_BLINK      0x08
 
-static int  bright_bg;          /* a text screen with sixteen backgrounds */
-static u8   attr_mode;          /* the mode register as it was found */
-static u16  crtc_port;
+static int      bright_bg;      /* a text screen with sixteen backgrounds */
+static uint8_t  attr_mode;      /* the mode register as it was found */
+static uint16_t crtc_port;
 
 static void attr_mode_set( unsigned value )
 {
@@ -88,7 +88,7 @@ static void blink_off( void )
     }
     port_in( crtc_port + ATTR_STATUS );
     port_out( ATTR_INDEX, ATTR_MODE );
-    attr_mode = (u8)port_in( ATTR_READ );
+    attr_mode = (uint8_t)port_in( ATTR_READ );
     port_in( crtc_port + ATTR_STATUS );     /* and the next write is an index again */
     if ( (attr_mode & 0x01) || attr_mode == 0xFF ) {
         return;                             /* not a text screen's: not believed */
@@ -148,13 +148,13 @@ static void scr_palette( void )
 
 void scr_init( int graphics )
 {
-    u32 cells;
+    unsigned int cells;
 
     sys_screen_size( &dos_rows, &dos_cols );
     sys_get_cursor( &dos_row, &dos_col );
-    dos_screen = (u16 *)try_alloc( (u32)dos_rows * dos_cols * 2 );
+    dos_screen = (uint16_t *)try_alloc( (unsigned int)dos_rows * dos_cols * 2 );
     if ( dos_screen ) {
-        sys_get_cells( 0, dos_screen, (u32)dos_rows * dos_cols );
+        sys_get_cells( 0, dos_screen, (unsigned int)dos_rows * dos_cols );
     }
     scr_rows = dos_rows > 60 ? 60 : dos_rows;
     scr_cols = dos_cols > 132 ? 132 : dos_cols;
@@ -165,7 +165,7 @@ void scr_init( int graphics )
     } else {
         blink_off();
     }
-    cells = (u32)scr_rows * scr_cols;
+    cells = (unsigned int)scr_rows * scr_cols;
     want = (CELL *)xalloc( cells * sizeof( CELL ) );
     shown = (CELL *)xalloc( cells * sizeof( CELL ) );
     mem_set( want, 0, cells * sizeof( CELL ) );
@@ -182,35 +182,35 @@ void scr_done( void )
     }
     blink_back();
     if ( dos_screen ) {
-        sys_put_cells( 0, dos_screen, (u32)dos_rows * dos_cols );
+        sys_put_cells( 0, dos_screen, (unsigned int)dos_rows * dos_cols );
     }
     sys_cursor_shape( CUR_LINE );
     sys_cursor( dos_row, dos_col );
 }
 
-void scr_ch( int row, int col, int ch, u8 attr )
+void scr_ch( int row, int col, int ch, uint8_t attr )
 {
     if ( row >= 0 && row < scr_rows && col >= 0 && col < scr_cols ) {
         want[row * scr_cols + col] = ((CELL)attr << 8) | (CELL)(ch & 0xFF);
     }
 }
 
-void scr_putn( int row, int col, const char *text, int len, u8 attr )
+void scr_putn( int row, int col, const char *text, int len, uint8_t attr )
 {
     int pos;
 
     for ( pos = 0; pos < len; pos++ ) {
-        scr_ch( row, col + pos, (u8)text[pos], attr );
+        scr_ch( row, col + pos, (uint8_t)text[pos], attr );
     }
 }
 
-void scr_put( int row, int col, const char *text, u8 attr )
+void scr_put( int row, int col, const char *text, uint8_t attr )
 {
     scr_putn( row, col, text, (int)str_len( text ), attr );
 }
 
 /* graphics: more bits for cells that are there already */
-void scr_flag( int row, int col, int len, u32 flags )
+void scr_flag( int row, int col, int len, uint32_t flags )
 {
     int pos;
 
@@ -225,7 +225,7 @@ void scr_flag( int row, int col, int len, u32 flags )
 }
 
 /* graphics: a picture in a cell, and what the picture needs told */
-void scr_pic( int row, int col, int pic, int data, u8 attr )
+void scr_pic( int row, int col, int pic, int data, uint8_t attr )
 {
     if ( gfx_on && row >= 0 && row < scr_rows && col >= 0 && col < scr_cols ) {
         want[row * scr_cols + col] = ((CELL)pic << CF_PIC_SHIFT) | ((CELL)attr << 8)
@@ -235,7 +235,7 @@ void scr_pic( int row, int col, int pic, int data, u8 attr )
 
 /* graphics: every cell of a picture - two for a tick, four by two rows
    for a sign */
-void scr_icon( int row, int col, int pic, u8 attr )
+void scr_icon( int row, int col, int pic, uint8_t attr )
 {
     int wide = pic >= PIC_ASK ? 4 : 2, high = pic >= PIC_ASK ? 2 : 1, down, along;
 
@@ -248,7 +248,7 @@ void scr_icon( int row, int col, int pic, u8 attr )
 
 /* "&File": the character after '&' in hot_attr - underlined, on a
    graphics screen - and the '&' not shown */
-void scr_hot( int row, int col, const char *text, u8 attr, u8 hot_attr )
+void scr_hot( int row, int col, const char *text, uint8_t attr, uint8_t hot_attr )
 {
     int hot = 0;
 
@@ -257,7 +257,7 @@ void scr_hot( int row, int col, const char *text, u8 attr, u8 hot_attr )
             hot = 1;
             continue;
         }
-        scr_ch( row, col, (u8)*text, hot == 1 ? hot_attr : attr );
+        scr_ch( row, col, (uint8_t)*text, hot == 1 ? hot_attr : attr );
         if ( hot == 1 ) {
             scr_flag( row, col, 1, CF_UNDER );
             hot = 2;
@@ -285,7 +285,7 @@ int scr_hotkey( const char *text )
     return amp && amp[1] ? ch_upper( amp[1] ) : 0;
 }
 
-void scr_fill( int row, int col, int len, int ch, u8 attr )
+void scr_fill( int row, int col, int len, int ch, uint8_t attr )
 {
     int pos;
 
@@ -296,7 +296,7 @@ void scr_fill( int row, int col, int len, int ch, u8 attr )
 
 /* other colours for what is there.  A graphics cell loses whatever
    else it was - an edge, a button, a picture - and is its character. */
-void scr_recolor( int row, int col, int len, u8 attr )
+void scr_recolor( int row, int col, int len, uint8_t attr )
 {
     int pos;
     CELL cell;
@@ -313,7 +313,7 @@ void scr_recolor( int row, int col, int len, u8 attr )
     }
 }
 
-void scr_box( int top, int left, int bottom, int right, u8 attr )
+void scr_box( int top, int left, int bottom, int right, uint8_t attr )
 {
     int row;
 
@@ -350,12 +350,12 @@ void scr_cursor( int row, int col, int kind )
 
 static void flush_text( void )
 {
-    static u16 run[132];
+    static uint16_t run[132];
     int row, col, first, last;
-    u32 base;
+    unsigned int base;
 
     for ( row = 0; row < scr_rows; row++ ) {
-        base = (u32)row * scr_cols;
+        base = (unsigned int)row * scr_cols;
         for ( first = 0; first < scr_cols && want[base + first] == shown[base + first]; first++ ) {
         }
         if ( first == scr_cols ) {
@@ -364,10 +364,10 @@ static void flush_text( void )
         for ( last = scr_cols - 1; want[base + last] == shown[base + last]; last-- ) {
         }
         for ( col = first; col <= last; col++ ) {
-            run[col - first] = (u16)want[base + col];
+            run[col - first] = (uint16_t)want[base + col];
             shown[base + col] = want[base + col];
         }
-        sys_put_cells( base + first, run, (u32)(last - first + 1) );
+        sys_put_cells( base + first, run, (unsigned int)(last - first + 1) );
     }
     if ( cur_kind != shown_kind ) {
         sys_cursor_shape( cur_kind );
@@ -383,7 +383,7 @@ static void flush_text( void )
 void scr_flush( void )
 {
     int row, col;
-    u32 at;
+    unsigned int at;
 
     if ( !gfx_on ) {
         flush_text();
@@ -391,7 +391,7 @@ void scr_flush( void )
     }
     for ( row = 0; row < scr_rows; row++ ) {
         for ( col = 0; col < scr_cols; col++ ) {
-            at = (u32)row * scr_cols + col;
+            at = (unsigned int)row * scr_cols + col;
             if ( want[at] != shown[at] ) {
                 gfx_cell( row, col, want[at] );
                 shown[at] = want[at];
@@ -405,16 +405,16 @@ void scr_flush( void )
 /* the keyboard                                                        */
 /* ------------------------------------------------------------------ */
 
-static int shift_seen;
-static int alt_armed;
-static int testing;
-static int poll_keys;           /* test mode: a running check takes keys too... */
-static int poll_on = 1;         /* ...in the check that is running now */
-static int test_shift;
-static u32 dump_handle;
-static int dump_open;
-static char dump_path[PATH_MAX];
-static int shots;
+static int      shift_seen;
+static int      alt_armed;
+static int      testing;
+static int      poll_keys;      /* test mode: a running check takes keys too... */
+static int      poll_on = 1;    /* ...in the check that is running now */
+static int      test_shift;
+static uint32_t dump_handle;
+static int      dump_open;
+static char     dump_path[PATH_MAX];
+static int      shots;
 
 /* ------------------------------------------------------------------ */
 /* the mouse                                                           */
@@ -434,14 +434,14 @@ static int shots;
 
 MEVENT mouse;
 
-static int    mouse_on;
-static int    mouse_xmax = 639, mouse_ymax = 199;
-static MEVENT mqueue[MQ_SIZE];
-static int    mq_head, mq_tail;
-static int    m_row = -1, m_col = -1, m_down;
-static int    last_row = -1, last_col = -1;     /* the last press */
-static u32    last_time;
-static int    click_here;       /* test mode: the input just before was
+static int      mouse_on;
+static int      mouse_xmax = 639, mouse_ymax = 199;
+static MEVENT   mqueue[MQ_SIZE];
+static int      mq_head, mq_tail;
+static int      m_row = -1, m_col = -1, m_down;
+static int      last_row = -1, last_col = -1;   /* the last press */
+static uint32_t last_time;
+static int      click_here;     /* test mode: the input just before was
                                    a release, and where it was */
 
 static int mouse_next( void );
@@ -466,7 +466,7 @@ static void to_cell( int x, int y, int *row, int *col )
 static void queue_event( int kind, int row, int col )
 {
     int next = (mq_tail + 1) % MQ_SIZE;
-    u32 now;
+    uint32_t now;
 
     if ( kind == ME_DOWN ) {
         /* a second press on the same cell, soon enough, is a double one;
@@ -743,7 +743,7 @@ static int mouse_next( void )
 static int key_wait( int hundredths )
 {
     int shift, raw, got, flags;
-    u32 start = hundredths > 0 ? sys_hundredths() : 0;
+    uint32_t start = hundredths > 0 ? sys_hundredths() : 0;
 
     for ( ;; ) {
         if ( mouse_next() ) {
@@ -779,7 +779,7 @@ static int key_wait( int hundredths )
             alt_armed = 0;
         }
         shift_seen = shift;
-        if ( hundredths == 0 || (hundredths > 0 && sys_hundredths() - start >= (u32)hundredths) ) {
+        if ( hundredths == 0 || (hundredths > 0 && sys_hundredths() - start >= (uint32_t)hundredths) ) {
             return K_TICK;
         }
     }
@@ -842,7 +842,7 @@ int key_alt_letter( int key )
 void scr_dump( void )
 {
     char line[140];
-    u32 done;
+    unsigned int done;
     int row, col;
 
     if ( !dump_open ) {
@@ -853,7 +853,7 @@ void scr_dump( void )
             line[col] = (char)(want[row * scr_cols + col] & 0xFF);
             if ( want[row * scr_cols + col] & CF_PIC_MASK ) {
                 line[col] = '*';
-            } else if ( (u8)line[col] < ' ' ) {
+            } else if ( (uint8_t)line[col] < ' ' ) {
                 line[col] = '.';
             }
         }
@@ -862,11 +862,11 @@ void scr_dump( void )
         }
         line[col++] = '\r';
         line[col++] = '\n';
-        sys_write( dump_handle, line, (u32)col, &done );
+        sys_write( dump_handle, line, (unsigned int)col, &done );
     }
-    col = sfmt( line, sizeof( line ), "[cursor %u,%u %s]\r\n", (u32)cur_row, (u32)cur_col,
+    col = sfmt( line, sizeof( line ), "[cursor %u,%u %s]\r\n", (unsigned int)cur_row, (unsigned int)cur_col,
                 cur_kind == CUR_BLOCK ? "block" : cur_kind == CUR_HIDE ? "hidden" : "line" );
-    sys_write( dump_handle, line, (u32)col, &done );
+    sys_write( dump_handle, line, (unsigned int)col, &done );
 }
 
 /* test mode: a graphics screen as a .BMP file beside the log - the
@@ -875,7 +875,7 @@ void scr_dump( void )
 void scr_shot( void )
 {
     char path[PATH_MAX + 8], line[PATH_MAX + 40];
-    u32 done;
+    unsigned int done;
     int len, dot, ok;
 
     if ( !dump_open || !gfx_on ) {
@@ -889,8 +889,8 @@ void scr_shot( void )
         len = dot - 1;
     }
     shots++;
-    sfmt( path + len, 8, "%u%u.BMP", (u32)(shots / 10 % 10), (u32)(shots % 10) );
+    sfmt( path + len, 8, "%u%u.BMP", (unsigned int)(shots / 10 % 10), (unsigned int)(shots % 10) );
     ok = gfx_snapshot( path );
     len = sfmt( line, sizeof( line ), "[picture %s%s]\r\n", path, ok ? "" : " NOT WRITTEN" );
-    sys_write( dump_handle, line, (u32)len, &done );
+    sys_write( dump_handle, line, (unsigned int)len, &done );
 }

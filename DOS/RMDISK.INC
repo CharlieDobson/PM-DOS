@@ -455,6 +455,7 @@ f32_none:
 ;=====================================================================
 vol_forget:
         push    ax
+        mov     word ptr [rd_growsft],0 ; sft_grow's end of chain: not known now
         cmp     si,[rd_fatvol]
         jne     vfg_dir
         call    fat_flush
@@ -492,6 +493,7 @@ vfg_cache:
 rd_mount:
         pushad
         push    es
+        mov     word ptr [rd_growsft],0 ; sft_grow's end of chain: not known now
 
         ; A DRIVER'S UNIT HAS NO BIOS TO ASK.  The geometry below is the
         ; CHS path's, which its sectors do not take (rd_drvraw).  A
@@ -732,6 +734,7 @@ rd_wrsec:
         mov     dl,1
 rd_xfer:
         pushad
+rx_setup:
         mov     [rd_rw],dl
         mov     dl,[si+VOL_BIOS]
         mov     [rd_bios],dl
@@ -752,11 +755,12 @@ rd_xfer:
         mov     edx,dword ptr [si+VOL_MBASE]
         mov     dword ptr [rd_mbase],edx
         movzx   ecx,cx
+        mov     byte ptr [rd_xcode],CERR_GENERAL        ; unless told better
 IFDEF RMDOS_E9
         call    e9_disk                 ; the request, on port E9h
 ENDIF
         call    cm_xfer
-        jc      rx_dead
+        jc      rx_fail
 rx_ok:
 IFDEF RMDOS_E9
         mov     al,[cmv_last]           ; H hit, M miss, W write, . raw
@@ -768,6 +772,27 @@ ENDIF
         pop     dx
         clc
         ret
+
+        ; A WRITE THAT FAILED IS THE PROGRAM'S TO DECIDE ABOUT, through its
+        ; INT 24h - rd_crit.  A read that failed is still reported to the
+        ; caller as it always was: it has never claimed to have done what
+        ; it did not.  A write had: until 2026-11-19 a delete, a rename or
+        ; a new file on a write-protected disk answered "done" and changed
+        ; nothing, because the directory and FAT flushes dropped the carry.
+rx_fail:
+        cmp     byte ptr [rd_rw],0
+        je      rx_dead
+        call    rd_crit                 ; -> AL: 1 retry, 3 fail
+        cmp     al,CRA_RETRY
+        jb      rx_ok                   ; (0, ignore: never offered today)
+        ja      rx_dead
+        mov     bx,sp                   ; retry: the request again, exactly
+        mov     eax,ss:[bx+28]          ; as it was handed in - the PUSHAD
+        mov     ecx,ss:[bx+24]          ; above holds it
+        mov     edx,ss:[bx+20]
+        mov     esi,ss:[bx+4]
+        mov     ebx,ss:[bx+16]
+        jmp     rx_setup
 rx_dead:
 IFDEF RMDOS_E9
         mov     al,'-'
@@ -777,6 +802,241 @@ ENDIF
         pop     dx
         stc
         ret
+
+;=====================================================================
+; rd_crit - a WRITE failed: ask the program's INT 24h what to do, the
+;           way MS-DOS asks it (DOS6SRC dos/msctrlc.asm, HardErr), and
+;           say what it answered.  SI = the volume, EAX = the transfer's
+;           first sector, [rd_xcode] = the INT 24h code for what went
+;           wrong.  -> AL = CRA_RETRY or CRA_FAIL; everything else kept.
+;
+; WHAT THE HANDLER IS GIVEN, AS DOS GIVES IT:
+;   AH  bit 0 a write; bits 1-2 where - 0 the boot area, 1 the FAT,
+;       2 the directory, 3 the data; and the answers allowed: Fail (08h)
+;       and Retry (10h).  Not Ignore - the kernel does not offer it for
+;       a disk either, and ignoring a write that did not happen is the
+;       very answer "done" this exists to stop giving
+;   AL  the drive, A: = 0
+;   DI  the reason: 0 write-protected, 2 not ready, 0Ch general failure
+;       and the rest of DOS's list
+;   BP:SI the device's header: a loaded driver's own, or rd_blkdev for
+;       a disk the BIOS reaches
+;
+; ON THE CALLER'S OWN STACK, with MS-DOS's frame on it: the caller's
+; AX, BX, CX, DX, SI, DI, BP, DS and ES, AX lowest, and its INT 21h
+; return above them.  Handlers rely on that shape - the C library's
+; _hardretn drops its own frame and those nine words and IRETs through
+; the return, straight back into the program (the kernel's crit_guest
+; says more).  One that does never comes back here; the next DOS call
+; that is not a console call or 59h finds rd_errmode still set and puts
+; the abandoned call's stack, depth and critical section back
+; (crit_abandon), as MS-DOS's dispatcher does with INT 2Ah AH=82h.
+;
+; NOT ASKED, AND FAILED AT ONCE: a write outside any DOS call, INT 26h's
+; (absolute I/O has always reported to its caller, which SYS and FORMAT
+; want), any write while a handler is already running, and every write
+; after the first refusal in a call - one question per call, not one
+; per sector the call goes on to try.
+;
+; RMDOS's CRITICAL SECTION IS HELD THROUGH THE QUESTION.  The buffers a
+; retry writes from are one copy for every VM; letting another machine
+; into this DOS while the user decides would let it overwrite them.  A
+; handler must keep to the console and 59h, as DOS has always said.
+;=====================================================================
+rd_crit:
+        cmp     byte ptr [rd_noi24],0
+        jne     rcr_quiet
+        cmp     byte ptr [rd_indos],0
+        je      rcr_quiet
+        cmp     byte ptr [rd_errmode],0
+        jne     rcr_quiet
+        test    byte ptr [rd_cerr],RCE_FAILED OR RCE_QUIET
+        jnz     rcr_quiet
+        push    ebx
+        push    ecx
+        push    edx
+        push    esi
+        push    edi
+        push    ebp
+        push    ds
+        push    es
+        push    fs
+
+        ; AH: what was being written, and what the answer may be
+        call    cr24_area                 ; -> CL
+        mov     ah,cl
+        shl     ah,1
+        or      ah,CEA_WRITE OR CEA_FAIL OR CEA_RETRY
+        mov     [cr24_ah],ah
+
+        ; AL: the drive - the volume's place in rd_vols
+        mov     ax,si
+        sub     ax,OFFSET rd_vols
+        xor     dx,dx
+        mov     cx,VOL_LEN
+        div     cx
+        mov     [cr24_drv],al
+
+        ; BP:SI: a loaded driver's header, or ours
+        mov     word ptr [cr24_hdr],OFFSET rd_blkdev
+        mov     word ptr [cr24_hdr+2],cs
+        test    byte ptr [si+VOL_FLAGS],VF_DRIVER
+        jz      rcr_hdr
+        mov     edx,dword ptr [si+VOL_DRVHDR]
+        or      edx,edx
+        jz      rcr_hdr                 ; the bridge's and a RAM disk's have none
+        mov     dword ptr [cr24_hdr],edx
+rcr_hdr:
+
+        ; THE FRAME, under the caller's own pushes - or under us, when no
+        ; stack slot was free and this call is running on the caller's
+        ; stack already (i21_stacked)
+        mov     fs,[rd_frss]
+        mov     bx,[rd_frame]
+        mov     ax,fs:[bx+F_SLOT]       ; kept now: a handler that never
+        mov     [rd_c24slot],ax         ; comes back may write over it
+        mov     es,fs:[bx+F_OWNSEG]
+        mov     di,fs:[bx+F_OWNOFF]     ; ES:DI -> the caller's registers
+        mov     dx,di
+        mov     ax,ss
+        mov     cx,es
+        cmp     ax,cx
+        jne     rcr_place
+        mov     ax,sp
+        cmp     ax,dx
+        jae     rcr_place
+        mov     dx,ax
+        sub     dx,16                   ; clear of what is in use here
+rcr_place:
+        sub     dx,RC_FRAME
+        mov     bx,dx
+        mov     ax,es:[di+F_AX]
+        mov     es:[bx+0],ax
+        mov     ax,es:[di+F_BX]
+        mov     es:[bx+2],ax
+        mov     ax,es:[di+F_CX]
+        mov     es:[bx+4],ax
+        mov     ax,es:[di+F_DX]
+        mov     es:[bx+6],ax
+        mov     ax,es:[di+F_SI]
+        mov     es:[bx+8],ax
+        mov     ax,es:[di+F_DI]
+        mov     es:[bx+10],ax
+        mov     ax,es:[di+F_BP]
+        mov     es:[bx+12],ax
+        mov     ax,es:[di+F_DS]
+        mov     es:[bx+14],ax
+        mov     [cr24_ds],ax
+        mov     ax,es:[di+F_ES]
+        mov     es:[bx+16],ax
+        mov     [cr24_es],ax
+        mov     ax,es:[di+F_IP]
+        mov     es:[bx+18],ax
+        mov     ax,es:[di+F_CS]
+        mov     es:[bx+20],ax
+        mov     ax,es:[di+F_FL]
+        mov     es:[bx+22],ax
+        mov     [cr24_ss],es
+        mov     [cr24_sp],bx
+
+        ; DOS IS OUT OF THE CALL while the handler runs, as MS-DOS is:
+        ; InDOS down (the handler may not come back), the error mode up -
+        ; both published, because a call the handler makes reads them
+        ; back out of the SDA (sda_pull)
+        dec     byte ptr [rd_indos]
+        mov     byte ptr [rd_errmode],1
+        call    sda_sync
+        mov     [rd_c24ss],ss
+        mov     [rd_c24sp],sp
+
+        mov     ah,[cr24_ah]
+        mov     al,[cr24_drv]
+        movzx   di,byte ptr [rd_xcode]
+        mov     si,word ptr [cr24_hdr]
+        mov     bp,word ptr [cr24_hdr+2]
+        mov     es,[cr24_es]
+        cli
+        mov     ss,[cr24_ss]
+        mov     sp,[cr24_sp]
+        mov     ds,cs:[cr24_ds]
+        sti
+        int     24h
+        cli
+        mov     ss,cs:[rd_c24ss]
+        mov     sp,cs:[rd_c24sp]
+        sti
+        push    cs
+        pop     ds
+        mov     byte ptr [rd_errmode],0
+        inc     byte ptr [rd_indos]
+        call    sda_sync
+
+        ; THE ANSWER.  Anything past Fail is Abort, as DOS takes it; an
+        ; answer that was not offered is Fail, as DOS makes it.
+        cmp     al,CRA_FAIL
+        jbe     rcr_known
+        mov     al,CRA_ABORT
+rcr_known:
+        cmp     al,CRA_RETRY
+        je      rcr_out
+        cmp     al,CRA_ABORT
+        jne     rcr_fail
+        or      byte ptr [rd_cerr],RCE_ABORT
+rcr_fail:
+        or      byte ptr [rd_cerr],RCE_FAILED
+        mov     al,CRA_FAIL
+rcr_out:
+        pop     fs
+        pop     es
+        pop     ds
+        pop     ebp
+        pop     edi
+        pop     esi
+        pop     edx
+        pop     ecx
+        pop     ebx
+        ret
+rcr_quiet:
+        mov     al,CRA_FAIL
+        ret
+
+;--- cr24_area - CL = where the sector EAX of the volume SI lies: 0 the
+;--- boot area, 1 the FAT, 2 a FAT12/16 root, 3 the data.  A FAT32 root
+;--- is a cluster chain in the data area, and that is what it is called.
+cr24_area:
+        xor     cl,cl
+        cmp     eax,dword ptr [si+VOL_FATLBA]
+        jb      rca_out
+        mov     cl,3
+        cmp     eax,dword ptr [si+VOL_DATALBA]
+        jae     rca_out
+        mov     cl,1
+        cmp     byte ptr [si+VOL_FATTYPE],32
+        je      rca_out
+        cmp     eax,dword ptr [si+VOL_ROOTLBA]
+        jb      rca_out
+        mov     cl,2
+rca_out:
+        ret
+
+;--- rd_blkdev - BP:SI for a disk the BIOS reaches.  A handler looks at
+;--- bit 15 of the attribute (clear: a block device) and the error
+;--- code; nothing calls through it, but its two entries are a RETF.
+rd_blkdev   dd  -1
+            dw  0000h
+            dw  OFFSET rd_devnop
+            dw  OFFSET rd_devnop
+            db  LASTDRIVE, 7 dup(0)
+rd_devnop:
+        retf
+
+cr24_ah       db  0
+cr24_drv      db  0
+cr24_hdr      dd  0
+cr24_ds       dw  0
+cr24_es       dw  0
+cr24_ss       dw  0
+cr24_sp       dw  0
 
 ;=====================================================================
 ; rd_raw - the BIOS transfer itself: EAX = absolute LBA, ECX = sectors,
@@ -922,6 +1182,7 @@ rdr_chsgo:
         mov     al,byte ptr [rd_run]
         push    si
         int     13h
+        mov     [rd_bstat],ah           ; the BIOS's reason, before the pops
         pop     si
         pop     ecx
         pop     eax
@@ -950,6 +1211,7 @@ rdr_lbago:
         mov     dl,[rd_bios]
         mov     si,OFFSET rd_dap
         int     13h
+        mov     [rd_bstat],ah
         pop     si
         pop     ecx
         pop     eax
@@ -963,6 +1225,7 @@ rdr_err:
 IFDEF RMDOS_E9
         call    e9_diskerr              ; " e=XX", the BIOS's AH
 ENDIF
+        call    rd_bmap                 ; the reason, as INT 24h names it
         cmp     byte ptr [rd_retry],0
         jne     rdr_dead
         mov     byte ptr [rd_retry],1
@@ -1003,6 +1266,52 @@ rdr_dead:
         pop     es
         stc
         ret
+
+;--- rd_bmap - [rd_xcode] = the INT 24h code for the BIOS status in
+;--- [rd_bstat], by the kernel's own table (CRITERR.INC, crit_tbl), so
+;--- that a disk error has the same name under Windows as at the
+;--- prompt.  Anything not in it is a general failure.  Everything kept,
+;--- the flags included.
+rd_bmap:
+        pushf
+        push    ax
+        push    cx
+        push    si
+        mov     al,[rd_bstat]
+        mov     si,OFFSET rd_btbl
+        mov     cx,RD_BTBL_LEN
+rbm_lp:
+        cmp     al,[si]
+        je      rbm_hit
+        add     si,2
+        loop    rbm_lp
+        mov     byte ptr [rd_xcode],CERR_GENERAL
+        jmp     short rbm_out
+rbm_hit:
+        mov     al,[si+1]
+        mov     [rd_xcode],al
+rbm_out:
+        pop     si
+        pop     cx
+        pop     ax
+        popf
+        ret
+
+rd_btbl     db  03h, CERR_WRPROT        ; write-protected
+            db  80h, CERR_NOTREADY      ; time-out: nothing answered
+            db  0FFh,CERR_NOTREADY      ; no such unit (a floppy: empty)
+            db  31h, CERR_NOTREADY      ; no media in the drive
+            db  06h, CERR_NOTREADY      ; media changed
+            db  10h, CERR_DATA          ; CRC error
+            db  40h, CERR_SEEK          ; seek failed
+            db  02h, CERR_SECTOR        ; address mark missing
+            db  04h, CERR_SECTOR        ; sector not found
+            db  01h, CERR_CMD           ; the controller refused it
+RD_BTBL_LEN EQU     10
+IF ($ - rd_btbl) - RD_BTBL_LEN * 2
+.ERR    ; RD_BTBL_LEN no longer matches the table
+ENDIF
+rd_bstat    db  0                       ; the BIOS's status, last failure
 
 ;--- rd_bncsel - ES:BX = the half of rd_bounce that lies within one 64K
 ;--- page.  The buffer is two sectors long and RMDOS is anywhere, so
@@ -1065,10 +1374,20 @@ rd_bncout:
         ret
 
 ;=====================================================================
-; 0Dh - disk reset.  Everything dirty goes out; nothing else happens.
+; 0Dh - disk reset.  Everything dirty goes out, AND IS THEN FORGOTTEN
+;       (2026-11-21), as MS-DOS's $DISK_RESET invalidates every buffer it
+;       has flushed (DOS6SRC dos/misc.asm: "it is supposed to FORCE a
+;       known state").  Windows' IFSMGR makes the call itself once it
+;       has taken a drive for 32-bit file access (seen in the trace,
+;       before the pager's next call on the swap file): whatever it is
+;       for there, it is the one way a program has of telling a DOS
+;       that the disk is not what the DOS last read.  This DOS kept its
+;       FAT window and directory sector through it.
 ;=====================================================================
 fn0D:
         call    rd_flush
+        call    rd_bufdrop              ; (written, so nothing is lost)
+        mov     word ptr [rd_growsft],0 ; nor the end sft_grow knew
         jmp     i21_ok
 
 ;=====================================================================
@@ -1338,7 +1657,9 @@ i25_have:
         mov     ecx,dword ptr [rd_abscnt]
         cmp     byte ptr [rd_absrw],0
         je      i25_read
-        call    rd_wrsec
+        mov     byte ptr [rd_noi24],1   ; its errors are its caller's, as
+        call    rd_wrsec                ; they always were - no INT 24h
+        mov     byte ptr [rd_noi24],0   ; (MOV keeps the carry)
         jmp     short i25_done
 i25_read:
         call    i25_bios                ; as IO.SYS reads it, if it can be

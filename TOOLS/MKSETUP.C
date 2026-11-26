@@ -55,6 +55,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
 #include <ctype.h>
 #include <time.h>
 #include <sys/stat.h>
@@ -77,7 +78,7 @@ typedef struct {
     char  flags[8];                 /* S F U R from the list, P when packed */
     int   first;                    /* on disk 1, as it is */
     int   nopack;
-    unsigned char *data;            /* what goes on the disk */
+    uint8_t *data;                  /* what goes on the disk */
     unsigned long size;             /* its size once expanded */
     unsigned long disksize;         /* its size on the disk */
     int   disk;
@@ -119,10 +120,10 @@ static char *trim(char *s)
     return s;
 }
 
-static unsigned char *load(const char *path, unsigned long *len)
+static uint8_t *load(const char *path, unsigned long *len)
 {
     FILE *f = fopen(path, "rb");
-    unsigned char *buf;
+    uint8_t *buf;
     long n;
 
     if (!f) return NULL;
@@ -137,7 +138,7 @@ static unsigned char *load(const char *path, unsigned long *len)
     return buf;
 }
 
-static void save(const char *path, const unsigned char *data, unsigned long len)
+static void save(const char *path, const uint8_t *data, unsigned long len)
 {
     FILE *f = fopen(path, "wb");
     if (!f || (len && fwrite(data, 1, len, f) != len) || fclose(f)) die("cannot write", path);
@@ -162,10 +163,10 @@ static void base_name(char *dst, const char *path)
 #define HBITS   13
 #define CHAIN   512
 
-static unsigned char *szdd_pack(const unsigned char *in, unsigned long n,
-                                char lastch, unsigned long *outlen)
+static uint8_t *szdd_pack(const uint8_t *in, unsigned long n,
+                          char lastch, unsigned long *outlen)
 {
-    unsigned char *out = malloc(n + n / 8 + 64);
+    uint8_t *out = malloc(n + n / 8 + 64);
     long *head = malloc(sizeof(long) << HBITS);
     long *prev = malloc(sizeof(long) * (n + 1));
     unsigned long i, o = 14, flagat;
@@ -174,9 +175,9 @@ static unsigned char *szdd_pack(const unsigned char *in, unsigned long n,
     if (!out || !head || !prev) die("out of memory", NULL);
     memcpy(out, "SZDD\x88\xF0\x27\x33", 8);
     out[8] = 'A';
-    out[9] = (unsigned char)lastch;
-    out[10] = (unsigned char)n; out[11] = (unsigned char)(n >> 8);
-    out[12] = (unsigned char)(n >> 16); out[13] = (unsigned char)(n >> 24);
+    out[9] = (uint8_t)lastch;
+    out[10] = (uint8_t)n; out[11] = (uint8_t)(n >> 8);
+    out[12] = (uint8_t)(n >> 16); out[13] = (uint8_t)(n >> 24);
     for (k = 0; k < (1 << HBITS); k++) head[k] = -1;
     flagat = 0;
     for (i = 0; i < n; ) {
@@ -195,11 +196,11 @@ static unsigned char *szdd_pack(const unsigned char *in, unsigned long n,
         }
         if (best >= 3) {
             unsigned pos = (unsigned)((WSIZE - 16 + bestpos) & WMASK);
-            out[o++] = (unsigned char)pos;
-            out[o++] = (unsigned char)(((pos >> 4) & 0xF0) | (best - 3));
+            out[o++] = (uint8_t)pos;
+            out[o++] = (uint8_t)(((pos >> 4) & 0xF0) | (best - 3));
         } else {
             best = 1;
-            out[flagat] |= (unsigned char)(1 << bit);
+            out[flagat] |= (uint8_t)(1 << bit);
             out[o++] = in[i];
         }
         bit++;
@@ -220,10 +221,10 @@ static unsigned char *szdd_pack(const unsigned char *in, unsigned long n,
 }
 
 /* the same decoder as SETUP's COPY.C: 1 = it does not give "in" back */
-static int szdd_check(const unsigned char *packed, unsigned long plen,
-                      const unsigned char *in, unsigned long n)
+static int szdd_check(const uint8_t *packed, unsigned long plen,
+                      const uint8_t *in, unsigned long n)
 {
-    unsigned char win[WSIZE];
+    uint8_t win[WSIZE];
     unsigned long at = 14, total = 0;
     int pos = WSIZE - 16, flags = 0, bits = 0, i;
 
@@ -240,7 +241,7 @@ static int szdd_check(const unsigned char *packed, unsigned long plen,
             len = (packed[at + 1] & 0x0F) + 3;
             at += 2;
             for (i = 0; i < len; i++) {
-                unsigned char v = win[(from + i) & WMASK];
+                uint8_t v = win[(from + i) & WMASK];
                 if (total >= n || v != in[total]) return 1;
                 win[pos] = v; pos = (pos + 1) & WMASK; total++;
             }
@@ -480,14 +481,14 @@ static void add_text(char *buf, size_t max, const char *line)
     strcat(buf, "\r\n");
 }
 
-static unsigned char *join_section(int sec, unsigned long *len)
+static uint8_t *join_section(int sec, unsigned long *len)
 {
     static char buf[8192];
     int i;
     buf[0] = 0;
     for (i = 0; i < nsection[sec]; i++) add_text(buf, sizeof(buf), section[sec][i]);
     *len = strlen(buf);
-    return (unsigned char *)buf;
+    return (uint8_t *)buf;
 }
 
 static void make_set(const char *outdir)
@@ -504,7 +505,7 @@ static void make_set(const char *outdir)
     /* read and pack */
     for (i = 0; i < nent; i++) {
         ENTRY *e = &ent[i];
-        unsigned char *raw = load(e->src, &len);
+        uint8_t *raw = load(e->src, &len);
         if (!raw) die("missing", e->src);
         e->size = len;
         strcpy(e->packed, e->name);
@@ -513,7 +514,7 @@ static void make_set(const char *outdir)
         if (!e->first && !e->nopack && len > 0) {
             char last = packed_name(e->packed, e->name);
             unsigned long plen;
-            unsigned char *p = szdd_pack(raw, len, last, &plen);
+            uint8_t *p = szdd_pack(raw, len, last, &plen);
             if (szdd_check(p, plen, raw, len)) die("packing does not give the file back", e->src);
             if (plen < len) {
                 e->data = p;
@@ -593,16 +594,16 @@ static void make_set(const char *outdir)
         save(path, ent[i].data, ent[i].disksize);
     }
     sprintf(path, "%s\\SETUP.INF", stage);
-    save(path, (unsigned char *)inf, strlen(inf));
+    save(path, (uint8_t *)inf, strlen(inf));
     sprintf(path, "%s\\CONFIG.SYS", stage);
-    { unsigned char *t = join_section(SEC_SUCFG, &len); save(path, t, len); }
+    { uint8_t *t = join_section(SEC_SUCFG, &len); save(path, t, len); }
     sprintf(path, "%s\\AUTOEXEC.BAT", stage);
-    { unsigned char *t = join_section(SEC_SUAUTO, &len); save(path, t, len); }
+    { uint8_t *t = join_section(SEC_SUAUTO, &len); save(path, t, len); }
     for (d = 1; d <= ndisks; d++) {
         sprintf(tag, "DISK%d", d);
         sprintf(path, "%s\\%s", stage, tag);
         sprintf(line, "%s %s Setup Disk #%d\r\n", product, version, d);
-        save(path, (unsigned char *)line, strlen(line));
+        save(path, (uint8_t *)line, strlen(line));
     }
 
     /* THE PM-DOS CD's tree, CD\.  Its root is the stage - Setup's source
@@ -619,7 +620,7 @@ static void make_set(const char *outdir)
         sprintf(path, "%s\\%s", cdroot, ent[i].packed);
         save(path, ent[i].data, ent[i].disksize);
         if (!strcmp(ent[i].where, "DOS") || (!strcmp(ent[i].where, "ROOT") && !ent[i].first)) {
-            unsigned char *raw = load(ent[i].src, &len);
+            uint8_t *raw = load(ent[i].src, &len);
             if (!raw || len != ent[i].size) die("cannot read", ent[i].src);
             sprintf(path, "%s\\%s", cdsys, ent[i].name);
             save(path, raw, len);
@@ -627,15 +628,15 @@ static void make_set(const char *outdir)
         }
     }
     sprintf(path, "%s\\SETUP.INF", cdroot);
-    save(path, (unsigned char *)inf, strlen(inf));
+    save(path, (uint8_t *)inf, strlen(inf));
     sprintf(path, "%s\\CONFIG.SYS", cdroot);
-    { unsigned char *t = join_section(SEC_CDCFG, &len); save(path, t, len); }
+    { uint8_t *t = join_section(SEC_CDCFG, &len); save(path, t, len); }
     sprintf(path, "%s\\AUTOEXEC.BAT", cdroot);
-    { unsigned char *t = join_section(SEC_CDAUTO, &len); save(path, t, len); }
+    { uint8_t *t = join_section(SEC_CDAUTO, &len); save(path, t, len); }
     for (d = 1; d <= ndisks; d++) {
         sprintf(path, "%s\\DISK%d", cdroot, d);
         sprintf(line, "%s %s Setup Disk #%d\r\n", product, version, d);
-        save(path, (unsigned char *)line, strlen(line));
+        save(path, (uint8_t *)line, strlen(line));
     }
 
     /* the commands that make the images */
@@ -678,37 +679,37 @@ static void make_set(const char *outdir)
  *-------------------------------------------------------------------*/
 #define SEC2K   2048UL
 
-static void both16(unsigned char *p, unsigned v)
+static void both16(uint8_t *p, uint16_t v)
 {
-    p[0] = (unsigned char)v; p[1] = (unsigned char)(v >> 8);
-    p[2] = (unsigned char)(v >> 8); p[3] = (unsigned char)v;
+    p[0] = (uint8_t)v; p[1] = (uint8_t)(v >> 8);
+    p[2] = (uint8_t)(v >> 8); p[3] = (uint8_t)v;
 }
 
-static void both32(unsigned char *p, unsigned long v)
+static void both32(uint8_t *p, uint32_t v)
 {
     int i;
     for (i = 0; i < 4; i++) {
-        p[i] = (unsigned char)(v >> (8 * i));
-        p[7 - i] = (unsigned char)(v >> (8 * i));
+        p[i] = (uint8_t)(v >> (8 * i));
+        p[7 - i] = (uint8_t)(v >> (8 * i));
     }
 }
 
-static void put32le(unsigned char *p, unsigned long v)
+static void put32le(uint8_t *p, uint32_t v)
 {
-    p[0] = (unsigned char)v; p[1] = (unsigned char)(v >> 8);
-    p[2] = (unsigned char)(v >> 16); p[3] = (unsigned char)(v >> 24);
+    p[0] = (uint8_t)v; p[1] = (uint8_t)(v >> 8);
+    p[2] = (uint8_t)(v >> 16); p[3] = (uint8_t)(v >> 24);
 }
 
-static void put32be(unsigned char *p, unsigned long v)
+static void put32be(uint8_t *p, uint32_t v)
 {
-    p[3] = (unsigned char)v; p[2] = (unsigned char)(v >> 8);
-    p[1] = (unsigned char)(v >> 16); p[0] = (unsigned char)(v >> 24);
+    p[3] = (uint8_t)v; p[2] = (uint8_t)(v >> 8);
+    p[1] = (uint8_t)(v >> 16); p[0] = (uint8_t)(v >> 24);
 }
 
-static void pad(unsigned char *p, const char *text, int len)
+static void pad(uint8_t *p, const char *text, int len)
 {
     int i, n = (int)strlen(text);
-    for (i = 0; i < len; i++) p[i] = (unsigned char)(i < n ? text[i] : ' ');
+    for (i = 0; i < len; i++) p[i] = (uint8_t)(i < n ? text[i] : ' ');
 }
 
 /* The disc is built from a directory tree on this machine, and every
@@ -722,7 +723,7 @@ static void pad(unsigned char *p, const char *text, int len)
 typedef struct {
     char name[16];                  /* NAME.EXT;1, or a directory's NAME */
     char path[300];                 /* where it is on this machine */
-    unsigned long size, lba;
+    uint32_t size, lba;
     int parent;                     /* the cdd[] row it is in */
     int isdir;
     int sub;                        /* a directory: its own cdd[] row */
@@ -732,7 +733,7 @@ typedef struct {
     char path[300];
     int parent, depth;
     int self;                       /* its cdf[] row; -1 for the root */
-    unsigned long lba, secs;
+    uint32_t lba, secs;
 } CDDIR;
 
 static CDFILE cdf[CD_MAXFILES];
@@ -745,7 +746,7 @@ static int cdcmp(const void *a, const void *b)
     return strcmp(((const CDFILE *)a)->name, ((const CDFILE *)b)->name);
 }
 
-static unsigned char stamp7[7];
+static uint8_t stamp7[7];
 
 /* a directory record's length: 33 bytes and the name, made even */
 static int reclen(int nlen)
@@ -753,18 +754,18 @@ static int reclen(int nlen)
     return 33 + nlen + ((nlen & 1) ? 0 : 1);
 }
 
-static void dirrec(unsigned char *p, unsigned long lba, unsigned long size, int dir,
+static void dirrec(uint8_t *p, uint32_t lba, uint32_t size, int dir,
                    const char *name, int nlen)
 {
     int len = reclen(nlen);
     memset(p, 0, len);
-    p[0] = (unsigned char)len;
+    p[0] = (uint8_t)len;
     both32(p + 2, lba);
     both32(p + 10, size);
     memcpy(p + 18, stamp7, 7);
-    p[25] = (unsigned char)(dir ? 2 : 0);
+    p[25] = (uint8_t)(dir ? 2 : 0);
     both16(p + 28, 1);
-    p[32] = (unsigned char)nlen;
+    p[32] = (uint8_t)nlen;
     memcpy(p + 33, name, nlen);
 }
 
@@ -784,7 +785,7 @@ static void cd_name(char *dst, const char *name, int dir)
     }
 }
 
-static void cd_add(int parent, const char *path, const char *name, unsigned long size, int dir)
+static void cd_add(int parent, const char *path, const char *name, uint32_t size, int dir)
 {
     if (ncdf >= CD_MAXFILES) die("too many files for the CD", path);
     if (strlen(path) + 1 > sizeof(cdf[0].path)) die("the path is too long", path);
@@ -859,9 +860,9 @@ static unsigned long dir_secs(int k)
     return secs;
 }
 
-static void dir_write(unsigned char *iso, int k)
+static void dir_write(uint8_t *iso, int k)
 {
-    unsigned char *p = iso + cdd[k].lba * SEC2K;
+    uint8_t *p = iso + cdd[k].lba * SEC2K;
     int up = cdd[k].parent, i;
     unsigned long insec = 68, secno = 0;
 
@@ -870,8 +871,8 @@ static void dir_write(unsigned char *iso, int k)
     for (i = 0; i < ncdf; i++) if (cdf[i].parent == k) {
         int nlen = (int)strlen(cdf[i].name);
         int len = reclen(nlen);
-        unsigned long lba = cdf[i].isdir ? cdd[cdf[i].sub].lba : cdf[i].lba;
-        unsigned long size = cdf[i].isdir ? cdd[cdf[i].sub].secs * SEC2K : cdf[i].size;
+        uint32_t lba = cdf[i].isdir ? cdd[cdf[i].sub].lba : cdf[i].lba;
+        uint32_t size = cdf[i].isdir ? cdd[cdf[i].sub].secs * SEC2K : cdf[i].size;
         if (insec + len > SEC2K) { secno++; insec = 0; }
         dirrec(p + secno * SEC2K + insec, lba, size, cdf[i].isdir, cdf[i].name, nlen);
         insec += len;
@@ -880,7 +881,7 @@ static void dir_write(unsigned char *iso, int k)
 
 /* one path table, little-endian (be = 0) or big-endian, written at p
    unless p is NULL; -> its length */
-static unsigned long path_table(unsigned char *p, int be)
+static unsigned long path_table(uint8_t *p, int be)
 {
     unsigned long at = 0;
     int k;
@@ -889,16 +890,16 @@ static unsigned long path_table(unsigned char *p, int be)
         int nlen = k ? (int)strlen(name) : 1;
         unsigned up = (unsigned)cdd[k].parent + 1;
         if (p) {
-            p[at] = (unsigned char)nlen;
+            p[at] = (uint8_t)nlen;
             p[at + 1] = 0;
             if (be) {
                 put32be(p + at + 2, cdd[k].lba);
-                p[at + 6] = (unsigned char)(up >> 8);
-                p[at + 7] = (unsigned char)up;
+                p[at + 6] = (uint8_t)(up >> 8);
+                p[at + 7] = (uint8_t)up;
             } else {
                 put32le(p + at + 2, cdd[k].lba);
-                p[at + 6] = (unsigned char)up;
-                p[at + 7] = (unsigned char)(up >> 8);
+                p[at + 6] = (uint8_t)up;
+                p[at + 7] = (uint8_t)(up >> 8);
             }
             memcpy(p + at + 8, name, nlen);
         }
@@ -916,8 +917,9 @@ static unsigned long path_table(unsigned char *p, int be)
                                          information table filled in */
 static void make_iso(const char *out, const char *boot, const char *dir, const char *vol)
 {
-    unsigned char *iso, *p, *bootdata;
-    unsigned long total, at, cat, ptlen, ptsecs, i, bootlba = 0, sum, bootsize;
+    uint8_t *iso, *p, *bootdata;
+    uint32_t total, at, cat, bootlba = 0, sum;
+    unsigned long ptlen, ptsecs, i, bootsize;
     char digits[20];
     const char *ext;
     int k, media, nsec, systype = 0;
@@ -963,10 +965,10 @@ static void make_iso(const char *out, const char *boot, const char *dir, const c
     gt = *gmtime(&now);
     gt.tm_isdst = lt.tm_isdst;
     gmtoff = (int)(difftime(now, mktime(&gt)) / 900);
-    stamp7[0] = (unsigned char)tm->tm_year; stamp7[1] = (unsigned char)(tm->tm_mon + 1);
-    stamp7[2] = (unsigned char)tm->tm_mday; stamp7[3] = (unsigned char)tm->tm_hour;
-    stamp7[4] = (unsigned char)tm->tm_min; stamp7[5] = (unsigned char)tm->tm_sec;
-    stamp7[6] = (unsigned char)(signed char)gmtoff;
+    stamp7[0] = (uint8_t)tm->tm_year; stamp7[1] = (uint8_t)(tm->tm_mon + 1);
+    stamp7[2] = (uint8_t)tm->tm_mday; stamp7[3] = (uint8_t)tm->tm_hour;
+    stamp7[4] = (uint8_t)tm->tm_min; stamp7[5] = (uint8_t)tm->tm_sec;
+    stamp7[6] = (uint8_t)(signed char)gmtoff;
 
     /* the layout: 16 empty, PVD 16, boot record 17, end 18, catalog 19,
        the two path tables, the directories, then the files */
@@ -991,7 +993,7 @@ static void make_iso(const char *out, const char *boot, const char *dir, const c
     /* the files */
     for (k = 0; k < ncdf; k++) if (!cdf[k].isdir) {
         unsigned long len;
-        unsigned char *data = load(cdf[k].path, &len);
+        uint8_t *data = load(cdf[k].path, &len);
         if (!data) die("cannot read", cdf[k].path);
         if (len != cdf[k].size) die("a file changed while the CD was made", cdf[k].path);
         memcpy(iso + cdf[k].lba * SEC2K, data, len);
@@ -1008,8 +1010,8 @@ static void make_iso(const char *out, const char *boot, const char *dir, const c
         put32le(p + 16, bootsize);
         sum = 0;
         for (i = BOOTINFO; i < bootsize; i += 4)
-            sum += p[i] | (p[i + 1] << 8) | ((unsigned long)p[i + 2] << 16) |
-                   ((unsigned long)p[i + 3] << 24);
+            sum += p[i] | (p[i + 1] << 8) | ((uint32_t)p[i + 2] << 16) |
+                   ((uint32_t)p[i + 3] << 24);
         put32le(p + 20, sum);
     }
 
@@ -1025,7 +1027,7 @@ static void make_iso(const char *out, const char *boot, const char *dir, const c
     both32(p + 80, total);
     both16(p + 120, 1);
     both16(p + 124, 1);
-    both16(p + 128, (unsigned)SEC2K);
+    both16(p + 128, (uint16_t)SEC2K);
     both32(p + 132, ptlen);
     put32le(p + 140, 20);
     put32be(p + 148, 20 + ptsecs);
@@ -1037,8 +1039,8 @@ static void make_iso(const char *out, const char *boot, const char *dir, const c
     pad(p + 702, "", 37); pad(p + 739, "", 37); pad(p + 776, "", 37);
     sprintf(digits, "%04d%02d%02d%02d%02d%02d00", tm->tm_year + 1900, tm->tm_mon + 1,
             tm->tm_mday, tm->tm_hour, tm->tm_min, tm->tm_sec);
-    memcpy(p + 813, digits, 16); p[829] = (unsigned char)(signed char)gmtoff;
-    memcpy(p + 830, digits, 16); p[846] = (unsigned char)(signed char)gmtoff;
+    memcpy(p + 813, digits, 16); p[829] = (uint8_t)(signed char)gmtoff;
+    memcpy(p + 830, digits, 16); p[846] = (uint8_t)(signed char)gmtoff;
     memset(p + 847, '0', 16); p[863] = 0;
     memset(p + 864, '0', 16); p[880] = 0;
     p[881] = 1;
@@ -1058,13 +1060,13 @@ static void make_iso(const char *out, const char *boot, const char *dir, const c
     sum = 0;
     for (i = 0; i < 32; i += 2) sum += p[i] | (p[i + 1] << 8);
     sum = (0x10000UL - (sum & 0xFFFF)) & 0xFFFF;
-    p[28] = (unsigned char)sum; p[29] = (unsigned char)(sum >> 8);
+    p[28] = (uint8_t)sum; p[29] = (uint8_t)(sum >> 8);
     p += 32;                        /* the initial entry */
     p[0] = 0x88;                    /* bootable */
-    p[1] = (unsigned char)media;
-    p[4] = (unsigned char)systype;  /* a hard disk image's partition type */
-    p[6] = (unsigned char)nsec;     /* 512-byte sectors the BIOS loads: one */
-    p[7] = (unsigned char)(nsec >> 8); /* of an image, all of a loader */
+    p[1] = (uint8_t)media;
+    p[4] = (uint8_t)systype;        /* a hard disk image's partition type */
+    p[6] = (uint8_t)nsec;           /* 512-byte sectors the BIOS loads: one */
+    p[7] = (uint8_t)(nsec >> 8);       /* of an image, all of a loader */
     put32le(p + 8, bootlba);
 
     f = fopen(out, "wb");

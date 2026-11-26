@@ -18,8 +18,8 @@
 #include "sys.h"
 
 typedef struct {
-    u32 eax, ebx, ecx, edx, esi, edi;
-    u32 flags;                  /* in: bit 0 = CF before the INT */
+    uint32_t eax, ebx, ecx, edx, esi, edi;
+    uint32_t flags;             /* in: bit 0 = CF before the INT */
 } REGS;
 
 void __cdecl int21( REGS *regs );
@@ -32,14 +32,14 @@ void __cdecl break_handler( void );
 
 #define TAIL_MAX    128
 
-static u8   *psp;
-static char  tail[TAIL_MAX];
-static int   in_device = 1;     /* standard input is the keyboard */
-static int   lfn_ok = 1;
+static uint8_t *psp;
+static char     tail[TAIL_MAX];
+static int      in_device = 1;  /* standard input is the keyboard */
+static int      lfn_ok = 1;
 
 void __cdecl dos_entry( void );
 
-static void call21( REGS *regs, u32 eax )
+static void call21( REGS *regs, uint32_t eax )
 {
     regs->eax = eax;
     regs->flags = 0;
@@ -63,11 +63,11 @@ static int result( REGS *regs )
 int sys_init( void )
 {
     REGS regs;
-    u32 len;
+    unsigned int len;
 
     clear( &regs );
     call21( &regs, 0x6200 );
-    psp = (u8 *)regs.ebx;
+    psp = (uint8_t *)regs.ebx;
     len = psp[0x80];
     if ( len > 126 ) {
         len = 126;
@@ -88,7 +88,7 @@ int sys_is_device( int handle )
     REGS regs;
 
     clear( &regs );
-    regs.ebx = (u32)handle;
+    regs.ebx = (uint32_t)handle;
     call21( &regs, 0x4400 );
     if ( CF( regs ) ) {
         return 0;
@@ -96,14 +96,14 @@ int sys_is_device( int handle )
     return ( regs.edx & 0x80 ) != 0;
 }
 
-void sys_write( int handle, const char *buf, u32 len )
+void sys_write( int handle, const char *buf, unsigned int len )
 {
     REGS regs;
 
     clear( &regs );
-    regs.ebx = (u32)handle;
+    regs.ebx = (uint32_t)handle;
     regs.ecx = len;
-    regs.edx = (u32)buf;
+    regs.edx = (uint32_t)buf;
     call21( &regs, 0x4000 );
 }
 
@@ -112,10 +112,10 @@ void sys_exit( int code )
     REGS regs;
 
     clear( &regs );
-    call21( &regs, 0x4C00 | ((u32)code & 0xFF) );
+    call21( &regs, 0x4C00 | ((uint32_t)code & 0xFF) );
 }
 
-void *sys_mem_alloc( u32 size )
+void *sys_mem_alloc( unsigned int size )
 {
     REGS regs;
 
@@ -133,7 +133,7 @@ void sys_mem_free( void *block )
     REGS regs;
 
     clear( &regs );
-    regs.edx = (u32)block;
+    regs.edx = (uint32_t)block;
     call21( &regs, 0x4900 );
 }
 
@@ -146,13 +146,13 @@ static int lf_owed;
 static int read_byte( void )
 {
     REGS regs;
-    u8 ch;
+    uint8_t ch;
 
     for ( ;; ) {
         clear( &regs );
         regs.ebx = H_IN;
         regs.ecx = 1;
-        regs.edx = (u32)&ch;
+        regs.edx = (uint32_t)&ch;
         call21( &regs, 0x3F00 );
         if ( CF( regs ) || regs.eax == 0 ) {
             return -1;
@@ -171,18 +171,18 @@ static int read_byte( void )
    keyboard, which edits as the shell's prompt does; from a file, read
    to the end of the line and shown, as 6.22's 0Ah showed it.  -1 when
    a file has nothing left. */
-int sys_read_line( char *buf, u32 max )
+int sys_read_line( char *buf, unsigned int max )
 {
-    static u8 line[2 + 256];
+    static uint8_t line[2 + 256];
     REGS regs;
-    u32 len = 0;
+    unsigned int len = 0;
     int ch;
 
     if ( in_device ) {
-        line[0] = (u8)( max - 1 > 255 ? 255 : max - 1 );
+        line[0] = (uint8_t)( max - 1 > 255 ? 255 : max - 1 );
         line[1] = 0;
         clear( &regs );
-        regs.edx = (u32)line;
+        regs.edx = (uint32_t)line;
         call21( &regs, 0x0A00 );
         len = line[1];
         mem_cpy( buf, line + 2, len );
@@ -242,7 +242,7 @@ void sys_break_install( void )
     REGS regs;
 
     clear( &regs );
-    regs.edx = (u32)break_handler;
+    regs.edx = (uint32_t)break_handler;
     call21( &regs, 0x2523 );
 }
 
@@ -269,7 +269,7 @@ static int open_mode( const char *name, int create, int *err )
         regs.ebx = create ? 0x0002 : 0x0000;        /* read/write, or read */
         regs.ecx = 0;                               /* attributes */
         regs.edx = create ? 0x0012 : 0x0001;        /* replace or make / open */
-        regs.esi = (u32)name;
+        regs.esi = (uint32_t)name;
         call21( &regs, 0x716C );
         if ( !lfn_missing( &regs ) ) {
             if ( CF( regs ) ) {
@@ -280,7 +280,7 @@ static int open_mode( const char *name, int create, int *err )
         }
     }
     clear( &regs );
-    regs.edx = (u32)name;
+    regs.edx = (uint32_t)name;
     regs.ecx = 0;
     call21( &regs, create ? 0x3C00 : 0x3D00 );
     if ( CF( regs ) ) {
@@ -306,7 +306,7 @@ void sys_delete( const char *name )
 
     if ( lfn_ok ) {
         clear( &regs );
-        regs.edx = (u32)name;
+        regs.edx = (uint32_t)name;
         regs.esi = 0;                               /* no wildcards */
         call21( &regs, 0x7141 );
         if ( !lfn_missing( &regs ) ) {
@@ -314,60 +314,60 @@ void sys_delete( const char *name )
         }
     }
     clear( &regs );
-    regs.edx = (u32)name;
+    regs.edx = (uint32_t)name;
     call21( &regs, 0x4100 );
 }
 
-int sys_read( int handle, void *buf, u32 len, u32 *got )
+int sys_read( int handle, void *buf, unsigned int len, unsigned int *got )
 {
     REGS regs;
 
     clear( &regs );
-    regs.ebx = (u32)handle;
+    regs.ebx = (uint32_t)handle;
     regs.ecx = len;
-    regs.edx = (u32)buf;
+    regs.edx = (uint32_t)buf;
     call21( &regs, 0x3F00 );
     *got = CF( regs ) ? 0 : regs.eax;
     return result( &regs );
 }
 
-int sys_write_file( int handle, const void *buf, u32 len, u32 *done )
+int sys_write_file( int handle, const void *buf, unsigned int len, unsigned int *done )
 {
     REGS regs;
 
     clear( &regs );
-    regs.ebx = (u32)handle;
+    regs.ebx = (uint32_t)handle;
     regs.ecx = len;
-    regs.edx = (u32)buf;
+    regs.edx = (uint32_t)buf;
     call21( &regs, 0x4000 );
     *done = CF( regs ) ? 0 : regs.eax;
     return result( &regs );
 }
 
-int sys_size( int handle, u32 *size )
+int sys_size( int handle, uint32_t *size )
 {
     REGS regs;
     int rc;
 
     clear( &regs );
-    regs.ebx = (u32)handle;
+    regs.ebx = (uint32_t)handle;
     regs.ecx = 0;
     call21( &regs, 0x4202 );        /* to the end: EAX = the length */
     rc = result( &regs );
     *size = rc ? 0 : regs.eax;
     clear( &regs );
-    regs.ebx = (u32)handle;
+    regs.ebx = (uint32_t)handle;
     regs.ecx = 0;
     call21( &regs, 0x4200 );        /* and back to the start */
     return rc;
 }
 
-int sys_seek( int handle, u32 pos )
+int sys_seek( int handle, uint32_t pos )
 {
     REGS regs;
 
     clear( &regs );
-    regs.ebx = (u32)handle;
+    regs.ebx = (uint32_t)handle;
     regs.ecx = pos;
     call21( &regs, 0x4200 );
     return result( &regs );
@@ -378,7 +378,7 @@ void sys_close( int handle )
     REGS regs;
 
     clear( &regs );
-    regs.ebx = (u32)handle;
+    regs.ebx = (uint32_t)handle;
     call21( &regs, 0x3E00 );
 }
 
@@ -386,14 +386,14 @@ void sys_close( int handle )
 /* the first megabyte                                                  */
 /* ------------------------------------------------------------------ */
 
-int sys_low_read( u32 linear, void *buf, u32 len )
+int sys_low_read( uint32_t linear, void *buf, uint32_t len )
 {
     REGS regs;
 
     clear( &regs );
     regs.ebx = linear;
     regs.ecx = len;
-    regs.edi = (u32)buf;
+    regs.edi = (uint32_t)buf;
     call21( &regs, 0x0000F120UL );          /* LMF_READ = 0 */
     return result( &regs );
 }
@@ -403,23 +403,23 @@ int sys_low_read( u32 linear, void *buf, u32 len )
    that the work area for one stands where it would stand and the real
    memory below it - the vectors, the BIOS's data, DOS's - is still
    there to be read.  1000h if the chain will not say. */
-u16 sys_conv_seg( void )
+uint16_t sys_conv_seg( void )
 {
     REGS regs;
-    u32 rec[4];                     /* F8_SIG, F8_SIZE, F8_OWNER, F8_ADDR */
-    u32 index;
+    uint32_t rec[4];                /* F8_SIG, F8_SIZE, F8_OWNER, F8_ADDR */
+    unsigned int index;
 
     for ( index = 0; index < 64; index++ ) {
         clear( &regs );
         regs.ebx = index;
         regs.edx = 1;               /* F8_CONV */
-        regs.edi = (u32)rec;
+        regs.edi = (uint32_t)rec;
         call21( &regs, 0xF108 );
         if ( CF( regs ) || rec[0] == 'E' ) {
             break;
         }
         if ( rec[0] == 'Z' && rec[3] < 0x90000UL && rec[1] >= 0x10000UL ) {
-            return (u16)( ( rec[3] + 15 ) >> 4 );
+            return (uint16_t)( ( rec[3] + 15 ) >> 4 );
         }
     }
     return 0x1000;
@@ -429,28 +429,28 @@ u16 sys_conv_seg( void )
 /* raw sectors                                                         */
 /* ------------------------------------------------------------------ */
 
-int sys_abs_read( int drive, u32 sector, u32 count, void *buf )
+int sys_abs_read( int drive, uint32_t sector, uint32_t count, void *buf )
 {
     REGS regs;
 
     clear( &regs );
-    regs.eax = (u32)drive;
+    regs.eax = (uint32_t)drive;
     regs.edx = sector;
     regs.ecx = count;
-    regs.ebx = (u32)buf;
+    regs.ebx = (uint32_t)buf;
     int25( &regs );
     return result( &regs );
 }
 
-int sys_abs_write( int drive, u32 sector, u32 count, const void *buf )
+int sys_abs_write( int drive, uint32_t sector, uint32_t count, const void *buf )
 {
     REGS regs;
 
     clear( &regs );
-    regs.eax = (u32)drive;
+    regs.eax = (uint32_t)drive;
     regs.edx = sector;
     regs.ecx = count;
-    regs.ebx = (u32)buf;
+    regs.ebx = (uint32_t)buf;
     int26( &regs );
     return result( &regs );
 }
@@ -459,7 +459,7 @@ int sys_abs_write( int drive, u32 sector, u32 count, const void *buf )
 /* the held program                                                    */
 /* ------------------------------------------------------------------ */
 
-static int dbg_call( u32 fn, REGS *regs )
+static int dbg_call( uint32_t fn, REGS *regs )
 {
     regs->eax = ( fn << 16 ) | 0xF129;
     regs->flags = 0;
@@ -470,15 +470,15 @@ static int dbg_call( u32 fn, REGS *regs )
 /* TAIL is the command tail as DOS keeps it: a length, the text, CR */
 int sys_dbg_load( const char *path, const char *tail, DRX *regs )
 {
-    static u32 block[2];            /* 4Bh's: the environment (ours), the tail */
+    static uint32_t block[2];       /* 4Bh's: the environment (ours), the tail */
     REGS r;
 
     block[0] = 0;
-    block[1] = (u32)tail;
+    block[1] = (uint32_t)tail;
     clear( &r );
-    r.edx = (u32)path;
-    r.ebx = (u32)block;
-    r.esi = (u32)regs;
+    r.edx = (uint32_t)path;
+    r.ebx = (uint32_t)block;
+    r.esi = (uint32_t)regs;
     return dbg_call( 0, &r );
 }
 
@@ -488,31 +488,31 @@ int sys_dbg_go( DRX *regs, int *stopped )
     int rc;
 
     clear( &r );
-    r.esi = (u32)regs;
+    r.esi = (uint32_t)regs;
     rc = dbg_call( 1, &r );
     *stopped = rc == 0 && AX( r ) == DBF_STOPPED;
     return rc;
 }
 
-int sys_dbg_read( u32 offset, void *buf, u32 len )
+int sys_dbg_read( uint32_t offset, void *buf, uint32_t len )
 {
     REGS r;
 
     clear( &r );
     r.ebx = offset;
     r.ecx = len;
-    r.edi = (u32)buf;
+    r.edi = (uint32_t)buf;
     return dbg_call( 2, &r );
 }
 
-int sys_dbg_write( u32 offset, const void *buf, u32 len )
+int sys_dbg_write( uint32_t offset, const void *buf, uint32_t len )
 {
     REGS r;
 
     clear( &r );
     r.ebx = offset;
     r.ecx = len;
-    r.esi = (u32)buf;
+    r.esi = (uint32_t)buf;
     return dbg_call( 3, &r );
 }
 

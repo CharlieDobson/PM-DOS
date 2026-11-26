@@ -32,22 +32,22 @@
  */
 #include "debug.h"
 
-int   mode = MODE_16;
-DRX   cpu;
-u16   work_seg;
-u32   work_len;
-u8   *work_buf;
-int   prog_held;
-char  file_name[128];
-int   file_kind;
-ADDR  next_dump;                /* where a bare D, U and A carry on */
-ADDR  next_unasm;
-ADDR  next_asm;
+int      mode = MODE_16;
+DRX      cpu;
+uint16_t work_seg;
+uint32_t work_len;
+uint8_t *work_buf;
+int      prog_held;
+char     file_name[128];
+int      file_kind;
+ADDR     next_dump;             /* where a bare D, U and A carry on */
+ADDR     next_unasm;
+ADDR     next_asm;
 
 const char *line;
 const char *lp;
 int   prompt_len;
-u32  *error_jmp;
+uint32_t *error_jmp;
 
 static char cmd_line[256];
 
@@ -142,7 +142,7 @@ int off_digits( void )
 
 /* A hex number of at most MAX_DIGITS digits.  0 if there is none here
    (lp unmoved); a digit too many is an error, under that digit. */
-int try_hex( u32 *val, int max_digits )
+int try_hex( uint32_t *val, int max_digits )
 {
     int digits = 0;
     int dig;
@@ -153,16 +153,16 @@ int try_hex( u32 *val, int max_digits )
         if ( digits == max_digits ) {
             syntax_error();
         }
-        *val = ( *val << 4 ) | (u32)dig;
+        *val = ( *val << 4 ) | (uint32_t)dig;
         digits++;
         lp++;
     }
     return digits != 0;
 }
 
-u32 get_hex( int max_digits )
+uint32_t get_hex( int max_digits )
 {
-    u32 val;
+    uint32_t val;
 
     if ( !try_hex( &val, max_digits ) ) {
         syntax_error();
@@ -172,7 +172,7 @@ u32 get_hex( int max_digits )
 
 /* A segment register's name -> its value.  FS and GS are a native
    program's only. */
-int reg_seg_value( const char *name, u16 *val )
+int reg_seg_value( const char *name, uint16_t *val )
 {
     int ch0 = ch_upper( name[0] );
 
@@ -193,10 +193,10 @@ int reg_seg_value( const char *name, u16 *val )
 /* [segment:]offset.  The segment is a register's name or a number, and
    an offset alone takes DEF_SEG.  0 if there is no address here at all,
    and ADDR is left as it was. */
-int try_addr( ADDR *addr, u16 def_seg )
+int try_addr( ADDR *addr, uint16_t def_seg )
 {
-    u32 val;
-    u16 seg;
+    uint32_t val;
+    uint16_t seg;
     const char *start;
 
     skip_blanks();
@@ -216,7 +216,7 @@ int try_addr( ADDR *addr, u16 def_seg )
             syntax_error();
         }
         lp++;
-        addr->seg = (u16)val;
+        addr->seg = (uint16_t)val;
         addr->off = get_hex( mem_is_low( *addr ) ? 4 : off_digits() );
         return 1;
     }
@@ -228,7 +228,7 @@ int try_addr( ADDR *addr, u16 def_seg )
     return 1;
 }
 
-void get_addr( ADDR *addr, u16 def_seg )
+void get_addr( ADDR *addr, uint16_t def_seg )
 {
     if ( !try_addr( addr, def_seg ) ) {
         syntax_error();
@@ -241,9 +241,9 @@ void get_addr( ADDR *addr, u16 def_seg )
    which is an error - except L 0 in the first megabyte, which is 64K
    from any offset, round the segment, because to 6.22 a length of 0 was
    a count of 64K that its end check could not see. */
-void get_range( ADDR *addr, u32 *len, u16 def_seg, u32 def_len, int need )
+void get_range( ADDR *addr, uint32_t *len, uint16_t def_seg, uint32_t def_len, int need )
 {
-    u32 end, val, seg_end;
+    uint32_t end, val, seg_end;
     int have;
 
     have = try_addr( addr, def_seg );
@@ -285,10 +285,10 @@ void get_range( ADDR *addr, u32 *len, u16 def_seg, u32 def_len, int need )
 }
 
 /* Bytes and strings: "12 34 'text' "more"", into BUF.  The count. */
-u32 get_list( u8 *buf, u32 max )
+uint32_t get_list( uint8_t *buf, uint32_t max )
 {
-    u32 count = 0;
-    u32 val;
+    uint32_t count = 0;
+    uint32_t val;
     int quote;
 
     for ( ;; ) {
@@ -312,7 +312,7 @@ u32 get_list( u8 *buf, u32 max )
                 if ( count == max ) {
                     syntax_error();
                 }
-                buf[count++] = (u8)*lp++;
+                buf[count++] = (uint8_t)*lp++;
             }
             continue;
         }
@@ -322,7 +322,7 @@ u32 get_list( u8 *buf, u32 max )
         if ( count == max ) {
             syntax_error();
         }
-        buf[count++] = (u8)val;
+        buf[count++] = (uint8_t)val;
     }
     if ( count == 0 ) {
         syntax_error();
@@ -334,16 +334,16 @@ u32 get_list( u8 *buf, u32 max )
 /* the work area, and the name for L and W                             */
 /* ------------------------------------------------------------------ */
 
-static u8 prog_tail[128];       /* the tail as DOS keeps it, for a native load */
+static uint8_t prog_tail[128];  /* the tail as DOS keeps it, for a native load */
 
-const u8 *native_tail( void )
+const uint8_t *native_tail( void )
 {
     return prog_tail;
 }
 
 /* One name from TEXT into a FCB of 16 bytes: a drive, eight and three
    characters, blank filled, * as question marks.  The text after it. */
-static const char *make_fcb( const char *text, u8 *fcb )
+static const char *make_fcb( const char *text, uint8_t *fcb )
 {
     int pos;
 
@@ -355,7 +355,7 @@ static const char *make_fcb( const char *text, u8 *fcb )
     if ( text[0] && text[1] == ':' ) {
         int drv = ch_upper( text[0] );
         if ( drv >= 'A' && drv <= 'Z' ) {
-            fcb[0] = (u8)( drv - 'A' + 1 );
+            fcb[0] = (uint8_t)( drv - 'A' + 1 );
         }
         text += 2;
     }
@@ -370,7 +370,7 @@ static const char *make_fcb( const char *text, u8 *fcb )
             continue;
         }
         if ( pos < 8 ) {
-            fcb[1 + pos++] = (u8)ch_upper( *text );
+            fcb[1 + pos++] = (uint8_t)ch_upper( *text );
         }
     }
     if ( *text == '.' ) {
@@ -381,7 +381,7 @@ static const char *make_fcb( const char *text, u8 *fcb )
                 continue;
             }
             if ( pos < 3 ) {
-                fcb[9 + pos++] = (u8)ch_upper( *text );
+                fcb[9 + pos++] = (uint8_t)ch_upper( *text );
             }
         }
     }
@@ -416,10 +416,10 @@ static int kind_of( const char *name )
    program; and into the program's own PSP when one is held. */
 static void put_tail( const char *args )
 {
-    u8 fcbs[0x24];
-    u8 tail[128];
+    uint8_t fcbs[0x24];
+    uint8_t tail[128];
     const char *rest;
-    u32 len;
+    unsigned int len;
     ADDR at;
 
     rest = make_fcb( args, fcbs );
@@ -428,7 +428,7 @@ static void put_tail( const char *args )
     if ( len > 126 ) {
         len = 126;
     }
-    tail[0] = (u8)len;
+    tail[0] = (uint8_t)len;
     mem_cpy( tail + 1, args, len );
     tail[1 + len] = '\r';
     mem_set( tail + 2 + len, 0, 126 - len );   /* to tail[127] */
@@ -458,7 +458,7 @@ static void put_tail( const char *args )
 void set_file_name( const char *text )
 {
     const char *cur = text;
-    u32 len = 0;
+    unsigned int len = 0;
 
     while ( *cur == ' ' || *cur == '\t' ) {
         cur++;
@@ -567,11 +567,11 @@ void __cdecl dos_entry( void )
        loaded to the top of conventional memory, as 6.22's reached to
        the top of the free memory it was given. */
     work_seg = sys_conv_seg();
-    work_len = 0xA0000UL - (u32)work_seg * 16;
-    work_buf = (u8 *)try_alloc( work_len );
+    work_len = 0xA0000UL - (uint32_t)work_seg * 16;
+    work_buf = (uint8_t *)try_alloc( work_len );
     if ( work_buf == NULL ) {
         work_len = 0x20000UL;
-        work_buf = (u8 *)try_alloc( work_len );
+        work_buf = (uint8_t *)try_alloc( work_len );
     }
     if ( work_buf == NULL ) {
         out_err( msg_nomem );

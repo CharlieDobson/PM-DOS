@@ -50,13 +50,13 @@
 ; image and IO_LIMIT there is room nobody uses - linear, and identity
 ; mapped, so its addresses are what goes on the bus.  The tables and
 ; the report are carved from there (AHM_*) rather than declared, which
-; keeps 18K of zeros out of PMIO.SYS and off the boot floppy.  IOPM.ASM
+; keeps 21K of zeros out of PMIO.SYS and off the boot floppy.  IOPM.ASM
 ; checks at assembly time that the image leaves room for it.
 ;
 ; ONE ADAPTER, the first one the PCI scan found, and up to AHCI_MAXREC
-; of its ports.  A second one on the same board (a JMicron beside the
-; south bridge) is for eSATA as a rule, and the block layer has only
-; two hard-disk numbers to give out anyway.
+; of its ports, each a disk under any of the BIOS's numbers 80h to 87h
+; (MAX_PHYS).  A second one on the same board (a JMicron beside the
+; south bridge) is for eSATA as a rule.
 ;
 ; A CD-ROM DRIVE ON A PORT is a CD-ROM unit (CDUNIT.INC, CUK_AHCI):
 ; the command block goes in the command table's ATAPI area and the
@@ -174,9 +174,9 @@ AHQ_LEN         EQU     32
 
 .ERRE   AHCI_MAXREC EQ AHR_MAXPORT, <the AHCI report and the driver disagree>
 
-AHM_BIOS        EQU     AHCI_MAXREC * AHM_PORT  ; sector 0 of 80h and 81h,
+AHM_BIOS        EQU     AHCI_MAXREC * AHM_PORT  ; sector 0 of 80h to 87h,
                                                 ; as the BIOS read them
-AHM_REP         EQU     AHM_BIOS + 400h         ; the report, AHR_LEN
+AHM_REP         EQU     AHM_BIOS + MAX_PHYS * 200h      ; the report, AHR_LEN
 AHM_PRV         EQU     AHM_REP + 300h          ; and what is not in it
 AHM_NEED        EQU     AHM_PRV + AHCI_MAXREC * AHQ_LEN
 
@@ -423,8 +423,8 @@ ahci_start:
 sax_go:
         mov     byte ptr [ebp+AHR_STATE],AHS_STARTED
 
-;--- 1: what the BIOS reads as sector 0 of 80h and 81h ---------------
-        xor     edx,edx                         ; EDX = 0 for 80h, 1 for 81h
+;--- 1: what the BIOS reads as sector 0 of 80h to 87h ----------------
+        xor     edx,edx                         ; EDX = 0 for 80h, and on
 sax_bios:
         lea     eax,[edx+80h]                   ; AL = the drive
         cmp     al,USB_DRV0
@@ -441,7 +441,11 @@ sax_noemu:
         call    blk_getgeo                      ; the geometry, cached for
         jc      sax_bnext                       ; good while it can be asked
         mov     ecx,[ebx+GEO_LBATOT]
+        mov     dword ptr [ahci_btot+edx*4],ecx
+        cmp     edx,2                           ; the report has room for
+        jae     sax_btot                        ; 80h's and 81h's
         mov     dword ptr [ebp+AHR_BTOT0+edx*4],ecx
+sax_btot:
         mov     edi,edx
         shl     edi,9
         add     edi,dword ptr [ahci_mem]
@@ -455,7 +459,7 @@ sax_noemu:
         bts     dword ptr [ebp+AHR_BIOSOK],edx
 sax_bnext:
         inc     edx
-        cmp     edx,2
+        cmp     edx,MAX_PHYS
         jb      sax_bios
 sax_biosdone:
         call    sa_cdask                        ; a BIOS question as well
@@ -521,7 +525,7 @@ sax_cmp:
         bts     dword ptr [ebp+AHP_MATCH],edx
 sax_cnext:
         inc     edx
-        cmp     edx,2
+        cmp     edx,MAX_PHYS
         jb      sax_cmp
         pop     esi
         pop     ecx
@@ -553,7 +557,7 @@ sax_mlp:
         inc     byte ptr [eax+AHR_UNITS]
 sax_mnext:
         inc     edx
-        cmp     edx,2
+        cmp     edx,MAX_PHYS
         jb      sax_mlp
 
 ;--- 5: and the rest back to the BIOS ---------------------------------
@@ -820,8 +824,9 @@ sxo_fail:
         ret
 
 ;---------------------------------------------------------------------
-; sa_pick - EDX = 0 or 1: the one taken, unnumbered port whose sector 0
-;           is what the BIOS read from 80h + EDX.  -> ECX = its record.
+; sa_pick - EDX = 0 to MAX_PHYS - 1: the one taken, unnumbered port
+;           whose sector 0 is what the BIOS read from 80h + EDX.  -> ECX
+;           = its record.
 ;           CF if there is none, or more than one and their sizes do
 ;           not settle it - a disk and its clone, say, which the kernel
 ;           has no way to tell apart and so leaves to the BIOS.
@@ -849,7 +854,7 @@ sap_lp:
         jnc     sap_next
         or      edi,edi
         jz      sap_fits
-        mov     eax,dword ptr [eax+AHR_BTOT0+edx*4]
+        mov     eax,dword ptr [ahci_btot+edx*4]
         or      eax,eax                         ; the BIOS gave no size
         jz      sap_next
         cmp     eax,dword ptr [ebx+AHP_TOTAL]
@@ -998,6 +1003,21 @@ ahci_capacity:
         jc      sac_out
         mov     ebx,dword ptr [ebp+AHP_TOTAL]
 sac_out:
+        pop     ebp
+        pop     esi
+        ret
+
+;---------------------------------------------------------------------
+; ahci_diskmed - AL = BIOS drive -> AL = what ata_medium found on that
+;                disk.  CF set, and AL kept, if the drive is not ours.
+;---------------------------------------------------------------------
+ahci_diskmed:
+        push    esi
+        push    ebp
+        call    sa_slot
+        jc      ahmed_out
+        mov     al,byte ptr [ebp+AHP_MEDIUM]
+ahmed_out:
         pop     ebp
         pop     esi
         ret
@@ -1854,6 +1874,10 @@ sad_total:
         jz      sad_fail
         mov     dword ptr [ebp+AHP_TOTAL],eax
         call    sa_model
+        mov     ebx,edi                         ; spinning or solid state,
+        lea     esi,[ebp+AHP_MODEL]             ; for blk_medium
+        call    ata_medium
+        mov     byte ptr [ebp+AHP_MEDIUM],al
         popad
         clc
         ret
@@ -2119,6 +2143,9 @@ ahci_count  dd  0
 ahci_cbuf   dd  0                       ; the caller's buffer
 ahci_dbuf   dd  0                       ; what the adapter is handed
 ahci_found  dd  0                       ; sa_pick's last fit
+ahci_btot   dd  MAX_PHYS dup(0)         ; sectors by INT 13h/48h, 80h to 87h,
+                                        ; 0 if it did not say (the report has
+                                        ; 80h's and 81h's, AHR_BTOT0/1)
 ahci_plen   dd  0                       ; a packet command's region, even
 axe_buf     dd  0                       ; ahci_cdexec's caller's buffer,
 axe_len     dd  0                       ; its length,

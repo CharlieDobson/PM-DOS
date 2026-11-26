@@ -98,7 +98,7 @@ void  mouse_done( void );
 /* a graphics screen it may be more: a slice of an icon in place of    */
 /* the character, and lines along its edges.                           */
 /* ------------------------------------------------------------------ */
-typedef u32 CELL;
+typedef uint32_t CELL;
 
 #define CF_TOP          0x04000000UL    /* a line along the cell's top... */
 #define CF_BOTTOM       0x08000000UL
@@ -106,34 +106,34 @@ typedef u32 CELL;
 #define CF_RIGHT        0x20000000UL
 #define CF_UNDER        0x40000000UL    /* the character underlined */
 #define CF_GRAD         0x80000000UL    /* 256 colours: a shaded background */
-#define CELL_ICON( id, slice )  (((u32)(id) << 16) | ((u32)(slice) << 24))
+#define CELL_ICON( id, slice )  (((uint32_t)(id) << 16) | ((uint32_t)(slice) << 24))
 
 typedef struct {
-    u8 desk;            /* the lines with the path and the drives */
-    u8 title;           /* the shell's own title bar */
-    u8 menu;            /* the menu bar and menus */
-    u8 menu_hot;        /* an access key in them */
-    u8 menu_sel;        /* the highlighted item */
-    u8 menu_sel_hot;
-    u8 menu_off;        /* an item that cannot be chosen now */
-    u8 pane;            /* a list's text */
-    u8 pane_title;      /* a list's title bar */
-    u8 pane_focus;      /* ...when the keys go to that list */
-    u8 select;          /* a selected entry */
-    u8 select_off;      /* ...in a list the keys are not in */
-    u8 drive_sel;       /* the drive in use */
-    u8 scroll;          /* scroll bars */
-    u8 thumb;           /* the scroll box in them */
-    u8 status;          /* the status bar */
-    u8 status_hot;
-    u8 dlg;             /* a dialog box */
-    u8 dlg_hot;
-    u8 dlg_title;
-    u8 field;           /* an entry field in it */
-    u8 field_sel;
-    u8 button;
-    u8 button_focus;
-    u8 shadow;
+    uint8_t desk;        /* the lines with the path and the drives */
+    uint8_t title;       /* the shell's own title bar */
+    uint8_t menu;        /* the menu bar and menus */
+    uint8_t menu_hot;    /* an access key in them */
+    uint8_t menu_sel;    /* the highlighted item */
+    uint8_t menu_sel_hot;
+    uint8_t menu_off;    /* an item that cannot be chosen now */
+    uint8_t pane;        /* a list's text */
+    uint8_t pane_title;  /* a list's title bar */
+    uint8_t pane_focus;  /* ...when the keys go to that list */
+    uint8_t select;      /* a selected entry */
+    uint8_t select_off;  /* ...in a list the keys are not in */
+    uint8_t drive_sel;   /* the drive in use */
+    uint8_t scroll;      /* scroll bars */
+    uint8_t thumb;       /* the scroll box in them */
+    uint8_t status;      /* the status bar */
+    uint8_t status_hot;
+    uint8_t dlg;         /* a dialog box */
+    uint8_t dlg_hot;
+    uint8_t dlg_title;
+    uint8_t field;       /* an entry field in it */
+    uint8_t field_sel;
+    uint8_t button;
+    uint8_t button_focus;
+    uint8_t shadow;
 } PALETTE;
 
 /* the screens there are: text ones, and graphics ones on three kinds
@@ -141,9 +141,9 @@ typedef struct {
 enum { VK_TEXT, VK_EGA, VK_VGA, VK_VBE };
 
 typedef struct {
-    u8  kind;                   /* VK_* */
-    u8  rows;
-    u8  font;                   /* a character's height in a graphics mode */
+    uint8_t kind;               /* VK_* */
+    uint8_t rows;
+    uint8_t font;               /* a character's height in a graphics mode */
     const char *tag;            /* its name in DOSSHELL.INI */
     const char *kind_name;      /* the Display dialog's three columns */
     const char *res_name;
@@ -157,32 +157,32 @@ extern int scr_rows, scr_cols;
 extern int scr_mode;            /* the dmodes[] entry on the screen */
 extern int gfx_on;              /* it is a graphics one */
 
-int   scr_mode_ok( int index );         /* this machine can show it */
-int   scr_init( int index );            /* the mode it settled on */
-int   scr_set_mode( int index );        /* 1 = set */
-void  scr_done( void );
-void  scr_suspend( void );              /* the DOS screen, for a program */
-void  scr_resume( void );
-void  scr_repaint( void );              /* everything sent again */
-void  scr_palette( int scheme );
-void  scr_ch( int row, int col, int ch, u8 attr );
-void  scr_putn( int row, int col, const char *text, int len, u8 attr );
-void  scr_put( int row, int col, const char *text, u8 attr );
-void  scr_putw( int row, int col, const char *text, int width, u8 attr );  /* padded or cut to "width" */
-void  scr_hot( int row, int col, const char *text, u8 attr, u8 hot_attr );
-int   scr_hotlen( const char *text );
-int   scr_hotkey( const char *text );
-void  scr_fill( int row, int col, int len, int ch, u8 attr );
-void  scr_recolor( int row, int col, int len, u8 attr );
-void  scr_flag( int row, int col, int len, u32 flags );     /* CF_* onto cells */
-u32   scr_bar_edges( void );            /* CF_TOP | CF_BOTTOM, where there is room */
-int   scr_icon( int row, int col, int icon, u8 attr );      /* -> cells it took */
-void  scr_box( int top, int left, int bottom, int right, u8 attr );
-void  scr_shadow( int top, int left, int bottom, int right );
-void  scr_cursor( int row, int col, int kind );
-void  scr_flush( void );
-void  scr_dump( void );                 /* test mode */
-void  scr_shot( void );                 /* test mode */
+int      scr_mode_ok( int index );      /* this machine can show it */
+int      scr_init( int index );         /* the mode it settled on */
+int      scr_set_mode( int index );     /* 1 = set */
+void     scr_done( void );
+void     scr_suspend( void );           /* the DOS screen, for a program */
+void     scr_resume( void );
+void     scr_repaint( void );           /* everything sent again */
+void     scr_palette( int scheme );
+void     scr_ch( int row, int col, int ch, uint8_t attr );
+void     scr_putn( int row, int col, const char *text, int len, uint8_t attr );
+void     scr_put( int row, int col, const char *text, uint8_t attr );
+void     scr_putw( int row, int col, const char *text, int width, uint8_t attr ); /* padded or cut to "width" */
+void     scr_hot( int row, int col, const char *text, uint8_t attr, uint8_t hot_attr );
+int      scr_hotlen( const char *text );
+int      scr_hotkey( const char *text );
+void     scr_fill( int row, int col, int len, int ch, uint8_t attr );
+void     scr_recolor( int row, int col, int len, uint8_t attr );
+void     scr_flag( int row, int col, int len, uint32_t flags );  /* CF_* onto cells */
+uint32_t scr_bar_edges( void );         /* CF_TOP | CF_BOTTOM, where there is room */
+int      scr_icon( int row, int col, int icon, uint8_t attr );   /* -> cells it took */
+void     scr_box( int top, int left, int bottom, int right, uint8_t attr );
+void     scr_shadow( int top, int left, int bottom, int right );
+void     scr_cursor( int row, int col, int kind );
+void     scr_flush( void );
+void     scr_dump( void );              /* test mode */
+void     scr_shot( void );              /* test mode */
 
 /* a scroll bar down a column: drawn, and what a press on it means */
 enum { SB_NONE, SB_UP, SB_DOWN, SB_PGUP, SB_PGDN, SB_THUMB };
@@ -199,7 +199,7 @@ enum { IC_NONE, IC_DIR, IC_DIR_PLUS, IC_DIR_MINUS, IC_FILE, IC_PROG,
        IC_RADIO_ON, IC_COUNT };
 
 typedef struct {
-    u8 width;                   /* pixels: 8, 16 or 32 */
+    uint8_t width;              /* pixels: 8, 16 or 32 */
     const char *const *rows;    /* sixteen strings, a character a pixel */
 } ICON;
 
@@ -228,21 +228,21 @@ int   gfx_snapshot( const char *path ); /* the picture as a .BMP file */
 #define TN_LAST         0x04    /* the last of its parent's */
 
 typedef struct {
-    char *name;                 /* the root's is "" */
-    int   parent;               /* -1 for the root */
-    u8    depth;
-    u8    flags;
+    char   *name;               /* the root's is "" */
+    int     parent;             /* -1 for the root */
+    uint8_t depth;
+    uint8_t flags;
 } TNODE;
 
 typedef struct {
-    int    drive;               /* 0 = A: */
-    int    valid;               /* it was read */
-    TNODE *node;                /* in the order they are listed */
-    int    count, cap;
-    int   *vis;                 /* the nodes that are showing */
-    int    nvis;
-    char   label[12];
-    u32    free_kb, total_kb;
+    int      drive;             /* 0 = A: */
+    int      valid;             /* it was read */
+    TNODE   *node;              /* in the order they are listed */
+    int      count, cap;
+    int     *vis;               /* the nodes that are showing */
+    int      nvis;
+    char     label[12];
+    uint32_t free_kb, total_kb;
 } DTREE;
 
 DTREE *tree_get( int drive, int reread );       /* NULL: the drive cannot be read */
@@ -261,21 +261,21 @@ void   tree_space( DTREE *tree );               /* free and total, asked again *
 /* files                                                               */
 /* ------------------------------------------------------------------ */
 typedef struct {
-    char *name;
-    u32   size;
-    u16   date, time;
-    u8    attr;
-    u8    sel;
-    int   dir;                  /* the tree node the file is in */
-    u32   order;                /* where the disk had it */
+    char        *name;
+    uint32_t     size;
+    uint16_t     date, time;
+    uint8_t      attr;
+    uint8_t      sel;
+    int          dir;           /* the tree node the file is in */
+    unsigned int order;         /* where the disk had it */
 } FENT;
 
 /* a sum of sizes, which can pass four gigabytes: K, and the bytes over */
 typedef struct {
-    u32 kb, rest;
+    uint32_t kb, rest;
 } BIGSIZE;
 
-void  big_add( BIGSIZE *sum, u32 bytes );
+void  big_add( BIGSIZE *sum, uint32_t bytes );
 char *big_fmt( const BIGSIZE *sum, char *buf );     /* 20 bytes */
 
 typedef struct {
@@ -294,8 +294,8 @@ int   flist_read_all( FLIST *list, DTREE *tree, const char *filter, int from_nod
 void  flist_sort( FLIST *list );
 void  flist_count( FLIST *list );               /* nsel and sel_bytes */
 void  flist_path( DTREE *tree, const FENT *ent, char *buf );
-void  fmt_date( u16 date, char *buf );          /* eight characters */
-void  fmt_time( u16 time, char *buf );          /* "10:42a" or "22:42" */
+void  fmt_date( uint16_t date, char *buf );     /* eight characters */
+void  fmt_time( uint16_t time, char *buf );     /* "10:42a" or "22:42" */
 
 /* ------------------------------------------------------------------ */
 /* the application                                                     */
@@ -462,17 +462,17 @@ void  ctl_button( CTL *ctl, int row, int col, const char *text, int id, int is_d
 /* OPS.C - what is done to files                                       */
 /* ------------------------------------------------------------------ */
 typedef struct {
-    char *path;                 /* whole */
-    u32   size;
-    u16   date, time;
-    u8    attr;
-    u8    is_dir;
+    char    *path;              /* whole */
+    uint32_t size;
+    uint16_t date, time;
+    uint8_t  attr;
+    uint8_t  is_dir;
 } PICK;
 
 typedef struct {
-    PICK *item;
-    int   count;
-    u32   bytes;
+    PICK    *item;
+    int      count;
+    uint32_t bytes;
 } PICKS;
 
 int   picks_take( PICKS *picks );   /* what the command applies to: 0 = nothing */
@@ -485,7 +485,7 @@ void  op_attrib( void );
 void  op_mkdir( void );
 void  op_print( void );
 void  op_drop( PICKS *picks, const char *dest_dir, int move );  /* the mouse let go there */
-int   copy_file( const char *from, const char *to, u16 attr );
+int   copy_file( const char *from, const char *to, uint16_t attr );
 
 /* VIEW.C */
 void  view_file( const char *path );
@@ -559,7 +559,7 @@ void  dlg_file_options( void );
 void  dlg_display( void );
 void  dlg_colors( void );
 void  dlg_show_info( void );
-int   info_line( FWIN *win, int line, char *buf, u32 max );     /* 0 past the last */
+int   info_line( FWIN *win, int line, char *buf, unsigned int max ); /* 0 past the last */
 void  dlg_search( void );
 void  dlg_run_line( void );
 void  dlg_associate( void );

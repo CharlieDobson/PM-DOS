@@ -1222,6 +1222,13 @@ fnu_unmap:
         jz      fnu_notmapped
         cmp     byte ptr [ebx+DRV_TYPE],NET_DRV_TYPE
         jne     fnu_notmapped
+        ; NOT WHILE AN IMAGE IS MOUNTED FROM IT.  The image reads through
+        ; a handle on this drive's session (IMAGE.INC, IMF_NET), and the
+        ; session goes with the letter.  ERR_ACCESS, which NET.EXE says
+        ; in those words.
+        mov     al,[net_nudrive]
+        call    img_netbusy
+        jc      fnu_imgbusy
         mov     al,[net_nudrive]
         mov     ebx,REDIR_UMOUNT
         call    net_req_begin
@@ -1247,6 +1254,11 @@ fnu_notmapped:
         mov     edi,[ebp+F_EDI]
         mov     dword ptr [edi+NU_STATUS],ERR_BADDRIVE
         mov     ax,ERR_BADDRIVE
+        jmp     i21_fail
+fnu_imgbusy:
+        mov     edi,[ebp+F_EDI]
+        mov     dword ptr [edi+NU_STATUS],ERR_ACCESS
+        mov     ax,ERR_ACCESS
         jmp     i21_fail
 
 ;--- NETUSE_QUERY: is this letter a net drive? ----------------------

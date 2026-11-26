@@ -22,8 +22,8 @@
  * what it can at once and returns.  The waiting - for a handshake to
  * finish, for a byte to arrive - is the caller's, in TOOLS\SOCKLIB.
  *
- * AN ADDRESS IS A u32 HERE, host order (10.0.2.2 is 0x0A000202), and a
- * port is a u16 in the natural order; the big-endian wire fields are
+ * AN ADDRESS IS A uint32_t HERE, host order (10.0.2.2 is 0x0A000202), and a
+ * port is a uint16_t in the natural order; the big-endian wire fields are
  * built and read a byte at a time (put16/get16).  So there is no need
  * to care which way the processor stores a word.
  *
@@ -38,21 +38,21 @@
 #include "x509.h"             /* ...and its reasons a certificate is refused */
 
 /* TCPSVC.ASM: the two kernel services NDSTART.ASM does not bridge */
-int __cdecl nds_readfile( const char *path, void *buf, u32 room, u32 *got, u32 *size );
-u32 __cdecl nds_stamp( void );
+int __cdecl nds_readfile( const char *path, void *buf, uint32_t room, uint32_t *got, uint32_t *size );
+uint32_t __cdecl nds_stamp( void );
 #include "rng.h"
 
 #define NULL ((void *)0)
 
 /* the timer's ports and the interrupt flag, for fine_now - the one
    piece of hardware the stack reads itself */
-u8   inb( u16 port );
+uint8_t  inb( uint16_t port );
 #pragma aux inb = "in al,dx" parm [dx] value [al] modify exact [al];
-void outb( u16 port, u8 value );
+void     outb( uint16_t port, uint8_t value );
 #pragma aux outb = "out dx,al" parm [dx] [al] modify exact [];
-u32  int_off( void );
+uint32_t int_off( void );
 #pragma aux int_off = "pushfd" "pop eax" "cli" value [eax] modify exact [eax];
-void int_back( u32 flags );
+void     int_back( uint32_t flags );
 #pragma aux int_back = "push eax" "popfd" parm [eax] modify exact [];
 
 /* A TICK COUNT THAT DOES NOT GO BACK.  nds_ticks() is the BIOS's count
@@ -67,12 +67,12 @@ void int_back( u32 flags );
 #define TICKS_PER_DAY 1573040UL
 #define TICKS_HOUR    65543UL
 
-static u32 tk_bios, tk_count;
+static uint32_t tk_bios, tk_count;
 
-static u32 ticks( void )
+static uint32_t ticks( void )
 {
-    u32 flags = int_off();
-    u32 bios = nds_ticks(), step;
+    uint32_t flags = int_off();
+    uint32_t bios = nds_ticks(), step;
 
     if ( bios >= tk_bios ) step = bios - tk_bios;
     else {
@@ -135,57 +135,57 @@ static u32 ticks( void )
 #define TXCAP        4096
 
 typedef struct {
-    u8   used;
-    u8   type;                  /* SOCK_STREAM or SOCK_DGRAM */
-    u8   tstate;                /* T_* */
-    u8   err;                   /* why it failed: NET_REFUSED, NET_TLSCERT... */
-    u8   why;                   /* CERT_* with NET_TLSCERT */
+    uint8_t used;
+    uint8_t type;               /* SOCK_STREAM or SOCK_DGRAM */
+    uint8_t tstate;             /* T_* */
+    uint8_t err;                /* why it failed: NET_REFUSED, NET_TLSCERT... */
+    uint8_t why;                /* CERT_* with NET_TLSCERT */
 
-    u32  lip, rip;              /* local and remote address */
-    u16  lport, rport;
+    uint32_t lip, rip;          /* local and remote address */
+    uint16_t lport, rport;
 
     /* TCP sequence space */
-    u32  iss;                   /* our initial sequence number */
-    u32  snd_una;               /* oldest unacked - the first txbuf byte */
-    u32  snd_nxt;               /* next sequence to send */
-    u32  snd_wnd;               /* what the peer will take */
-    u32  irs;                   /* the peer's initial sequence number */
-    u32  rcv_nxt;               /* next sequence expected */
+    uint32_t iss;               /* our initial sequence number */
+    uint32_t snd_una;           /* oldest unacked - the first txbuf byte */
+    uint32_t snd_nxt;           /* next sequence to send */
+    uint32_t snd_wnd;           /* what the peer will take */
+    uint32_t irs;               /* the peer's initial sequence number */
+    uint32_t rcv_nxt;           /* next sequence expected */
 
-    u8  *txbuf;                 /* bytes queued to send, from snd_una */
-    u32  txstart, txlen;
-    u8  *rxbuf;                 /* bytes arrived, waiting to be read */
-    u32  rxstart, rxlen;
-    u32  wnd_adv;               /* the receive window the peer last heard */
+    uint8_t *txbuf;             /* bytes queued to send, from snd_una */
+    unsigned int txstart, txlen;
+    uint8_t *rxbuf;             /* bytes arrived, waiting to be read */
+    unsigned int rxstart, rxlen;
+    uint32_t wnd_adv;           /* the receive window the peer last heard */
 
-    u8   finsent;               /* our FIN has gone out */
-    u32  finseq;                /* ...occupying this sequence */
-    u8   finacked;
-    u8   closing;               /* the app has asked to close */
+    uint8_t  finsent;           /* our FIN has gone out */
+    uint32_t finseq;            /* ...occupying this sequence */
+    uint8_t  finacked;
+    uint8_t  closing;           /* the app has asked to close */
 
-    u32  rto;                   /* the retransmit timeout, in ticks */
-    u32  rto_at;                /* when to retransmit next (0: no timer) */
-    u8   retries;
-    u32  wait_at;               /* TIME_WAIT / handshake give-up deadline */
+    unsigned int rto;           /* the retransmit timeout, in ticks */
+    uint32_t rto_at;            /* when to retransmit next (0: no timer) */
+    uint8_t  retries;
+    uint32_t wait_at;           /* TIME_WAIT / handshake give-up deadline */
 
     /* a listening socket keeps the port; children carry the connection */
-    u16  listenport;
-    u8   listening;
+    uint16_t listenport;
+    uint8_t  listening;
 
     /* TLS (SOCK_TLS): the handshake and record crypto run kernel-side over
        the raw TCP stream.  The TLS state rides above tstate: tls_state is
        TLSX_* while tstate is the TCP connection underneath. */
-    u8   tls;                   /* 1: a TLS socket */
-    u8   tls_state;             /* TLSX_* */
-    u8   tls_eof;               /* the peer sent close_notify */
+    uint8_t  tls;               /* 1: a TLS socket */
+    uint8_t  tls_state;         /* TLSX_* */
+    uint8_t  tls_eof;           /* the peer sent close_notify */
     tls_conn *tc;               /* the TLS connection (arena, from tls_new) */
     nst_rng  *rng;              /* its RNG (arena; must outlive tc) */
-    u8  *trx;                   /* one inbound record, being assembled */
-    u32  trxlen;
-    u8  *tapp;                  /* decrypted plaintext waiting for the app */
-    u32  tapstart, taplen;
-    char host[128];             /* server name: SNI and the cert to match */
-    char now14[15];             /* the time the certificate is checked
+    uint8_t *trx;               /* one inbound record, being assembled */
+    unsigned int trxlen;
+    uint8_t *tapp;              /* decrypted plaintext waiting for the app */
+    unsigned int tapstart, taplen;
+    char     host[128];         /* server name: SNI and the cert to match */
+    char     now14[15];         /* the time the certificate is checked
                                    against, YYYYMMDDHHMMSS; "" unchecked */
 } SOCKET;
 
@@ -204,16 +204,16 @@ static SOCKET sock[SOCK_MAX];
 
 /* the trust bundle (SOCK_SETCA), the crypto's big stack, and a record-sized
    scratch for SOCK_SEND, all out of the kernel arena */
-static u8  *tls_ca;             /* concatenated DER roots, or NULL */
-static u32  tls_calen;          /* bytes present so far */
-static u32  tls_catotal;        /* bytes the bundle will be */
-static u8  *tls_stk;            /* the crypto stack's base */
-static u32  tls_stktop;         /* ...and its top (ESP starts here) */
-static u8   tls_scratch[TLS_RECCAP];   /* one outbound record */
+static uint8_t *tls_ca;         /* concatenated DER roots, or NULL */
+static unsigned int tls_calen;  /* bytes present so far */
+static unsigned int tls_catotal; /* bytes the bundle will be */
+static uint8_t *tls_stk;        /* the crypto stack's base */
+static uint32_t tls_stktop;     /* ...and its top (ESP starts here) */
+static uint8_t  tls_scratch[TLS_RECCAP]; /* one outbound record */
 
-extern u32 __cdecl tls_run( void *newtop, void *fn, void *arg );
-extern u32 tlsrt_init( u32 want );     /* grab the TLS heap pool; 0 if none */
-extern void *malloc( unsigned bytes ); /* the TLS pool (TLSRT.C), not DOS */
+extern uint32_t __cdecl tls_run( void *newtop, void *fn, void *arg );
+extern unsigned int tlsrt_init( unsigned int want ); /* grab the TLS heap pool; 0 if none */
+extern void *malloc( unsigned bytes );       /* the TLS pool (TLSRT.C), not DOS */
 extern void  free( void *block );
 
 #ifndef TLS_CT_APPLICATION_DATA
@@ -228,28 +228,28 @@ static void tls_service( void );
 /* the interface                                                     */
 /* ---------------------------------------------------------------- */
 
-static u8   if_mac[6];
-static u32  if_ip, if_mask, if_gw, if_dns;
-static u32  if_lease;
-static u8   if_up;
-static u8   if_dhcp;            /* DHS_* */
-static u8   if_static;          /* /IP= was given: DHCP never runs */
-static char if_name[32];
-static u32  if_wins;            /* the WINS server: /WINS=, or DHCP option 44 */
-static u32  if_dns2, if_dns3;   /* more DNS servers, asked when if_dns is not */
-static char nb_name[16];        /* our NetBIOS name (/NAME=), upper case */
-static char host_name[64];      /* our DNS host name, lower case: the same name */
-static char dom_name[64];       /* our DNS domain: TCPIP.INI's, else DHCP's; "" none */
-static u8   dom_fixed;          /* TCPIP.INI named the domain: DHCP's is not taken */
-static u8   reg_dns = 1;        /* RegisterDNS=: send our name to DNS ourselves */
-static const u8 *rx_srcmac;     /* the station that sent the frame being read */
+static uint8_t  if_mac[6];
+static uint32_t if_ip, if_mask, if_gw, if_dns;
+static uint32_t if_lease;
+static uint8_t  if_up;
+static uint8_t  if_dhcp;           /* DHS_* */
+static uint8_t  if_static;         /* /IP= was given: DHCP never runs */
+static char     if_name[32];
+static uint32_t if_wins;           /* the WINS server: /WINS=, or DHCP option 44 */
+static uint32_t if_dns2, if_dns3;  /* more DNS servers, asked when if_dns is not */
+static char     nb_name[16];       /* our NetBIOS name (/NAME=), upper case */
+static char     host_name[64];     /* our DNS host name, lower case: the same name */
+static char     dom_name[64];      /* our DNS domain: TCPIP.INI's, else DHCP's; "" none */
+static uint8_t  dom_fixed;         /* TCPIP.INI named the domain: DHCP's is not taken */
+static uint8_t  reg_dns = 1;       /* RegisterDNS=: send our name to DNS ourselves */
+static const uint8_t *rx_srcmac;   /* the station that sent the frame being read */
 
-static u16  ip_id = 1;
-static u8   running;
-static volatile u8 pumping;     /* a pump is in progress: a tick stands off */
+static uint16_t ip_id = 1;
+static uint8_t  running;
+static volatile uint8_t pumping; /* a pump is in progress: a tick stands off */
 
-static u8   tx_frame[1600];
-static u8   rx_frame[1600];
+static uint8_t tx_frame[1600];
+static uint8_t rx_frame[1600];
 
 /* Frames the stack does not own (not IP, not ARP - NetBEUI and the like)
    are held in a small ring for the WfW bridge to collect through
@@ -257,40 +257,40 @@ static u8   rx_frame[1600];
    nothing drains the ring; it simply drops the oldest and stays small. */
 #define FGN_N    4                      /* a power of two; holds FGN_N-1 frames */
 #define FGN_CAP  1518
-static u8   fgn_buf[FGN_N][FGN_CAP];
-static u16  fgn_len[FGN_N];
-static u8   fgn_head, fgn_tail;         /* head = next to read, tail = next to fill */
+static uint8_t  fgn_buf[FGN_N][FGN_CAP];
+static uint16_t fgn_len[FGN_N];
+static uint8_t  fgn_head, fgn_tail;     /* head = next to read, tail = next to fill */
 
 /* the one echo and the one name lookup the stack carries at a time */
 static struct {
-    u8   active;
-    u32  ip;
-    u16  id, seq;
-    u32  state;
-    u32  sent_at;
-    u32  sent_fine;             /* fine_now() when the echo went */
-    u32  rtt;
-    u32  give_up;
-    u8   tries;
+    uint8_t      active;
+    uint32_t     ip;
+    uint16_t     id, seq;
+    unsigned int state;
+    uint32_t     sent_at;
+    uint32_t     sent_fine;     /* fine_now() when the echo went */
+    unsigned int rtt;
+    uint32_t     give_up;
+    uint8_t      tries;
 } ping;
 
 static struct {
-    u8   active;
-    u8   step;                  /* RS_*: who is being asked */
-    u32  ip;
-    u32  state;
-    u16  id;
-    u16  lport;
-    u32  give_up;
-    u8   tries;
-    char name[128];
-    char qname[192];            /* what DNS is asked: name, or name.domain */
+    uint8_t      active;
+    uint8_t      step;          /* RS_*: who is being asked */
+    uint32_t     ip;
+    unsigned int state;
+    uint16_t     id;
+    uint16_t     lport;
+    uint32_t     give_up;
+    uint8_t      tries;
+    char         name[128];
+    char         qname[192];    /* what DNS is asked: name, or name.domain */
 } res;
 
 /* a lookup is over, found or not: callers asking for the same name are
    told so - a failure for RES_HOLD ticks, then a new attempt is made */
 #define RES_HOLD     55
-static u32 res_done_at;
+static uint32_t res_done_at;
 static void res_end( void )
 {
     res.active = 0;
@@ -306,23 +306,23 @@ static void res_end( void )
    then send the update.  The address record always; the reverse one too
    when the address is our own (/IP=), since then no DHCP server adds it */
 static struct {
-    u8   want;                  /* send when the chance comes */
-    u8   active;
-    u8   step;                  /* RG_* */
-    u8   job;                   /* RJ_* */
-    u8   tries;
-    u16  id, lport;
-    u32  give_up;
-    u32  asked;                 /* the DNS server the zone question went to */
-    u32  master;                /* the zone's primary server */
-    u32  ip;                    /* the address being sent */
-    u32  done_ip;               /* the address last taken; 0 none */
-    u32  done_at;               /* ticks() when it was */
-    u32  retry_at;              /* after no answer: try again then; 0 not */
-    u16  state, rcode;          /* DREG_*, and the server's answer */
-    char owner[128];            /* the name the record is for */
-    char zone[128];             /* the zone it is in */
-    char mname[128];            /* the zone's primary server, by name */
+    uint8_t  want;              /* send when the chance comes */
+    uint8_t  active;
+    uint8_t  step;              /* RG_* */
+    uint8_t  job;               /* RJ_* */
+    uint8_t  tries;
+    uint16_t id, lport;
+    uint32_t give_up;
+    uint32_t asked;             /* the DNS server the zone question went to */
+    uint32_t master;            /* the zone's primary server */
+    uint32_t ip;                /* the address being sent */
+    uint32_t done_ip;           /* the address last taken; 0 none */
+    uint32_t done_at;           /* ticks() when it was */
+    uint32_t retry_at;          /* after no answer: try again then; 0 not */
+    uint16_t state, rcode;      /* DREG_*, and the server's answer */
+    char     owner[128];        /* the name the record is for */
+    char     zone[128];         /* the zone it is in */
+    char     mname[128];        /* the zone's primary server, by name */
 } reg;
 
 #define RG_SOA       0          /* asking which zone, and its primary */
@@ -340,50 +340,50 @@ static struct {
 /* what a library would have supplied                                */
 /* ---------------------------------------------------------------- */
 
-static void mem_copy( void *to, const void *from, u32 len )
+static void mem_copy( void *to, const void *from, unsigned int len )
 {
-    u8 *dst = (u8 *)to;
-    const u8 *src = (const u8 *)from;
+    uint8_t *dst = (uint8_t *)to;
+    const uint8_t *src = (const uint8_t *)from;
     while ( len-- ) *dst++ = *src++;
 }
 
-static void mem_zero( void *to, u32 len )
+static void mem_zero( void *to, unsigned int len )
 {
-    u8 *dst = (u8 *)to;
+    uint8_t *dst = (uint8_t *)to;
     while ( len-- ) *dst++ = 0;
 }
 
 /* the foreign-frame ring (declared up by rx_frame): hold a frame the stack
    does not own, give the oldest back to the bridge on request */
-static void fgn_put( const u8 *frame, u32 len )
+static void fgn_put( const uint8_t *frame, unsigned int len )
 {
-    u8 next;
+    uint8_t next;
 
     if ( len > FGN_CAP ) return;        /* a foreign frame this large is not ours */
-    next = (u8)( ( fgn_tail + 1 ) & ( FGN_N - 1 ) );
+    next = (uint8_t)( ( fgn_tail + 1 ) & ( FGN_N - 1 ) );
     if ( next == fgn_head ) {           /* ring full: drop the oldest */
-        fgn_head = (u8)( ( fgn_head + 1 ) & ( FGN_N - 1 ) );
+        fgn_head = (uint8_t)( ( fgn_head + 1 ) & ( FGN_N - 1 ) );
     }
     mem_copy( fgn_buf[fgn_tail], frame, len );
-    fgn_len[fgn_tail] = (u16)len;
+    fgn_len[fgn_tail] = (uint16_t)len;
     fgn_tail = next;
 }
 
-static u32 fgn_get( u8 *buf, u32 max )
+static unsigned int fgn_get( uint8_t *buf, unsigned int max )
 {
-    u32 len;
+    unsigned int len;
 
     if ( fgn_head == fgn_tail ) return 0;       /* empty */
     len = fgn_len[fgn_head];
     if ( len > max ) len = max;
     mem_copy( buf, fgn_buf[fgn_head], len );
-    fgn_head = (u8)( ( fgn_head + 1 ) & ( FGN_N - 1 ) );
+    fgn_head = (uint8_t)( ( fgn_head + 1 ) & ( FGN_N - 1 ) );
     return len;
 }
 
-static void str_copy( char *to, const char *from, u32 max )
+static void str_copy( char *to, const char *from, unsigned int max )
 {
-    u32 i;
+    unsigned int i;
     for ( i = 0; i + 1 < max && from[i]; i++ ) to[i] = from[i];
     to[i] = 0;
 }
@@ -394,68 +394,68 @@ static int str_same( const char *one, const char *two )
     return *one == *two;
 }
 
-static u32 str_len( const char *text )
+static unsigned int str_len( const char *text )
 {
-    u32 n = 0;
+    unsigned int n = 0;
     while ( text[n] ) n++;
     return n;
 }
 
-static u8 lower( u8 ch )
+static unsigned char lower( unsigned char ch )
 {
-    return ( ch >= 'A' && ch <= 'Z' ) ? (u8)( ch + 32 ) : ch;
+    return ( ch >= 'A' && ch <= 'Z' ) ? (unsigned char)( ch + 32 ) : ch;
 }
 
 /* the same but for case, as names are */
 static int str_samei( const char *one, const char *two )
 {
-    while ( *one && lower( (u8)*one ) == lower( (u8)*two ) ) { one++; two++; }
-    return lower( (u8)*one ) == lower( (u8)*two );
+    while ( *one && lower( (unsigned char)*one ) == lower( (unsigned char)*two ) ) { one++; two++; }
+    return lower( (unsigned char)*one ) == lower( (unsigned char)*two );
 }
 
-static void put16( u8 *buf, u16 value )
+static void put16( uint8_t *buf, uint16_t value )
 {
-    buf[0] = (u8)( value >> 8 );
-    buf[1] = (u8)value;
+    buf[0] = (uint8_t)( value >> 8 );
+    buf[1] = (uint8_t)value;
 }
 
-static void put32( u8 *buf, u32 value )
+static void put32( uint8_t *buf, uint32_t value )
 {
-    buf[0] = (u8)( value >> 24 );
-    buf[1] = (u8)( value >> 16 );
-    buf[2] = (u8)( value >> 8 );
-    buf[3] = (u8)value;
+    buf[0] = (uint8_t)( value >> 24 );
+    buf[1] = (uint8_t)( value >> 16 );
+    buf[2] = (uint8_t)( value >> 8 );
+    buf[3] = (uint8_t)value;
 }
 
-static u16 get16( const u8 *buf )
+static uint16_t get16( const uint8_t *buf )
 {
-    return (u16)( ( (u16)buf[0] << 8 ) | buf[1] );
+    return (uint16_t)( ( (uint16_t)buf[0] << 8 ) | buf[1] );
 }
 
-static u32 get32( const u8 *buf )
+static uint32_t get32( const uint8_t *buf )
 {
-    return ( (u32)buf[0] << 24 ) | ( (u32)buf[1] << 16 ) |
-           ( (u32)buf[2] << 8 ) | buf[3];
+    return ( (uint32_t)buf[0] << 24 ) | ( (uint32_t)buf[1] << 16 ) |
+           ( (uint32_t)buf[2] << 8 ) | buf[3];
 }
 
 /* the Internet checksum, over data read as big-endian 16-bit words */
-static u32 cksum_add( const u8 *buf, u32 len, u32 sum )
+static uint32_t cksum_add( const uint8_t *buf, unsigned int len, uint32_t sum )
 {
-    u32 i;
-    for ( i = 0; i + 1 < len; i += 2 ) sum += ( (u32)buf[i] << 8 ) | buf[i + 1];
-    if ( i < len ) sum += (u32)buf[i] << 8;
+    unsigned int i;
+    for ( i = 0; i + 1 < len; i += 2 ) sum += ( (uint32_t)buf[i] << 8 ) | buf[i + 1];
+    if ( i < len ) sum += (uint32_t)buf[i] << 8;
     return sum;
 }
 
-static u16 cksum_done( u32 sum )
+static uint16_t cksum_done( uint32_t sum )
 {
     while ( sum >> 16 ) sum = ( sum & 0xFFFF ) + ( sum >> 16 );
-    return (u16)( ~sum & 0xFFFF );
+    return (uint16_t)( ~sum & 0xFFFF );
 }
 
 /* a pseudo-random seed for sequence numbers and ids, out of the clock */
-static u32 rnd_state;
-static u32 rnd( void )
+static uint32_t rnd_state;
+static uint32_t rnd( void )
 {
     rnd_state = rnd_state * 1103515245L + 12345L;
     return rnd_state;
@@ -465,15 +465,15 @@ static u32 rnd( void )
 /* the card, reached through the kernel                              */
 /* ---------------------------------------------------------------- */
 
-static int nic_send( const u8 *frame, u32 len )
+static int nic_send( const uint8_t *frame, unsigned int len )
 {
-    u32 answer;
+    uint32_t answer;
     return nds_niccall( 0, NIC_SEND, (void *)frame, len, &answer ) == 0;
 }
 
-static u32 nic_recv( u8 *buf, u32 max )
+static unsigned int nic_recv( uint8_t *buf, unsigned int max )
 {
-    u32 answer;
+    uint32_t answer;
     if ( nds_niccall( 0, NIC_RECV, buf, max, &answer ) != 0 ) return 0;
     return answer;
 }
@@ -483,7 +483,7 @@ static u32 nic_recv( u8 *buf, u32 max )
    tick of its own, so SOCK_PUMP asks for this before it pumps */
 static void nic_service( void )
 {
-    u32 answer;
+    uint32_t answer;
     nds_niccall( 0, NIC_SERVICE, (void *)0, 0, &answer );
 }
 
@@ -494,9 +494,9 @@ static void nic_service( void )
 #define ARP_N   8
 #define ARP_RETRY 3             /* ticks: a send that waited on ARP goes again */
 
-static struct { u32 ip; u8 mac[6]; u8 valid; u32 at; } arp[ARP_N];
+static struct { uint32_t ip; uint8_t mac[6]; uint8_t valid; uint32_t at; } arp[ARP_N];
 
-static u8 *arp_find( u32 ip )
+static uint8_t *arp_find( uint32_t ip )
 {
     int i;
     for ( i = 0; i < ARP_N; i++ ) {
@@ -505,10 +505,10 @@ static u8 *arp_find( u32 ip )
     return NULL;
 }
 
-static void arp_put( u32 ip, const u8 *mac )
+static void arp_put( uint32_t ip, const uint8_t *mac )
 {
     int i, slot = 0;
-    u32 oldest = 0xFFFFFFFFL;
+    uint32_t oldest = 0xFFFFFFFFL;
 
     for ( i = 0; i < ARP_N; i++ ) {
         if ( arp[i].valid && arp[i].ip == ip ) { slot = i; break; }
@@ -521,10 +521,10 @@ static void arp_put( u32 ip, const u8 *mac )
     arp[slot].at = ticks();
 }
 
-static void arp_send( u16 op, u32 target_ip, const u8 *target_mac )
+static void arp_send( uint16_t op, uint32_t target_ip, const uint8_t *target_mac )
 {
-    u8 *frame = tx_frame;
-    static const u8 bcast[6] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
+    uint8_t *frame = tx_frame;
+    static const uint8_t bcast[6] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
 
     mem_copy( frame, op == ARP_REQUEST ? bcast : target_mac, 6 );
     mem_copy( frame + 6, if_mac, 6 );
@@ -542,15 +542,15 @@ static void arp_send( u16 op, u32 target_ip, const u8 *target_mac )
     nic_send( frame, 42 );
 }
 
-static void arp_request( u32 ip )
+static void arp_request( uint32_t ip )
 {
     arp_send( ARP_REQUEST, ip, NULL );
 }
 
-static void arp_input( const u8 *frame, u32 len )
+static void arp_input( const uint8_t *frame, unsigned int len )
 {
-    u16 op;
-    u32 sender_ip, target_ip;
+    uint16_t op;
+    uint32_t sender_ip, target_ip;
 
     if ( len < 42 ) return;
     if ( get16( frame + 16 ) != ETH_IP ) return;
@@ -569,25 +569,25 @@ static void arp_input( const u8 *frame, u32 len )
 /* IP out: the headers around a payload already placed at +34        */
 /* ---------------------------------------------------------------- */
 
-static int same_subnet( u32 ip )
+static int same_subnet( uint32_t ip )
 {
     return if_mask && ( ( ip ^ if_ip ) & if_mask ) == 0;
 }
 
 /* where a frame for dst goes first: dst itself, or the gateway */
-static u32 next_hop( u32 dst )
+static uint32_t next_hop( uint32_t dst )
 {
     return same_subnet( dst ) ? dst : if_gw;
 }
 
-static int ip_send( u32 dst, u8 proto, u32 plen )
+static int ip_send( uint32_t dst, uint8_t proto, unsigned int plen )
 {
-    u8 *mac, *ih = tx_frame + ETH_HDR;
-    u32 nexthop;
-    static const u8 bcast[6] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
+    uint8_t *mac, *ih = tx_frame + ETH_HDR;
+    uint32_t nexthop;
+    static const uint8_t bcast[6] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
 
     if ( dst == IP_BCAST || ( if_mask && same_subnet( dst ) && ( dst | if_mask ) == IP_BCAST ) ) {
-        mac = (u8 *)bcast;              /* everyone, or everyone on our network */
+        mac = (uint8_t *)bcast;         /* everyone, or everyone on our network */
     } else {
         nexthop = next_hop( dst );
         mac = arp_find( nexthop );
@@ -599,7 +599,7 @@ static int ip_send( u32 dst, u8 proto, u32 plen )
 
     ih[0] = 0x45;
     ih[1] = 0;
-    put16( ih + 2, (u16)( 20 + plen ) );
+    put16( ih + 2, (uint16_t)( 20 + plen ) );
     put16( ih + 4, ip_id++ );
     put16( ih + 6, 0x4000 );            /* don't fragment */
     ih[8] = 64;
@@ -613,16 +613,16 @@ static int ip_send( u32 dst, u8 proto, u32 plen )
 }
 
 /* the checksum over the pseudo-header and the L4 data at +34 */
-static u16 l4_cksum( u32 src, u32 dst, u8 proto, u32 plen )
+static uint16_t l4_cksum( uint32_t src, uint32_t dst, uint8_t proto, unsigned int plen )
 {
-    u8 pseudo[12];
-    u32 sum;
+    uint8_t pseudo[12];
+    uint32_t sum;
 
     put32( pseudo, src );
     put32( pseudo + 4, dst );
     pseudo[8] = 0;
     pseudo[9] = proto;
-    put16( pseudo + 10, (u16)plen );
+    put16( pseudo + 10, (uint16_t)plen );
     sum = cksum_add( pseudo, 12, 0 );
     sum = cksum_add( tx_frame + 34, plen, sum );
     return cksum_done( sum );
@@ -632,14 +632,14 @@ static u16 l4_cksum( u32 src, u32 dst, u8 proto, u32 plen )
 /* UDP                                                               */
 /* ---------------------------------------------------------------- */
 
-static int udp_send( u32 dst, u16 dport, u16 sport, const u8 *data, u32 dlen )
+static int udp_send( uint32_t dst, uint16_t dport, uint16_t sport, const uint8_t *data, unsigned int dlen )
 {
-    u8 *uh = tx_frame + 34;
-    u16 ck;
+    uint8_t *uh = tx_frame + 34;
+    uint16_t ck;
 
     put16( uh, sport );
     put16( uh + 2, dport );
-    put16( uh + 4, (u16)( 8 + dlen ) );
+    put16( uh + 4, (uint16_t)( 8 + dlen ) );
     put16( uh + 6, 0 );
     /* a caller with the payload already in place (DHCP, DNS) passes
        data == NULL: leave what is at uh+8 alone */
@@ -651,26 +651,26 @@ static int udp_send( u32 dst, u16 dport, u16 sport, const u8 *data, u32 dlen )
 }
 
 /* forward */
-static void dhcp_input( const u8 *bootp, u32 len );
-static void dns_input( const u8 *dns, u32 len );
-static void reg_input( u32 src, const u8 *dns, u32 len );
+static void dhcp_input( const uint8_t *bootp, unsigned int len );
+static void dns_input( const uint8_t *dns, unsigned int len );
+static void reg_input( uint32_t src, const uint8_t *dns, unsigned int len );
 #define NBNS_PORT 137
-static void nbns_input( u32 src, u16 sport, const u8 *data, u32 dlen );
-static SOCKET *udp_socket_for( u16 port );
-static void udp_queue( SOCKET *s, u32 src, u16 sport, const u8 *data, u32 dlen );
+static void nbns_input( uint32_t src, uint16_t sport, const uint8_t *data, unsigned int dlen );
+static SOCKET *udp_socket_for( uint16_t port );
+static void udp_queue( SOCKET *s, uint32_t src, uint16_t sport, const uint8_t *data, unsigned int dlen );
 
-static void udp_input( u32 src, const u8 *uh, u32 len )
+static void udp_input( uint32_t src, const uint8_t *uh, unsigned int len )
 {
-    u16 sport, dport, ulen;
-    const u8 *data;
-    u32 dlen;
+    uint16_t sport, dport, ulen;
+    const uint8_t *data;
+    unsigned int dlen;
     SOCKET *s;
 
     if ( len < 8 ) return;
     sport = get16( uh );
     dport = get16( uh + 2 );
     ulen = get16( uh + 4 );
-    if ( ulen < 8 || ulen > len ) ulen = (u16)len;
+    if ( ulen < 8 || ulen > len ) ulen = (uint16_t)len;
     data = uh + 8;
     dlen = ulen - 8;
 
@@ -703,12 +703,12 @@ static void udp_input( u32 src, const u8 *uh, u32 len )
    clock go back, so it stands still instead. */
 #define FINE_PER_MS  1193UL
 
-static u32 fine_last;
+static uint32_t fine_last;
 
-static u32 fine_now( void )
+static uint32_t fine_now( void )
 {
-    u32 flags, tick, into, now, count;
-    u8  status, low, high;
+    uint32_t flags, tick, into, now, count;
+    uint8_t  status, low, high;
 
     do {
         tick = ticks();
@@ -719,7 +719,7 @@ static u32 fine_now( void )
         high = inb( 0x40 );
         int_back( flags );
     } while ( ticks() != tick );
-    count = ( (u32)high << 8 ) | low;
+    count = ( (uint32_t)high << 8 ) | low;
     if ( count == 0 ) count = 0x10000UL;
     if ( ( status & 0x06 ) == 0x06 ) {          /* mode 3, the square wave */
         into = ( 0x10000UL - count ) / 2;
@@ -728,33 +728,33 @@ static u32 fine_now( void )
         into = 0x10000UL - count;
     }
     now = tick * 0x10000UL + into;
-    if ( (long)( now - fine_last ) < 0 && fine_last - now < 0x10000UL ) now = fine_last;
+    if ( (int32_t)( now - fine_last ) < 0 && fine_last - now < 0x10000UL ) now = fine_last;
     fine_last = now;
     return now;
 }
 
-static int icmp_echo( u32 dst, u16 id, u16 seq )
+static int icmp_echo( uint32_t dst, uint16_t id, uint16_t seq )
 {
-    u8 *ic = tx_frame + 34;
-    u32 i, plen = 8 + 32;
+    uint8_t *ic = tx_frame + 34;
+    unsigned int i, plen = 8 + 32;
 
     ic[0] = ICMP_ECHOREQ;
     ic[1] = 0;
     put16( ic + 2, 0 );
     put16( ic + 4, id );
     put16( ic + 6, seq );
-    for ( i = 0; i < 32; i++ ) ic[8 + i] = (u8)( 'a' + ( i & 15 ) );
+    for ( i = 0; i < 32; i++ ) ic[8 + i] = (uint8_t)( 'a' + ( i & 15 ) );
     put16( ic + 2, cksum_done( cksum_add( ic, plen, 0 ) ) );
     return ip_send( dst, IP_ICMP, plen );
 }
 
-static void icmp_input( u32 src, const u8 *ic, u32 len )
+static void icmp_input( uint32_t src, const uint8_t *ic, unsigned int len )
 {
     if ( len < 8 ) return;
     if ( ic[0] == ICMP_ECHOREQ ) {
         /* answer a ping to us, in place: swap type to a reply */
-        u8 *out = tx_frame + 34;
-        u32 plen = len;
+        uint8_t *out = tx_frame + 34;
+        unsigned int plen = len;
         if ( plen > sizeof( tx_frame ) - 34 ) plen = sizeof( tx_frame ) - 34;
         mem_copy( out, ic, plen );
         out[0] = ICMP_ECHOREP;
@@ -776,13 +776,14 @@ static void icmp_input( u32 src, const u8 *ic, u32 len )
 /* IP in                                                             */
 /* ---------------------------------------------------------------- */
 
-static void tcp_input( u32 src, u32 dst, const u8 *th, u32 len );
+static void tcp_input( uint32_t src, uint32_t dst, const uint8_t *th, unsigned int len );
 
-static void ip_input( const u8 *frame, u32 len )
+static void ip_input( const uint8_t *frame, unsigned int len )
 {
-    const u8 *ih = frame + ETH_HDR;
-    u32 ihl, total, plen, src, dst;
-    const u8 *l4;
+    const uint8_t *ih = frame + ETH_HDR;
+    unsigned int ihl, total, plen;
+    uint32_t src, dst;
+    const uint8_t *l4;
 
     if ( len < ETH_HDR + 20 ) return;
     if ( ( ih[0] >> 4 ) != 4 ) return;
@@ -803,9 +804,9 @@ static void ip_input( const u8 *frame, u32 len )
     }
 }
 
-static void eth_input( const u8 *frame, u32 len )
+static void eth_input( const uint8_t *frame, unsigned int len )
 {
-    u16 type;
+    uint16_t type;
 
     if ( len < ETH_HDR ) return;
     rx_srcmac = frame + 6;
@@ -826,9 +827,9 @@ static void eth_input( const u8 *frame, u32 len )
    With neither, the name is made from the card's address, PMDOS-0A1B2C,
    which no other PM-DOS machine on the network has. */
 
-static u8 nb_upper( u8 ch );
+static unsigned char nb_upper( unsigned char ch );
 
-static int is_alnum( u8 ch )
+static int is_alnum( unsigned char ch )
 {
     return ( ch >= 'a' && ch <= 'z' ) || ( ch >= 'A' && ch <= 'Z' ) || ( ch >= '0' && ch <= '9' );
 }
@@ -837,10 +838,10 @@ static int is_alnum( u8 ch )
    ending with a hyphen.  0 if it is not one */
 static int host_ok( const char *name )
 {
-    u32 n;
+    unsigned int n;
 
     for ( n = 0; name[n]; n++ ) {
-        if ( n >= 63 || !( is_alnum( (u8)name[n] ) || name[n] == '-' ) ) return 0;
+        if ( n >= 63 || !( is_alnum( (unsigned char)name[n] ) || name[n] == '-' ) ) return 0;
     }
     return n > 0 && name[0] != '-' && name[n - 1] != '-';
 }
@@ -850,11 +851,11 @@ static int host_ok( const char *name )
    as some DHCP servers send) is dropped.  0 if it is not one */
 static int take_domain( const char *src, char *dst )
 {
-    char out[64];
-    u32 n = 0, label = 0;
-    u8  ch;
+    char          out[64];
+    unsigned int  n = 0, label = 0;
+    unsigned char ch;
 
-    for ( ; ( ch = (u8)*src ) != 0; src++ ) {
+    for ( ; ( ch = (unsigned char)*src ) != 0; src++ ) {
         if ( n >= sizeof( out ) - 1 ) return 0;
         if ( ch == '.' ) {
             if ( label == 0 || out[n - 1] == '-' ) return 0;
@@ -876,10 +877,10 @@ static int take_domain( const char *src, char *dst )
    carry (_, !, $ and the like) a hyphen */
 static void host_from_nb( void )
 {
-    u32 n;
+    unsigned int n;
 
     for ( n = 0; nb_name[n]; n++ ) {
-        u8 ch = (u8)nb_name[n];
+        unsigned char ch = (unsigned char)nb_name[n];
         host_name[n] = (char)( is_alnum( ch ) ? lower( ch ) : '-' );
     }
     host_name[n] = 0;
@@ -888,9 +889,9 @@ static void host_from_nb( void )
 /* the NetBIOS name from the host name: its first 15, upper case */
 static void nb_from_host( void )
 {
-    u32 n;
+    unsigned int n;
 
-    for ( n = 0; n < 15 && host_name[n]; n++ ) nb_name[n] = (char)nb_upper( (u8)host_name[n] );
+    for ( n = 0; n < 15 && host_name[n]; n++ ) nb_name[n] = (char)nb_upper( (unsigned char)host_name[n] );
     nb_name[n] = 0;
 }
 
@@ -899,7 +900,7 @@ static void nb_from_host( void )
 static void names_settle( void )
 {
     static const char hex[] = "0123456789ABCDEF";
-    u32 i;
+    unsigned int i;
 
     if ( nb_name[0] == 0 && host_name[0] == 0 ) {
         str_copy( nb_name, "PMDOS-", sizeof( nb_name ) );
@@ -916,12 +917,12 @@ static void names_settle( void )
 /* is a name to be looked up this computer's own? */
 static int name_is_us( const char *name )
 {
-    u32 n = str_len( host_name ), i;
+    unsigned int n = str_len( host_name ), i;
 
     if ( str_samei( name, host_name ) || str_samei( name, nb_name ) ) return 1;
     if ( dom_name[0] == 0 || n == 0 ) return 0;
     for ( i = 0; i < n; i++ ) {         /* host.domain: a short name stops here */
-        if ( lower( (u8)name[i] ) != (u8)host_name[i] ) return 0;
+        if ( lower( (unsigned char)name[i] ) != (unsigned char)host_name[i] ) return 0;
     }
     return name[n] == '.' && str_samei( name + n + 1, dom_name );
 }
@@ -959,33 +960,33 @@ static int name_is_us( const char *name )
 #define DH_RETRY_MIN  ( 60 * TICKS_SEC )    /* RFC 2131's floor while renewing */
 #define DH_BACKOFF    ( 64 * TICKS_SEC )    /* the longest wait between DISCOVERs */
 
-static u32 dhcp_xid;
-static volatile u8 dhcp_state;   /* nd_init spins on this while the tick runs */
-static u32 dhcp_next;            /* when to send again */
-static u32 dhcp_wait;            /* the DISCOVER interval, doubling */
-static u8  dhcp_tries;
-static u32 dhcp_offer_ip, dhcp_server_ip;
-static u32 dhcp_bound_at;        /* the tick the lease was given or renewed */
-static u32 dhcp_t1, dhcp_t2, dhcp_end;      /* deadlines, in ticks */
-static u8  dhcp_timed;           /* 0: the lease has no end */
-static u32 dns_fixed;            /* /DNS= - used whatever DHCP says */
-static u32 dns_fixed2, dns_fixed3;
-static u32 wins_fixed;           /* /WINS= - the same for the WINS server */
-static u16 dhcp_acks;            /* ACKs taken: IPCONFIG /RENEW watches it move */
+static uint32_t dhcp_xid;
+static volatile uint8_t dhcp_state;  /* nd_init spins on this while the tick runs */
+static uint32_t dhcp_next;           /* when to send again */
+static unsigned int dhcp_wait;       /* the DISCOVER interval, doubling */
+static uint8_t  dhcp_tries;
+static uint32_t dhcp_offer_ip, dhcp_server_ip;
+static uint32_t dhcp_bound_at;       /* the tick the lease was given or renewed */
+static uint32_t dhcp_t1, dhcp_t2, dhcp_end; /* deadlines, in ticks */
+static uint8_t  dhcp_timed;          /* 0: the lease has no end */
+static uint32_t dns_fixed;           /* /DNS= - used whatever DHCP says */
+static uint32_t dns_fixed2, dns_fixed3;
+static uint32_t wins_fixed;          /* /WINS= - the same for the WINS server */
+static uint16_t dhcp_acks;           /* ACKs taken: IPCONFIG /RENEW watches it move */
 
 /* seconds to ticks, 18.2 a second, for a span under DH_LONGEST */
-static u32 secs_ticks( u32 secs )
+static uint32_t secs_ticks( uint32_t secs )
 {
     return secs * TICKS_SEC + secs / 5;
 }
 
 /* ticks to seconds, without the multiply overflowing */
-static u32 ticks_secs( u32 ticks )
+static uint32_t ticks_secs( uint32_t ticks )
 {
     return ( ticks / 91 ) * 5 + ( ( ticks % 91 ) * 5 ) / 91;
 }
 
-static u32 dns_put_name( u8 *q, u32 n, const char *name );
+static unsigned int dns_put_name( uint8_t *q, unsigned int n, const char *name );
 
 /* Our name, for the DHCP server to put in DNS and in its list of leases:
    option 12, the host name, which home routers take; and option 81 (RFC
@@ -995,18 +996,18 @@ static u32 dns_put_name( u8 *q, u32 n, const char *name );
    only the reverse one; otherwise the server is asked to add both.  With
    no domain known the name is a partial one, and the server adds its own
    domain to it */
-static u32 dhcp_names( u8 *b, u32 n )
+static unsigned int dhcp_names( uint8_t *b, unsigned int n )
 {
-    u32 len = str_len( host_name ), at;
+    unsigned int len = str_len( host_name ), at;
 
     if ( len == 0 ) return n;
-    b[n++] = 12; b[n++] = (u8)len;
+    b[n++] = 12; b[n++] = (uint8_t)len;
     mem_copy( b + n, host_name, len );
     n += len;
 
     b[n++] = 81;
     at = n++;                           /* the length, when it is known */
-    b[n++] = (u8)( ( reg_dns && dom_name[0] ) ? 0x04 : 0x05 );     /* E, and S or not */
+    b[n++] = (uint8_t)( ( reg_dns && dom_name[0] ) ? 0x04 : 0x05 ); /* E, and S or not */
     b[n++] = 0;                         /* RCODE1 and RCODE2: not used */
     b[n++] = 0;
     if ( dom_name[0] ) {
@@ -1018,14 +1019,14 @@ static u32 dhcp_names( u8 *b, u32 n )
     } else {
         n = dns_put_name( b, n, host_name ) - 1;        /* partial: no root */
     }
-    b[at] = (u8)( n - at - 1 );
+    b[at] = (uint8_t)( n - at - 1 );
     return n;
 }
 
-static u32 bootp_build( u8 type, u32 client_ip, u32 request_ip, u32 server_ip )
+static unsigned int bootp_build( uint8_t type, uint32_t client_ip, uint32_t request_ip, uint32_t server_ip )
 {
-    u8 *b = tx_frame + 34 + 8;   /* past the UDP header, filled by udp_send */
-    u32 n;
+    uint8_t *b = tx_frame + 34 + 8; /* past the UDP header, filled by udp_send */
+    unsigned int n;
 
     mem_zero( b, 548 );          /* the most a DHCP message need be */
     b[0] = 1;                    /* BOOTREQUEST */
@@ -1054,9 +1055,9 @@ static u32 bootp_build( u8 type, u32 client_ip, u32 request_ip, u32 server_ip )
     return n;
 }
 
-static void dhcp_send( u8 type )
+static void dhcp_send( uint8_t type )
 {
-    u32 n;
+    unsigned int n;
 
     switch ( dhcp_state ) {
     case DH_RENEW:              /* to our server, from our address */
@@ -1105,9 +1106,9 @@ static void dhcp_start( void )
 }
 
 /* the lease's three deadlines, from the ACK's lease, T1 and T2 */
-static void dhcp_schedule( u32 lease, u32 t1, u32 t2 )
+static void dhcp_schedule( uint32_t lease, uint32_t t1, uint32_t t2 )
 {
-    u32 now = ticks();
+    uint32_t now = ticks();
 
     dhcp_bound_at = now;
     if ( lease == DH_FOREVER || lease >= DH_LONGEST ) {
@@ -1125,12 +1126,12 @@ static void dhcp_schedule( u32 lease, u32 t1, u32 t2 )
 
 /* the next try while renewing or rebinding: half the time left to the
    deadline, but not under a minute, and never past the deadline */
-static u32 dhcp_halfway( u32 now, u32 deadline )
+static uint32_t dhcp_halfway( uint32_t now, uint32_t deadline )
 {
-    u32 left = deadline - now;
-    u32 step = left / 2;
+    uint32_t left = deadline - now;
+    uint32_t step = left / 2;
 
-    if ( (long)left <= 0 ) return now;
+    if ( (int32_t)left <= 0 ) return now;
     if ( step < DH_RETRY_MIN ) step = DH_RETRY_MIN;
     if ( step > left ) step = left;
     return now + step;
@@ -1138,16 +1139,16 @@ static u32 dhcp_halfway( u32 now, u32 deadline )
 
 /* a BOOTP reply arrived: move the state machine along.  Called from the
    pump, so it does not print or wait */
-static void dhcp_input( const u8 *uh, u32 len )
+static void dhcp_input( const uint8_t *uh, unsigned int len )
 {
-    const u8 *b = uh + 8;
-    u32 blen, n;
-    u8  type = 0;
-    u32 yiaddr, server = 0, mask = 0, gw = 0, dns = 0, wins = 0;
-    u32 dns2 = 0, dns3 = 0;
-    char dom[64];
-    u32 lease = 0, t1 = 0, t2 = 0;
-    u8  have_lease = 0;
+    const uint8_t *b = uh + 8;
+    unsigned int blen, n;
+    uint8_t  type = 0;
+    uint32_t yiaddr, server = 0, mask = 0, gw = 0, dns = 0, wins = 0;
+    uint32_t dns2 = 0, dns3 = 0;
+    char     dom[64];
+    uint32_t lease = 0, t1 = 0, t2 = 0;
+    uint8_t  have_lease = 0;
 
     dom[0] = 0;
     if ( dhcp_state == DH_OFF || dhcp_state == DH_BOUND ) return;
@@ -1162,7 +1163,7 @@ static void dhcp_input( const u8 *uh, u32 len )
     yiaddr = get32( b + 16 );
 
     for ( n = 240; n + 1 < blen; ) {
-        u8 opt = b[n], olen;
+        uint8_t opt = b[n], olen;
         if ( opt == 0 ) { n++; continue; }
         if ( opt == 255 ) break;
         olen = b[n + 1];
@@ -1229,23 +1230,23 @@ static void dhcp_input( const u8 *uh, u32 len )
 /* every tick: resend what is unanswered, and keep the lease */
 static void dhcp_tick( void )
 {
-    u32 now = ticks();
+    uint32_t now = ticks();
 
     switch ( dhcp_state ) {
     case DH_DISCOVER:
-        if ( (long)( now - dhcp_next ) < 0 ) break;
+        if ( (int32_t)( now - dhcp_next ) < 0 ) break;
         dhcp_send( DHCP_DISCOVER );
         if ( dhcp_wait < DH_BACKOFF ) dhcp_wait *= 2;
         dhcp_next = now + dhcp_wait;
         break;
     case DH_REQUEST:
-        if ( (long)( now - dhcp_next ) < 0 ) break;
+        if ( (int32_t)( now - dhcp_next ) < 0 ) break;
         if ( ++dhcp_tries > 3 ) { dhcp_start(); break; }    /* begin again */
         dhcp_send( DHCP_REQUEST );
         dhcp_next = now + 2 * TICKS_SEC;
         break;
     case DH_BOUND:
-        if ( !dhcp_timed || (long)( now - dhcp_t1 ) < 0 ) break;
+        if ( !dhcp_timed || (int32_t)( now - dhcp_t1 ) < 0 ) break;
         dhcp_state = DH_RENEW;
         dhcp_xid = rnd();
         dhcp_send( DHCP_REQUEST );
@@ -1253,20 +1254,20 @@ static void dhcp_tick( void )
         break;
     case DH_RENEW:
         if ( !dhcp_timed ) {            /* a /RENEW of a lease with no end */
-            if ( (long)( now - dhcp_next ) >= 0 ) dhcp_state = DH_BOUND;
-        } else if ( (long)( now - dhcp_t2 ) >= 0 ) {
+            if ( (int32_t)( now - dhcp_next ) >= 0 ) dhcp_state = DH_BOUND;
+        } else if ( (int32_t)( now - dhcp_t2 ) >= 0 ) {
             dhcp_state = DH_REBIND;
             dhcp_send( DHCP_REQUEST );
             dhcp_next = dhcp_halfway( now, dhcp_end );
-        } else if ( (long)( now - dhcp_next ) >= 0 ) {
+        } else if ( (int32_t)( now - dhcp_next ) >= 0 ) {
             dhcp_send( DHCP_REQUEST );
             dhcp_next = dhcp_halfway( now, dhcp_t2 );
         }
         break;
     case DH_REBIND:
-        if ( (long)( now - dhcp_end ) >= 0 ) {
+        if ( (int32_t)( now - dhcp_end ) >= 0 ) {
             dhcp_start();               /* the lease ran out */
-        } else if ( (long)( now - dhcp_next ) >= 0 ) {
+        } else if ( (int32_t)( now - dhcp_next ) >= 0 ) {
             dhcp_send( DHCP_REQUEST );
             dhcp_next = dhcp_halfway( now, dhcp_end );
         }
@@ -1278,7 +1279,7 @@ static void dhcp_tick( void )
 static void dhcp_release( void )
 {
     if ( if_up && dhcp_server_ip ) {
-        u32 n;
+        unsigned int n;
         dhcp_xid = rnd();
         n = bootp_build( DHCP_RELEASE, if_ip, 0, dhcp_server_ip );
         udp_send( dhcp_server_ip, 67, 68, NULL, n );
@@ -1306,18 +1307,18 @@ static void dhcp_renew( void )
 
 /* a name as DNS carries it: each label after its length, 0 at the end.
    An empty label (a.b. or a..b) is left out rather than ending the name */
-static u32 dns_put_name( u8 *q, u32 n, const char *name )
+static unsigned int dns_put_name( uint8_t *q, unsigned int n, const char *name )
 {
     const char *p = name;
 
     while ( *p ) {
         const char *start = p;
-        u32 label;
+        unsigned int label;
         while ( *p && *p != '.' ) p++;
-        label = (u32)( p - start );
+        label = (unsigned int)( p - start );
         if ( label > 63 ) label = 63;
         if ( label ) {
-            q[n++] = (u8)label;
+            q[n++] = (uint8_t)label;
             mem_copy( q + n, start, label );
             n += label;
         }
@@ -1329,10 +1330,10 @@ static u32 dns_put_name( u8 *q, u32 n, const char *name )
 
 /* one question - a name and a record type - with recursion asked for,
    placed where udp_send expects it */
-static u32 dns_query( u16 id, const char *name, u16 type )
+static unsigned int dns_query( uint16_t id, const char *name, uint16_t type )
 {
-    u8 *q = tx_frame + 34 + 8;
-    u32 n;
+    uint8_t *q = tx_frame + 34 + 8;
+    unsigned int n;
 
     put16( q, id );
     put16( q + 2, 0x0100 );              /* recursion desired */
@@ -1346,10 +1347,10 @@ static u32 dns_query( u16 id, const char *name, u16 type )
     return n;
 }
 
-static u32 dns_skip_name( const u8 *dns, u32 len, u32 at )
+static unsigned int dns_skip_name( const uint8_t *dns, unsigned int len, unsigned int at )
 {
     while ( at < len ) {
-        u8 label = dns[at];
+        uint8_t label = dns[at];
         if ( ( label & 0xC0 ) == 0xC0 ) return at + 2;      /* a pointer */
         if ( label == 0 ) return at + 1;
         at += 1 + label;
@@ -1360,10 +1361,10 @@ static u32 dns_skip_name( const u8 *dns, u32 len, u32 at )
 /* a name in a reply as dotted text, its pointers followed; the offset
    just past it in the message, or 0 if it is not a name or is longer
    than max */
-static u32 dns_get_name( const u8 *dns, u32 len, u32 at, char *out, u32 max )
+static unsigned int dns_get_name( const uint8_t *dns, unsigned int len, unsigned int at, char *out, unsigned int max )
 {
-    u32 o = 0, after = 0, hops = 0;
-    u8  label;
+    unsigned int o = 0, after = 0, hops = 0;
+    uint8_t      label;
 
     for ( ;; ) {
         if ( at >= len ) return 0;
@@ -1371,7 +1372,7 @@ static u32 dns_get_name( const u8 *dns, u32 len, u32 at, char *out, u32 max )
         if ( ( label & 0xC0 ) == 0xC0 ) {
             if ( at + 1 >= len || ++hops > 16 ) return 0;   /* a loop of pointers */
             if ( after == 0 ) after = at + 2;
-            at = ( (u32)( label & 0x3F ) << 8 ) | dns[at + 1];
+            at = ( (unsigned int)( label & 0x3F ) << 8 ) | dns[at + 1];
             continue;
         }
         if ( label & 0xC0 ) return 0;
@@ -1391,9 +1392,10 @@ static u32 dns_get_name( const u8 *dns, u32 len, u32 at, char *out, u32 max )
 }
 
 /* the DNS servers we have, the n'th of them, round and round */
-static u32 dns_server( u32 n )
+static uint32_t dns_server( unsigned int n )
 {
-    u32 list[3], count = 0;
+    uint32_t     list[3];
+    unsigned int count = 0;
 
     if ( if_dns ) list[count++] = if_dns;
     if ( if_dns2 ) list[count++] = if_dns2;
@@ -1405,7 +1407,7 @@ static u32 dns_server( u32 n )
    dot) with our domain after it, as Windows adds its DNS suffix */
 static void dns_qname( void )
 {
-    u32 i, n;
+    unsigned int i, n;
 
     str_copy( res.qname, res.name, sizeof( res.qname ) );
     for ( i = 0; res.name[i] && res.name[i] != '.'; i++ ) ;
@@ -1422,9 +1424,9 @@ static int dns_send( void )
                      dns_query( res.id, res.qname, 1 ) );
 }
 
-static void dns_input( const u8 *dns, u32 len )
+static void dns_input( const uint8_t *dns, unsigned int len )
 {
-    u32 at, answers, i, rcode;
+    unsigned int at, answers, i, rcode;
 
     if ( len < 12 ) return;
     if ( get16( dns ) != res.id ) return;
@@ -1439,7 +1441,7 @@ static void dns_input( const u8 *dns, u32 len )
     answers = get16( dns + 6 );
     at = dns_skip_name( dns, len, 12 ) + 4;         /* past the question */
     for ( i = 0; i < answers && at + 10 <= len; i++ ) {
-        u32 rdlen, type;
+        unsigned int rdlen, type;
         at = dns_skip_name( dns, len, at );
         if ( at + 10 > len ) break;
         type = get16( dns + at );
@@ -1477,9 +1479,9 @@ static void dns_input( const u8 *dns, u32 len )
    name. */
 
 /* host.domain */
-static void reg_fqdn( char *out, u32 max )
+static void reg_fqdn( char *out, unsigned int max )
 {
-    u32 n;
+    unsigned int n;
 
     str_copy( out, host_name, max );
     n = str_len( out );
@@ -1487,10 +1489,10 @@ static void reg_fqdn( char *out, u32 max )
     str_copy( out + n + 1, dom_name, max - n - 1 );
 }
 
-static char *put_dec( char *p, u32 value )
+static char *put_dec( char *p, unsigned int value )
 {
     char digits[10];
-    u32 n = 0;
+    unsigned int n = 0;
 
     do {
         digits[n++] = (char)( '0' + value % 10 );
@@ -1503,12 +1505,14 @@ static char *put_dec( char *p, u32 value )
 /* the question or the update for the step reg is at, sent */
 static void reg_send( void )
 {
-    u8 *q = tx_frame + 34 + 8;
-    u32 n, dst, at;
-    u16 type = reg.job == RJ_A ? 1 : 12;
+    uint8_t *q = tx_frame + 34 + 8;
+    unsigned int n;
+    uint32_t dst;
+    unsigned int at;
+    uint16_t type = reg.job == RJ_A ? 1 : 12;
     char full[128];
 
-    reg.id = (u16)rnd();
+    reg.id = (uint16_t)rnd();
     if ( reg.step == RG_UPDATE ) {
         dst = reg.master;
         put16( q, reg.id );
@@ -1542,7 +1546,7 @@ static void reg_send( void )
             at = n;
             reg_fqdn( full, sizeof( full ) );
             n = dns_put_name( q, n, full );
-            put16( q + at - 2, (u16)( n - at ) );
+            put16( q + at - 2, (uint16_t)( n - at ) );
         }
     } else if ( reg.step == RG_MASTER ) {
         dst = reg.asked;
@@ -1557,10 +1561,10 @@ static void reg_send( void )
 }
 
 /* begin one record: the address one (RJ_A) or the reverse one (RJ_PTR) */
-static void reg_begin( u8 job )
+static void reg_begin( uint8_t job )
 {
     char *p;
-    u32 shift;
+    unsigned int shift;
 
     reg.job = job;
     reg.ip = if_ip;
@@ -1578,7 +1582,7 @@ static void reg_begin( u8 job )
     reg.master = 0;
     reg.step = RG_SOA;
     reg.tries = 0;
-    reg.lport = (u16)( 0xC000 + ( rnd() & 0x3FFF ) );
+    reg.lport = (uint16_t)( 0xC000 + ( rnd() & 0x3FFF ) );
     reg.active = 1;
     reg_send();
 }
@@ -1586,7 +1590,7 @@ static void reg_begin( u8 job )
 /* one record is done with.  The address record's fate is what IPCONFIG
    shows; the reverse one, sent after it for an address of our own, is
    taken or not without a word */
-static void reg_end( u16 state, u16 rcode )
+static void reg_end( uint16_t state, uint16_t rcode )
 {
     reg.active = 0;
     if ( reg.job != RJ_A ) return;
@@ -1606,7 +1610,7 @@ static void reg_end( u16 state, u16 rcode )
    resolver's own empty zone */
 static int reg_zone_ok( void )
 {
-    u32 i;
+    unsigned int i;
 
     for ( i = 0; reg.zone[i] && reg.zone[i] != '.'; i++ ) ;
     if ( reg.zone[i] == 0 ) return 0;
@@ -1615,7 +1619,7 @@ static int reg_zone_ok( void )
 
 /* the primary's address, or the server that answered when it has none
    (or one no update should go to) */
-static void reg_to_master( u32 ip )
+static void reg_to_master( uint32_t ip )
 {
     if ( ip == 0 || ( ip >> 24 ) == 127 || ip == IP_BCAST ) ip = reg.asked;
     reg.master = ip;
@@ -1624,15 +1628,15 @@ static void reg_to_master( u32 ip )
     reg_send();
 }
 
-static void reg_input( u32 src, const u8 *dns, u32 len )
+static void reg_input( uint32_t src, const uint8_t *dns, unsigned int len )
 {
-    u32 at, i, count, rcode, type, rdlen, name_at;
+    unsigned int at, i, count, rcode, type, rdlen, name_at;
 
     if ( len < 12 || get16( dns ) != reg.id || !( get16( dns + 2 ) & 0x8000 ) ) return;
     rcode = get16( dns + 2 ) & 0x000F;
 
     if ( reg.step == RG_UPDATE ) {
-        reg_end( (u16)( rcode == 0 ? DREG_DONE : DREG_REFUSED ), (u16)rcode );
+        reg_end( (uint16_t)( rcode == 0 ? DREG_DONE : DREG_REFUSED ), (uint16_t)rcode );
         return;
     }
     if ( rcode != 0 && rcode != 3 ) {   /* not this server: the next, when time is up */
@@ -1682,14 +1686,14 @@ static void reg_timeout( void )
 
 /* on the clock: a step's deadline, the daily refresh, a retry after no
    answer, and a send that was asked for */
-static void reg_poll( u32 now )
+static void reg_poll( uint32_t now )
 {
     if ( reg.active ) {
-        if ( (long)( now - reg.give_up ) >= 0 ) reg_timeout();
+        if ( (int32_t)( now - reg.give_up ) >= 0 ) reg_timeout();
         return;
     }
     if ( reg.done_ip && reg.done_ip == if_ip && now - reg.done_at >= REG_REFRESH ) reg.want = 1;
-    if ( reg.retry_at && (long)( now - reg.retry_at ) >= 0 ) {
+    if ( reg.retry_at && (int32_t)( now - reg.retry_at ) >= 0 ) {
         reg.retry_at = 0;
         reg.want = 1;
     }
@@ -1721,7 +1725,7 @@ static void reg_poll( u32 now )
 /* 1 to 15 characters, no dot: a name NetBIOS can look up */
 static int nb_able( const char *name )
 {
-    u32 n;
+    unsigned int n;
 
     for ( n = 0; name[n]; n++ ) {
         if ( name[n] == '.' || n >= 15 ) return 0;
@@ -1729,27 +1733,27 @@ static int nb_able( const char *name )
     return n > 0;
 }
 
-static u8 nb_upper( u8 ch )
+static unsigned char nb_upper( unsigned char ch )
 {
-    return ( ch >= 'a' && ch <= 'z' ) ? (u8)( ch - 32 ) : ch;
+    return ( ch >= 'a' && ch <= 'z' ) ? (unsigned char)( ch - 32 ) : ch;
 }
 
 /* the 34 bytes of an encoded name: the length 32, the letters, the root */
-static void nb_encode( u8 *out, const char *name, u8 suffix )
+static void nb_encode( uint8_t *out, const char *name, uint8_t suffix )
 {
-    u8  raw[16];
-    u32 i;
-    int ended = 0;
+    uint8_t      raw[16];
+    unsigned int i;
+    int          ended = 0;
 
     for ( i = 0; i < 15; i++ ) {
         if ( !ended && name[i] == 0 ) ended = 1;
-        raw[i] = ended ? (u8)' ' : nb_upper( (u8)name[i] );
+        raw[i] = ended ? (uint8_t)' ' : nb_upper( (unsigned char)name[i] );
     }
     raw[15] = suffix;
     out[0] = 32;
     for ( i = 0; i < 16; i++ ) {
-        out[1 + 2 * i] = (u8)( 'A' + ( raw[i] >> 4 ) );
-        out[2 + 2 * i] = (u8)( 'A' + ( raw[i] & 15 ) );
+        out[1 + 2 * i] = (uint8_t)( 'A' + ( raw[i] >> 4 ) );
+        out[2 + 2 * i] = (uint8_t)( 'A' + ( raw[i] & 15 ) );
     }
     out[33] = 0;
 }
@@ -1757,8 +1761,8 @@ static void nb_encode( u8 *out, const char *name, u8 suffix )
 /* a query for res.name: to the WINS server, or to everyone on the network */
 static int nbns_send( void )
 {
-    u8 *q = tx_frame + 34 + 8;
-    u32 dst;
+    uint8_t *q = tx_frame + 34 + 8;
+    uint32_t dst;
 
     put16( q, res.id );
     put16( q + 2, res.step == RS_BCAST ? 0x0110 : 0x0100 );    /* query, RD (+ B) */
@@ -1776,20 +1780,20 @@ static int nbns_send( void )
 
 /* is the query's name (34 bytes at q) ours, for the workstation or the
    server service? */
-static int nb_ours( const u8 *q )
+static int nb_ours( const uint8_t *q )
 {
-    u8  raw[16];
-    u32 i;
+    uint8_t      raw[16];
+    unsigned int i;
 
     if ( nb_name[0] == 0 || q[0] != 32 || q[33] != 0 ) return 0;
     for ( i = 0; i < 16; i++ ) {
-        u8 hi = (u8)( q[1 + 2 * i] - 'A' ), lo = (u8)( q[2 + 2 * i] - 'A' );
+        uint8_t hi = (uint8_t)( q[1 + 2 * i] - 'A' ), lo = (uint8_t)( q[2 + 2 * i] - 'A' );
         if ( hi > 15 || lo > 15 ) return 0;
-        raw[i] = (u8)( ( hi << 4 ) | lo );
+        raw[i] = (uint8_t)( ( hi << 4 ) | lo );
     }
     if ( raw[15] != 0x00 && raw[15] != 0x20 ) return 0;
     for ( i = 0; i < 15; i++ ) {
-        u8 want = nb_name[i] ? (u8)nb_name[i] : (u8)' ';
+        uint8_t want = nb_name[i] ? (uint8_t)nb_name[i] : (uint8_t)' ';
         if ( nb_name[i] == 0 ) {
             for ( ; i < 15; i++ ) if ( raw[i] != ' ' ) return 0;
             return 1;
@@ -1799,12 +1803,12 @@ static int nb_ours( const u8 *q )
     return 1;
 }
 
-static void res_next( u8 step );
+static void res_next( uint8_t step );
 
-static void nbns_input( u32 src, u16 sport, const u8 *d, u32 dlen )
+static void nbns_input( uint32_t src, uint16_t sport, const uint8_t *d, unsigned int dlen )
 {
-    u16 flags;
-    u32 at, rdlen;
+    uint16_t     flags;
+    unsigned int at, rdlen;
 
     if ( dlen < 12 ) return;
     flags = get16( d + 2 );
@@ -1835,7 +1839,7 @@ static void nbns_input( u32 src, u16 sport, const u8 *d, u32 dlen )
     if ( !if_up || dlen < 50 || get16( d + 4 ) != 1 ) return;
     if ( get16( d + 46 ) != 0x0020 || !nb_ours( d + 12 ) ) return;
     {
-        u8 *r = tx_frame + 34 + 8;
+        uint8_t *r = tx_frame + 34 + 8;
 
         put16( r, get16( d ) );
         put16( r + 2, 0x8500 );         /* answer, authoritative, RD */
@@ -1859,7 +1863,7 @@ static void nbns_input( u32 src, u16 sport, const u8 *d, u32 dlen )
 
 /* the lookup's next step: WINS (if there is one), broadcast, DNS (if
    there is one), or give up */
-static void res_next( u8 step )
+static void res_next( uint8_t step )
 {
     int sent;
 
@@ -1871,7 +1875,7 @@ static void res_next( u8 step )
     }
     res.step = step;
     res.tries = 0;
-    res.id = (u16)rnd();
+    res.id = (uint16_t)rnd();
     if ( step == RS_DNS ) {
         dns_qname();
         sent = dns_send();
@@ -1883,7 +1887,7 @@ static void res_next( u8 step )
 }
 
 /* a lookup's time is up: ask again, or move on */
-static void res_timeout( u32 now )
+static void res_timeout( uint32_t now )
 {
     switch ( res.step ) {
     case RS_WINS:                       /* two tries, a second each */
@@ -1905,20 +1909,20 @@ static void res_timeout( u32 now )
 /* TCP                                                               */
 /* ---------------------------------------------------------------- */
 
-#define SEQ_LT( a, b )   ( (long)( (u32)(a) - (u32)(b) ) < 0 )
-#define SEQ_LEQ( a, b )  ( (long)( (u32)(a) - (u32)(b) ) <= 0 )
-#define SEQ_GT( a, b )   ( (long)( (u32)(a) - (u32)(b) ) > 0 )
-#define SEQ_GEQ( a, b )  ( (long)( (u32)(a) - (u32)(b) ) >= 0 )
+#define SEQ_LT( a, b )   ( (int32_t)( (uint32_t)(a) - (uint32_t)(b) ) < 0 )
+#define SEQ_LEQ( a, b )  ( (int32_t)( (uint32_t)(a) - (uint32_t)(b) ) <= 0 )
+#define SEQ_GT( a, b )   ( (int32_t)( (uint32_t)(a) - (uint32_t)(b) ) > 0 )
+#define SEQ_GEQ( a, b )  ( (int32_t)( (uint32_t)(a) - (uint32_t)(b) ) >= 0 )
 
-static u32 rx_free( SOCKET *s )  { return RXCAP - s->rxlen; }
-static u32 tx_free( SOCKET *s )  { return TXCAP - s->txlen; }
+static unsigned int rx_free( SOCKET *s )  { return RXCAP - s->rxlen; }
+static unsigned int tx_free( SOCKET *s )  { return TXCAP - s->txlen; }
 
 /* put one TCP segment on the wire: control flags, and dlen bytes of
    send buffer starting seq bytes from snd_una */
-static void tcp_xmit( SOCKET *s, u32 seq, u8 flags, u32 off, u32 dlen )
+static void tcp_xmit( SOCKET *s, uint32_t seq, uint8_t flags, unsigned int off, unsigned int dlen )
 {
-    u8 *th = tx_frame + 34;
-    u32 i;
+    uint8_t *th = tx_frame + 34;
+    unsigned int i;
 
     put16( th, s->lport );
     put16( th + 2, s->rport );
@@ -1927,7 +1931,7 @@ static void tcp_xmit( SOCKET *s, u32 seq, u8 flags, u32 off, u32 dlen )
     th[12] = 5 << 4;                     /* a 20-byte header */
     th[13] = flags;
     s->wnd_adv = rx_free( s );
-    put16( th + 14, (u16)s->wnd_adv );
+    put16( th + 14, (uint16_t)s->wnd_adv );
     put16( th + 16, 0 );
     put16( th + 18, 0 );
     for ( i = 0; i < dlen; i++ ) {
@@ -1937,16 +1941,16 @@ static void tcp_xmit( SOCKET *s, u32 seq, u8 flags, u32 off, u32 dlen )
     ip_send( s->rip, IP_TCP, 20 + dlen );
 }
 
-static void tcp_rst( u32 dst, u16 lport, u16 rport, u32 seq, u32 ack, u8 have_ack )
+static void tcp_rst( uint32_t dst, uint16_t lport, uint16_t rport, uint32_t seq, uint32_t ack, uint8_t have_ack )
 {
-    u8 *th = tx_frame + 34;
+    uint8_t *th = tx_frame + 34;
 
     put16( th, lport );
     put16( th + 2, rport );
     put32( th + 4, seq );
     put32( th + 8, ack );
     th[12] = 5 << 4;
-    th[13] = (u8)( TCP_RST | ( have_ack ? TCP_ACK : 0 ) );
+    th[13] = (uint8_t)( TCP_RST | ( have_ack ? TCP_ACK : 0 ) );
     put16( th + 14, 0 );
     put16( th + 16, 0 );
     put16( th + 18, 0 );
@@ -1963,7 +1967,7 @@ static void tcp_arm( SOCKET *s )
 /* send whatever data the window now allows, and a FIN if it is time */
 static void tcp_send_data( SOCKET *s )
 {
-    u32 usable, avail, off, chunk;
+    uint32_t usable, avail, off, chunk;
 
     if ( s->tstate != T_ESTAB && s->tstate != T_CLOSEWAIT ) return;
 
@@ -1971,11 +1975,11 @@ static void tcp_send_data( SOCKET *s )
         off = s->snd_nxt - s->snd_una;
         avail = s->txlen - off;                 /* unsent bytes in the ring */
         usable = s->snd_una + s->snd_wnd - s->snd_nxt;      /* the window */
-        if ( avail == 0 || (long)usable <= 0 ) break;
+        if ( avail == 0 || (int32_t)usable <= 0 ) break;
         chunk = avail;
         if ( chunk > usable ) chunk = usable;
         if ( chunk > TCP_MSS ) chunk = TCP_MSS;
-        tcp_xmit( s, s->snd_nxt, (u8)( TCP_ACK | TCP_PSH ), off, chunk );
+        tcp_xmit( s, s->snd_nxt, (uint8_t)( TCP_ACK | TCP_PSH ), off, chunk );
         s->snd_nxt += chunk;
         tcp_arm( s );
     }
@@ -1983,7 +1987,7 @@ static void tcp_send_data( SOCKET *s )
     /* the app has closed and every byte is out: send the FIN */
     if ( s->closing && !s->finsent && s->snd_nxt == s->snd_una + s->txlen ) {
         s->finseq = s->snd_nxt;
-        tcp_xmit( s, s->snd_nxt, (u8)( TCP_ACK | TCP_FIN ), s->txlen, 0 );
+        tcp_xmit( s, s->snd_nxt, (uint8_t)( TCP_ACK | TCP_FIN ), s->txlen, 0 );
         s->snd_nxt++;
         s->finsent = 1;
         if ( s->tstate == T_ESTAB ) s->tstate = T_FINWAIT1;
@@ -1992,7 +1996,7 @@ static void tcp_send_data( SOCKET *s )
     }
 }
 
-static SOCKET *tcp_listener_for( u32 dst, u16 port )
+static SOCKET *tcp_listener_for( uint32_t dst, uint16_t port )
 {
     int i;
     (void)dst;
@@ -2004,7 +2008,7 @@ static SOCKET *tcp_listener_for( u32 dst, u16 port )
     return NULL;
 }
 
-static SOCKET *tcp_match( u32 src, u16 sport, u32 dst, u16 dport )
+static SOCKET *tcp_match( uint32_t src, uint16_t sport, uint32_t dst, uint16_t dport )
 {
     int i;
     for ( i = 0; i < SOCK_MAX; i++ ) {
@@ -2018,15 +2022,16 @@ static SOCKET *tcp_match( u32 src, u16 sport, u32 dst, u16 dport )
 }
 
 static SOCKET *sock_free_slot( void );
-static void sock_reset( SOCKET *s, u8 type );
+static void sock_reset( SOCKET *s, uint8_t type );
 
-static void tcp_input( u32 src, u32 dst, const u8 *th, u32 len )
+static void tcp_input( uint32_t src, uint32_t dst, const uint8_t *th, uint32_t len )
 {
-    u16 sport, dport, window;
-    u32 seq, ack, off, dlen;
-    u8  flags;
-    const u8 *data;
-    SOCKET *s;
+    uint16_t sport, dport, window;
+    uint32_t seq, ack;
+    unsigned int off, dlen;
+    uint8_t  flags;
+    const uint8_t *data;
+    SOCKET  *s;
 
     if ( len < 20 ) return;
     sport = get16( th );
@@ -2058,7 +2063,7 @@ static void tcp_input( u32 src, u32 dst, const u8 *th, u32 len )
             c->snd_nxt = c->iss;
             c->snd_wnd = window ? window : 1;
             c->tstate = T_SYNRCVD;
-            tcp_xmit( c, c->snd_nxt, (u8)( TCP_SYN | TCP_ACK ), 0, 0 );
+            tcp_xmit( c, c->snd_nxt, (uint8_t)( TCP_SYN | TCP_ACK ), 0, 0 );
             c->snd_nxt++;
             tcp_arm( c );
             return;
@@ -2096,7 +2101,7 @@ static void tcp_input( u32 src, u32 dst, const u8 *th, u32 len )
             s->irs = seq;
             s->rcv_nxt = seq + 1;
             s->tstate = T_SYNRCVD;
-            tcp_xmit( s, s->iss, (u8)( TCP_SYN | TCP_ACK ), 0, 0 );
+            tcp_xmit( s, s->iss, (uint8_t)( TCP_SYN | TCP_ACK ), 0, 0 );
         }
         return;
     }
@@ -2104,8 +2109,8 @@ static void tcp_input( u32 src, u32 dst, const u8 *th, u32 len )
     /* an acceptable segment acknowledges something; use its ACK */
     if ( flags & TCP_ACK ) {
         if ( SEQ_GT( ack, s->snd_una ) && SEQ_LEQ( ack, s->snd_nxt ) ) {
-            u32 acked = ack - s->snd_una;
-            u32 databytes = acked;
+            uint32_t acked = ack - s->snd_una;
+            uint32_t databytes = acked;
             if ( s->finsent && SEQ_GT( ack, s->finseq ) ) {
                 databytes = acked - 1;          /* the FIN's sequence */
                 s->finacked = 1;
@@ -2127,10 +2132,10 @@ static void tcp_input( u32 src, u32 dst, const u8 *th, u32 len )
 
     /* data, if it is the next in order */
     if ( dlen && SEQ_LEQ( seq, s->rcv_nxt ) && SEQ_GT( seq + dlen, s->rcv_nxt ) ) {
-        u32 skip = s->rcv_nxt - seq;
-        u32 take = dlen - skip;
-        u32 room = rx_free( s );
-        u32 i;
+        uint32_t skip = s->rcv_nxt - seq;
+        unsigned int take = dlen - skip;
+        unsigned int room = rx_free( s );
+        unsigned int i;
         if ( take > room ) take = room;
         for ( i = 0; i < take; i++ ) {
             s->rxbuf[( s->rxstart + s->rxlen + i ) % RXCAP] = data[skip + i];
@@ -2169,18 +2174,18 @@ static void tcp_input( u32 src, u32 dst, const u8 *th, u32 len )
 static void tcp_timers( void )
 {
     int i;
-    u32 now = ticks();
+    uint32_t now = ticks();
 
     for ( i = 0; i < SOCK_MAX; i++ ) {
         SOCKET *s = &sock[i];
         if ( !s->used || s->type != SOCK_STREAM ) continue;
 
-        if ( s->tstate == T_TIMEWAIT && (long)( now - s->wait_at ) >= 0 ) {
+        if ( s->tstate == T_TIMEWAIT && (int32_t)( now - s->wait_at ) >= 0 ) {
             s->tstate = T_CLOSED;
             s->used = 0;
             continue;
         }
-        if ( s->rto_at == 0 || (long)( now - s->rto_at ) < 0 ) continue;
+        if ( s->rto_at == 0 || (int32_t)( now - s->rto_at ) < 0 ) continue;
 
         if ( ++s->retries > 6 ) {
             /* nothing came back.  A SYN that never left, because the
@@ -2198,7 +2203,7 @@ static void tcp_timers( void )
         if ( s->tstate == T_SYNSENT ) {
             tcp_xmit( s, s->iss, TCP_SYN, 0, 0 );
         } else if ( s->tstate == T_SYNRCVD ) {
-            tcp_xmit( s, s->iss, (u8)( TCP_SYN | TCP_ACK ), 0, 0 );
+            tcp_xmit( s, s->iss, (uint8_t)( TCP_SYN | TCP_ACK ), 0, 0 );
         } else {
             /* go back: resend from the oldest unacknowledged byte */
             s->snd_nxt = s->snd_una;
@@ -2220,21 +2225,25 @@ static SOCKET *sock_free_slot( void )
     return NULL;
 }
 
-static SOCKET *sock_by_handle( u32 handle )
+static SOCKET *sock_by_handle( unsigned int handle )
 {
     if ( handle < 1 || handle > SOCK_MAX ) return NULL;
     if ( !sock[handle - 1].used ) return NULL;
     return &sock[handle - 1];
 }
 
-static u32 sock_handle( SOCKET *s )
+static unsigned int sock_handle( SOCKET *s )
 {
-    return (u32)( s - sock ) + 1;
+    return (unsigned int)( s - sock ) + 1;
 }
 
-static SOCKET *udp_socket_for( u16 port )
+static SOCKET *udp_socket_for( uint16_t port )
 {
     int i;
+
+    /* no socket's port: a UDP socket that has none yet says 0 too, and a
+       datagram sent to port 0 was queued on the first of those */
+    if ( port == 0 ) return NULL;
     for ( i = 0; i < SOCK_MAX; i++ ) {
         if ( sock[i].used && sock[i].type == SOCK_DGRAM && sock[i].lport == port ) {
             return &sock[i];
@@ -2243,23 +2252,35 @@ static SOCKET *udp_socket_for( u16 port )
     return NULL;
 }
 
-/* a datagram's frame in the UDP socket's buffer: length, address, port */
-static void udp_queue( SOCKET *s, u32 src, u16 sport, const u8 *data, u32 dlen )
+/* a port for a UDP socket that has not asked for one: one no other UDP
+   socket has, or that socket's datagrams would go to this one */
+static uint16_t udp_port_pick( void )
 {
-    u32 need = 8 + dlen;
+    uint16_t port;
+
+    do {
+        port = (uint16_t)( 0xC000 + ( rnd() & 0x3FFF ) );
+    } while ( udp_socket_for( port ) != NULL );
+    return port;
+}
+
+/* a datagram's frame in the UDP socket's buffer: length, address, port */
+static void udp_queue( SOCKET *s, uint32_t src, uint16_t sport, const uint8_t *data, unsigned int dlen )
+{
+    unsigned int need = 8 + dlen;
 
     if ( s->rxstart == s->rxlen ) { s->rxstart = 0; s->rxlen = 0; }  /* empty: pack */
     if ( s->rxlen + need > RXCAP ) return;                           /* no room: drop */
-    put16( s->rxbuf + s->rxlen, (u16)dlen );
+    put16( s->rxbuf + s->rxlen, (uint16_t)dlen );
     put16( s->rxbuf + s->rxlen + 2, sport );
     put32( s->rxbuf + s->rxlen + 4, src );
     if ( dlen ) mem_copy( s->rxbuf + s->rxlen + 8, data, dlen );
     s->rxlen += need;
 }
 
-static void sock_reset( SOCKET *s, u8 type )
+static void sock_reset( SOCKET *s, uint8_t type )
 {
-    u8 *rxbuf = s->rxbuf, *txbuf = s->txbuf;
+    uint8_t *rxbuf = s->rxbuf, *txbuf = s->txbuf;
     tls_release( s );                   /* free any TLS state a prior user left */
     mem_zero( s, sizeof( *s ) );
     s->rxbuf = rxbuf;
@@ -2269,7 +2290,7 @@ static void sock_reset( SOCKET *s, u8 type )
     s->used = 1;
 }
 
-static u32 sock_ss( SOCKET *s )
+static unsigned int sock_ss( SOCKET *s )
 {
     if ( s->type == SOCK_DGRAM ) return SS_ESTABLISHED;
     if ( s->tls ) {
@@ -2279,7 +2300,7 @@ static u32 sock_ss( SOCKET *s )
         if ( s->tls_state == TLSX_UP ) {
             /* up, but report the close once the peer has ended and there is
                no plaintext left, so a read-to-end loop stops */
-            u32 left = s->taplen - s->tapstart;
+            unsigned int left = s->taplen - s->tapstart;
             if ( left == 0 ) {
                 if ( s->tls_eof ) return SS_CLOSING;
                 /* a server that sends its FIN without close_notify has
@@ -2309,7 +2330,7 @@ static u32 sock_ss( SOCKET *s )
     }
 }
 
-static u32 sock_rxready( SOCKET *s )
+static unsigned int sock_rxready( SOCKET *s )
 {
     if ( s->tls )
         return ( s->tls_state == TLSX_UP ) ? ( s->taplen - s->tapstart ) : 0;
@@ -2332,8 +2353,8 @@ static u32 sock_rxready( SOCKET *s )
    is the machine's own local time and is taken as UTC, which is what a
    certificate's dates are in: a few hours out at the very edges of a
    certificate's life, which are weeks or years apart. */
-static u32 clk_stamp;           /* NDS_STAMP: the date << 16 | the time; 0 none */
-static u32 clk_at;              /* ticks() when it was taken */
+static uint32_t clk_stamp;      /* NDS_STAMP: the date << 16 | the time; 0 none */
+static uint32_t clk_at;         /* ticks() when it was taken */
 
 static void clock_take( void )
 {
@@ -2343,9 +2364,9 @@ static void clock_take( void )
 
 /* days from 1970-01-01 to a date, and back - H. Hinnant's civil calendar
    arithmetic, here for the years a DOS date holds (1980 to 2107) */
-static u32 days_of( u32 y, u32 m, u32 d )
+static unsigned int days_of( unsigned int y, unsigned int m, unsigned int d )
 {
-    u32 era, yoe, doy, doe;
+    unsigned int era, yoe, doy, doe;
 
     if ( m <= 2 ) y--;
     era = y / 400;
@@ -2355,9 +2376,9 @@ static u32 days_of( u32 y, u32 m, u32 d )
     return era * 146097UL + doe - 719468UL;
 }
 
-static void date_of( u32 days, u32 *y, u32 *m, u32 *d )
+static void date_of( unsigned int days, unsigned int *y, unsigned int *m, unsigned int *d )
 {
-    u32 z = days + 719468UL, era, doe, yoe, doy, mp;
+    unsigned int z = days + 719468UL, era, doe, yoe, doy, mp;
 
     era = z / 146097UL;
     doe = z - era * 146097UL;
@@ -2369,9 +2390,9 @@ static void date_of( u32 days, u32 *y, u32 *m, u32 *d )
     *y = yoe + era * 400 + ( *m <= 2 );
 }
 
-static char *put_num( char *p, u32 value, u32 width )
+static char *put_num( char *p, unsigned int value, unsigned int width )
 {
-    u32 i;
+    unsigned int i;
 
     for ( i = width; i-- > 0; ) {
         p[i] = (char)( '0' + value % 10 );
@@ -2383,8 +2404,8 @@ static char *put_num( char *p, u32 value, u32 width )
 /* now, as YYYYMMDDHHMMSS for the TLS core; "" if the kernel gave no date */
 static void clock_now14( char *out )
 {
-    u32 date = clk_stamp >> 16, time = clk_stamp & 0xFFFF;
-    u32 secs, days, y, m, d;
+    uint32_t date = clk_stamp >> 16, time = clk_stamp & 0xFFFF;
+    unsigned int secs, days, y, m, d;
     char *p = out;
 
     out[0] = 0;
@@ -2420,7 +2441,7 @@ static int __cdecl job_pump( void *p )
 }
 
 typedef struct {
-    tls_conn *c; const u8 *in; int len; u8 *out; int outcap; int ret;
+    tls_conn *c; const uint8_t *in; int len; uint8_t *out; int outcap; int ret;
 } ENCJOB;
 static int __cdecl job_encrypt( void *p )
 {
@@ -2430,7 +2451,7 @@ static int __cdecl job_encrypt( void *p )
 }
 
 typedef struct {
-    tls_conn *c; const u8 *rec; int reclen; u8 *out; int outcap; int ct; int ret;
+    tls_conn *c; const uint8_t *rec; int reclen; uint8_t *out; int outcap; int ct; int ret;
 } DECJOB;
 static int __cdecl job_decrypt( void *p )
 {
@@ -2447,7 +2468,7 @@ static int run_pump( tls_conn *c )
     return j.ret;
 }
 
-static int run_encrypt( tls_conn *c, const u8 *in, int len, u8 *out, int outcap )
+static int run_encrypt( tls_conn *c, const uint8_t *in, int len, uint8_t *out, int outcap )
 {
     ENCJOB j;
     j.c = c; j.in = in; j.len = len; j.out = out; j.outcap = outcap; j.ret = -1;
@@ -2455,8 +2476,8 @@ static int run_encrypt( tls_conn *c, const u8 *in, int len, u8 *out, int outcap 
     return j.ret;
 }
 
-static int run_decrypt( tls_conn *c, const u8 *rec, int reclen,
-                        u8 *out, int outcap, int *ct )
+static int run_decrypt( tls_conn *c, const uint8_t *rec, int reclen,
+                        uint8_t *out, int outcap, int *ct )
 {
     DECJOB j;
     j.c = c; j.rec = rec; j.reclen = reclen; j.out = out; j.outcap = outcap;
@@ -2485,10 +2506,10 @@ static void tls_release( SOCKET *s )
    window goes out as soon as it has grown by a segment, or by half the
    ring if that is less (RFC 1122 4.2.3.3), which also keeps the peer from
    being told of every few bytes */
-static u32 tcp_rx_pop( SOCKET *s, u8 *dst, u32 want )
+static unsigned int tcp_rx_pop( SOCKET *s, uint8_t *dst, unsigned int want )
 {
-    u32 got = s->rxlen < want ? s->rxlen : want;
-    u32 i, step = TCP_MSS < RXCAP / 2 ? TCP_MSS : RXCAP / 2;
+    unsigned int got = s->rxlen < want ? s->rxlen : want;
+    unsigned int i, step = TCP_MSS < RXCAP / 2 ? TCP_MSS : RXCAP / 2;
     for ( i = 0; i < got; i++ ) dst[i] = s->rxbuf[( s->rxstart + i ) % RXCAP];
     s->rxstart = ( s->rxstart + got ) % RXCAP;
     s->rxlen -= got;
@@ -2499,11 +2520,11 @@ static u32 tcp_rx_pop( SOCKET *s, u8 *dst, u32 want )
     return got;
 }
 
-static u8 tls_feedbuf[1024];        /* handshake bytes, off the scratch stack */
+static uint8_t tls_feedbuf[1024];   /* handshake bytes, off the scratch stack */
 
 /* the TLS core's reason a certificate was refused, as SOCK_STAT's CERT_*;
    0 if it was not refused */
-static u8 cert_why( int verr )
+static uint8_t cert_why( int verr )
 {
     switch ( verr ) {
     case 0:                return 0;
@@ -2520,18 +2541,18 @@ static void tls_begin( SOCKET *s )
     const char *host = s->host[0] ? s->host : NULL;
 
     if ( tls_stk == NULL ) {
-        tls_stk = (u8 *)malloc( TLS_STK_SIZE );
+        tls_stk = (uint8_t *)malloc( TLS_STK_SIZE );
         if ( tls_stk == NULL ) { s->tls_state = TLSX_FAIL; s->err = NET_TLSFAIL; return; }
-        tls_stktop = ( (u32)tls_stk + TLS_STK_SIZE ) & ~15u;
+        tls_stktop = ( (uint32_t)tls_stk + TLS_STK_SIZE ) & ~15u;
     }
     s->rng  = (nst_rng *)malloc( sizeof( nst_rng ) );
-    s->trx  = (u8 *)malloc( TLS_RECCAP );
-    s->tapp = (u8 *)malloc( TLS_REC_MAX );
+    s->trx  = (uint8_t *)malloc( TLS_RECCAP );
+    s->tapp = (uint8_t *)malloc( TLS_REC_MAX );
     if ( s->rng == NULL || s->trx == NULL || s->tapp == NULL ) {
         s->tls_state = TLSX_FAIL; s->err = NET_TLSFAIL; return;
     }
     rng_init( s->rng );
-    rng_stir( s->rng, (const u8 *)&s->iss, 4 );     /* a little extra entropy */
+    rng_stir( s->rng, (const uint8_t *)&s->iss, 4 ); /* a little extra entropy */
     s->tc = tls_new( s->rng );
     if ( s->tc == NULL ) { s->tls_state = TLSX_FAIL; s->err = NET_TLSFAIL; return; }
     if ( tls_ca && tls_catotal > 0 && tls_calen == tls_catotal ) {
@@ -2549,7 +2570,7 @@ static void tls_begin( SOCKET *s )
 /* assemble and decrypt one inbound record into tapp, if tapp is empty */
 static void tls_fill( SOCKET *s )
 {
-    u32 reclen, extra;
+    unsigned int reclen, extra;
     int ct, plen;
 
     if ( s->taplen > s->tapstart ) return;          /* app still has plaintext */
@@ -2559,7 +2580,7 @@ static void tls_fill( SOCKET *s )
         s->trxlen += tcp_rx_pop( s, s->trx + s->trxlen, 5 - s->trxlen );
     if ( s->trxlen < 5 ) return;                    /* record header not in yet */
 
-    reclen = 5 + ( ( (u32)s->trx[3] << 8 ) | s->trx[4] );
+    reclen = 5 + ( ( (unsigned int)s->trx[3] << 8 ) | s->trx[4] );
     if ( reclen > TLS_RECCAP ) { s->tls_state = TLSX_FAIL; s->err = NET_TLSFAIL; return; }
     if ( s->trxlen < reclen )
         s->trxlen += tcp_rx_pop( s, s->trx + s->trxlen, reclen - s->trxlen );
@@ -2571,7 +2592,7 @@ static void tls_fill( SOCKET *s )
     s->trxlen = extra;
 
     if ( plen < 0 ) { s->tls_state = TLSX_FAIL; s->err = NET_TLSFAIL; return; }
-    if ( ct == TLS_CT_APPLICATION_DATA ) { s->tapstart = 0; s->taplen = (u32)plen; }
+    if ( ct == TLS_CT_APPLICATION_DATA ) { s->tapstart = 0; s->taplen = (unsigned int)plen; }
     else if ( ct == TLS_CT_ALERT ) s->tls_eof = 1;
     /* else a post-handshake handshake message (a session ticket): drop it */
 }
@@ -2591,12 +2612,12 @@ static void tls_drive( SOCKET *s )
     }
 
     if ( s->tls_state == TLSX_HS ) {
-        unsigned char *out;
+        uint8_t *out;
         int st, m;
 
         /* feed everything the TCP stream has to the handshake */
         while ( s->rxlen > 0 ) {
-            u32 got = tcp_rx_pop( s, tls_feedbuf, sizeof( tls_feedbuf ) );
+            unsigned int got = tcp_rx_pop( s, tls_feedbuf, sizeof( tls_feedbuf ) );
             if ( got == 0 ) break;
             if ( tls_hs_feed( s->tc, tls_feedbuf, (int)got ) < 0 ) {
                 s->tls_state = TLSX_FAIL; s->err = NET_TLSFAIL; return;
@@ -2605,9 +2626,9 @@ static void tls_drive( SOCKET *s )
         st = run_pump( s->tc );
         /* flush whatever the handshake wants to send into the TCP txbuf */
         while ( ( m = tls_hs_out_ptr( s->tc, &out ) ) > 0 ) {
-            u32 room = tx_free( s );
-            u32 n = (u32)m < room ? (u32)m : room;
-            u32 i;
+            unsigned int room = tx_free( s );
+            unsigned int n = (unsigned int)m < room ? (unsigned int)m : room;
+            unsigned int i;
             if ( n == 0 ) break;                    /* no room; next pass */
             for ( i = 0; i < n; i++ )
                 s->txbuf[( s->txstart + s->txlen + i ) % TXCAP] = out[i];
@@ -2617,12 +2638,12 @@ static void tls_drive( SOCKET *s )
         if ( s->txlen > 0 ) tcp_send_data( s );
 
         if ( st == TLS_HS_DONE ) {
-            unsigned char *lp;
+            uint8_t *lp;
             int lm = tls_hs_leftover( s->tc, &lp );     /* app bytes past Finished */
             if ( lm > 0 ) {
                 if ( lm > TLS_RECCAP ) lm = TLS_RECCAP;
-                mem_copy( s->trx, lp, (u32)lm );
-                s->trxlen = (u32)lm;
+                mem_copy( s->trx, lp, (unsigned int)lm );
+                s->trxlen = (unsigned int)lm;
             }
             s->tls_state = TLSX_UP;
         } else if ( st == TLS_HS_ERROR ) {
@@ -2659,7 +2680,7 @@ static void tls_service( void )
 
 static void pump( void )
 {
-    u32 len;
+    unsigned int len;
     int budget = 64;
 
     while ( budget-- > 0 ) {
@@ -2672,19 +2693,19 @@ static void pump( void )
 
 static void timers( void )
 {
-    u32 now = ticks();
+    uint32_t now = ticks();
 
     dhcp_tick();
     tcp_timers();
 
-    if ( ping.active && (long)( now - ping.give_up ) >= 0 ) {
+    if ( ping.active && (int32_t)( now - ping.give_up ) >= 0 ) {
         if ( ++ping.tries > 3 ) { ping.state = NET_FAIL; ping.active = 0; }
         else {
             ping.sent_fine = fine_now();        /* the round trip of the echo now sent */
             ping.give_up = now + ( icmp_echo( ping.ip, ping.id, ping.seq ) ? 18 : ARP_RETRY );
         }
     }
-    if ( res.active && (long)( now - res.give_up ) >= 0 ) res_timeout( now );
+    if ( res.active && (int32_t)( now - res.give_up ) >= 0 ) res_timeout( now );
     reg_poll( now );
 }
 
@@ -2692,10 +2713,10 @@ static void timers( void )
 /* the socket calls (nd_call)                                        */
 /* ---------------------------------------------------------------- */
 
-static int do_ifstat( void *buf, u32 len, u32 *answer )
+static int do_ifstat( void *buf, uint32_t len, uint32_t *answer )
 {
     SOCK_IF *info = (SOCK_IF *)buf;
-    static const u8 dhst[6] = { DHST_OFF, DHST_ASKING, DHST_ASKING,
+    static const uint8_t dhst[6] = { DHST_OFF, DHST_ASKING, DHST_ASKING,
                                 DHST_BOUND, DHST_RENEWING, DHST_REBINDING };
 
     if ( len < SOCKIF_LEN ) return ERR_BADLEN;
@@ -2734,12 +2755,12 @@ static int do_ifstat( void *buf, u32 len, u32 *answer )
 }
 
 /* SOCK_DHCP: IPCONFIG's /RELEASE and /RENEW */
-static int do_dhcp( void *buf, u32 len, u32 *answer )
+static int do_dhcp( void *buf, uint32_t len, uint32_t *answer )
 {
-    u32 op;
+    uint32_t op;
 
     if ( len < 4 ) return ERR_BADLEN;
-    op = *(u32 *)buf;
+    op = *(uint32_t *)buf;
     if ( op == DHCPOP_REGDNS ) {            /* IPCONFIG /REGISTERDNS: the tick sends it */
         reg.want = 1;
         reg.retry_at = 0;
@@ -2755,24 +2776,24 @@ static int do_dhcp( void *buf, u32 len, u32 *answer )
     return 0;
 }
 
-static int do_open( void *buf, u32 len, u32 *answer )
+static int do_open( void *buf, uint32_t len, uint32_t *answer )
 {
     SOCK_OPENREQ *req = (SOCK_OPENREQ *)buf;
     SOCKET *s;
-    u32 base;
+    unsigned int base;
 
     if ( len < sizeof( SOCK_OPENREQ ) ) return ERR_BADLEN;
     base = req->type & 0xFF;
     if ( base != SOCK_STREAM && base != SOCK_DGRAM ) return ERR_BADDATA;
     s = sock_free_slot();
     if ( s == NULL ) return ERR_GENERAL;
-    sock_reset( s, (u8)base );
+    sock_reset( s, (uint8_t)base );
     if ( ( req->type & SOCK_TLS ) && base == SOCK_STREAM ) s->tls = 1;
     *answer = sock_handle( s );
     return 0;
 }
 
-static int do_close( void *buf, u32 len )
+static int do_close( void *buf, uint32_t len )
 {
     SOCK_HANDLE *req = (SOCK_HANDLE *)buf;
     SOCKET *s;
@@ -2795,7 +2816,7 @@ static int do_close( void *buf, u32 len )
     return 0;
 }
 
-static int do_connect( void *buf, u32 len )
+static int do_connect( void *buf, uint32_t len )
 {
     SOCK_CONNREQ *req = (SOCK_CONNREQ *)buf;
     SOCKET *s;
@@ -2808,9 +2829,15 @@ static int do_connect( void *buf, u32 len )
     s->rip = req->ip;
     s->rport = req->port;
     s->lip = if_ip;
-    s->lport = (u16)( 0xC000 + ( rnd() & 0x3FFF ) );
 
-    if ( s->type == SOCK_DGRAM ) return 0;      /* just the default peer */
+    if ( s->type == SOCK_DGRAM ) {
+        /* just the default peer.  A port SOCK_BIND gave stays: it was
+           thrown away for a picked one here, so a socket could not both
+           have a port and a peer (2026-11-20) */
+        if ( s->lport == 0 ) s->lport = udp_port_pick();
+        return 0;
+    }
+    s->lport = (uint16_t)( 0xC000 + ( rnd() & 0x3FFF ) );
 
     s->iss = rnd();
     s->snd_una = s->iss;
@@ -2830,7 +2857,7 @@ static int do_connect( void *buf, u32 len )
     return 0;
 }
 
-static int do_listen( void *buf, u32 len )
+static int do_listen( void *buf, uint32_t len )
 {
     SOCK_LISTENREQ *req = (SOCK_LISTENREQ *)buf;
     SOCKET *s;
@@ -2845,7 +2872,33 @@ static int do_listen( void *buf, u32 len )
     return 0;
 }
 
-static int do_accept( void *buf, u32 len, u32 *answer )
+/* SOCK_BIND: A UDP SOCKET'S OWN PORT.  There was no way to have one - a
+   UDP socket's port was picked at its first send - so a program could
+   ask a server (SNTP) and could not be one, and a game could not be
+   reached by the others in it (DOOM, 2026-11-20).  The ports the stack
+   takes itself in udp_input, before any socket is looked for, are
+   refused: a socket bound to one would never be given a datagram */
+static int do_bind( void *buf, uint32_t len, uint32_t *answer )
+{
+    SOCK_BINDREQ *req = (SOCK_BINDREQ *)buf;
+    SOCKET *s, *holder;
+
+    if ( len < sizeof( SOCK_BINDREQ ) ) return ERR_BADLEN;
+    s = sock_by_handle( req->handle );
+    if ( s == NULL || s->type != SOCK_DGRAM ) return ERR_BADDATA;
+    if ( req->port == 0 ) {
+        if ( s->lport == 0 ) s->lport = udp_port_pick();
+    } else {
+        if ( req->port == 68 || req->port == NBNS_PORT ) return ERR_ACCESS;
+        holder = udp_socket_for( req->port );
+        if ( holder != NULL && holder != s ) return ERR_ACCESS;
+        s->lport = req->port;
+    }
+    *answer = s->lport;
+    return 0;
+}
+
+static int do_accept( void *buf, uint32_t len, uint32_t *answer )
 {
     SOCK_ACCEPTREQ *req = (SOCK_ACCEPTREQ *)buf;
     SOCKET *lis;
@@ -2874,12 +2927,12 @@ static int do_accept( void *buf, u32 len, u32 *answer )
     return 0;
 }
 
-static int do_send( void *buf, u32 len, u32 *answer )
+static int do_send( void *buf, uint32_t len, uint32_t *answer )
 {
     SOCK_IO *io = (SOCK_IO *)buf;
-    const u8 *data = (const u8 *)buf + SOCK_IO_HDR;
+    const uint8_t *data = (const uint8_t *)buf + SOCK_IO_HDR;
     SOCKET *s;
-    u32 dlen;
+    unsigned int dlen;
 
     if ( len < SOCK_IO_HDR ) return ERR_BADLEN;
     s = sock_by_handle( io->handle );
@@ -2888,18 +2941,18 @@ static int do_send( void *buf, u32 len, u32 *answer )
     if ( dlen > len - SOCK_IO_HDR ) return ERR_BADLEN;
 
     if ( s->type == SOCK_DGRAM ) {
-        u32 dst = io->ip ? io->ip : s->rip;
-        u16 dport = io->port ? io->port : s->rport;
+        uint32_t dst = io->ip ? io->ip : s->rip;
+        uint16_t dport = io->port ? io->port : s->rport;
         if ( !if_up || dst == 0 ) return ERR_GENERAL;
         if ( dlen > 1472 ) dlen = 1472;
-        if ( s->lport == 0 ) s->lport = (u16)( 0xC000 + ( rnd() & 0x3FFF ) );
+        if ( s->lport == 0 ) s->lport = udp_port_pick();
         udp_send( dst, dport, s->lport, data, dlen );
         *answer = dlen;
         return 0;
     }
 
     if ( s->tls ) {
-        u32 room, maxp, i;
+        unsigned int room, maxp, i;
         int reclen;
 
         if ( s->tls_state != TLSX_UP || s->tc == NULL ) return ERR_GENERAL;
@@ -2910,9 +2963,9 @@ static int do_send( void *buf, u32 len, u32 *answer )
         if ( dlen > maxp ) dlen = maxp;
         reclen = run_encrypt( s->tc, data, (int)dlen, tls_scratch, (int)sizeof( tls_scratch ) );
         if ( reclen <= 0 ) return ERR_GENERAL;
-        for ( i = 0; i < (u32)reclen; i++ )
+        for ( i = 0; i < (unsigned int)reclen; i++ )
             s->txbuf[( s->txstart + s->txlen + i ) % TXCAP] = tls_scratch[i];
-        s->txlen += (u32)reclen;
+        s->txlen += (unsigned int)reclen;
         tcp_send_data( s );
         *answer = dlen;
         return 0;
@@ -2921,7 +2974,7 @@ static int do_send( void *buf, u32 len, u32 *answer )
     if ( s->tstate != T_ESTAB && s->tstate != T_CLOSEWAIT ) return ERR_GENERAL;
     if ( dlen > tx_free( s ) ) dlen = tx_free( s );
     {
-        u32 i;
+        unsigned int i;
         for ( i = 0; i < dlen; i++ ) {
             s->txbuf[( s->txstart + s->txlen + i ) % TXCAP] = data[i];
         }
@@ -2932,12 +2985,12 @@ static int do_send( void *buf, u32 len, u32 *answer )
     return 0;
 }
 
-static int do_recv( void *buf, u32 len, u32 *answer )
+static int do_recv( void *buf, uint32_t len, uint32_t *answer )
 {
     SOCK_IO *io = (SOCK_IO *)buf;
-    u8 *room = (u8 *)buf + SOCK_IO_HDR;
+    uint8_t *room = (uint8_t *)buf + SOCK_IO_HDR;
     SOCKET *s;
-    u32 want, got;
+    unsigned int want, got;
 
     if ( len < SOCK_IO_HDR ) return ERR_BADLEN;
     s = sock_by_handle( io->handle );
@@ -2946,7 +2999,7 @@ static int do_recv( void *buf, u32 len, u32 *answer )
     if ( want > len - SOCK_IO_HDR ) want = len - SOCK_IO_HDR;
 
     if ( s->type == SOCK_DGRAM ) {
-        u32 dlen;
+        unsigned int dlen;
         if ( s->rxstart >= s->rxlen ) { *answer = 0; return 0; }
         dlen = get16( s->rxbuf + s->rxstart );
         io->port = get16( s->rxbuf + s->rxstart + 2 );
@@ -2961,7 +3014,7 @@ static int do_recv( void *buf, u32 len, u32 *answer )
     }
 
     if ( s->tls ) {
-        u32 avail;
+        unsigned int avail;
         if ( s->tls_state != TLSX_UP || s->tc == NULL ) { io->len = 0; *answer = 0; return 0; }
         tls_fill( s );                       /* decrypt one record if none is pending */
         avail = s->taplen - s->tapstart;
@@ -2979,7 +3032,7 @@ static int do_recv( void *buf, u32 len, u32 *answer )
     return 0;
 }
 
-static int do_state( void *buf, u32 len, u32 *answer )
+static int do_state( void *buf, uint32_t len, uint32_t *answer )
 {
     SOCK_STAT *st = (SOCK_STAT *)buf;
     SOCKET *s;
@@ -2996,7 +3049,7 @@ static int do_state( void *buf, u32 len, u32 *answer )
     return 0;
 }
 
-static int do_resolve( void *buf, u32 len, u32 *answer )
+static int do_resolve( void *buf, uint32_t len, uint32_t *answer )
 {
     SOCK_RES *req = (SOCK_RES *)buf;
 
@@ -3024,7 +3077,7 @@ static int do_resolve( void *buf, u32 len, u32 *answer )
     }
     if ( !res.active || !str_same( res.name, req->name ) ) {
         str_copy( res.name, req->name, sizeof( res.name ) );
-        res.lport = (u16)( 0xC000 + ( rnd() & 0x3FFF ) );
+        res.lport = (uint16_t)( 0xC000 + ( rnd() & 0x3FFF ) );
         res.ip = 0;
         res.state = NET_PENDING;
         res.active = 1;
@@ -3036,7 +3089,7 @@ static int do_resolve( void *buf, u32 len, u32 *answer )
     return 0;
 }
 
-static int do_ping( void *buf, u32 len, u32 *answer )
+static int do_ping( void *buf, uint32_t len, uint32_t *answer )
 {
     SOCK_PINGREQ *req = (SOCK_PINGREQ *)buf;
 
@@ -3052,16 +3105,16 @@ static int do_ping( void *buf, u32 len, u32 *answer )
     }
 
     if ( ping.state != NET_PENDING && ping.active == 0 &&
-         ping.ip == req->ip && ping.seq == (u16)req->seq ) {
+         ping.ip == req->ip && ping.seq == (uint16_t)req->seq ) {
         req->state = ping.state;
         req->rttms = ping.rtt;
         *answer = ping.state;
         return 0;
     }
-    if ( !ping.active || ping.ip != req->ip || ping.seq != (u16)req->seq ) {
+    if ( !ping.active || ping.ip != req->ip || ping.seq != (uint16_t)req->seq ) {
         ping.ip = req->ip;
         ping.id = 0x504D;               /* 'PM' */
-        ping.seq = (u16)req->seq;
+        ping.seq = (uint16_t)req->seq;
         ping.state = NET_PENDING;
         ping.rtt = 0;
         ping.tries = 0;
@@ -3076,7 +3129,7 @@ static int do_ping( void *buf, u32 len, u32 *answer )
     return 0;
 }
 
-static int do_tlshost( void *buf, u32 len )
+static int do_tlshost( void *buf, uint32_t len )
 {
     SOCK_TLSHOSTREQ *req = (SOCK_TLSHOSTREQ *)buf;
     SOCKET *s;
@@ -3093,10 +3146,10 @@ static int do_tlshost( void *buf, u32 len )
     return 0;
 }
 
-static int do_setca( void *buf, u32 len )
+static int do_setca( void *buf, uint32_t len )
 {
     SOCK_CAREQ *req = (SOCK_CAREQ *)buf;
-    const u8 *data = (const u8 *)buf + SOCKCA_HDR;
+    const uint8_t *data = (const uint8_t *)buf + SOCKCA_HDR;
     int i;
 
     if ( len < SOCKCA_HDR ) return ERR_BADLEN;
@@ -3111,9 +3164,9 @@ static int do_setca( void *buf, u32 len )
         }
     }
 
-    if ( req->offset == 0 ) {                   /* the first chunk starts fresh */
+    if ( req->offset == 0 ) {                      /* the first chunk starts fresh */
         if ( tls_ca ) { free( tls_ca ); tls_ca = NULL; }
-        tls_ca = (u8 *)malloc( req->total );    /* from the TLS pool, not the tight arena */
+        tls_ca = (uint8_t *)malloc( req->total );  /* from the TLS pool, not the tight arena */
         if ( tls_ca == NULL ) return ERR_GENERAL;
         tls_catotal = req->total;
         tls_calen = 0;
@@ -3128,17 +3181,17 @@ static int do_setca( void *buf, u32 len )
 /* the DEVICE= line: /IP=, /MASK=, /GW=, /DNS=, /INI:, /CA:          */
 /* ---------------------------------------------------------------- */
 
-static u32 opt_ip, opt_mask, opt_gw, opt_dns, opt_wins;
-static u32 opt_dns2, opt_dns3;
-static u8  opt_bad;
-static char drv_dir[128];       /* where TCPIP.SYS was loaded from, \ and all */
-static char ini_path[128];      /* /INI: - the settings file, if not beside it */
-static char ca_path[128];       /* /CA: or CACerts= - the trust bundle */
+static uint32_t opt_ip, opt_mask, opt_gw, opt_dns, opt_wins;
+static uint32_t opt_dns2, opt_dns3;
+static uint8_t  opt_bad;
+static char     drv_dir[128];   /* where TCPIP.SYS was loaded from, \ and all */
+static char     ini_path[128];  /* /INI: - the settings file, if not beside it */
+static char     ca_path[128];   /* /CA: or CACerts= - the trust bundle */
 
 /* drv_dir: the DEVICE= line's path up to its last \ or : ("" for none) */
 static void drv_dir_from( const char *line )
 {
-    u32 n = 0, cut = 0;
+    unsigned int n = 0, cut = 0;
 
     while ( line[n] && line[n] != ' ' && line[n] != '\t' && line[n] != '\r' &&
             line[n] != '\n' && n < sizeof( drv_dir ) - 1 ) {
@@ -3152,7 +3205,7 @@ static void drv_dir_from( const char *line )
 /* a file beside TCPIP.SYS */
 static void path_beside( char *path, const char *name )
 {
-    u32 n;
+    unsigned int n;
 
     str_copy( path, drv_dir, 128 );
     n = str_len( path );
@@ -3163,7 +3216,7 @@ static void path_beside( char *path, const char *name )
 static void say3( const char *one, const char *two, const char *three )
 {
     char text[200];
-    u32 n;
+    unsigned int n;
 
     str_copy( text, "TCP/IP: ", sizeof( text ) );
     n = str_len( text );
@@ -3177,9 +3230,9 @@ static void say3( const char *one, const char *two, const char *three )
 
 /* a path after /INI: or /CA:, to the next space or switch; 0 if there is
    none or it is too long */
-static int take_path( const char *p, char *out, u32 max, const char **after )
+static int take_path( const char *p, char *out, unsigned int max, const char **after )
 {
-    u32 n = 0;
+    unsigned int n = 0;
 
     while ( *p && *p != ' ' && *p != '\t' && *p != '\r' && *p != '\n' && *p != '/' ) {
         if ( n + 1 >= max ) return 0;
@@ -3194,11 +3247,11 @@ static int take_path( const char *p, char *out, u32 max, const char **after )
    kept in upper case; 0 if the name is not one */
 static int take_name( const char *p, const char **after )
 {
-    u32 n = 0;
-    u8  ch;
+    unsigned int  n = 0;
+    unsigned char ch;
 
     for ( ;; p++ ) {
-        ch = (u8)*p;
+        ch = (unsigned char)*p;
         if ( ch == 0 || ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n' || ch == '/' ) break;
         if ( !( ( ch >= 'A' && ch <= 'Z' ) || ( ch >= 'a' && ch <= 'z' ) || ( ch >= '0' && ch <= '9' ) ||
                 ch == '-' || ch == '_' || ch == '!' || ch == '#' || ch == '$' || ch == '%' ||
@@ -3214,16 +3267,16 @@ static int take_name( const char *p, const char **after )
 
 /* a dotted quad, a.b.c.d, ending at a space, a switch or the line's end;
    0 if it is not one */
-static u32 parse_ip( const char *p, const char **after )
+static uint32_t parse_ip( const char *p, const char **after )
 {
-    u32 ip = 0, part;
+    uint32_t ip = 0, part;
     int i, digits;
 
     for ( i = 0; i < 4; i++ ) {
         part = 0;
         digits = 0;
         while ( *p >= '0' && *p <= '9' && digits < 4 ) {
-            part = part * 10 + (u32)( *p - '0' );
+            part = part * 10 + (uint32_t)( *p - '0' );
             p++;
             digits++;
         }
@@ -3241,9 +3294,9 @@ static u32 parse_ip( const char *p, const char **after )
 
 /* one to three addresses with commas between (spaces after a comma are
    let by), for /DNS= and DNSServers=; how many, or 0 if one is wrong */
-static u32 parse_ips( const char *p, u32 *list, const char **after )
+static unsigned int parse_ips( const char *p, uint32_t *list, const char **after )
 {
-    u32 n = 0;
+    unsigned int n = 0;
 
     for ( ;; ) {
         if ( n == 3 ) return 0;
@@ -3271,7 +3324,7 @@ static const char *switch_is( const char *p, const char *name )
 static void say_switch( const char *what, const char *p )
 {
     char text[100];
-    u32 i = 0;
+    unsigned int i = 0;
 
     str_copy( text, "TCP/IP: ", sizeof( text ) );
     while ( text[i] ) i++;
@@ -3284,7 +3337,7 @@ static void say_switch( const char *what, const char *p )
 static void parse_line( const char *line )
 {
     const char *p = line, *value, *after;
-    u32 *slot;
+    uint32_t *slot;
 
     while ( *p && *p != ' ' && *p != '\t' && *p != '\r' && *p != '\n' ) p++;
     for ( ; *p && *p != '\r' && *p != '\n'; p++ ) {
@@ -3313,8 +3366,8 @@ static void parse_line( const char *line )
             continue;
         }
         if ( ( value = switch_is( p + 1, "dns" ) ) != NULL ) {
-            u32 list[3];
-            u32 n = parse_ips( value, list, &after );
+            uint32_t list[3];
+            unsigned int n = parse_ips( value, list, &after );
             if ( n == 0 ) {
                 say_switch( " is not up to three addresses such as 192.168.1.1,192.168.1.2\r\n", p );
                 opt_bad = 1;
@@ -3360,13 +3413,13 @@ static void parse_line( const char *line )
 #define INI_MAX   4096
 
 static const char *ini_name;    /* the file, for what is said about it */
-static u32 ini_line;
+static unsigned int ini_line;
 
 /* "TCP/IP: C:\DOS\TCPIP.INI line 4: Gateway= is not ..." */
 static void ini_say( const char *key, const char *what )
 {
     char text[200], num[12];
-    u32 n;
+    unsigned int n;
 
     str_copy( text, ini_name, sizeof( text ) );
     n = str_len( text );
@@ -3384,10 +3437,10 @@ static void ini_say( const char *key, const char *what )
 }
 
 /* an address setting, into a slot a switch has not filled */
-static void ini_ip( const char *key, const char *val, u32 *slot, const char *like )
+static void ini_ip( const char *key, const char *val, uint32_t *slot, const char *like )
 {
     const char *after;
-    u32 ip;
+    uint32_t ip;
 
     if ( *slot ) return;
     ip = parse_ip( val, &after );
@@ -3401,7 +3454,8 @@ static void ini_ip( const char *key, const char *val, u32 *slot, const char *lik
 
 static void ini_set( const char *key, const char *val )
 {
-    u32 i, list[3], n;
+    unsigned int i, n;
+    uint32_t list[3];
     const char *after;
 
     if ( val[0] == 0 ) return;                  /* empty: the default */
@@ -3411,7 +3465,7 @@ static void ini_set( const char *key, const char *val )
             ini_say( key, "is not a name of 1 to 63 letters, digits and hyphens" );
             return;
         }
-        for ( i = 0; val[i]; i++ ) host_name[i] = (char)lower( (u8)val[i] );
+        for ( i = 0; val[i]; i++ ) host_name[i] = (char)lower( (unsigned char)val[i] );
         host_name[i] = 0;
     } else if ( str_samei( key, "Domain" ) ) {
         if ( take_domain( val, dom_name ) ) dom_fixed = 1;
@@ -3451,7 +3505,7 @@ static void ini_set( const char *key, const char *val )
 /* spaces and tabs off both ends, in place */
 static char *trim( char *text )
 {
-    u32 n;
+    unsigned int n;
 
     while ( *text == ' ' || *text == '\t' ) text++;
     n = str_len( text );
@@ -3499,7 +3553,7 @@ static void ini_read( void )
 {
     char path[128];
     char *text;
-    u32 got, size;
+    uint32_t got, size;
 
     if ( ini_path[0] ) str_copy( path, ini_path, sizeof( path ) );
     else path_beside( path, "TCPIP.INI" );
@@ -3525,10 +3579,10 @@ static void ini_read( void )
    Without one, TLS still connects, unchecked, and that is said. */
 static void ca_load( void )
 {
-    char path[128];
-    u8  probe[1];
-    u8 *bundle;
-    u32 got, size;
+    char     path[128];
+    uint8_t  probe[1];
+    uint8_t *bundle;
+    uint32_t got, size;
 
     if ( ca_path[0] ) str_copy( path, ca_path, sizeof( path ) );
     else path_beside( path, "CACERT.BND" );
@@ -3540,7 +3594,7 @@ static void ca_load( void )
         say3( path, " is not a trust bundle - HTTPS certificates will not be checked", "\r\n" );
         return;
     }
-    bundle = (u8 *)malloc( size );
+    bundle = (uint8_t *)malloc( size );
     if ( bundle == NULL ) {
         say3( "no memory for ", path, " - HTTPS certificates will not be checked\r\n" );
         return;
@@ -3556,14 +3610,14 @@ static void ca_load( void )
 }
 
 /* a mask is ones then zeros */
-static int mask_ok( u32 mask )
+static int mask_ok( uint32_t mask )
 {
-    u32 low = ~mask + 1;            /* the lowest one bit, or 0 for 0.0.0.0 */
+    uint32_t low = ~mask + 1;       /* the lowest one bit, or 0 for 0.0.0.0 */
     return mask != 0 && ( low & ( low - 1 ) ) == 0;
 }
 
 /* the mask an address's class gives, for /IP= without /MASK= */
-static u32 class_mask( u32 ip )
+static uint32_t class_mask( uint32_t ip )
 {
     if ( ( ip >> 24 ) < 128 ) return 0xFF000000L;
     if ( ( ip >> 24 ) < 192 ) return 0xFFFF0000L;
@@ -3616,7 +3670,7 @@ static int take_static( void )
 static void say_address( void )
 {
     char text[40];
-    u32 i, shift, part;
+    unsigned int i, shift, part;
 
     str_copy( text, "IP Address: ", sizeof( text ) );
     i = 0; while ( text[i] ) i++;
@@ -3638,7 +3692,7 @@ static void say_address( void )
 /* the four entries the kernel calls                                 */
 /* ---------------------------------------------------------------- */
 
-int __cdecl nd_call( u32 fn, void *buf, u32 len, u32 *answer )
+int __cdecl nd_call( uint32_t fn, void *buf, uint32_t len, uint32_t *answer )
 {
     int result;
 
@@ -3652,6 +3706,7 @@ int __cdecl nd_call( u32 fn, void *buf, u32 len, u32 *answer )
     case SOCK_CLOSE:   result = do_close( buf, len ); break;
     case SOCK_CONNECT: result = do_connect( buf, len ); break;
     case SOCK_LISTEN:  result = do_listen( buf, len ); break;
+    case SOCK_BIND:    result = do_bind( buf, len, answer ); break;
     case SOCK_ACCEPT:  result = do_accept( buf, len, answer ); break;
     case SOCK_SEND:    result = do_send( buf, len, answer ); break;
     case SOCK_RECV:    result = do_recv( buf, len, answer ); break;
@@ -3693,7 +3748,7 @@ int __cdecl nd_call( u32 fn, void *buf, u32 len, u32 *answer )
 int __cdecl nd_init( const char *line )
 {
     NIC_INFOBLOCK info;
-    u32 answer, start;
+    uint32_t answer, start;
     int i;
 
     if ( nds_niccount() == 0 ) {
@@ -3715,13 +3770,13 @@ int __cdecl nd_init( const char *line )
     names_settle();
     if ( !take_static() ) return 1;
 
-    rnd_state = ticks() ^ ( (u32)if_mac[5] << 16 ) ^ get32( if_mac + 1 );
+    rnd_state = ticks() ^ ( (uint32_t)if_mac[5] << 16 ) ^ get32( if_mac + 1 );
 
     /* the socket buffers, once, from the arena (never freed, never from
        a tick) */
     for ( i = 0; i < SOCK_MAX; i++ ) {
-        sock[i].rxbuf = (u8 *)nds_alloc( RXCAP );
-        sock[i].txbuf = (u8 *)nds_alloc( TXCAP );
+        sock[i].rxbuf = (uint8_t *)nds_alloc( RXCAP );
+        sock[i].txbuf = (uint8_t *)nds_alloc( TXCAP );
         if ( sock[i].rxbuf == NULL || sock[i].txbuf == NULL ) {
             nds_print( "TCP/IP: not enough memory for the sockets\r\n" );
             return 1;
@@ -3771,7 +3826,7 @@ void __cdecl nd_halt( void )
     running = 0;
 }
 
-int __cdecl nd_irq( u32 line )
+int __cdecl nd_irq( uint32_t line )
 {
     (void)line;
     return 0;                           /* the stack has no interrupt of its own */

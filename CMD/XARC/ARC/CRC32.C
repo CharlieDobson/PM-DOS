@@ -7,17 +7,17 @@
 
 #include "crc32.h"
 
-static UInt32 g_table[256];
-static int    g_inited = 0;
+static uint32_t g_table[256];
+static int      g_inited = 0;
 
 static void BuildTable( void )
 {
-    UInt32 c;
-    int    n, k;
+    uint32_t c;
+    int      n, k;
 
     for ( n = 0; n < 256; n++ )
     {
-        c = (UInt32)n;
+        c = (uint32_t)n;
         for ( k = 0; k < 8; k++ )
             c = ( c & 1 ) ? ( 0xEDB88320UL ^ ( c >> 1 ) ) : ( c >> 1 );
         g_table[n] = c;
@@ -25,32 +25,32 @@ static void BuildTable( void )
     g_inited = 1;
 }
 
-UInt32 Crc32Init( void )
+uint32_t Crc32Init( void )
 {
     if ( !g_inited )
         BuildTable();
     return 0xFFFFFFFFUL;
 }
 
-UInt32 Crc32Update( UInt32 crc, const void *data, UInt32 len )
+uint32_t Crc32Update( uint32_t crc, const void *data, uint32_t len )
 {
-    const Byte *p = (const Byte *)data;
+    const uint8_t *p = (const uint8_t *)data;
 
     if ( !g_inited )
         BuildTable();
 
     while ( len-- )
-        crc = g_table[ (Byte)( crc ^ *p++ ) ] ^ ( crc >> 8 );
+        crc = g_table[ (uint8_t)( crc ^ *p++ ) ] ^ ( crc >> 8 );
 
     return crc;
 }
 
-UInt32 Crc32Done( UInt32 crc )
+uint32_t Crc32Done( uint32_t crc )
 {
     return crc ^ 0xFFFFFFFFUL;
 }
 
-UInt32 Crc32Calc( const void *data, UInt32 len )
+uint32_t Crc32Calc( const void *data, uint32_t len )
 {
     return Crc32Done( Crc32Update( Crc32Init(), data, len ) );
 }

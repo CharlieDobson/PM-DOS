@@ -22,12 +22,12 @@
  *   insecure : nonzero skips verification even when a bundle is given.
  *   outcome  : receives a TLSV_* code (may be NULL).
  * Returns the connection, or NULL if the handshake failed (outcome says why). */
-void *tls_open( int handle, const char *host, const unsigned char *ca, int calen,
+void *tls_open( int handle, const char *host, const uint8_t *ca, int calen,
                 int insecure, int *outcome );
 int   tls_verify_reason( void );   /* the X509_ERR_* behind a TLSV_BADCERT, else 0 */
 
-int   tls_send( void *conn, const void *data, u32 len );    /* bytes, or <0 */
-int   tls_recv( void *conn, void *buf, u32 max );           /* bytes, 0 at end, <0 error */
+int   tls_send( void *conn, const void *data, unsigned int len );  /* bytes, or <0 */
+int   tls_recv( void *conn, void *buf, unsigned int max );         /* bytes, 0 at end, <0 error */
 void  tls_close( void *conn );
 
 #endif /* TLSGLUE_H */

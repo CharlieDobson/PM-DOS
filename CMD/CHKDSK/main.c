@@ -169,10 +169,11 @@ static void check_drive( void )
 /* ------------------------------------------------------------------ */
 
 /* first volume label entry of the root (first root cluster on FAT32) */
-static int find_label( char *label, u16 *date, u16 *time )
+static int find_label( char *label, uint16_t *date, uint16_t *time )
 {
-    u32 lba, nsec, sec, i, per = vol.bps / DE_LEN;
-    u8 *buf = (u8 *)xalloc( vol.bps ), *ent;
+    uint32_t lba, nsec, sec;
+    unsigned int i, per = vol.bps / DE_LEN;
+    uint8_t *buf = (uint8_t *)xalloc( vol.bps ), *ent;
     int found = 0;
 
     if ( vol.fattype == 32 ) {
@@ -216,7 +217,7 @@ static int find_label( char *label, u16 *date, u16 *time )
 static void show_volume_id( void )
 {
     char label[12], date_buf[16], time_buf[16], hi_buf[8], lo_buf[8];
-    u16 date, time;
+    uint16_t date, time;
 
     out_blank();
     if ( find_label( label, &date, &time ) ) {
@@ -237,8 +238,8 @@ static void show_volume_id( void )
 
 typedef struct {
     const char *tmpl;
-    u64 value;
-    u32 count;
+    uint64_t value;
+    unsigned int count;
     int has_count;
     int gap_before;             /* blank line before this one */
 } RPTLINE;
@@ -247,7 +248,7 @@ static void report( void )
 {
     RPTLINE rows[RPT_MAX];
     int nrows = 0, i, width = 13, len;
-    u32 used, avail, total_mem, free_mem;
+    uint32_t used, avail, total_mem, free_mem;
     char num[40], pad[48], cnt[40];
 
     used = st.dir_clus + st.fil_clus + st.hid_clus + st.bad_clus +
@@ -310,9 +311,9 @@ static void report( void )
     }
 }
 
-static u32 count_free( void )
+static uint32_t count_free( void )
 {
-    u32 clus, nfree = 0;
+    uint32_t clus, nfree = 0;
 
     for ( clus = 2; clus <= vol.maxclus; clus++ ) {
         if ( fat_get( clus ) == 0 ) {
@@ -329,7 +330,7 @@ static u32 count_free( void )
 void chkdsk_main( void )
 {
     char dn[4];
-    u8 media;
+    uint8_t media;
 
     if ( sys_init() != 0 ) {
         sys_exit( 255 );
@@ -358,12 +359,12 @@ void chkdsk_main( void )
         out_line( H_ERR, M_FATAL );
         finish( 255 );
     }
-    media = (u8)fat_get( 0 );           /* the FAT's first byte */
+    media = (uint8_t)fat_get( 0 );      /* the FAT's first byte */
     if ( media < 0xF8 && media != 0xF0 && !prompt_yn( M_BADIDBYT ) ) {
         finish( 0 );
     }
 
-    vol.map = (u8 *)try_alloc( vol.maxclus + 1 );
+    vol.map = (uint8_t *)try_alloc( vol.maxclus + 1 );
     if ( vol.map == NULL ) {
         out_of_memory();
     }

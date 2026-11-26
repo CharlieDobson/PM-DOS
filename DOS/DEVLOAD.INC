@@ -2183,7 +2183,7 @@ dl_units    db  DLU_MAX * DLU_LEN dup (0)
 ; A ROW IN drv_tbl, so that the filesystem can be pointed at it.  The
 ; table is keyed by BIOS drive number, which a driver unit does not
 ; have, so it is given one: DL_UNIT_BASE upwards, a range no BIOS ever
-; uses (this machine's real disks are 80h and 81h).  The number then
+; uses (this machine's real disks are 80h to 87h).  The number then
 ; flows through fat_mount, disk_read and bios2log untouched, and the
 ; only place that has to know what it means is dio_try.  Inventing a
 ; key is cheaper than threading a second one through nine routines.

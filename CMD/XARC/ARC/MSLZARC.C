@@ -52,9 +52,9 @@
  * a whole one. */
 #define ML_ZBUF       65536UL
 
-static const Byte SIG_SZDD[8] = { 'S', 'Z', 'D', 'D', 0x88, 0xF0, 0x27, 0x33 };
-static const Byte SIG_SZQB[8] = { 'S', 'Z', ' ', 0x88, 0xF0, 0x27, 0x33, 0xD1 };
-static const Byte SIG_KWAJ[8] = { 'K', 'W', 'A', 'J', 0x88, 0xF0, 0x27, 0xD1 };
+static const uint8_t SIG_SZDD[8] = { 'S', 'Z', 'D', 'D', 0x88, 0xF0, 0x27, 0x33 };
+static const uint8_t SIG_SZQB[8] = { 'S', 'Z', ' ', 0x88, 0xF0, 0x27, 0x33, 0xD1 };
+static const uint8_t SIG_KWAJ[8] = { 'K', 'W', 'A', 'J', 0x88, 0xF0, 0x27, 0xD1 };
 
 struct MslzArchive {
     FILE     *fp;
@@ -62,7 +62,7 @@ struct MslzArchive {
     int       kind;             /* ML_SZDD / ML_SZQB / ML_KWAJ             */
     int       method;           /* ML_M_*, or what the header said         */
     long      dataStart;
-    UInt32    dataLen;          /* from dataStart to the end of the file   */
+    uint32_t  dataLen;          /* from dataStart to the end of the file   */
     int       sizeKnown;
     int       hasLength;        /* sizeKnown from the header, not a decode */
     char     *comment;
@@ -71,44 +71,44 @@ struct MslzArchive {
 
 /*---- Input and output ------------------------------------------------------*/
 typedef struct {
-    FILE  *fp;
-    UInt32 left;                /* bytes of the data not yet read          */
-    Byte   buf[4096];
-    UInt32 pos, len;
-    int    err;                 /* fread came up short: a real read error  */
+    FILE    *fp;
+    uint32_t left;              /* bytes of the data not yet read          */
+    uint8_t  buf[4096];
+    uint32_t pos, len;
+    int      err;               /* fread came up short: a real read error  */
 } MlIn;
 
 typedef struct {
-    FILE  *fp;                  /* NULL when testing, or measuring          */
-    Byte   buf[8192];
-    UInt32 len;
-    UInt32 total;
-    UInt32 limit;               /* the header's length, or 0xFFFFFFFF      */
-    int    rc;
+    FILE    *fp;                /* NULL when testing, or measuring          */
+    uint8_t  buf[8192];
+    uint32_t len;
+    uint32_t total;
+    uint32_t limit;             /* the header's length, or 0xFFFFFFFF      */
+    int      rc;
 } MlOut;
 
 typedef struct {
-    UInt16 count[17];
-    UInt16 symbol[256];
+    uint16_t count[17];
+    uint16_t symbol[256];
 } MlHuff;
 
 /* Everything one decode needs, on the heap: the DOS build's stack is small. */
 typedef struct {
-    MlIn   in;
-    MlOut  out;
-    Byte   window[ML_WINDOW];
-    MlHuff trees[5];
+    MlIn    in;
+    MlOut   out;
+    uint8_t window[ML_WINDOW];
+    MlHuff  trees[5];
 } MlWork;
 
 static int MlGet( MlIn *in )
 {
     if ( in->pos == in->len )
     {
-        UInt32 want = ( in->left < sizeof( in->buf ) )
-                    ? in->left : (UInt32)sizeof( in->buf );
+        uint32_t want = ( in->left < sizeof( in->buf ) )
+                    ? in->left : (uint32_t)sizeof( in->buf );
 
         if ( want == 0 ) return -1;
-        in->len = (UInt32)fread( in->buf, 1, want, in->fp );
+        in->len = (uint32_t)fread( in->buf, 1, want, in->fp );
         in->pos = 0;
         if ( in->len < want ) in->err = 1;
         in->left = in->err ? 0 : in->left - in->len;
@@ -117,16 +117,16 @@ static int MlGet( MlIn *in )
     return in->buf[in->pos++];
 }
 
-static UInt32 MlRead( MlIn *in, Byte *dst, UInt32 n )
+static uint32_t MlRead( MlIn *in, uint8_t *dst, uint32_t n )
 {
-    UInt32 got = 0;
+    uint32_t got = 0;
 
     while ( got < n )
     {
         int val = MlGet( in );
 
         if ( val < 0 ) break;
-        dst[got++] = (Byte)val;
+        dst[got++] = (uint8_t)val;
     }
     return got;
 }
@@ -142,7 +142,7 @@ static int MlFlush( MlOut *out )
 
 /* 0 means stop: the length the header promised is reached, or writing
  * failed (out->rc says which). */
-static int MlPut( MlOut *out, Byte val )
+static int MlPut( MlOut *out, uint8_t val )
 {
     if ( out->total >= out->limit ) return 0;
     out->buf[out->len++] = val;
@@ -159,10 +159,10 @@ static int MlPut( MlOut *out, Byte val )
  * variant), and because match positions are absolute that starting point is
  * part of the format.  The stream simply ends; the header gives the length.
  *--------------------------------------------------------------------------- */
-static void MlLzss( MlWork *work, UInt32 startPos )
+static void MlLzss( MlWork *work, uint32_t startPos )
 {
-    UInt32 pos = startPos;
-    int    flags, bit;
+    uint32_t pos = startPos;
+    int      flags, bit;
 
     memset( work->window, ' ', ML_WINDOW );
     for ( ;; )
@@ -177,22 +177,22 @@ static void MlLzss( MlWork *work, UInt32 startPos )
                 int val = MlGet( &work->in );
 
                 if ( val < 0 ) return;
-                work->window[pos] = (Byte)val;
+                work->window[pos] = (uint8_t)val;
                 pos = ( pos + 1 ) & ML_WMASK;
-                if ( !MlPut( &work->out, (Byte)val ) ) return;
+                if ( !MlPut( &work->out, (uint8_t)val ) ) return;
             }
             else
             {
-                int    lo = MlGet( &work->in );
-                int    hi = MlGet( &work->in );
-                UInt32 from, len;
+                int      lo = MlGet( &work->in );
+                int      hi = MlGet( &work->in );
+                uint32_t from, len;
 
                 if ( lo < 0 || hi < 0 ) return;
-                from = (UInt32)lo | ( (UInt32)( hi & 0xF0 ) << 4 );
-                len  = (UInt32)( hi & 0x0F ) + 3;
+                from = (uint32_t)lo | ( (uint32_t)( hi & 0xF0 ) << 4 );
+                len  = (uint32_t)( hi & 0x0F ) + 3;
                 while ( len-- )
                 {
-                    Byte val = work->window[from];
+                    uint8_t val = work->window[from];
 
                     from = ( from + 1 ) & ML_WMASK;
                     work->window[pos] = val;
@@ -225,15 +225,15 @@ static void MlLzss( MlWork *work, UInt32 startPos )
  * bits past the last byte means "finished", not "corrupt".
  *--------------------------------------------------------------------------- */
 typedef struct {
-    MlIn  *in;
-    UInt32 buf;                 /* the next bit is bit 31                  */
-    int    cnt;
-    int    fake;                /* zero bytes supplied past the end        */
+    MlIn    *in;
+    uint32_t buf;               /* the next bit is bit 31                  */
+    int      cnt;
+    int      fake;              /* zero bytes supplied past the end        */
 } MlBits;
 
-static UInt32 MlGetBits( MlBits *br, int n )        /* 1 <= n <= 16 */
+static uint32_t MlGetBits( MlBits *br, int n )      /* 1 <= n <= 16 */
 {
-    UInt32 val;
+    uint32_t val;
 
     while ( br->cnt < n )
     {
@@ -244,7 +244,7 @@ static UInt32 MlGetBits( MlBits *br, int n )        /* 1 <= n <= 16 */
             byte = 0;
             br->fake++;
         }
-        br->buf |= (UInt32)byte << ( 24 - br->cnt );
+        br->buf |= (uint32_t)byte << ( 24 - br->cnt );
         br->cnt += 8;
     }
     val = br->buf >> ( 32 - n );
@@ -259,10 +259,10 @@ static int MlBitsEnded( const MlBits *br )
     return br->fake * 8 > br->cnt;
 }
 
-static int MlBuild( MlHuff *tree, const Byte *lens, int n )
+static int MlBuild( MlHuff *tree, const uint8_t *lens, int n )
 {
-    UInt16 offs[17];
-    int    len, sym, left = 1;
+    uint16_t offs[17];
+    int      len, sym, left = 1;
 
     memset( tree->count, 0, sizeof( tree->count ) );
     for ( sym = 0; sym < n; sym++ )
@@ -278,9 +278,9 @@ static int MlBuild( MlHuff *tree, const Byte *lens, int n )
 
     offs[1] = 0;
     for ( len = 1; len < 16; len++ )
-        offs[len + 1] = (UInt16)( offs[len] + tree->count[len] );
+        offs[len + 1] = (uint16_t)( offs[len] + tree->count[len] );
     for ( sym = 0; sym < n; sym++ )
-        if ( lens[sym] ) tree->symbol[offs[lens[sym]]++] = (UInt16)sym;
+        if ( lens[sym] ) tree->symbol[offs[lens[sym]]++] = (uint16_t)sym;
     return 0;
 }
 
@@ -308,7 +308,7 @@ static int MlDecode( MlBits *br, const MlHuff *tree )
  *   1  4 bits, then per symbol: 0 = same again, 10 = one longer, 11 = 4 new bits
  *   2  4 bits, then 2 bits per symbol: 0-2 add -1/0/+1, 3 = 4 new bits
  *   3  4 bits per symbol */
-static int MlReadLens( MlBits *br, int type, int n, Byte *lens )
+static int MlReadLens( MlBits *br, int type, int n, uint8_t *lens )
 {
     int i, val, sel;
 
@@ -316,12 +316,12 @@ static int MlReadLens( MlBits *br, int type, int n, Byte *lens )
     {
     case 0:
         val = ( n == 16 ) ? 4 : ( n == 32 ) ? 5 : ( n == 64 ) ? 6 : 8;
-        for ( i = 0; i < n; i++ ) lens[i] = (Byte)val;
+        for ( i = 0; i < n; i++ ) lens[i] = (uint8_t)val;
         return SZ_OK;
 
     case 1:
         val = (int)MlGetBits( br, 4 );
-        lens[0] = (Byte)val;
+        lens[0] = (uint8_t)val;
         for ( i = 1; i < n; i++ )
         {
             if ( MlGetBits( br, 1 ) == 0 )
@@ -331,26 +331,26 @@ static int MlReadLens( MlBits *br, int type, int n, Byte *lens )
             else
                 val = (int)MlGetBits( br, 4 );
             if ( val > 15 ) return SZ_ERR_DATA;
-            lens[i] = (Byte)val;
+            lens[i] = (uint8_t)val;
         }
         return SZ_OK;
 
     case 2:
         val = (int)MlGetBits( br, 4 );
-        lens[0] = (Byte)val;
+        lens[0] = (uint8_t)val;
         for ( i = 1; i < n; i++ )
         {
             sel = (int)MlGetBits( br, 2 );
             if ( sel == 3 ) val = (int)MlGetBits( br, 4 );
             else            val += sel - 1;
             if ( val < 0 || val > 15 ) return SZ_ERR_DATA;
-            lens[i] = (Byte)val;
+            lens[i] = (uint8_t)val;
         }
         return SZ_OK;
 
     case 3:
         for ( i = 0; i < n; i++ )
-            lens[i] = (Byte)MlGetBits( br, 4 );
+            lens[i] = (uint8_t)MlGetBits( br, 4 );
         return SZ_OK;
 
     default:
@@ -361,10 +361,10 @@ static int MlReadLens( MlBits *br, int type, int n, Byte *lens )
 static int MlLzh( MlWork *work )
 {
     static const int counts[5] = { 16, 16, 32, 64, 256 };
-    MlBits br;
-    Byte   lens[256];
-    int    types[6], i, afterRun = 0;
-    UInt32 pos = 0;
+    MlBits   br;
+    uint8_t  lens[256];
+    int      types[6], i, afterRun = 0;
+    uint32_t pos = 0;
 
     br.in   = &work->in;
     br.buf  = 0;
@@ -392,12 +392,12 @@ static int MlLzh( MlWork *work )
 
         if ( len > 0 )
         {
-            UInt32 offset, from;
-            int    high = MlDecode( &br, &work->trees[3] );
+            uint32_t offset, from;
+            int      high = MlDecode( &br, &work->trees[3] );
 
             if ( MlBitsEnded( &br ) ) return SZ_OK;
             if ( high < 0 ) return SZ_ERR_DATA;
-            offset = ( (UInt32)high << 6 ) | MlGetBits( &br, 6 );
+            offset = ( (uint32_t)high << 6 ) | MlGetBits( &br, 6 );
             if ( MlBitsEnded( &br ) ) return SZ_OK;
 
             afterRun = 0;
@@ -405,7 +405,7 @@ static int MlLzh( MlWork *work )
             from = ( pos - offset ) & ML_WMASK;
             while ( len-- )
             {
-                Byte val = work->window[from];
+                uint8_t val = work->window[from];
 
                 from = ( from + 1 ) & ML_WMASK;
                 work->window[pos] = val;
@@ -429,9 +429,9 @@ static int MlLzh( MlWork *work )
 
                 if ( MlBitsEnded( &br ) ) return SZ_OK;
                 if ( sym < 0 ) return SZ_ERR_DATA;
-                work->window[pos] = (Byte)sym;
+                work->window[pos] = (uint8_t)sym;
                 pos = ( pos + 1 ) & ML_WMASK;
-                if ( !MlPut( &work->out, (Byte)sym ) ) return SZ_OK;
+                if ( !MlPut( &work->out, (uint8_t)sym ) ) return SZ_OK;
             }
         }
     }
@@ -447,20 +447,21 @@ static int MlLzh( MlWork *work )
 static int MlMszip( MlWork *work )
 {
     MszipDec *dec   = NULL;
-    Byte     *buf   = NULL;
-    Byte     *frame = NULL;
-    UInt32    have  = 0, pos = 0;
+    uint8_t  *buf   = NULL;
+    uint8_t  *frame = NULL;
+    uint32_t  have  = 0, pos = 0;
     int       rc;
 
     rc = MszipCreate( &dec );
     if ( rc != SZ_OK ) return rc;
-    buf   = (Byte *)malloc( ML_ZBUF );
-    frame = (Byte *)malloc( MSZIP_BLOCK_MAX );
+    buf   = (uint8_t *)malloc( ML_ZBUF );
+    frame = (uint8_t *)malloc( MSZIP_BLOCK_MAX );
     if ( !buf || !frame ) rc = SZ_ERR_MEMORY;
 
     while ( rc == SZ_OK )
     {
-        UInt32 got, used, i;
+        uint32_t got, used;
+        unsigned i;
 
         if ( pos > 0 )
         {
@@ -491,8 +492,8 @@ static int MlMszip( MlWork *work )
 }
 
 /*---- Decode the data to a file, or to nowhere ------------------------------*/
-static int MlDecodeTo( MslzArchive *arc, FILE *outFp, UInt32 limit,
-                       UInt32 *produced )
+static int MlDecodeTo( MslzArchive *arc, FILE *outFp, uint32_t limit,
+                       uint32_t *produced )
 {
     MlWork *work;
     int     rc = SZ_OK;
@@ -517,11 +518,11 @@ static int MlDecodeTo( MslzArchive *arc, FILE *outFp, UInt32 limit,
     case ML_M_STORE:
     case ML_M_XOR:
     {
-        Byte mask = (Byte)( ( arc->method == ML_M_XOR ) ? 0xFF : 0x00 );
-        int  val;
+        uint8_t mask = (uint8_t)( ( arc->method == ML_M_XOR ) ? 0xFF : 0x00 );
+        int     val;
 
         while ( ( val = MlGet( &work->in ) ) >= 0 )
-            if ( !MlPut( &work->out, (Byte)( val ^ mask ) ) ) break;
+            if ( !MlPut( &work->out, (uint8_t)( val ^ mask ) ) ) break;
         break;
     }
     case ML_M_LZSS:
@@ -598,23 +599,23 @@ static void MlFileDate( MslzArchive *arc )
     if ( stat( arc->path, &st ) != 0 ) return;
     when = localtime( &st.st_mtime );
     if ( !when || when->tm_year < 80 ) return;
-    arc->entry.modDate = (UInt16)( ( ( when->tm_year - 80 ) << 9 ) |
-                                   ( ( when->tm_mon + 1 ) << 5 ) |
-                                   when->tm_mday );
-    arc->entry.modTime = (UInt16)( ( when->tm_hour << 11 ) |
-                                   ( when->tm_min << 5 ) |
-                                   ( when->tm_sec / 2 ) );
+    arc->entry.modDate = (uint16_t)( ( ( when->tm_year - 80 ) << 9 ) |
+                                     ( ( when->tm_mon + 1 ) << 5 ) |
+                                     when->tm_mday );
+    arc->entry.modTime = (uint16_t)( ( when->tm_hour << 11 ) |
+                                     ( when->tm_min << 5 ) |
+                                     ( when->tm_sec / 2 ) );
 }
 
-static UInt32 MlLe16( const Byte *ptr )
+static uint32_t MlLe16( const uint8_t *ptr )
 {
-    return ptr[0] | ( (UInt32)ptr[1] << 8 );
+    return ptr[0] | ( (uint32_t)ptr[1] << 8 );
 }
 
-static UInt32 MlLe32( const Byte *ptr )
+static uint32_t MlLe32( const uint8_t *ptr )
 {
-    return ptr[0] | ( (UInt32)ptr[1] << 8 ) |
-           ( (UInt32)ptr[2] << 16 ) | ( (UInt32)ptr[3] << 24 );
+    return ptr[0] | ( (uint32_t)ptr[1] << 8 ) |
+           ( (uint32_t)ptr[2] << 16 ) | ( (uint32_t)ptr[3] << 24 );
 }
 
 /* A NUL-ended field of at most 'max' bytes.  A field that fills all of them
@@ -635,11 +636,11 @@ static void MlField( FILE *fp, char *dst, int max, int keep )
 }
 
 /* The KWAJ header's optional fields, in their fixed order. */
-static int MlKwajFields( MslzArchive *arc, UInt32 flags )
+static int MlKwajFields( MslzArchive *arc, uint32_t flags )
 {
-    FILE *fp = arc->fp;
-    Byte  num[4];
-    char  base[9], ext[4];
+    FILE   *fp = arc->fp;
+    uint8_t num[4];
+    char    base[9], ext[4];
 
     base[0] = ext[0] = '\0';
     if ( fseek( fp, 14L, SEEK_SET ) != 0 ) return SZ_ERR_READ;
@@ -668,7 +669,7 @@ static int MlKwajFields( MslzArchive *arc, UInt32 flags )
     if ( flags & KW_HAS_EXT )  MlField( fp, ext, 4, 3 );
     if ( flags & KW_HAS_TEXT )
     {
-        UInt32 len;
+        uint32_t len;
 
         if ( fread( num, 1, 2, fp ) != 2 ) return SZ_ERR_FORMAT;
         len = MlLe16( num );
@@ -774,7 +775,7 @@ static int MlSameFile( const char *outPath, const char *arcPath )
 }
 
 /*---- Public ----------------------------------------------------------------*/
-int MslzProbe( const unsigned char *sig, int len )
+int MslzProbe( const uint8_t *sig, int len )
 {
     if ( len < 8 ) return 0;
     return memcmp( sig, SIG_SZDD, 8 ) == 0 ||
@@ -785,7 +786,7 @@ int MslzProbe( const unsigned char *sig, int len )
 int MslzOpen( const char *path, MslzArchive **out )
 {
     MslzArchive *arc;
-    Byte         hdr[14];
+    uint8_t      hdr[14];
     size_t       got;
     long         fileLen;
     int          missing = 0;
@@ -839,7 +840,7 @@ int MslzOpen( const char *path, MslzArchive **out )
     if ( rc == SZ_OK && arc->dataStart > fileLen ) rc = SZ_ERR_FORMAT;
     if ( rc != SZ_OK ) { MslzClose( arc ); return rc; }
 
-    arc->dataLen      = (UInt32)( fileLen - arc->dataStart );
+    arc->dataLen      = (uint32_t)( fileLen - arc->dataStart );
     arc->entry.packed = arc->dataLen;
     if ( arc->kind == ML_SZDD ) MlSzddName( arc, missing );
     MlFileDate( arc );
@@ -857,7 +858,7 @@ int MslzOpen( const char *path, MslzArchive **out )
         }
         else if ( arc->method >= 0 && arc->method <= ML_M_LAST )
         {
-            UInt32 produced;
+            uint32_t produced;
 
             if ( MlDecodeTo( arc, NULL, 0xFFFFFFFFUL, &produced ) == SZ_OK )
             {
@@ -914,10 +915,10 @@ int MslzHasLength( MslzArchive *arc )
 
 static int MslzExtractOne( MslzArchive *arc, const char *destDir )
 {
-    char   outPath[SZ_MAX_NAME * 4];
-    FILE  *outFp = NULL;
-    UInt32 produced;
-    int    rc;
+    char     outPath[SZ_MAX_NAME * 4];
+    FILE    *outFp = NULL;
+    uint32_t produced;
+    int      rc;
 
     if ( arc->method < 0 || arc->method > ML_M_LAST ) return SZ_ERR_UNSUPPORTED;
 
@@ -973,9 +974,9 @@ int MslzExtractItems( MslzArchive *arc, const int *indices, int count,
     return SZ_OK;
 }
 
-UInt32 MslzMemNeeded( MslzArchive *arc )
+uint32_t MslzMemNeeded( MslzArchive *arc )
 {
-    UInt32 need = (UInt32)sizeof( MlWork );
+    uint32_t need = (uint32_t)sizeof( MlWork );
 
     if ( arc && arc->method == ML_M_MSZIP )
         need += MszipMemNeeded() + ML_ZBUF + MSZIP_BLOCK_MAX;

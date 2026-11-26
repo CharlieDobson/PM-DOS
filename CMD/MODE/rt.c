@@ -3,28 +3,28 @@
  */
 #include "rt.h"
 
-void mem_set( void *dst, int val, u32 len )
+void mem_set( void *dst, int val, unsigned int len )
 {
-    u8 *cur = (u8 *)dst;
+    uint8_t *cur = (uint8_t *)dst;
 
     while ( len-- ) {
-        *cur++ = (u8)val;
+        *cur++ = (uint8_t)val;
     }
 }
 
-void mem_cpy( void *dst, const void *src, u32 len )
+void mem_cpy( void *dst, const void *src, unsigned int len )
 {
-    u8 *dcur = (u8 *)dst;
-    const u8 *scur = (const u8 *)src;
+    uint8_t *dcur = (uint8_t *)dst;
+    const uint8_t *scur = (const uint8_t *)src;
 
     while ( len-- ) {
         *dcur++ = *scur++;
     }
 }
 
-u32 str_len( const char *str )
+unsigned int str_len( const char *str )
 {
-    u32 len = 0;
+    unsigned int len = 0;
 
     while ( str[len] ) {
         len++;
@@ -33,9 +33,9 @@ u32 str_len( const char *str )
 }
 
 /* a copy that stops short of "max" bytes including the NUL */
-int str_cpyn( char *dst, const char *src, u32 max )
+int str_cpyn( char *dst, const char *src, unsigned int max )
 {
-    u32 len = str_len( src );
+    unsigned int len = str_len( src );
 
     if ( len + 1 > max ) {
         return 0;
@@ -69,7 +69,7 @@ int str_icmp( const char *lhs, const char *rhs )
     }
 }
 
-int str_nicmp( const char *lhs, const char *rhs, u32 len )
+int str_nicmp( const char *lhs, const char *rhs, unsigned int len )
 {
     int lch, rch;
 
@@ -86,10 +86,10 @@ int str_nicmp( const char *lhs, const char *rhs, u32 len )
     return 0;
 }
 
-u32 num_str( char *buf, u32 val )
+unsigned int num_str( char *buf, unsigned int val )
 {
     char rev[10];
-    u32 len = 0, pos = 0;
+    unsigned int len = 0, pos = 0;
 
     do {
         rev[len++] = (char)('0' + val % 10);

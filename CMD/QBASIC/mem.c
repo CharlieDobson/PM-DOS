@@ -19,7 +19,7 @@
 #include "sys.h"
 
 typedef struct HBLK {
-    u32          size;          /* the whole block, header included */
+    uint32_t     size;          /* the whole block, header included */
     struct HBLK *next;          /* while free */
 } HBLK;
 
@@ -30,9 +30,9 @@ typedef struct HBLK {
 #define MIN_SPLIT   64u
 #define CHUNK       (64u * 1024u)
 
-static HBLK *small_free[NCLASS];
-static u8   *small_cur, *small_end;
-static HBLK *free_list;         /* big blocks, in address order */
+static HBLK    *small_free[NCLASS];
+static uint8_t *small_cur, *small_end;
+static HBLK    *free_list;      /* big blocks, in address order */
 
 static void big_insert( HBLK *blk )
 {
@@ -45,20 +45,20 @@ static void big_insert( HBLK *blk )
     }
     blk->next = *link;
     *link = blk;
-    if ( blk->next && (u8 *)blk + blk->size == (u8 *)blk->next ) {
+    if ( blk->next && (uint8_t *)blk + blk->size == (uint8_t *)blk->next ) {
         blk->size += blk->next->size;
         blk->next = blk->next->next;
     }
-    if ( prev && (u8 *)prev + prev->size == (u8 *)blk ) {
+    if ( prev && (uint8_t *)prev + prev->size == (uint8_t *)blk ) {
         prev->size += blk->size;
         prev->next = blk->next;
     }
 }
 
-static HBLK *big_alloc( u32 need )
+static HBLK *big_alloc( unsigned int need )
 {
     HBLK **link, *blk, *rest;
-    u32 chunk;
+    unsigned int chunk;
     void *mem;
     int pass;
 
@@ -68,7 +68,7 @@ static HBLK *big_alloc( u32 need )
                 continue;
             }
             if ( blk->size - need >= MIN_SPLIT ) {
-                rest = (HBLK *)((u8 *)blk + need);
+                rest = (HBLK *)((uint8_t *)blk + need);
                 rest->size = blk->size - need;
                 rest->next = blk->next;
                 *link = rest;
@@ -97,10 +97,10 @@ static HBLK *big_alloc( u32 need )
     return NULL;
 }
 
-void *try_alloc( u32 size )
+void *try_alloc( unsigned int size )
 {
     HBLK *blk;
-    u32 need, cls;
+    unsigned int need, cls;
 
     if ( size > 0xFFFFFF00UL - HDR ) {
         return NULL;
@@ -114,13 +114,13 @@ void *try_alloc( u32 size )
         blk = small_free[cls];
         if ( blk != NULL ) {
             small_free[cls] = blk->next;
-            return (u8 *)blk + HDR;
+            return (uint8_t *)blk + HDR;
         }
-        if ( small_cur == NULL || (u32)(small_end - small_cur) < need ) {
+        if ( small_cur == NULL || (unsigned int)(small_end - small_cur) < need ) {
             /* what is left of the chunk goes to the lists by size */
-            while ( small_cur != NULL && (u32)(small_end - small_cur) >= 16 ) {
-                u32 left = (u32)(small_end - small_cur);
-                u32 piece = left > SMALL_MAX ? SMALL_MAX : left & ~7u;
+            while ( small_cur != NULL && (unsigned int)(small_end - small_cur) >= 16 ) {
+                unsigned int left = (unsigned int)(small_end - small_cur);
+                unsigned int piece = left > SMALL_MAX ? SMALL_MAX : left & ~7u;
                 blk = (HBLK *)small_cur;
                 blk->size = piece;
                 blk->next = small_free[piece / 8];
@@ -131,19 +131,19 @@ void *try_alloc( u32 size )
             if ( blk == NULL ) {
                 return NULL;
             }
-            small_cur = (u8 *)blk;
+            small_cur = (uint8_t *)blk;
             small_end = small_cur + blk->size;
         }
         blk = (HBLK *)small_cur;
         blk->size = need;
         small_cur += need;
-        return (u8 *)blk + HDR;
+        return (uint8_t *)blk + HDR;
     }
     blk = big_alloc( need );
-    return blk ? (u8 *)blk + HDR : NULL;
+    return blk ? (uint8_t *)blk + HDR : NULL;
 }
 
-void *xalloc( u32 size )
+void *xalloc( unsigned int size )
 {
     void *ptr = try_alloc( size );
 
@@ -160,7 +160,7 @@ void xfree( void *ptr )
     if ( ptr == NULL ) {
         return;
     }
-    blk = (HBLK *)((u8 *)ptr - HDR);
+    blk = (HBLK *)((uint8_t *)ptr - HDR);
     if ( blk->size <= SMALL_MAX ) {
         blk->next = small_free[blk->size / 8];
         small_free[blk->size / 8] = blk;
@@ -169,15 +169,15 @@ void xfree( void *ptr )
     }
 }
 
-u32 mem_size( void *ptr )
+unsigned int mem_size( void *ptr )
 {
-    return ((HBLK *)((u8 *)ptr - HDR))->size - HDR;
+    return ((HBLK *)((uint8_t *)ptr - HDR))->size - HDR;
 }
 
-void *try_realloc( void *ptr, u32 size )
+void *try_realloc( void *ptr, unsigned int size )
 {
     void *grown;
-    u32 have;
+    unsigned int have;
 
     if ( ptr == NULL ) {
         return try_alloc( size );
@@ -195,10 +195,10 @@ void *try_realloc( void *ptr, u32 size )
     return grown;
 }
 
-u32 mem_avail( void )
+unsigned int mem_avail( void )
 {
     HBLK *blk;
-    u32 best = sys_mem_largest();
+    unsigned int best = sys_mem_largest();
 
     for ( blk = free_list; blk != NULL; blk = blk->next ) {
         if ( blk->size - HDR > best ) {
@@ -216,7 +216,7 @@ u32 mem_avail( void )
 
 typedef struct PCHUNK {
     struct PCHUNK *next;
-    u32 used, size;
+    unsigned int used, size;
 } PCHUNK;
 
 struct POOL {
@@ -234,14 +234,14 @@ POOL *pool_new( void )
     return pool;
 }
 
-void *pool_alloc( POOL *pool, u32 size )
+void *pool_alloc( POOL *pool, unsigned int size )
 {
     PCHUNK *chunk = pool->chunks;
-    u8 *mem;
+    uint8_t *mem;
 
     size = (size + 7u) & ~7u;
     if ( chunk == NULL || chunk->size - chunk->used < size ) {
-        u32 want = size > POOL_CHUNK / 4 ? size : POOL_CHUNK;
+        unsigned int want = size > POOL_CHUNK / 4 ? size : POOL_CHUNK;
         chunk = (PCHUNK *)try_alloc( sizeof( PCHUNK ) + want );
         if ( chunk == NULL ) {
             return NULL;
@@ -257,13 +257,13 @@ void *pool_alloc( POOL *pool, u32 size )
             pool->chunks = chunk;
         }
     }
-    mem = (u8 *)(chunk + 1) + chunk->used;
+    mem = (uint8_t *)(chunk + 1) + chunk->used;
     chunk->used += size;
     mem_set( mem, 0, size );
     return mem;
 }
 
-char *pool_strn( POOL *pool, const char *text, u32 len )
+char *pool_strn( POOL *pool, const char *text, unsigned int len )
 {
     char *copy = (char *)pool_alloc( pool, len + 1 );
 

@@ -43,19 +43,19 @@
 #include "socklib.h"
 #include "redir.h"
 
-static int call_netuse( u32 sub, netuse_req *req )
+static int call_netuse( unsigned int sub, netuse_req *req )
 {
     REGS regs;
     sl_memzero( &regs, sizeof( regs ) );
     regs.eax = ( sub << 16 ) | 0xF127UL;
     regs.ecx = sizeof( netuse_req );
-    regs.edi = (u32)req;
+    regs.edi = (uint32_t)req;
     int21( &regs );
     if ( CF( regs ) ) return (int)( regs.eax & 0xFFFF );
     return 0;
 }
 
-static void put_hex32( u32 value )
+static void put_hex32( uint32_t value )
 {
     int shift;
     for ( shift = 28; shift >= 0; shift -= 4 ) sl_putc( "0123456789ABCDEF"[( value >> shift ) & 15] );
@@ -73,7 +73,7 @@ static void say_err( int code )
 }
 
 /* the sign-in, refused: the NTSTATUS says why */
-static void say_logon( u32 srvstatus )
+static void say_logon( uint32_t srvstatus )
 {
     switch ( srvstatus ) {
     case 0xC000006DUL:                  /* LOGON_FAILURE */
@@ -193,15 +193,15 @@ static int stdin_is_console( void )
    measured the only way there is: a count that runs until the key comes.
    Each count and the clock are folded into the bytes handed over in every
    pwl_req; the driver hashes them into its own pool. */
-static u8  noise[64];
-static u32 noise_at;
+static uint8_t  noise[64];
+static unsigned noise_at;
 
-static void add_noise( u32 value )
+static void add_noise( uint32_t value )
 {
     int i;
     for ( i = 0; i < 4; i++ ) {
-        noise[noise_at % sizeof( noise )] ^= (u8)( value >> ( 8 * i ) );
-        noise[( noise_at + 31 ) % sizeof( noise )] += (u8)( value >> ( 8 * i ) );
+        noise[noise_at % sizeof( noise )] ^= (uint8_t)( value >> ( 8 * i ) );
+        noise[( noise_at + 31 ) % sizeof( noise )] += (uint8_t)( value >> ( 8 * i ) );
         noise_at++;
     }
 }
@@ -209,7 +209,7 @@ static void add_noise( u32 value )
 /* a key, with the count it took to come folded into the noise */
 static int noisy_key( void )
 {
-    u32 spin = 0;
+    unsigned int spin = 0;
     while ( !sl_kbhit() ) spin++;
     add_noise( spin );
     add_noise( sl_now() );
@@ -221,9 +221,9 @@ static int noisy_key( void )
    first line.  Always NUL-terminated within max. */
 static void get_secret( char *buf, int max )
 {
-    REGS regs;
-    int  n = 0, key;
-    u8   ch;
+    REGS    regs;
+    int     n = 0, key;
+    uint8_t ch;
 
     if ( stdin_is_console() ) {
         for ( ;; ) {
@@ -242,7 +242,7 @@ static void get_secret( char *buf, int max )
         regs.eax = 0x3F00;
         regs.ebx = 0;
         regs.ecx = 1;
-        regs.edx = (u32)&ch;
+        regs.edx = (uint32_t)&ch;
         int21( &regs );
         if ( CF( regs ) || ( regs.eax & 0xFFFF ) == 0 ) break;
         add_noise( sl_now() );
@@ -257,9 +257,9 @@ static void get_secret( char *buf, int max )
    line.  NUL-terminated within max. */
 static void get_line( char *buf, int max )
 {
-    REGS regs;
-    int  n = 0, key;
-    u8   ch;
+    REGS    regs;
+    int     n = 0, key;
+    uint8_t ch;
 
     if ( stdin_is_console() ) {
         for ( ;; ) {
@@ -281,7 +281,7 @@ static void get_line( char *buf, int max )
         regs.eax = 0x3F00;
         regs.ebx = 0;
         regs.ecx = 1;
-        regs.edx = (u32)&ch;
+        regs.edx = (uint32_t)&ch;
         int21( &regs );
         if ( CF( regs ) || ( regs.eax & 0xFFFF ) == 0 ) break;
         if ( ch == '\n' ) break;
@@ -336,7 +336,7 @@ static void list_drives( void )
     int drive, any = 0, count = letter_count();
     for ( drive = 0; drive < count; drive++ ) {
         sl_memzero( &req, sizeof( req ) );
-        req.drive = (u32)drive;
+        req.drive = (uint32_t)drive;
         if ( call_netuse( NETUSE_QUERY, &req ) != 0 ) continue;
         if ( req.flags & NUF_INUSE ) {
             sl_putc( (char)( 'A' + drive ) );
@@ -358,21 +358,21 @@ static char    owner[32];       /* whose list is unlocked, or "" */
 /* every field but the file */
 static void pwl_reset( void )
 {
-    sl_memzero( &pq, (u32)( (u8 *)pq.data - (u8 *)&pq ) );
+    sl_memzero( &pq, (uint32_t)( (uint8_t *)pq.data - (uint8_t *)&pq ) );
 }
 
 /* a PWL_* call; pq.status says what the driver made of it.  1 when there
    is no driver to ask */
-static int call_pwl( u32 op )
+static int call_pwl( unsigned int op )
 {
     REGS regs;
     pq.op = op;
     add_noise( sl_now() );
     sl_memcpy( pq.seed, noise, sizeof( pq.seed ) );
     sl_memzero( &regs, sizeof( regs ) );
-    regs.eax = ( (u32)NETUSE_PWL << 16 ) | 0xF127UL;
+    regs.eax = ( (uint32_t)NETUSE_PWL << 16 ) | 0xF127UL;
     regs.ecx = sizeof( pwl_req );
-    regs.edi = (u32)&pq;
+    regs.edi = (uint32_t)&pq;
     int21( &regs );
     /* the driver clears these; with no driver, nothing else would */
     sl_memzero( pq.pass, sizeof( pq.pass ) );
@@ -403,7 +403,7 @@ static void own_dir( char *out, int max )
     sl_memzero( &regs, sizeof( regs ) );
     regs.eax = 0x6200;
     int21( &regs );
-    env = *(const char **)( (u8 *)regs.ebx + 0x2C );
+    env = *(const char **)( (uint8_t *)regs.ebx + 0x2C );
     out[0] = 0;
     if ( env != NULL ) {
         while ( *env ) { while ( *env ) env++; env++; }
@@ -417,16 +417,16 @@ static void own_dir( char *out, int max )
             out[cut + 1] = 0;
         }
     }
-    if ( out[0] == 0 ) sl_strcpy( out, "C:\\", (u32)max );
+    if ( out[0] == 0 ) sl_strcpy( out, "C:\\", (uint32_t)max );
 }
 
 /* NAME.PWL beside NET.EXE, the name made of the user's letters and digits,
    eight at most.  0 if the name has none. */
 static int list_path( const char *name )
 {
-    char file[13];
-    int  i, len = 0;
-    u32  at;
+    char     file[13];
+    int      i, len = 0;
+    unsigned at;
 
     for ( i = 0; name[i] && len < 8; i++ ) {
         char ch = name[i];
@@ -445,12 +445,12 @@ static int list_path( const char *name )
 /* the file into pq.data; 0, or the DOS error (2: there is none) */
 static int file_load( void )
 {
-    REGS regs;
-    u32  handle;
+    REGS     regs;
+    uint32_t handle;
 
     sl_memzero( &regs, sizeof( regs ) );
     regs.eax = 0x3D00;
-    regs.edx = (u32)list_file;
+    regs.edx = (uint32_t)list_file;
     int21( &regs );
     if ( CF( regs ) ) return (int)( regs.eax & 0xFFFF );
     handle = regs.eax & 0xFFFF;
@@ -458,7 +458,7 @@ static int file_load( void )
     regs.eax = 0x3F00;
     regs.ebx = handle;
     regs.ecx = sizeof( pq.data );
-    regs.edx = (u32)pq.data;
+    regs.edx = (uint32_t)pq.data;
     int21( &regs );
     pq.len = CF( regs ) ? 0 : ( regs.eax & 0xFFFF );
     sl_memzero( &regs, sizeof( regs ) );
@@ -473,16 +473,17 @@ static int file_load( void )
    list as it was.  1 done. */
 static int file_save( void )
 {
-    REGS regs;
-    char temp[sizeof( list_file )];
-    u32  handle, len = sl_strlen( list_file );
-    int  ok;
+    REGS     regs;
+    char     temp[sizeof( list_file )];
+    uint32_t handle;
+    unsigned len = sl_strlen( list_file );
+    int      ok;
 
     sl_strcpy( temp, list_file, sizeof( temp ) );
     sl_strcpy( temp + len - 3, "$$$", 4 );      /* NAME.PWL -> NAME.$$$ */
     sl_memzero( &regs, sizeof( regs ) );
     regs.eax = 0x3C00;
-    regs.edx = (u32)temp;
+    regs.edx = (uint32_t)temp;
     int21( &regs );
     if ( CF( regs ) ) return 0;
     handle = regs.eax & 0xFFFF;
@@ -490,7 +491,7 @@ static int file_save( void )
     regs.eax = 0x4000;
     regs.ebx = handle;
     regs.ecx = pq.len;
-    regs.edx = (u32)pq.data;
+    regs.edx = (uint32_t)pq.data;
     int21( &regs );
     ok = !CF( regs ) && ( regs.eax & 0xFFFF ) == pq.len;
     sl_memzero( &regs, sizeof( regs ) );
@@ -501,18 +502,18 @@ static int file_save( void )
     if ( ok ) {
         sl_memzero( &regs, sizeof( regs ) );
         regs.eax = 0x4100;
-        regs.edx = (u32)list_file;
+        regs.edx = (uint32_t)list_file;
         int21( &regs );                         /* none the first time */
         sl_memzero( &regs, sizeof( regs ) );
         regs.eax = 0x5600;
-        regs.edx = (u32)temp;
-        regs.edi = (u32)list_file;
+        regs.edx = (uint32_t)temp;
+        regs.edi = (uint32_t)list_file;
         int21( &regs );
         if ( !CF( regs ) ) return 1;
     }
     sl_memzero( &regs, sizeof( regs ) );
     regs.eax = 0x4100;
-    regs.edx = (u32)temp;
+    regs.edx = (uint32_t)temp;
     int21( &regs );
     return 0;
 }
@@ -527,7 +528,7 @@ static int save_list( void )
     return 0;
 }
 
-static void say_pwl( u32 status )
+static void say_pwl( unsigned int status )
 {
     switch ( status ) {
     case PWLE_LOCKED:
@@ -558,7 +559,7 @@ static void put_unc( const char *server, const char *share )
 /* the drives the list remembers, connected again with its passwords */
 static void reconnect( void )
 {
-    u32 index;
+    unsigned int index;
     int rc;
 
     for ( index = 0; ; index++ ) {
@@ -708,7 +709,7 @@ static void do_logoff( int argc, char **argv )
        and logging off is the way to leave the machine without them */
     for ( drive = 0; drive < count; drive++ ) {
         sl_memzero( &req, sizeof( req ) );
-        req.drive = (u32)drive;
+        req.drive = (uint32_t)drive;
         if ( call_netuse( NETUSE_QUERY, &req ) != 0 || !( req.flags & NUF_INUSE ) ) continue;
         if ( !any ) sl_puts( "These network drives will be disconnected:" );
         sl_putc( ' ' );
@@ -721,9 +722,12 @@ static void do_logoff( int argc, char **argv )
         if ( !yes && !ask_yes( "Continue", 1 ) ) return;
         for ( drive = 0; drive < count; drive++ ) {
             sl_memzero( &req, sizeof( req ) );
-            req.drive = (u32)drive;
+            req.drive = (uint32_t)drive;
             if ( call_netuse( NETUSE_QUERY, &req ) != 0 || !( req.flags & NUF_INUSE ) ) continue;
-            call_netuse( NETUSE_UNMAP, &req );
+            if ( call_netuse( NETUSE_UNMAP, &req ) == 5 ) {
+                sl_putc( (char)( 'A' + drive ) );
+                sl_puts( ": stays connected: an image file on the drive is mounted.\r\n" );
+            }
         }
     }
     pwl_reset();
@@ -737,7 +741,7 @@ static void do_password( int argc, char **argv )
     const char *name = NULL, *forget = NULL, *val;
     static char typed[32], first[64], again[64];
     int         i, list = 0, open;
-    u32         index;
+    unsigned    index;
 
     for ( i = 1; i < argc; i++ ) {
         if ( sl_strcasecmp( argv[i], "/LIST" ) == 0 || sl_strcasecmp( argv[i], "/L" ) == 0 ) list = 1;
@@ -926,17 +930,23 @@ static void do_use( int argc, char **argv )
     if ( logged ) list_path( owner );
 
     sl_memzero( &req, sizeof( req ) );
-    req.drive = (u32)drive;
+    req.drive = (uint32_t)drive;
 
     if ( del ) {
         rc = call_netuse( NETUSE_UNMAP, &req );
         if ( rc == 0 ) { sl_putc( (char)( 'A' + drive ) ); sl_puts( ": disconnected.\r\n" ); }
+        else if ( rc == 5 ) {
+            /* the kernel keeps a share while an image is mounted from it */
+            sl_puts( "An image file on " ); sl_putc( (char)( 'A' + drive ) );
+            sl_puts( ": is mounted.  Unmount the image with MOUNT /U first.\r\n" );
+            return;
+        }
         else say_err( rc );
         /* and NET LOGON no longer makes it, as NT forgets a persistent
            connection that is deleted */
         if ( logged ) {
             pwl_reset();
-            pq.drive = (u32)drive;
+            pq.drive = (uint32_t)drive;
             if ( !call_pwl( PWL_DELMAP ) && pq.status == PWLE_OK && save_list() ) {
                 sl_putc( (char)( 'A' + drive ) );
                 sl_puts( ": will no longer be connected by NET LOGON.\r\n" );
@@ -957,7 +967,7 @@ static void do_use( int argc, char **argv )
     if ( user ) {
         /* /USER:domain\name - the domain is whatever comes before the
            first backslash */
-        u32 split;
+        unsigned int split;
         for ( split = 0; user[split] && user[split] != '\\'; split++ ) ;
         if ( user[split] == '\\' ) {
             if ( split >= sizeof( req.domain ) || user[split + 1] == 0 ) {
@@ -978,7 +988,7 @@ static void do_use( int argc, char **argv )
     if ( pass == NULL && logged ) {
         req.flags |= NUF_SAVED;
         rc = call_netuse( NETUSE_MAP, &req );
-        req.flags &= ~(u32)NUF_SAVED;
+        req.flags &= ~(uint32_t)NUF_SAVED;
         if ( rc != 0 && req.step == MNT_NOSAVED ) {
             if ( !stdin_is_console() ) {
                 say_mapfail( rc, &req );
@@ -1042,7 +1052,7 @@ static void do_use( int argc, char **argv )
             return;
         }
         pwl_reset();
-        pq.drive = (u32)drive;
+        pq.drive = (uint32_t)drive;
         pq.flags = req.flags & NUF_SMB1;
         sl_strcpy( pq.server, req.server, sizeof( pq.server ) );
         sl_strcpy( pq.share, req.share, sizeof( pq.share ) );
@@ -1056,7 +1066,7 @@ static void do_use( int argc, char **argv )
         }
     } else if ( persist < 0 && logged ) {
         pwl_reset();
-        pq.drive = (u32)drive;
+        pq.drive = (uint32_t)drive;
         if ( !call_pwl( PWL_DELMAP ) && pq.status == PWLE_OK && save_list() ) {
             sl_putc( (char)( 'A' + drive ) );
             sl_puts( ": will no longer be connected by NET LOGON.\r\n" );

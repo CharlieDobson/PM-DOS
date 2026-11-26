@@ -33,6 +33,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
 
 #define D32_HDRLEN  32              /* D32H_SIZE in PMDOS.INC */
 #define D32H_VER    4
@@ -48,25 +49,25 @@
 #define STUB_NAME   10              /* DEVH_NAME: where the mark is */
 #define DELTA       0x10000000UL    /* the second link's offset */
 
-static unsigned long get32( const unsigned char *at )
+static uint32_t get32( const uint8_t *at )
 {
-    return (unsigned long)at[0] | ( (unsigned long)at[1] << 8 ) |
-           ( (unsigned long)at[2] << 16 ) | ( (unsigned long)at[3] << 24 );
+    return (uint32_t)at[0] | ( (uint32_t)at[1] << 8 ) |
+           ( (uint32_t)at[2] << 16 ) | ( (uint32_t)at[3] << 24 );
 }
 
-static void put32( unsigned char *at, unsigned long value )
+static void put32( uint8_t *at, uint32_t value )
 {
-    at[0] = (unsigned char)value;
-    at[1] = (unsigned char)( value >> 8 );
-    at[2] = (unsigned char)( value >> 16 );
-    at[3] = (unsigned char)( value >> 24 );
+    at[0] = (uint8_t)value;
+    at[1] = (uint8_t)( value >> 8 );
+    at[2] = (uint8_t)( value >> 16 );
+    at[3] = (uint8_t)( value >> 24 );
 }
 
 /* the whole of a file, or exit 2 */
-static unsigned char *load( const char *path, long *size )
+static uint8_t *load( const char *path, long *size )
 {
     FILE          *file;
-    unsigned char *data;
+    uint8_t       *data;
 
     file = fopen( path, "rb" );
     if ( file == NULL ) {
@@ -76,7 +77,7 @@ static unsigned char *load( const char *path, long *size )
     fseek( file, 0L, SEEK_END );
     *size = ftell( file );
     fseek( file, 0L, SEEK_SET );
-    data = (unsigned char *)malloc( (size_t)*size + 4 );
+    data = (uint8_t *)malloc( (size_t)*size + 4 );
     if ( data == NULL || fread( data, 1, (size_t)*size, file ) != (size_t)*size ) {
         printf( "D32DRV: %s could not be read\n", path );
         exit( 2 );
@@ -85,7 +86,7 @@ static unsigned char *load( const char *path, long *size )
     return data;
 }
 
-static int is_driver( const unsigned char *data, long size, const char *path )
+static int is_driver( const uint8_t *data, long size, const char *path )
 {
     if ( size < D32_HDRLEN || data[0] != 'C' || data[1] != 'D' ) {
         printf( "D32DRV: %s is not a D32 image\n", path );
@@ -104,7 +105,7 @@ static int is_driver( const unsigned char *data, long size, const char *path )
 
 int main( int argc, char **argv )
 {
-    unsigned char *stub, *image0, *image1, *table;
+    uint8_t       *stub, *image0, *image1, *table;
     long           stub_size, size0, size1, at, count;
     FILE          *out;
 
@@ -135,7 +136,7 @@ int main( int argc, char **argv )
 
     /* THE SCAN.  A dword that moved by the delta is a relocation; a
      * byte that differs any other way is a file this cannot describe. */
-    table = (unsigned char *)malloc( (size_t)size0 + 4 );
+    table = (uint8_t *)malloc( (size_t)size0 + 4 );
     if ( table == NULL ) {
         printf( "D32DRV: out of memory\n" );
         return 2;
@@ -148,7 +149,7 @@ int main( int argc, char **argv )
                 printf( "D32DRV: %s has an address in its header at %ld\n", argv[3], at );
                 return 1;
             }
-            put32( table + count * 4, (unsigned long)at );
+            put32( table + count * 4, (uint32_t)at );
             count++;
             at += 4;
         } else if ( image0[at] != image1[at] ) {
@@ -165,8 +166,8 @@ int main( int argc, char **argv )
     }
 
     /* the header says where the table is: right after the image */
-    put32( image0 + D32H_RELOC, (unsigned long)size0 );
-    put32( image0 + D32H_NRELOC, (unsigned long)count );
+    put32( image0 + D32H_RELOC, (uint32_t)size0 );
+    put32( image0 + D32H_NRELOC, (uint32_t)count );
 
     out = fopen( argv[1], "wb" );
     if ( out == NULL ) {

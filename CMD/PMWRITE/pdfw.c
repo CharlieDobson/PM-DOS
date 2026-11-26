@@ -70,11 +70,11 @@ static const char *const font_names[NFONTS] = {
 #define XFONT_MOST      64
 
 typedef struct {
-    TFACE *face;
-    u16    base;                /* which of the first twelve fonts it goes with */
-    u16    count;               /* codes 1 to "count" are taken */
-    u16    uni[256];            /* the character each code is */
-    u32    obj;                 /* its object, once it is written */
+    TFACE   *face;
+    uint16_t base;              /* which of the first twelve fonts it goes with */
+    uint16_t count;             /* codes 1 to "count" are taken */
+    uint16_t uni[256];          /* the character each code is */
+    uint32_t obj;               /* its object, once it is written */
 } XFONT;
 
 /*
@@ -96,39 +96,39 @@ typedef struct {
 #define EFONT_MOST      32
 
 typedef struct {
-    TFACE *face;                /* a face that is the file: any one answers for it */
-    void  *file;                /* tf_file's: which file */
-    u32   *uni;                 /* for each glyph the text used, a character it was; 0: not used */
-    u32    glyphs;
-    u32    obj;                 /* its object, once it is written */
+    TFACE       *face;          /* a face that is the file: any one answers for it */
+    void        *file;          /* tf_file's: which file */
+    uint32_t    *uni;           /* for each glyph the text used, a character it was; 0: not used */
+    unsigned int glyphs;
+    uint32_t     obj;           /* its object, once it is written */
 } EFONT;
 
 typedef struct {
-    WDOC  *doc;
-    OUT   *out;                 /* the file */
-    OUT   *page;                /* the page being drawn: its content stream */
-    int    major, minor;
-    u32   *offset;              /* where each object is in the file */
-    u32    nobj, obj_cap;
-    u32   *kids;                /* the page objects */
-    u32    nkids, kid_cap;
-    u32   *image;               /* the object each picture was written as, or 0 */
-    u32   *used;                /* pictures on this page */
-    u32    nused, used_cap;
-    u32    color;               /* the fill colour last set on this page */
-    int    color_set;
-    u32    stroke;              /* and the colour of a pen, which a font of drawings uses */
-    int    stroke_set;
-    XFONT *xfont[XFONT_MOST];
-    u32    nxfont;
-    EFONT *efont[EFONT_MOST];
-    u32    nefont;
-    int    embed;               /* the version can hold a font from a file: 1.3 and later */
-    int    failed;              /* no memory */
+    WDOC        *doc;
+    OUT         *out;           /* the file */
+    OUT         *page;          /* the page being drawn: its content stream */
+    int          major, minor;
+    uint32_t    *offset;        /* where each object is in the file */
+    unsigned int nobj, obj_cap;
+    uint32_t    *kids;          /* the page objects */
+    unsigned int nkids, kid_cap;
+    uint32_t    *image;         /* the object each picture was written as, or 0 */
+    uint32_t    *used;          /* pictures on this page */
+    unsigned int nused, used_cap;
+    uint32_t     color;         /* the fill colour last set on this page */
+    int          color_set;
+    uint32_t     stroke;        /* and the colour of a pen, which a font of drawings uses */
+    int          stroke_set;
+    XFONT       *xfont[XFONT_MOST];
+    unsigned int nxfont;
+    EFONT       *efont[EFONT_MOST];
+    unsigned int nefont;
+    int          embed;         /* the version can hold a font from a file: 1.3 and later */
+    int          failed;        /* no memory */
     /* bookmarks: a heading's paragraph and the page object it is on */
-    u32   *mark_para, *mark_page;
-    s32   *mark_y;
-    u32    nmarks, mark_cap;
+    uint32_t    *mark_para, *mark_page;
+    int         *mark_y;
+    unsigned int nmarks, mark_cap;
 } PDFW;
 
 /* ------------------------------------------------------------------ */
@@ -136,15 +136,15 @@ typedef struct {
 /* ------------------------------------------------------------------ */
 
 /* twips as points: two decimal places are exact for a twentieth */
-static void put_tw( OUT *out, s32 twips )
+static void put_tw( OUT *out, int twips )
 {
-    u32 hundredths;
+    unsigned int hundredths;
 
     if ( twips < 0 ) {
         out_byte( out, '-' );
         twips = -twips;
     }
-    hundredths = (u32)twips * 5;
+    hundredths = (unsigned int)twips * 5;
     out_fmt( out, "%u", hundredths / 100 );
     if ( hundredths % 100 ) {
         out_fmt( out, ".%02u", hundredths % 100 );
@@ -153,9 +153,9 @@ static void put_tw( OUT *out, s32 twips )
 }
 
 /* a colour's part, 0 to 255, as 0 to 1 */
-static void put_unit( OUT *out, u32 part )
+static void put_unit( OUT *out, uint32_t part )
 {
-    u32 thousandths = (part * 1000 + 127) / 255;
+    uint32_t thousandths = (part * 1000 + 127) / 255;
 
     if ( thousandths >= 1000 ) {
         out_str( out, "1 " );
@@ -164,10 +164,10 @@ static void put_unit( OUT *out, u32 part )
     }
 }
 
-static int grow_u32( PDFW *pw, u32 **array, u32 *cap, u32 need )
+static int grow_u32( PDFW *pw, uint32_t **array, unsigned int *cap, unsigned int need )
 {
-    u32 *grown;
-    u32 want = *cap ? *cap : 32;
+    uint32_t *grown;
+    unsigned int want = *cap ? *cap : 32;
 
     if ( need <= *cap ) {
         return 1;
@@ -175,19 +175,19 @@ static int grow_u32( PDFW *pw, u32 **array, u32 *cap, u32 need )
     while ( want < need ) {
         want *= 2;
     }
-    grown = (u32 *)try_realloc( *array, want * sizeof( u32 ) );
+    grown = (uint32_t *)try_realloc( *array, want * sizeof( uint32_t ) );
     if ( grown == NULL ) {
         pw->failed = 1;
         return 0;
     }
-    mem_set( grown + *cap, 0, (want - *cap) * sizeof( u32 ) );
+    mem_set( grown + *cap, 0, (want - *cap) * sizeof( uint32_t ) );
     *array = grown;
     *cap = want;
     return 1;
 }
 
 /* an object number nobody has yet */
-static u32 obj_new( PDFW *pw )
+static uint32_t obj_new( PDFW *pw )
 {
     if ( !grow_u32( pw, &pw->offset, &pw->obj_cap, pw->nobj + 1 ) ) {
         return 0;
@@ -195,7 +195,7 @@ static u32 obj_new( PDFW *pw )
     return pw->nobj++;
 }
 
-static void obj_begin( PDFW *pw, u32 num )
+static void obj_begin( PDFW *pw, uint32_t num )
 {
     if ( num < pw->nobj ) {
         pw->offset[num] = out_tell( pw->out );
@@ -204,10 +204,10 @@ static void obj_begin( PDFW *pw, u32 num )
 }
 
 /* a stream object: compressed when the version has Flate and it helps */
-static void obj_stream( PDFW *pw, u32 num, const char *dict, const u8 *data, u32 len )
+static void obj_stream( PDFW *pw, uint32_t num, const char *dict, const uint8_t *data, uint32_t len )
 {
-    u8 *packed = NULL;
-    u32 packed_len = 0;
+    uint8_t *packed = NULL;
+    uint32_t packed_len = 0;
 
     if ( (pw->major > 1 || pw->minor >= 2) && len > 64 ) {
         packed = deflate_alloc( data, len, &packed_len, 1 );
@@ -227,8 +227,8 @@ static void obj_stream( PDFW *pw, u32 num, const char *dict, const u8 *data, u32
 /* text for the Info dictionary: ASCII as it is, anything else UTF-16 */
 static void put_info( OUT *out, const char *key, const char *utf8 )
 {
-    const u8 *cur = (const u8 *)utf8, *end = cur + str_len( utf8 );
-    u32 code;
+    const uint8_t *cur = (const uint8_t *)utf8, *end = cur + str_len( utf8 );
+    uint32_t code;
     int plain = 1;
 
     if ( *utf8 == 0 ) {
@@ -240,7 +240,7 @@ static void put_info( OUT *out, const char *key, const char *utf8 )
         }
     }
     out_fmt( out, "/%s ", key );
-    cur = (const u8 *)utf8;
+    cur = (const uint8_t *)utf8;
     if ( plain ) {
         out_byte( out, '(' );
         for ( ; cur < end; cur++ ) {
@@ -269,7 +269,7 @@ static void put_info( OUT *out, const char *key, const char *utf8 )
 /* drawing                                                             */
 /* ------------------------------------------------------------------ */
 
-static void set_color( PDFW *pw, u32 color )
+static void set_color( PDFW *pw, uint32_t color )
 {
     if ( color == COLOR_AUTO ) {
         color = 0;
@@ -286,7 +286,7 @@ static void set_color( PDFW *pw, u32 color )
 }
 
 /* a filled box: x and y are its top left corner, down the page */
-static void put_box( PDFW *pw, s32 x, s32 y, s32 width, s32 height )
+static void put_box( PDFW *pw, int x, int y, int width, int height )
 {
     put_tw( pw->page, x );
     put_tw( pw->page, pw->doc->page.height - y - height );
@@ -324,7 +324,7 @@ static void put_text_byte( OUT *out, int byte )
     }
 }
 
-static u32 upper_of( u32 code )
+static uint32_t upper_of( uint32_t code )
 {
     if ( (code >= 'a' && code <= 'z') || (code >= 0xE0 && code <= 0xFE && code != 0xF7) ) {
         return code - 0x20;
@@ -338,10 +338,10 @@ static u32 upper_of( u32 code )
  * 1 to 255 - in the low byte.  0 if there is no room or no memory, and
  * the character is then written as the standard font's nearest.
  */
-static u32 xfont_code( PDFW *pw, int base, TFACE *face, u32 code )
+static uint32_t xfont_code( PDFW *pw, int base, TFACE *face, uint32_t code )
 {
     XFONT *font;
-    u32 which, slot;
+    unsigned int which, slot;
 
     for ( which = 0; which < pw->nxfont; which++ ) {
         font = pw->xfont[which];
@@ -354,7 +354,7 @@ static u32 xfont_code( PDFW *pw, int base, TFACE *face, u32 code )
             }
         }
         if ( font->count < 255 ) {
-            font->uni[++font->count] = (u16)code;
+            font->uni[++font->count] = (uint16_t)code;
             return (which << 8) | font->count;
         }
     }
@@ -367,15 +367,15 @@ static u32 xfont_code( PDFW *pw, int base, TFACE *face, u32 code )
     }
     mem_set( font, 0, sizeof( *font ) );
     font->face = face;
-    font->base = (u16)base;
+    font->base = (uint16_t)base;
     font->count = 1;
-    font->uni[1] = (u16)code;
+    font->uni[1] = (uint16_t)code;
     pw->xfont[pw->nxfont] = font;
     return (pw->nxfont++ << 8) | 1;
 }
 
 /* the pen's colour, for what is stroked: a drawing, a bold that is made */
-static void set_stroke( PDFW *pw, u32 color )
+static void set_stroke( PDFW *pw, uint32_t color )
 {
     if ( color == COLOR_AUTO ) {
         color = 0;
@@ -402,7 +402,7 @@ static int efont_index( PDFW *pw, TFACE *face )
     TFINFO info;
     EFONT *font;
     void *file;
-    u32 which;
+    unsigned int which;
 
     if ( !pw->embed || !tf_embed( face ) ) {
         return -1;
@@ -421,12 +421,12 @@ static int efont_index( PDFW *pw, TFACE *face )
     if ( font == NULL ) {
         return -1;
     }
-    font->uni = (u32 *)try_alloc( info.glyphs * sizeof( u32 ) );
+    font->uni = (uint32_t *)try_alloc( info.glyphs * sizeof( uint32_t ) );
     if ( font->uni == NULL ) {
         xfree( font );
         return -1;
     }
-    mem_set( font->uni, 0, info.glyphs * sizeof( u32 ) );
+    mem_set( font->uni, 0, info.glyphs * sizeof( uint32_t ) );
     font->face = face;
     font->file = file;
     font->glyphs = info.glyphs;
@@ -436,13 +436,15 @@ static int efont_index( PDFW *pw, TFACE *face )
 }
 
 /* text at a place: x, and the baseline's y down the page */
-static void put_text( PDFW *pw, const CHP *chp, s32 size, s32 x, s32 base_y, const u16 *text, u32 count,
+static void put_text( PDFW *pw, const CHP *chp, int size, int x, int base_y, const uint16_t *text, unsigned int count,
                       int upper )
 {
     TFACE *face, *builtin;
     char near_buf[8];
-    u32 pos = 0, code, drawn, glyph, part = 0;
-    s32 pen = 0;
+    unsigned int pos = 0;
+    uint32_t code, drawn, glyph;
+    unsigned int part = 0;
+    int pen = 0;
     int font = font_index( pw, chp, &face ), len, index, now = -1, want, efont, made = 0;
     int lean = 0, leaning = 0, heavy = 0, heavier = 0;
 
@@ -512,13 +514,13 @@ static void put_text( PDFW *pw, const CHP *chp, s32 size, s32 x, s32 base_y, con
                 heavier = heavy;
             }
             if ( glyph ) {
-                out_fmt( pw->page, "/T%u ", (u32)efont );
+                out_fmt( pw->page, "/T%u ", (uint32_t)efont );
             } else if ( drawn ) {
                 /* a drawing is stroked: the pen has the text's colour */
                 set_stroke( pw, chp->color );
                 out_fmt( pw->page, "/X%u ", drawn >> 8 );
             } else {
-                out_fmt( pw->page, "/F%u ", (u32)font );
+                out_fmt( pw->page, "/F%u ", (uint32_t)font );
             }
             put_tw( pw->page, size );
             out_str( pw->page, glyph ? "Tf <" : "Tf (" );
@@ -527,8 +529,8 @@ static void put_text( PDFW *pw, const CHP *chp, s32 size, s32 x, s32 base_y, con
         if ( efont >= 0 ) {
             /* where the pen is, in twips, for a text matrix that has to
                be set again: the widths the lines were laid out with */
-            part += tf_advance( face, code ) * (u32)size;
-            pen += (s32)(part / 1000);
+            part += tf_advance( face, code ) * (unsigned int)size;
+            pen += (int)(part / 1000);
             part %= 1000;
         }
         if ( glyph ) {
@@ -571,9 +573,12 @@ static void write_efonts( PDFW *pw )
     TFINFO info;
     OUT *map;
     char dict[40], name[80];
-    u8 *keep, *data;
-    u32 which, gid, len, crc, used, left, code;
-    u32 file_obj, desc_obj, cid_obj, map_obj, self;
+    uint8_t *keep, *data;
+    unsigned int which;
+    uint32_t gid, len, crc;
+    unsigned int used, left;
+    uint32_t code;
+    uint32_t file_obj, desc_obj, cid_obj, map_obj, self;
     int open, index;
 
     for ( which = 0; which < pw->nefont && !pw->failed; which++ ) {
@@ -583,7 +588,7 @@ static void write_efonts( PDFW *pw )
         cid_obj = obj_new( pw );
         map_obj = obj_new( pw );
         self = obj_new( pw );
-        keep = (u8 *)try_alloc( font->glyphs );
+        keep = (uint8_t *)try_alloc( font->glyphs );
         if ( keep == NULL || self == 0 || pw->failed || !tf_file_info( font->face, &info ) ) {
             xfree( keep );
             pw->failed = 1;
@@ -591,7 +596,7 @@ static void write_efonts( PDFW *pw )
         }
         used = 0;
         for ( gid = 0; gid < font->glyphs; gid++ ) {
-            keep[gid] = (u8)(font->uni[gid] != 0);
+            keep[gid] = (uint8_t)(font->uni[gid] != 0);
             used += keep[gid];
         }
         data = tf_subset( font->face, keep, font->glyphs, &len );
@@ -607,7 +612,7 @@ static void write_efonts( PDFW *pw )
         xfree( data );
 
         /* a subset's name starts with six letters of its own */
-        crc = crc32_update( which, (const u8 *)font->uni, font->glyphs * sizeof( u32 ) );
+        crc = crc32_update( which, (const uint8_t *)font->uni, font->glyphs * sizeof( uint32_t ) );
         for ( index = 0; index < 6; index++ ) {
             name[index] = (char)('A' + crc % 26);
             crc /= 26;
@@ -618,7 +623,7 @@ static void write_efonts( PDFW *pw )
         obj_begin( pw, desc_obj );
         out_fmt( pw->out, "<< /Type /FontDescriptor /FontName /%s /Flags %u /FontBBox [%d %d %d %d] "
                  "/ItalicAngle %d\n/Ascent %d /Descent %d /CapHeight %d /StemV 80 /FontFile2 %u 0 R >>\nendobj\n",
-                 name, (u32)((info.fixed ? 1 : 0) | (info.serif ? 2 : 0) | (info.symbol ? 4 : 32) |
+                 name, (uint32_t)((info.fixed ? 1 : 0) | (info.serif ? 2 : 0) | (info.symbol ? 4 : 32) |
                  (info.angle ? 64 : 0)), info.box[0], info.box[1], info.box[2], info.box[3], info.angle,
                  info.ascent, -info.descent, info.cap, file_obj );
 
@@ -695,7 +700,7 @@ static void write_efonts( PDFW *pw )
 }
 
 /* a point of a drawing's path, for tf_path */
-static void xfont_point( void *ctx, int move, s32 x, s32 y )
+static void xfont_point( void *ctx, int move, int x, int y )
 {
     out_fmt( (OUT *)ctx, "%d %d %c\n", x, y, move ? 'm' : 'l' );
 }
@@ -707,9 +712,10 @@ static void write_xfonts( PDFW *pw )
     XFONT *font;
     OUT *proc;
     char head[48];
-    u8 *data;
-    u32 which, slot, len, first, map, self;
-    s32 pen;
+    uint8_t *data;
+    unsigned int which, slot;
+    uint32_t len, first, map, self;
+    int pen;
 
     for ( which = 0; which < pw->nxfont; which++ ) {
         font = pw->xfont[which];
@@ -762,7 +768,7 @@ static void write_xfonts( PDFW *pw )
                         out_fmt( proc, "%s%u beginbfchar\n", slot > 1 ? "endbfchar\n" : "",
                                  font->count - slot + 1 > 100 ? 100 : font->count - slot + 1 );
                     }
-                    out_fmt( proc, "<%02X> <%04X>\n", slot, (u32)font->uni[slot] );
+                    out_fmt( proc, "<%02X> <%04X>\n", slot, (uint32_t)font->uni[slot] );
                 }
                 out_str( proc, "endbfchar\nendcmap CMapName currentdict /CMap defineresource pop end end\n" );
                 data = out_data( proc, &len );
@@ -776,7 +782,7 @@ static void write_xfonts( PDFW *pw )
         obj_begin( pw, self );
         out_fmt( pw->out, "<< /Type /Font /Subtype /Type3 /Name /X%u /FontBBox [-400 -400 2000 1200] "
                  "/FontMatrix [0.001 0 0 0.001 0 0]\n/FirstChar 1 /LastChar %u /Widths [", which,
-                 (u32)font->count );
+                 (uint32_t)font->count );
         for ( slot = 1; slot <= font->count; slot++ ) {
             out_fmt( pw->out, "%u%s", tf_advance( font->face, font->uni[slot] ), (slot & 15) == 0 ? "\n" : " " );
         }
@@ -798,9 +804,9 @@ static void write_xfonts( PDFW *pw )
 }
 
 /* a JPEG file's size and colours: 0 if it is not one this can use */
-static int jpeg_info( const u8 *data, u32 len, u32 *width, u32 *height, u32 *comps )
+static int jpeg_info( const uint8_t *data, uint32_t len, uint32_t *width, uint32_t *height, uint32_t *comps )
 {
-    u32 pos = 2, seg;
+    uint32_t pos = 2, seg;
 
     if ( len < 4 || data[0] != 0xFF || data[1] != 0xD8 ) {
         return 0;
@@ -835,12 +841,13 @@ static int jpeg_info( const u8 *data, u32 len, u32 *width, u32 *height, u32 *com
 /* a picture's object, written the first time the picture is met: a JPEG
    file goes in as it is, anything else IMG.C can decode as its pixels.
    0 if it is a kind that cannot be had either way. */
-static u32 image_object( PDFW *pw, int which )
+static uint32_t image_object( PDFW *pw, int which )
 {
     const WOBJ *obj = &pw->doc->obj[which];
     char dict[120];
-    u8 *pixels, hold;
-    u32 pix_w, pix_h, comps, num, index;
+    uint8_t *pixels, hold;
+    uint32_t pix_w, pix_h, comps, num;
+    unsigned int index;
 
     if ( pw->image[which] != 0 ) {
         return pw->image[which];
@@ -882,11 +889,11 @@ static u32 image_object( PDFW *pw, int which )
 }
 
 /* a picture on the page: x and top are its top left corner */
-static void put_image( PDFW *pw, int which, s32 x, s32 top, s32 width, s32 height )
+static void put_image( PDFW *pw, int which, int x, int top, int width, int height )
 {
     if ( image_object( pw, which ) != 0 ) {
         if ( grow_u32( pw, &pw->used, &pw->used_cap, pw->nused + 1 ) ) {
-            pw->used[pw->nused++] = (u32)which;
+            pw->used[pw->nused++] = (uint32_t)which;
         }
         out_str( pw->page, "q " );
         put_tw( pw->page, width );
@@ -894,7 +901,7 @@ static void put_image( PDFW *pw, int which, s32 x, s32 top, s32 width, s32 heigh
         put_tw( pw->page, height );
         put_tw( pw->page, x );
         put_tw( pw->page, pw->doc->page.height - top - height );
-        out_fmt( pw->page, "cm /Im%u Do Q\n", (u32)which );
+        out_fmt( pw->page, "cm /Im%u Do Q\n", (uint32_t)which );
         return;
     }
     /* a frame where a picture that cannot be had is */
@@ -906,11 +913,11 @@ static void put_image( PDFW *pw, int which, s32 x, s32 top, s32 width, s32 heigh
     pw->doc->lost |= LOST_IMAGES;
 }
 typedef struct {
-    PDFW *pw;
-    LAY  *lay;
-    s32   left;                 /* the text area's left edge on the page */
-    s32   base;                 /* the line's baseline, down the page */
-    s32   line_top;
+    PDFW   *pw;
+    LAY    *lay;
+    int     left;               /* the text area's left edge on the page */
+    int     base;               /* the line's baseline, down the page */
+    int     line_top;
 } LINECTX;
 
 static void line_seg( void *ctx, const LSEG *seg )
@@ -919,9 +926,9 @@ static void line_seg( void *ctx, const LSEG *seg )
     PDFW *pw = lc->pw;
     const CHP *chp = wd_chp_get( pw->doc, seg->chp );
     TFACE *face;
-    u16 dots[64];
-    s32 x = lc->left + seg->x, base = lc->base - seg->rise, dot, thick;
-    u32 count, index;
+    uint16_t dots[64];
+    int x = lc->left + seg->x, base = lc->base - seg->rise, dot, thick;
+    unsigned int count, index;
 
     switch ( seg->kind ) {
     case SEG_TEXT:
@@ -931,23 +938,23 @@ static void line_seg( void *ctx, const LSEG *seg )
     case SEG_TAB:
         if ( seg->lead == LEAD_DOTS || seg->lead == LEAD_DASHES ) {
             font_index( pw, chp, &face );
-            dot = (s32)(tf_advance( face, seg->lead == LEAD_DOTS ? '.' : '-' ) * (u32)seg->size / 1000);
-            count = dot > 0 ? (u32)(seg->width / dot) : 0;
+            dot = (int)(tf_advance( face, seg->lead == LEAD_DOTS ? '.' : '-' ) * (unsigned int)seg->size / 1000);
+            count = dot > 0 ? (unsigned int)(seg->width / dot) : 0;
             if ( count > 64 ) {
                 count = 64;
             }
             for ( index = 0; index < count; index++ ) {
-                dots[index] = (u16)(seg->lead == LEAD_DOTS ? '.' : '-');
+                dots[index] = (uint16_t)(seg->lead == LEAD_DOTS ? '.' : '-');
             }
             /* set against the right, so the rows of dots of a list line up */
-            put_text( pw, chp, seg->size, x + seg->width - (s32)count * dot, base, dots, count, 0 );
+            put_text( pw, chp, seg->size, x + seg->width - (int)count * dot, base, dots, count, 0 );
         } else if ( seg->lead == LEAD_LINE ) {
             set_color( pw, chp->color );
             put_box( pw, x, base + seg->size / 10, seg->width, seg->size / 20 > 10 ? seg->size / 20 : 10 );
         }
         break;
     case SEG_OBJECT:
-        if ( seg->obj >= 0 && (u32)seg->obj < pw->doc->nobj ) {
+        if ( seg->obj >= 0 && (unsigned int)seg->obj < pw->doc->nobj ) {
             put_image( pw, seg->obj, x, lc->base - seg->height, seg->width, seg->height );
         }
         return;
@@ -968,7 +975,7 @@ static void line_seg( void *ctx, const LSEG *seg )
 }
 
 /* one line of a story, the story's "story_top" at "page_top" down the page */
-static void draw_line( PDFW *pw, LAY *lay, u32 para, u32 line, s32 left, s32 shift )
+static void draw_line( PDFW *pw, LAY *lay, unsigned int para, unsigned int line, int left, int shift )
 {
     LINECTX lc;
     LINFO info;
@@ -985,9 +992,9 @@ static void draw_line( PDFW *pw, LAY *lay, u32 para, u32 line, s32 left, s32 shi
 }
 
 /* the lines round a table row's cells, once for the row */
-static void draw_rules( PDFW *pw, LAY *lay, u32 para, s32 left, s32 shift, s32 *last_top )
+static void draw_rules( PDFW *pw, LAY *lay, unsigned int para, int left, int shift, int *last_top )
 {
-    s32 edges[MAX_CELLS + 1], top, height;
+    int edges[MAX_CELLS + 1], top, height;
     int count, index;
 
     if ( !lay_row_rules( lay, para, &top, &height, edges, &count ) || top == *last_top ) {
@@ -1003,12 +1010,12 @@ static void draw_rules( PDFW *pw, LAY *lay, u32 para, s32 left, s32 shift, s32 *
 }
 
 /* the lines a paragraph has above, below and beside it */
-static void draw_borders( PDFW *pw, LAY *lay, const WPARA *para, u32 index, s32 left, s32 shift )
+static void draw_borders( PDFW *pw, LAY *lay, const WPARA *para, unsigned int index, int left, int shift )
 {
     const PAP *pap = &para->pap;
     LINFO first, last;
-    s32 col_x, col_w, x0, x1, top, bottom;
-    u32 lines = lay_lines( lay, index );
+    int col_x, col_w, x0, x1, top, bottom;
+    unsigned int lines = lay_lines( lay, index );
 
     if ( !(pap->flags & (PF_BORDER_TOP | PF_BORDER_BOT | PF_BORDER_LEFT | PF_BORDER_RIGHT)) || lines == 0 ||
          !lay_line( lay, index, 0, &first ) || !lay_line( lay, index, lines - 1, &last ) ) {
@@ -1038,11 +1045,11 @@ static void draw_borders( PDFW *pw, LAY *lay, const WPARA *para, u32 index, s32 
 }
 
 /* a whole story - a header, a footer - with its top at "top" */
-static void draw_story( PDFW *pw, STORY *story, s32 top, int from_bottom, u32 page_no, u32 pages )
+static void draw_story( PDFW *pw, STORY *story, int top, int from_bottom, unsigned int page_no, unsigned int pages )
 {
     LAY *lay;
-    u32 para, line, lines;
-    s32 last_top = -1;
+    unsigned int para, line, lines;
+    int last_top = -1;
 
     if ( story->count == 0 ) {
         return;
@@ -1083,8 +1090,9 @@ static void page_begin( PDFW *pw )
 
 static void page_end( PDFW *pw )
 {
-    u8 *data;
-    u32 len, content, page, index, which;
+    uint8_t *data;
+    uint32_t len, content, page;
+    unsigned int index, which;
 
     content = obj_new( pw );
     page = obj_new( pw );
@@ -1104,7 +1112,7 @@ static void page_end( PDFW *pw )
     pw->page = NULL;
     obj_begin( pw, page );
     out_fmt( pw->out, "<< /Type /Page /Parent %u 0 R /Contents %u 0 R /Resources << /ProcSet [/PDF /Text "
-             "/ImageB /ImageC] /Font %u 0 R", (u32)OBJ_PAGES, content, (u32)OBJ_FONTS );
+             "/ImageB /ImageC] /Font %u 0 R", (uint32_t)OBJ_PAGES, content, (uint32_t)OBJ_FONTS );
     if ( pw->nused ) {
         out_str( pw->out, " /XObject <<" );
         for ( index = 0; index < pw->nused; index++ ) {
@@ -1129,15 +1137,15 @@ static void page_end( PDFW *pw )
 /* the file                                                            */
 /* ------------------------------------------------------------------ */
 
-static void mark_add( PDFW *pw, u32 para, s32 y )
+static void mark_add( PDFW *pw, unsigned int para, int y )
 {
     if ( !grow_u32( pw, &pw->mark_para, &pw->mark_cap, pw->nmarks + 1 ) ) {
         return;
     }
     /* the three grow together: the first sets the size of all */
-    if ( pw->nmarks == 0 || mem_size( pw->mark_page ) < pw->mark_cap * sizeof( u32 ) ) {
-        u32 *pages = (u32 *)try_realloc( pw->mark_page, pw->mark_cap * sizeof( u32 ) );
-        s32 *tops = (s32 *)try_realloc( pw->mark_y, pw->mark_cap * sizeof( s32 ) );
+    if ( pw->nmarks == 0 || mem_size( pw->mark_page ) < pw->mark_cap * sizeof( uint32_t ) ) {
+        uint32_t *pages = (uint32_t *)try_realloc( pw->mark_page, pw->mark_cap * sizeof( uint32_t ) );
+        int *tops = (int *)try_realloc( pw->mark_y, pw->mark_cap * sizeof( int ) );
 
         if ( pages != NULL ) {
             pw->mark_page = pages;
@@ -1163,8 +1171,8 @@ static void write_body( PDFW *pw )
     const LPAGE *start, *next;
     WPARA *para;
     LINFO info;
-    u32 pages, index, pi, li, lines, first_line, kind;
-    s32 shift, last_top;
+    unsigned int pages, index, pi, li, lines, first_line, kind;
+    int shift, last_top;
 
     lay = lay_new( doc, &doc->body, 0 );
     if ( lay == NULL || !lay_update( lay ) ) {
@@ -1227,10 +1235,10 @@ static void write_notes( PDFW *pw )
     LAY *lay;
     LINFO info;
     CHP chp = doc->style[0].chp;
-    u16 digits[12];
+    uint16_t digits[12];
     char text[12];
-    u32 pi, index, number = 0, line, lines, count, note_para;
-    s32 y = 0, room = doc->page.height - doc->page.top - doc->page.bottom, top;
+    unsigned int pi, index, number = 0, line, lines, count, note_para;
+    int y = 0, room = doc->page.height - doc->page.top - doc->page.bottom, top;
     int open = 0;
 
     for ( pi = 0; pi < doc->body.count && !pw->failed; pi++ ) {
@@ -1253,7 +1261,7 @@ static void write_notes( PDFW *pw )
             lay_update( lay );
             fmt_dec( number, 0, text );
             for ( count = 0; text[count]; count++ ) {
-                digits[count] = (u16)text[count];
+                digits[count] = (uint16_t)text[count];
             }
             digits[count++] = '.';
             for ( note_para = 0; note_para < story->count; note_para++ ) {
@@ -1298,8 +1306,8 @@ static void put_date( OUT *out, const char *key )
     DATETIME now;
 
     sys_now( &now );
-    out_fmt( out, "/%s (D:%04u%02u%02u%02u%02u%02u)\n", key, (u32)now.year, (u32)now.month, (u32)now.day,
-             (u32)now.hour, (u32)now.minute, (u32)now.second );
+    out_fmt( out, "/%s (D:%04u%02u%02u%02u%02u%02u)\n", key, (uint32_t)now.year, (uint32_t)now.month, (uint32_t)now.day,
+             (uint32_t)now.hour, (uint32_t)now.minute, (uint32_t)now.second );
 }
 
 /* text for XML: the three characters it cannot hold as themselves */
@@ -1324,8 +1332,9 @@ static void write_tail( PDFW *pw )
     OUT *out = pw->out, *xmp;
     WPARA *para;
     char title[INFO_LEN];
-    u8 *data;
-    u32 index, xref, len, meta = 0, outline = 0, first_mark = 0, crc;
+    uint8_t *data;
+    unsigned int index;
+    uint32_t xref, len, meta = 0, outline = 0, first_mark = 0, crc;
     int with_info = pw->major < 2;
 
     /* the fonts */
@@ -1445,7 +1454,7 @@ static void write_tail( PDFW *pw )
     out_str( out, "] >>\nendobj\n" );
 
     obj_begin( pw, OBJ_CATALOG );
-    out_fmt( out, "<< /Type /Catalog /Pages %u 0 R", (u32)OBJ_PAGES );
+    out_fmt( out, "<< /Type /Catalog /Pages %u 0 R", (uint32_t)OBJ_PAGES );
     if ( outline ) {
         out_fmt( out, " /Outlines %u 0 R /PageMode /UseOutlines", outline );
     }
@@ -1474,17 +1483,17 @@ static void write_tail( PDFW *pw )
         out_fmt( out, "%010u 00000 n \n", pw->offset[index] );
     }
     /* an ID that is this file's: from where its objects fell, and its size */
-    crc = crc32_update( 0, (const u8 *)pw->offset, pw->nobj * sizeof( u32 ) );
+    crc = crc32_update( 0, (const uint8_t *)pw->offset, pw->nobj * sizeof( uint32_t ) );
     out_fmt( out, "trailer\n<< /Size %u /Root %u 0 R /Info %u 0 R /ID [<%08X%08X%08X%08X> <%08X%08X%08X%08X>] >>\n"
-             "startxref\n%u\n%%%%EOF\n", pw->nobj, (u32)OBJ_CATALOG, (u32)OBJ_INFO, crc, xref, pw->nobj,
+             "startxref\n%u\n%%%%EOF\n", pw->nobj, (uint32_t)OBJ_CATALOG, (uint32_t)OBJ_INFO, crc, xref, pw->nobj,
              crc ^ 0x504D5752UL, crc, xref, pw->nobj, crc ^ 0x504D5752UL, xref );
 }
 
 int pdfw_save( WDOC *doc, OUT *out, int variant )
 {
-    static const u8 minors[] = { 0, 1, 2, 3, 4, 5, 6, 7, 0 };
+    static const uint8_t minors[] = { 0, 1, 2, 3, 4, 5, 6, 7, 0 };
     PDFW pw;
-    u32 index;
+    unsigned int index;
     int rc;
 
     if ( variant < 0 || variant > 8 ) {
@@ -1500,15 +1509,15 @@ int pdfw_save( WDOC *doc, OUT *out, int variant )
     for ( index = 0; index < OBJ_FIRST_FREE; index++ ) {
         obj_new( &pw );
     }
-    pw.image = (u32 *)try_alloc( (doc->nobj + 1) * sizeof( u32 ) );
+    pw.image = (uint32_t *)try_alloc( (doc->nobj + 1) * sizeof( uint32_t ) );
     if ( pw.image == NULL ) {
         pw.failed = 1;
     } else {
-        mem_set( pw.image, 0, (doc->nobj + 1) * sizeof( u32 ) );
+        mem_set( pw.image, 0, (doc->nobj + 1) * sizeof( uint32_t ) );
     }
     /* the second line's four bytes above 7Fh tell a mail program that
        the file is not text */
-    out_fmt( out, "%%PDF-%u.%u\n%%\xE2\xE3\xCF\xD3\n", (u32)pw.major, (u32)pw.minor );
+    out_fmt( out, "%%PDF-%u.%u\n%%\xE2\xE3\xCF\xD3\n", (uint32_t)pw.major, (uint32_t)pw.minor );
     if ( !pw.failed ) {
         write_body( &pw );
     }

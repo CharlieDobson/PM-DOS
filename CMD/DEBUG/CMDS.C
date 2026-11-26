@@ -14,7 +14,7 @@
 /* D - dump                                                            */
 /* ------------------------------------------------------------------ */
 
-static void dump_line( ADDR addr, const u8 *buf, const u8 *ok, int first, int count )
+static void dump_line( ADDR addr, const uint8_t *buf, const uint8_t *ok, int first, int count )
 {
     int i;
     int ascii_col = out_col();          /* set below from the address width */
@@ -50,12 +50,12 @@ static void dump_line( ADDR addr, const u8 *buf, const u8 *ok, int first, int co
 
 void cmd_dump( void )
 {
-    ADDR addr = next_dump;
-    ADDR next;
-    u32  len = 128;
-    u32  done = 0;
-    u8   buf[16], ok[16];
-    int  first;
+    ADDR     addr = next_dump;
+    ADDR     next;
+    uint32_t len = 128;
+    uint32_t done = 0;
+    uint8_t  buf[16], ok[16];
+    int      first;
 
     get_range( &addr, &len, cpu.ds, 128, 0 );
     need_end();
@@ -66,7 +66,7 @@ void cmd_dump( void )
     addr.off &= ~0x0FUL;
     while ( done < len ) {
         int count = 16 - first;
-        if ( (u32)count > len - done ) {
+        if ( (uint32_t)count > len - done ) {
             count = (int)( len - done );
         }
         mem_get( addr, buf, 16, ok );
@@ -106,10 +106,10 @@ static void enter_prompt( ADDR addr )
     int newrow = 1;
 
     for ( ;; ) {
-        u8  cur[1], ok[1];
-        u32 val = 0;
-        int typed = 0;
-        int ch;
+        uint8_t  cur[1], ok[1];
+        uint32_t val = 0;
+        int      typed = 0;
+        int      ch;
 
         if ( newrow ) {
             out_addr( addr );
@@ -141,7 +141,7 @@ static void enter_prompt( ADDR addr )
                 }
             } else if ( typed < 2 && hex_of( ch ) >= 0 ) {
                 out_ch( ch );
-                val = val * 16 + (u32)hex_of( ch );
+                val = val * 16 + (uint32_t)hex_of( ch );
                 typed++;
             } else {
                 out_ch( ch );
@@ -149,7 +149,7 @@ static void enter_prompt( ADDR addr )
             }
         }
         if ( typed ) {
-            u8 b = (u8)val;
+            uint8_t b = (uint8_t)val;
             if ( mem_write( addr, &b, 1 ) ) {
                 out_nl();
                 coded_error( "df" );
@@ -181,9 +181,9 @@ static void enter_prompt( ADDR addr )
 
 void cmd_enter( void )
 {
-    ADDR addr;
-    u8   list[256];
-    u32  count;
+    ADDR     addr;
+    uint8_t  list[256];
+    uint32_t count;
 
     addr.seg = cpu.ds;
     get_addr( &addr, cpu.ds );
@@ -209,17 +209,17 @@ void cmd_enter( void )
 
 void cmd_fill( void )
 {
-    ADDR addr;
-    u32  len;
-    u8   list[256];
-    u32  count, i;
+    ADDR     addr;
+    uint32_t len;
+    uint8_t  list[256];
+    uint32_t count, i;
 
     addr.seg = cpu.ds;
     get_range( &addr, &len, cpu.ds, 0, 1 );
     count = get_list( list, sizeof( list ) );
     need_end();
     for ( i = 0; i < len; i++ ) {
-        u8 b = list[i % count];
+        uint8_t b = list[i % count];
         if ( mem_write( addr, &b, 1 ) ) {
             coded_error( "df" );
         }
@@ -233,9 +233,9 @@ void cmd_fill( void )
 
 void cmd_compare( void )
 {
-    ADDR a, b;
-    u32  len, i;
-    u8   ba[1], bb[1], oka[1], okb[1];
+    ADDR     a, b;
+    uint32_t len, i;
+    uint8_t  ba[1], bb[1], oka[1], okb[1];
 
     a.seg = cpu.ds;
     get_range( &a, &len, cpu.ds, 0, 1 );
@@ -270,9 +270,9 @@ void cmd_compare( void )
 
 void cmd_move( void )
 {
-    ADDR a, b;
-    u32  len;
-    u8  *tmp;
+    ADDR     a, b;
+    uint32_t len;
+    uint8_t *tmp;
 
     a.seg = cpu.ds;
     get_range( &a, &len, cpu.ds, 0, 1 );
@@ -283,7 +283,7 @@ void cmd_move( void )
         syntax_error();
     }
     /* through a buffer, so that overlapping moves copy as DOS's did */
-    tmp = (u8 *)scratch_get( len );
+    tmp = (uint8_t *)scratch_get( len );
     if ( tmp == NULL ) {
         out_err( msg_nomem );
         cmd_abort();
@@ -302,11 +302,11 @@ void cmd_move( void )
 
 void cmd_search( void )
 {
-    ADDR addr, at;
-    u32  len, i, j;
-    u8   pat[256];
-    u32  plen;
-    u8   win[256], ok[256];
+    ADDR     addr, at;
+    uint32_t len, i, j;
+    uint8_t  pat[256];
+    uint32_t plen;
+    uint8_t  win[256], ok[256];
 
     addr.seg = cpu.ds;
     get_range( &addr, &len, cpu.ds, 0, 1 );
@@ -338,7 +338,7 @@ void cmd_search( void )
 
 void cmd_hex( void )
 {
-    u32 a, b;
+    uint32_t a, b;
     int digits = off_digits();
 
     a = get_hex( digits );
@@ -362,17 +362,17 @@ void cmd_hex( void )
 
 void cmd_input( void )
 {
-    u32 port;
+    uint32_t port;
 
     port = get_hex( 4 );
     need_end();
-    out_hex( (u8)port_in( port ), 2 );
+    out_hex( (uint8_t)port_in( port ), 2 );
     out_nl();
 }
 
 void cmd_output( void )
 {
-    u32 port, val;
+    uint32_t port, val;
 
     port = get_hex( 4 );
     val = get_hex( 2 );

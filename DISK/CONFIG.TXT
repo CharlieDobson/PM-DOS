@@ -304,6 +304,12 @@ NULLTRAP=ON|OFF
     Turn NULLTRAP off for a program that writes to low memory on
     purpose.
 
+VME=ON|OFF
+    Lets a Pentium or later processor handle a DOS program's CLI, STI,
+    PUSHF, POPF and IRET itself, which makes DOS programs faster.  ON
+    by default, and used only if a check at startup passes.  Turn VME
+    off to see whether a problem with a DOS program comes from VME.
+
 KEYRATE=rate[,delay]
     Keyboard repeat, using MODE CON's numbers.  Rate is 1 to 32, and
     higher is faster (32 is about 30 keys a second).  Delay is 1 to 4
@@ -340,8 +346,8 @@ IDE32=OFF|AUTO|ON
 AHCI=ON|OFF
     SATA disks and CD-ROM drives, when the BIOS setup has the SATA
     ports in AHCI mode.  ON by default: PM-DOS drives them itself once
-    CONFIG.SYS has been read.  Only the BIOS's first two hard disks are
-    taken, and each keeps the drive number the BIOS gave it.  OFF
+    CONFIG.SYS has been read.  Up to eight hard disks are taken, and
+    each keeps the drive number the BIOS gave it.  OFF
     leaves the disks to the BIOS, which works but is slower, and the
     CD-ROM drives without a letter.  Safe mode (Shift or F5 at start)
     is OFF whatever the line says.

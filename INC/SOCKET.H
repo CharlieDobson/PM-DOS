@@ -9,8 +9,8 @@
  * AX is an error (NDRV.H's ERR_*).  TOOLS\SOCKLIB wraps all of this.
  *
  * Every socket is a handle, a small number from 1 up; 0 is never one.
- * AN ADDRESS IS A u32, most significant octet first: 10.0.2.2 is
- * 0x0A000202L.  A PORT IS A u16 in the natural order: 80 is 80.  The
+ * AN ADDRESS IS A uint32_t, most significant octet first: 10.0.2.2 is
+ * 0x0A000202L.  A PORT IS A uint16_t in the natural order: 80 is 80.  The
  * stack puts both on the wire big-endian itself.
  *
  * NOTHING BLOCKS.  The stack runs on the clock and whenever a socket
@@ -19,7 +19,7 @@
  * to reach SS_ESTABLISHED.  A receive gives what has arrived, or none.
  * SOCKLIB is where the waiting and the timeouts live.
  *
- * Needs INC\NDRV.H before it, for u8/u16/u32 and REGS.
+ * Needs INC\NDRV.H before it, for uint8_t/uint16_t/uint32_t and REGS.
  */
 #ifndef SOCKET_H
 #define SOCKET_H
@@ -48,9 +48,13 @@
                                  For the WfW bridge to indicate to its protocol */
 #define SOCK_NICSTATS  15     /* buf <- the card's NIC_STATBLOCK (INC\NIC.H);
                                  answer = NICS_LEN.  A window on tx/rx counts */
-#define SOCK_DHCP      16     /* buf -> a u32, DHCPOP_*; answer = 0.  ERR_BADDATA
+#define SOCK_DHCP      16     /* buf -> a uint32_t, DHCPOP_*; answer = 0.  ERR_BADDATA
                                  for RELEASE or RENEW when the address is
                                  static (TCPIP.SYS /IP=) */
+#define SOCK_BIND      17     /* buf -> SOCK_BINDREQ; UDP: the port this socket's
+                                 datagrams arrive on and leave from; answer =
+                                 the port.  ERR_FUNC from a TCPIP.SYS older
+                                 than 2026-11-20 */
 
 /* SOCK_DHCP's one word: what to do with the lease */
 #define DHCPOP_RELEASE 1      /* give the address back and stay without one */
@@ -113,30 +117,30 @@
    fits and answers how many.  A stack older than the form a caller asked
    for answers a shorter one */
 typedef struct {
-    u32  ip;
-    u32  mask;
-    u32  gw;
-    u32  dns;
-    u32  leasesecs;           /* the DHCP lease, in seconds; FFFFFFFF = no end */
-    u8   mac[6];
-    u8   up;                  /* 1: an address is held */
-    u8   dhcp;                /* DHS_* */
-    char nic[32];             /* the card driver's name */
-    u32  dhcpsrv;             /* the DHCP server that gave the lease */
-    u32  leaseage;            /* seconds since the lease was given or renewed */
-    u16  dhstate;             /* DHST_*: where DHCP is now */
-    u16  acks;                /* ACKs taken since TCPIP.SYS loaded (wraps):
+    uint32_t ip;
+    uint32_t mask;
+    uint32_t gw;
+    uint32_t dns;
+    uint32_t leasesecs;       /* the DHCP lease, in seconds; FFFFFFFF = no end */
+    uint8_t  mac[6];
+    uint8_t  up;              /* 1: an address is held */
+    uint8_t  dhcp;            /* DHS_* */
+    char     nic[32];         /* the card driver's name */
+    uint32_t dhcpsrv;         /* the DHCP server that gave the lease */
+    uint32_t leaseage;        /* seconds since the lease was given or renewed */
+    uint16_t dhstate;         /* DHST_*: where DHCP is now */
+    uint16_t acks;            /* ACKs taken since TCPIP.SYS loaded (wraps):
                                  a change means a lease was given or renewed */
-    u32  wins;                /* the WINS server (NetBIOS names), 0 if none */
-    char nbname[16];          /* this computer's NetBIOS name (/NAME=), "" if none */
+    uint32_t wins;            /* the WINS server (NetBIOS names), 0 if none */
+    char     nbname[16];      /* this computer's NetBIOS name (/NAME=), "" if none */
     /* SOCKIF_LEN3 on */
-    char hostname[64];        /* this computer's DNS host name, lower case */
-    char domain[64];          /* its DNS domain, "" if none: TCPIP.INI's or DHCP's */
-    u32  dns2, dns3;          /* more DNS servers, asked when the first is not */
-    u32  cabytes;             /* the trust bundle TLS checks against; 0: none,
+    char     hostname[64];    /* this computer's DNS host name, lower case */
+    char     domain[64];      /* its DNS domain, "" if none: TCPIP.INI's or DHCP's */
+    uint32_t dns2, dns3;      /* more DNS servers, asked when the first is not */
+    uint32_t cabytes;         /* the trust bundle TLS checks against; 0: none,
                                  and TLS connects without checking */
-    u16  regstate;            /* DREG_*: the name in DNS */
-    u16  regrcode;            /* the DNS server's answer to the last update */
+    uint16_t regstate;        /* DREG_*: the name in DNS */
+    uint16_t regrcode;        /* the DNS server's answer to the last update */
 } SOCK_IF;
 #define SOCKIF_LEN   60
 #define SOCKIF_LEN2  92
@@ -160,57 +164,74 @@ typedef struct {
 
 /* SOCK_OPEN */
 typedef struct {
-    u32 type;                 /* SOCK_STREAM or SOCK_DGRAM */
+    uint32_t type;            /* SOCK_STREAM or SOCK_DGRAM */
 } SOCK_OPENREQ;
 
 /* SOCK_CLOSE */
 typedef struct {
-    u32 handle;
+    uint32_t handle;
 } SOCK_HANDLE;
 
 /* SOCK_CONNECT - TCP: begin a connection; UDP: fix the default peer */
 typedef struct {
-    u32 handle;
-    u32 ip;
-    u16 port;
-    u16 spare;
+    uint32_t handle;
+    uint32_t ip;
+    uint16_t port;
+    uint16_t spare;
 } SOCK_CONNREQ;
 
 /* SOCK_LISTEN - TCP only */
 typedef struct {
-    u32 handle;
-    u16 port;
-    u16 spare;
+    uint32_t handle;
+    uint16_t port;
+    uint16_t spare;
 } SOCK_LISTENREQ;
+
+/* SOCK_BIND - UDP only: give a datagram socket a port of its own.  Until
+   then a socket has none, and gets one picked for it by its first send
+   or SOCK_CONNECT - good for asking a server, no good for being one.
+   Port 0 asks for a picked one now.  ERR_ACCESS when another UDP socket
+   has the port, or the stack does (68, 137); ERR_BADDATA for a TCP
+   socket.  A bound socket takes every datagram for its port, whoever
+   sent it and whether it came to this computer's address or to the
+   network's broadcast address; SOCK_CONNECT afterwards sets where
+   SOCK_SEND goes and leaves the port alone.  Datagrams wait in a queue
+   of 4,096 bytes (8 more than its data for each), and one that does not
+   fit is dropped */
+typedef struct {
+    uint32_t handle;
+    uint16_t port;
+    uint16_t spare;
+} SOCK_BINDREQ;
 
 /* SOCK_ACCEPT - the next connection that came in on a listening socket */
 typedef struct {
-    u32 handle;               /* in: the listening socket */
-    u32 newh;                 /* out: the accepted socket, 0 if none */
-    u32 ip;                   /* out: the peer's address */
-    u16 port;                 /* out: the peer's port */
-    u16 spare;
+    uint32_t handle;          /* in: the listening socket */
+    uint32_t newh;            /* out: the accepted socket, 0 if none */
+    uint32_t ip;              /* out: the peer's address */
+    uint16_t port;            /* out: the peer's port */
+    uint16_t spare;
 } SOCK_ACCEPTREQ;
 
 /* SOCK_SEND and SOCK_RECV - the header, then the data.  For UDP, ip and
    port are the peer: where a send goes, and where a receive came from */
 typedef struct {
-    u32 handle;
-    u32 ip;
-    u16 port;
-    u16 spare;
-    u32 len;                  /* bytes of data after this header */
+    uint32_t handle;
+    uint32_t ip;
+    uint16_t port;
+    uint16_t spare;
+    uint32_t len;             /* bytes of data after this header */
 } SOCK_IO;
 #define SOCK_IO_HDR  16
 
 /* SOCK_STATE */
 typedef struct {
-    u32 handle;               /* in */
-    u32 state;                /* out: SS_* */
-    u32 rxready;              /* out: bytes waiting to be read */
-    u32 txfree;               /* out: room in the send buffer now */
-    u32 err;                  /* out: NET_FAIL and the like when SS_ERROR */
-    u32 why;                  /* out: CERT_* with NET_TLSCERT, else 0.  Only
+    uint32_t handle;          /* in */
+    uint32_t state;           /* out: SS_* */
+    uint32_t rxready;         /* out: bytes waiting to be read */
+    uint32_t txfree;          /* out: room in the send buffer now */
+    uint32_t err;             /* out: NET_FAIL and the like when SS_ERROR */
+    uint32_t why;             /* out: CERT_* with NET_TLSCERT, else 0.  Only
                                  when SOCKSTAT_LEN2 bytes were given */
 } SOCK_STAT;
 #define SOCKSTAT_LEN  20
@@ -222,19 +243,19 @@ typedef struct {
    with the name; poll until the state is not NET_PENDING (up to about 8
    seconds when nothing answers) */
 typedef struct {
-    u32  ip;                  /* out */
-    u32  state;               /* out: NET_* */
-    char name[128];           /* in: ASCIIZ */
+    uint32_t ip;              /* out */
+    uint32_t state;           /* out: NET_* */
+    char     name[128];       /* in: ASCIIZ */
 } SOCK_RES;
 #define SOCKRES_LEN  136
 
 /* SOCK_PING - one ICMP echo, and its reply.  Call with the address;
    poll until the state is not NET_PENDING */
 typedef struct {
-    u32 ip;                   /* in */
-    u32 state;                /* out: NET_* */
-    u32 rttms;                /* out: the round trip, in milliseconds */
-    u32 seq;                  /* in and out */
+    uint32_t ip;              /* in */
+    uint32_t state;           /* out: NET_* */
+    uint32_t rttms;           /* out: the round trip, in milliseconds */
+    uint32_t seq;             /* in and out */
 } SOCK_PINGREQ;
 #define SOCKPING_LEN 16
 
@@ -242,8 +263,8 @@ typedef struct {
    SOCK_TLS) and before the connection comes up.  It is sent as SNI and the
    name the certificate must match.  An empty name skips both. */
 typedef struct {
-    u32  handle;
-    char name[128];           /* in: ASCIIZ server name */
+    uint32_t handle;
+    char     name[128];       /* in: ASCIIZ server name */
 } SOCK_TLSHOSTREQ;
 #define SOCKTLSHOST_LEN 132
 
@@ -257,19 +278,19 @@ typedef struct {
    CACERT.BND beside TCPIP.SYS), so a program need not; one sent here
    replaces it for every socket opened after. */
 typedef struct {
-    u32 offset;               /* in: where this chunk goes in the bundle */
-    u32 total;                /* in: the whole bundle's length */
-    u32 len;                  /* in: bytes of data in this chunk */
-    /* u8 data[len] follows */
+    uint32_t offset;          /* in: where this chunk goes in the bundle */
+    uint32_t total;           /* in: the whole bundle's length */
+    uint32_t len;             /* in: bytes of data in this chunk */
+    /* uint8_t data[len] follows */
 } SOCK_CAREQ;
 #define SOCKCA_HDR   12
 
 /* a handy way to write an address out */
-#define IP_A( ip )   ((u8)( (ip) >> 24 ))
-#define IP_B( ip )   ((u8)( (ip) >> 16 ))
-#define IP_C( ip )   ((u8)( (ip) >> 8 ))
-#define IP_D( ip )   ((u8)( (ip) ))
-#define MAKE_IP( a, b, c, d )  ( ((u32)(a) << 24) | ((u32)(b) << 16) | \
-                                 ((u32)(c) << 8) | (u32)(d) )
+#define IP_A( ip )   ((uint8_t)( (ip) >> 24 ))
+#define IP_B( ip )   ((uint8_t)( (ip) >> 16 ))
+#define IP_C( ip )   ((uint8_t)( (ip) >> 8 ))
+#define IP_D( ip )   ((uint8_t)( (ip) ))
+#define MAKE_IP( a, b, c, d )  ( ((uint32_t)(a) << 24) | ((uint32_t)(b) << 16) | \
+                                 ((uint32_t)(c) << 8) | (uint32_t)(d) )
 
 #endif /* SOCKET_H */

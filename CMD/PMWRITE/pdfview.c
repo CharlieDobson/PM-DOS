@@ -26,12 +26,12 @@
 #define JPEG_SIDE   4096                    /* pixels, either way */
 #define JPEG_BYTES  (16UL * 1024 * 1024)    /* of the picture decoded */
 
-static int     waiting;             /* open as far as its password */
+static int      waiting;            /* open as far as its password */
 static int   (*poll_fn)( void );
-static JMPBUF  trap;
-static JMPBUF  jpeg_trap;
-static u8     *jpeg_out;
-static POOL   *jpeg_pool;
+static JMPBUF   trap;
+static JMPBUF   jpeg_trap;
+static uint8_t *jpeg_out;
+static POOL    *jpeg_pool;
 
 /* ------------------------------------------------------------------ */
 /* the program's part                                                  */
@@ -72,7 +72,7 @@ int pdfview_open( const char *path )
     return why;
 }
 
-int pdfview_open_mem( const u8 *data, u32 len )
+int pdfview_open_mem( const uint8_t *data, uint32_t len )
 {
     int why = pdf_open_mem( data, len );
 
@@ -80,7 +80,7 @@ int pdfview_open_mem( const u8 *data, u32 len )
     return why;
 }
 
-int pdfview_password( const char *text, u32 len )
+int pdfview_password( const char *text, unsigned int len )
 {
     static int good;
     int why;
@@ -133,7 +133,7 @@ static int turn_of( int turn )
     return (turn + 45) / 90 * 90 % 360;
 }
 
-static s32 zoom_of( s32 zoom )
+static int32_t zoom_of( int32_t zoom )
 {
     if ( zoom < FX_ONE / 16 ) {
         return FX_ONE / 16;
@@ -141,9 +141,9 @@ static s32 zoom_of( s32 zoom )
     return zoom > 64 * FX_ONE ? 64 * FX_ONE : zoom;
 }
 
-int pdfview_page_size( int page, s32 *width, s32 *height )
+int pdfview_page_size( int page, int32_t *width, int32_t *height )
 {
-    static s32 wide, high;
+    static int32_t wide, high;
     PAGE info;
     int why;
 
@@ -174,7 +174,7 @@ int pdfview_page_size( int page, s32 *width, s32 *height )
     return settle( why );
 }
 
-int pdfview_page_pixels( int page, s32 zoom, int turn, int *width, int *height )
+int pdfview_page_pixels( int page, int32_t zoom, int turn, int *width, int *height )
 {
     PAGE info;
     VIEW view;
@@ -206,7 +206,7 @@ void pdfview_poll( int (*poll)( void ) )
     poll_fn = poll;
 }
 
-int pdfview_render( int page, s32 zoom, int turn, const PVBLOCK *block )
+int pdfview_render( int page, int32_t zoom, int turn, const PVBLOCK *block )
 {
     PAGE info;
     VIEW view;
@@ -215,14 +215,14 @@ int pdfview_render( int page, s32 zoom, int turn, const PVBLOCK *block )
 
     if ( block == NULL || block->pix == NULL || block->width <= 0 || block->height <= 0 ||
          block->width > 32000 || block->height > 32000 || (block->bpp != 1 && block->bpp != 3) ||
-         block->stride < (u32)block->width * (u32)block->bpp ||
-         block->stride > 0x7FFFFFFFUL / (u32)block->height || block->org_x < -1000000L ||
+         block->stride < (unsigned int)block->width * (unsigned int)block->bpp ||
+         block->stride > 0x7FFFFFFFUL / (unsigned int)block->height || block->org_x < -1000000L ||
          block->org_x > 1000000L || block->org_y < -1000000L || block->org_y > 1000000L ) {
         return PV_PARAM;
     }
     /* paper, whatever comes of the page */
     for ( row = 0; row < block->height; row++ ) {
-        mem_set( block->pix + (u32)row * block->stride, 0xFF, (u32)block->width * (u32)block->bpp );
+        mem_set( block->pix + (unsigned int)row * block->stride, 0xFF, (unsigned int)block->width * (unsigned int)block->bpp );
     }
     if ( !pdfview_is_open() ) {
         return PV_NOPAGE;
@@ -258,7 +258,7 @@ int pdfview_text( int page, char ***lines, int *count )
     static char **block;
     TEXTPAGE *text;
     char *put;
-    u32 bytes, len;
+    unsigned int bytes, len;
     int why, index;
 
     *lines = NULL;
@@ -275,7 +275,7 @@ int pdfview_text( int page, char ***lines, int *count )
         if ( text == NULL ) {
             why = PV_NOPAGE;
         } else if ( text->count > 0 ) {
-            bytes = (u32)text->count * sizeof( char * );
+            bytes = (unsigned int)text->count * sizeof( char * );
             for ( index = 0; index < text->count; index++ ) {
                 bytes += str_len( text->lines[index] ) + 1;
             }
@@ -311,9 +311,9 @@ int pdfview_text( int page, char ***lines, int *count )
  * says that four components are inks written upside down, 255 for
  * none.  0 if it is not a JPEG of the kind DCT.C reads.
  */
-static int jpeg_look( const u8 *data, u32 len, u32 *width, u32 *height, int *comps, int *adobe )
+static int jpeg_look( const uint8_t *data, uint32_t len, uint32_t *width, uint32_t *height, int *comps, int *adobe )
 {
-    u32 pos = 2, size;
+    uint32_t pos = 2, size;
     int marker;
 
     *adobe = 0;
@@ -333,7 +333,7 @@ static int jpeg_look( const u8 *data, u32 len, u32 *width, u32 *height, int *com
             pos += 2;                           /* these have nothing after them */
             continue;
         }
-        size = ((u32)data[pos + 2] << 8) | data[pos + 3];
+        size = ((uint32_t)data[pos + 2] << 8) | data[pos + 3];
         if ( size < 2 || size > len - pos - 2 ) {
             return 0;
         }
@@ -341,8 +341,8 @@ static int jpeg_look( const u8 *data, u32 len, u32 *width, u32 *height, int *com
             if ( size < 8 || data[pos + 4] != 8 ) {
                 return 0;                       /* twelve bits a sample */
             }
-            *height = ((u32)data[pos + 5] << 8) | data[pos + 6];
-            *width = ((u32)data[pos + 7] << 8) | data[pos + 8];
+            *height = ((uint32_t)data[pos + 5] << 8) | data[pos + 6];
+            *width = ((uint32_t)data[pos + 7] << 8) | data[pos + 8];
             *comps = data[pos + 9];
             return *width != 0 && *height != 0 && (*comps == 1 || *comps == 3 || *comps == 4);
         }
@@ -358,14 +358,15 @@ static int jpeg_look( const u8 *data, u32 len, u32 *width, u32 *height, int *com
     return 0;
 }
 
-u8 *pdfview_jpeg( const u8 *data, u32 len, u32 *width, u32 *height )
+uint8_t *pdfview_jpeg( const uint8_t *data, uint32_t len, uint32_t *width, uint32_t *height )
 {
     static IN *in;
     static int good;
     JMPBUF *outer_trap = pdf_trap;
     POOL *outer_pool = doc.page_pool;
-    u32 wide, high, row, col;
-    u8 *line, *pix;
+    uint32_t wide, high;
+    unsigned int row, col;
+    uint8_t *line, *pix;
     int comps, adobe, keep;
 
     *width = *height = 0;
@@ -373,7 +374,7 @@ u8 *pdfview_jpeg( const u8 *data, u32 len, u32 *width, u32 *height )
          wide > JPEG_SIDE || high > JPEG_SIDE || wide * high * 3 > JPEG_BYTES ) {
         return NULL;
     }
-    jpeg_out = (u8 *)try_alloc( wide * high * 3 );
+    jpeg_out = (uint8_t *)try_alloc( wide * high * 3 );
     if ( jpeg_out == NULL ) {
         return NULL;
     }
@@ -386,11 +387,11 @@ u8 *pdfview_jpeg( const u8 *data, u32 len, u32 *width, u32 *height )
         jpeg_pool = pool_new();
         doc.page_pool = jpeg_pool;
         in = flt_dct( in_mem( data, len ), NULL );
-        if ( in != NULL && (u32)dct_width == wide && (u32)dct_height == high && dct_comps == comps ) {
-            line = (u8 *)pool_big( jpeg_pool, wide * 4 );
+        if ( in != NULL && (uint32_t)dct_width == wide && (uint32_t)dct_height == high && dct_comps == comps ) {
+            line = (uint8_t *)pool_big( jpeg_pool, wide * 4 );
             good = 1;
             for ( row = 0; row < high; row++ ) {
-                if ( in_read( in, line, wide * (u32)comps ) != wide * (u32)comps ) {
+                if ( in_read( in, line, wide * (uint32_t)comps ) != wide * (uint32_t)comps ) {
                     good = 0;                   /* it stops short */
                     break;
                 }
@@ -405,9 +406,9 @@ u8 *pdfview_jpeg( const u8 *data, u32 len, u32 *width, u32 *height )
                     } else {
                         /* four inks, as IMAGE.C turns them into light */
                         keep = adobe ? line[col * 4 + 3] : 255 - line[col * 4 + 3];
-                        pix[2] = (u8)((adobe ? line[col * 4] : 255 - line[col * 4]) * keep / 255);
-                        pix[1] = (u8)((adobe ? line[col * 4 + 1] : 255 - line[col * 4 + 1]) * keep / 255);
-                        pix[0] = (u8)((adobe ? line[col * 4 + 2] : 255 - line[col * 4 + 2]) * keep / 255);
+                        pix[2] = (uint8_t)((adobe ? line[col * 4] : 255 - line[col * 4]) * keep / 255);
+                        pix[1] = (uint8_t)((adobe ? line[col * 4 + 1] : 255 - line[col * 4 + 1]) * keep / 255);
+                        pix[0] = (uint8_t)((adobe ? line[col * 4 + 2] : 255 - line[col * 4 + 2]) * keep / 255);
                     }
                 }
             }

@@ -30,13 +30,13 @@ enum { UR_DELETE, UR_INSERT, UR_JOIN, UR_SPLIT, UR_ATTR, UR_PAP };
 
 typedef struct UREC {
     struct UREC *next;
-    int    op;                  /* UR_*: what to do, to undo */
-    u32    para, off, len;
-    u16   *text, *attr;         /* UR_INSERT; UR_ATTR has attr alone */
-    WANCH *anch;                /* UR_INSERT: counted from "off" */
-    u32    nanch;
-    PAP    pap;                 /* UR_SPLIT: the second half's; UR_PAP */
-    int    has_pap;
+    int          op;            /* UR_*: what to do, to undo */
+    unsigned int para, off, len;
+    uint16_t    *text, *attr;   /* UR_INSERT; UR_ATTR has attr alone */
+    WANCH       *anch;          /* UR_INSERT: counted from "off" */
+    unsigned int nanch;
+    PAP          pap;           /* UR_SPLIT: the second half's; UR_PAP */
+    int          has_pap;
 } UREC;
 
 typedef struct UGROUP {
@@ -48,12 +48,12 @@ typedef struct UGROUP {
 } UGROUP;
 
 typedef struct {
-    UGROUP *undo, *redo;
-    UGROUP *open;               /* the action being done */
-    int     depth;              /* we_begin inside we_begin */
-    int     failed;             /* a record could not be made */
-    int     unsure;             /* a change was made with no record */
-    u32     nundo;
+    UGROUP      *undo, *redo;
+    UGROUP      *open;          /* the action being done */
+    int          depth;         /* we_begin inside we_begin */
+    int          failed;        /* a record could not be made */
+    int          unsure;        /* a change was made with no record */
+    unsigned int nundo;
 } UNDO;
 
 static void drop_all( WDOC *doc );
@@ -177,7 +177,7 @@ static void drop_all( WDOC *doc )
  * (NULL when none is wanted: nothing is being recorded); 0 when one
  * was wanted and there is no memory, and then the change is not made.
  */
-static int rec_new( WDOC *doc, int op, u32 para, u32 off, u32 len, UREC **out )
+static int rec_new( WDOC *doc, int op, unsigned int para, unsigned int off, unsigned int len, UREC **out )
 {
     UNDO *undo = (UNDO *)doc->undo;
     UREC *rec;
@@ -228,9 +228,9 @@ static void rec_fail( WDOC *doc, UREC *rec )
 /* ------------------------------------------------------------------ */
 
 /* the objects in a stretch of a paragraph, counted from its start */
-static u32 anch_count( const WPARA *para, u32 off, u32 len )
+static unsigned int anch_count( const WPARA *para, unsigned int off, unsigned int len )
 {
-    u32 index, count = 0;
+    unsigned int index, count = 0;
 
     for ( index = 0; index < para->nanch; index++ ) {
         if ( para->anch[index].off >= off && para->anch[index].off - off < len ) {
@@ -240,9 +240,9 @@ static u32 anch_count( const WPARA *para, u32 off, u32 len )
     return count;
 }
 
-static void anch_take( const WPARA *para, u32 off, u32 len, WANCH *out )
+static void anch_take( const WPARA *para, unsigned int off, unsigned int len, WANCH *out )
 {
-    u32 index, count = 0;
+    unsigned int index, count = 0;
 
     for ( index = 0; index < para->nanch; index++ ) {
         if ( para->anch[index].off >= off && para->anch[index].off - off < len ) {
@@ -254,8 +254,8 @@ static void anch_take( const WPARA *para, u32 off, u32 len, WANCH *out )
 }
 
 /* text in.  "attr" NULL: all of it "chp", and no objects. */
-static int p_insert( WDOC *doc, STORY *story, u32 pi, u32 off, const u16 *text, const u16 *attr,
-                     u16 chp, u32 len, const WANCH *anch, u32 nanch )
+static int p_insert( WDOC *doc, STORY *story, unsigned int pi, unsigned int off, const uint16_t *text, const uint16_t *attr,
+                     uint16_t chp, unsigned int len, const WANCH *anch, unsigned int nanch )
 {
     WPARA *para = story->para[pi];
     UREC *rec;
@@ -281,7 +281,7 @@ static int p_insert( WDOC *doc, STORY *story, u32 pi, u32 off, const u16 *text, 
 }
 
 /* text out */
-static int p_delete( WDOC *doc, STORY *story, u32 pi, u32 off, u32 len )
+static int p_delete( WDOC *doc, STORY *story, unsigned int pi, unsigned int off, unsigned int len )
 {
     WPARA *para = story->para[pi];
     UREC *rec;
@@ -297,15 +297,15 @@ static int p_delete( WDOC *doc, STORY *story, u32 pi, u32 off, u32 len )
     }
     if ( rec != NULL ) {
         rec->nanch = anch_count( para, off, len );
-        rec->text = (u16 *)try_alloc( len * sizeof( u16 ) );
-        rec->attr = (u16 *)try_alloc( len * sizeof( u16 ) );
+        rec->text = (uint16_t *)try_alloc( len * sizeof( uint16_t ) );
+        rec->attr = (uint16_t *)try_alloc( len * sizeof( uint16_t ) );
         rec->anch = rec->nanch ? (WANCH *)try_alloc( rec->nanch * sizeof( WANCH ) ) : NULL;
         if ( rec->text == NULL || rec->attr == NULL || (rec->nanch && rec->anch == NULL) ) {
             rec_fail( doc, rec );
             return 0;
         }
-        mem_cpy( rec->text, para->text + off, len * sizeof( u16 ) );
-        mem_cpy( rec->attr, para->attr + off, len * sizeof( u16 ) );
+        mem_cpy( rec->text, para->text + off, len * sizeof( uint16_t ) );
+        mem_cpy( rec->attr, para->attr + off, len * sizeof( uint16_t ) );
         anch_take( para, off, len, rec->anch );
     }
     wd_text_delete( doc, para, off, len );
@@ -317,12 +317,12 @@ static int p_delete( WDOC *doc, STORY *story, u32 pi, u32 off, u32 len )
 
 /* a paragraph ended at "off": what was after it is a new paragraph,
    with "second" for its properties or a copy of the first one's */
-static int p_split( WDOC *doc, STORY *story, u32 pi, u32 off, const PAP *second )
+static int p_split( WDOC *doc, STORY *story, unsigned int pi, unsigned int off, const PAP *second )
 {
     WPARA *para = story->para[pi], *fresh;
     WANCH *moved = NULL;
     UREC *rec;
-    u32 tail, count;
+    unsigned int tail, count;
 
     if ( off > para->len ) {
         off = para->len;
@@ -353,7 +353,7 @@ static int p_split( WDOC *doc, STORY *story, u32 pi, u32 off, const PAP *second 
     xfree( moved );
     wd_text_delete( doc, para, off, tail );
     /* a cell's end is where the second half ends now */
-    para->pap.flags &= (u16)~CELL_MARKS;
+    para->pap.flags &= (uint16_t)~CELL_MARKS;
     xfree( para->pap.row );
     para->pap.row = NULL;
     wd_para_touch( para );
@@ -361,16 +361,16 @@ static int p_split( WDOC *doc, STORY *story, u32 pi, u32 off, const PAP *second 
     return 1;
 }
 
-static int p_pap( WDOC *doc, STORY *story, u32 pi, const PAP *pap );
+static int p_pap( WDOC *doc, STORY *story, unsigned int pi, const PAP *pap );
 
 /* a paragraph joined to the one after it, which goes */
-static int p_join( WDOC *doc, STORY *story, u32 pi )
+static int p_join( WDOC *doc, STORY *story, unsigned int pi )
 {
     WPARA *para, *next;
     WANCH *moved = NULL;
     UREC *rec;
     PAP plain;
-    u32 count;
+    unsigned int count;
     int done;
 
     if ( pi + 1 >= story->count ) {
@@ -386,7 +386,7 @@ static int p_join( WDOC *doc, STORY *story, u32 pi )
             doc->failed = 1;
             return 0;
         }
-        plain.flags &= (u16)~CELL_MARKS;
+        plain.flags &= (uint16_t)~CELL_MARKS;
         xfree( plain.row );
         plain.row = NULL;
         done = p_pap( doc, story, pi, &plain );
@@ -421,7 +421,7 @@ static int p_join( WDOC *doc, STORY *story, u32 pi )
     }
     xfree( moved );
     /* the cell's end, if the paragraph that goes was one */
-    para->pap.flags = (u16)((para->pap.flags & ~CELL_MARKS) | (next->pap.flags & CELL_MARKS));
+    para->pap.flags = (uint16_t)((para->pap.flags & ~CELL_MARKS) | (next->pap.flags & CELL_MARKS));
     xfree( para->pap.row );
     para->pap.row = next->pap.row;
     next->pap.row = NULL;
@@ -432,11 +432,11 @@ static int p_join( WDOC *doc, STORY *story, u32 pi )
 }
 
 /* the looks of "len" characters: "attr" has the new CHP numbers */
-static int p_attr( WDOC *doc, STORY *story, u32 pi, u32 off, u32 len, const u16 *attr )
+static int p_attr( WDOC *doc, STORY *story, unsigned int pi, unsigned int off, unsigned int len, const uint16_t *attr )
 {
     WPARA *para = story->para[pi];
     UREC *rec;
-    u32 index;
+    unsigned int index;
 
     if ( off >= para->len || len == 0 ) {
         return 1;
@@ -444,22 +444,22 @@ static int p_attr( WDOC *doc, STORY *story, u32 pi, u32 off, u32 len, const u16 
     if ( len > para->len - off ) {
         len = para->len - off;
     }
-    if ( mem_cmp( para->attr + off, attr, len * sizeof( u16 ) ) == 0 ) {
+    if ( mem_cmp( para->attr + off, attr, len * sizeof( uint16_t ) ) == 0 ) {
         return 1;
     }
     if ( !rec_new( doc, UR_ATTR, pi, off, len, &rec ) ) {
         return 0;
     }
     if ( rec != NULL ) {
-        rec->attr = (u16 *)try_alloc( len * sizeof( u16 ) );
+        rec->attr = (uint16_t *)try_alloc( len * sizeof( uint16_t ) );
         if ( rec->attr == NULL ) {
             rec_fail( doc, rec );
             return 0;
         }
-        mem_cpy( rec->attr, para->attr + off, len * sizeof( u16 ) );
+        mem_cpy( rec->attr, para->attr + off, len * sizeof( uint16_t ) );
     }
     for ( index = 0; index < len; index++ ) {
-        para->attr[off + index] = (u16)(attr[index] < doc->nchp ? attr[index] : 0);
+        para->attr[off + index] = (uint16_t)(attr[index] < doc->nchp ? attr[index] : 0);
     }
     wd_para_touch( para );
     rec_keep( doc, rec );
@@ -467,7 +467,7 @@ static int p_attr( WDOC *doc, STORY *story, u32 pi, u32 off, u32 len, const u16 
 }
 
 /* a paragraph's own properties */
-static int p_pap( WDOC *doc, STORY *story, u32 pi, const PAP *pap )
+static int p_pap( WDOC *doc, STORY *story, unsigned int pi, const PAP *pap )
 {
     WPARA *para = story->para[pi];
     UREC *rec;
@@ -584,7 +584,7 @@ void we_begin_more( WDOC *doc, STORY *story, WPOS caret, int kind )
 static void trim( UNDO *undo )
 {
     UGROUP **link = &undo->undo;
-    u32 kept = 0;
+    unsigned int kept = 0;
 
     while ( *link != NULL && kept < UNDO_STEPS ) {
         link = &(*link)->next;
@@ -661,7 +661,7 @@ int we_can_redo( const WDOC *doc )
     return undo != NULL && undo->redo != NULL;
 }
 
-u32 we_serial( const WDOC *doc )
+unsigned int we_serial( const WDOC *doc )
 {
     return doc->serial;
 }
@@ -737,7 +737,7 @@ int we_redo( WDOC *doc, STORY **story, WPOS *caret )
 /* what the commands are made of                                       */
 /* ------------------------------------------------------------------ */
 
-void we_insert( WDOC *doc, STORY *story, WPOS *pos, const u16 *text, u32 len, u16 chp )
+void we_insert( WDOC *doc, STORY *story, WPOS *pos, const uint16_t *text, unsigned int len, uint16_t chp )
 {
     if ( story->count == 0 ) {
         return;
@@ -748,17 +748,17 @@ void we_insert( WDOC *doc, STORY *story, WPOS *pos, const u16 *text, u32 len, u1
     }
 }
 
-void we_insert_obj( WDOC *doc, STORY *story, WPOS *pos, int obj, u16 chp )
+void we_insert_obj( WDOC *doc, STORY *story, WPOS *pos, int obj, uint16_t chp )
 {
     WANCH anch;
-    u16 unit = WCH_OBJ;
+    uint16_t unit = WCH_OBJ;
 
-    if ( story->count == 0 || obj < 0 || (u32)obj >= doc->nobj ) {
+    if ( story->count == 0 || obj < 0 || (unsigned int)obj >= doc->nobj ) {
         return;
     }
     *pos = wpos_clamp( story, *pos );
     anch.off = 0;
-    anch.obj = (u32)obj;
+    anch.obj = (unsigned int)obj;
     if ( p_insert( doc, story, pos->para, pos->off, &unit, &chp, 0, 1, &anch, 1 ) ) {
         pos->off++;
     }
@@ -779,7 +779,7 @@ void we_split( WDOC *doc, STORY *story, WPOS *pos )
 void we_delete( WDOC *doc, STORY *story, WPOS from, WPOS to )
 {
     WPOS hold;
-    u32 gone;
+    unsigned int gone;
 
     from = wpos_clamp( story, from );
     to = wpos_clamp( story, to );
@@ -809,11 +809,11 @@ void we_delete( WDOC *doc, STORY *story, WPOS from, WPOS to )
     }
 }
 
-void we_insert_table( WDOC *doc, STORY *story, WPOS *pos, int rows, int cols, s32 width )
+void we_insert_table( WDOC *doc, STORY *story, WPOS *pos, int rows, int cols, int width )
 {
     PAP cell, rest;
     TROW row;
-    u32 at;
+    unsigned int at;
     int down, across, done;
 
     if ( story->count == 0 || rows < 1 || rows > 500 || cols < 1 || cols > MAX_CELLS || width < 720 ||
@@ -835,10 +835,10 @@ void we_insert_table( WDOC *doc, STORY *story, WPOS *pos, int rows, int cols, s3
     }
     at = pos->para;
     mem_set( &row, 0, sizeof( row ) );
-    row.ncells = (u8)cols;
+    row.ncells = (uint8_t)cols;
     row.borders = 1;
     for ( across = 0; across < cols; across++ ) {
-        row.edge[across] = (s32)((u32)width * (u32)(across + 1) / (u32)cols);
+        row.edge[across] = (int)((uint32_t)width * (uint32_t)(across + 1) / (uint32_t)cols);
     }
     for ( down = 0; down < rows; down++ ) {
         for ( across = 0; across < cols; across++ ) {
@@ -874,11 +874,11 @@ void we_insert_table( WDOC *doc, STORY *story, WPOS *pos, int rows, int cols, s3
  * the row's end, and the one before it is given back what it was - the
  * old row's end the first time, a cell's end and no more after that.
  */
-void we_add_row( WDOC *doc, STORY *story, u32 row_end, WPOS *pos )
+void we_add_row( WDOC *doc, STORY *story, unsigned int row_end, WPOS *pos )
 {
     const WPARA *para;
     PAP whole, cell;
-    u32 ncells, index;
+    unsigned int ncells, index;
     int done = 1;
 
     if ( row_end >= story->count ) {
@@ -898,7 +898,7 @@ void we_add_row( WDOC *doc, STORY *story, u32 row_end, WPOS *pos )
         doc->failed = 1;
         return;
     }
-    cell.flags &= (u16)~PF_ROWEND;
+    cell.flags &= (uint16_t)~PF_ROWEND;
     xfree( cell.row );
     cell.row = NULL;
     for ( index = 0; index < ncells && done; index++ ) {
@@ -926,10 +926,10 @@ void we_add_row( WDOC *doc, STORY *story, u32 row_end, WPOS *pos )
  * edges - which no table made here is, and a file's may be.
  */
 
-int we_row_of( const STORY *story, u32 pi, u32 *first, u32 *end )
+int we_row_of( const STORY *story, unsigned int pi, unsigned int *first, unsigned int *end )
 {
     const WPARA *para;
-    u32 low = pi, high = pi;
+    unsigned int low = pi, high = pi;
 
     if ( pi >= story->count || !(story->para[pi]->pap.flags & PF_INTABLE) ) {
         return 0;
@@ -955,9 +955,9 @@ int we_row_of( const STORY *story, u32 pi, u32 *first, u32 *end )
 
 /* how many cells the row "first" to "end" has, by their ends; the last
    paragraph ends one whether it says so or not */
-static u32 row_cells( const STORY *story, u32 first, u32 end )
+static unsigned int row_cells( const STORY *story, unsigned int first, unsigned int end )
 {
-    u32 scan, count = 1;
+    unsigned int scan, count = 1;
 
     for ( scan = first; scan < end; scan++ ) {
         if ( story->para[scan]->pap.flags & PF_CELLEND ) {
@@ -969,9 +969,9 @@ static u32 row_cells( const STORY *story, u32 first, u32 end )
 
 /* the paragraphs of the row's cell "which", counted from 0: 0 if the
    row has not so many */
-static int cell_span( const STORY *story, u32 first, u32 end, u32 which, u32 *from, u32 *to )
+static int cell_span( const STORY *story, unsigned int first, unsigned int end, unsigned int which, unsigned int *from, unsigned int *to )
 {
-    u32 scan, start = first, cell = 0;
+    unsigned int scan, start = first, cell = 0;
 
     for ( scan = first; scan <= end; scan++ ) {
         if ( scan == end || (story->para[scan]->pap.flags & PF_CELLEND) ) {
@@ -987,9 +987,9 @@ static int cell_span( const STORY *story, u32 first, u32 end, u32 which, u32 *fr
     return 0;
 }
 
-int we_cell_of( const STORY *story, u32 pi )
+int we_cell_of( const STORY *story, unsigned int pi )
 {
-    u32 first, end, scan, cell = 0;
+    unsigned int first, end, scan, cell = 0;
 
     if ( !we_row_of( story, pi, &first, &end ) ) {
         return -1;
@@ -1004,9 +1004,9 @@ int we_cell_of( const STORY *story, u32 pi )
 
 /* the table paragraph "pi" is in: its first row's first paragraph and
    its last row's last.  0 if "pi" is not in a row. */
-static int table_of( const STORY *story, u32 pi, u32 *first, u32 *last )
+static int table_of( const STORY *story, unsigned int pi, unsigned int *first, unsigned int *last )
 {
-    u32 low, high, from, to;
+    unsigned int low, high, from, to;
 
     if ( !we_row_of( story, pi, &low, &high ) ) {
         return 0;
@@ -1024,9 +1024,9 @@ static int table_of( const STORY *story, u32 pi, u32 *first, u32 *last )
 
 /* is every row of the table as the commands expect: as many ends of
    cells as its TROW has edges? */
-static int table_sound( const STORY *story, u32 first, u32 last )
+static int table_sound( const STORY *story, unsigned int first, unsigned int last )
 {
-    u32 from, to, at = first;
+    unsigned int from, to, at = first;
 
     while ( at <= last ) {
         if ( !we_row_of( story, at, &from, &to ) || from != at ||
@@ -1046,11 +1046,11 @@ static int table_sound( const STORY *story, u32 first, u32 last )
  * own properties back when the joining is done.  0 if there was not the
  * memory to finish; what was done can be undone.
  */
-static int paras_remove( WDOC *doc, STORY *story, u32 from, u32 to )
+static int paras_remove( WDOC *doc, STORY *story, unsigned int from, unsigned int to )
 {
     PAP keep;
     WPOS start, stop;
-    u32 want = story->count - (to - from + 1);
+    unsigned int want = story->count - (to - from + 1);
     int done;
 
     if ( from > 0 ) {
@@ -1096,9 +1096,9 @@ static int paras_remove( WDOC *doc, STORY *story, u32 from, u32 to )
     return p_pap( doc, story, 0, &keep );
 }
 
-void we_delete_rows( WDOC *doc, STORY *story, u32 from, u32 to, WPOS *pos )
+void we_delete_rows( WDOC *doc, STORY *story, unsigned int from, unsigned int to, WPOS *pos )
 {
-    u32 first, last, low, high;
+    unsigned int first, last, low, high;
 
     if ( from > to ) {
         low = from;
@@ -1119,7 +1119,7 @@ void we_delete_rows( WDOC *doc, STORY *story, u32 from, u32 to, WPOS *pos )
 }
 
 /* paragraph "pi" given the row's ends again: "row" for its TROW */
-static int row_set( WDOC *doc, STORY *story, u32 pi, const TROW *row, u16 more_flags )
+static int row_set( WDOC *doc, STORY *story, unsigned int pi, const TROW *row, uint16_t more_flags )
 {
     PAP fresh;
     int done;
@@ -1141,7 +1141,7 @@ static int row_set( WDOC *doc, STORY *story, u32 pi, const TROW *row, u16 more_f
 
 /* value * num / den, for a value no more than "den" and a "num" under
    32768: the two are halved together until the product fits */
-static s32 scaled( s32 value, s32 num, s32 den )
+static int scaled( int value, int num, int den )
 {
     if ( value < 0 || num < 0 ) {
         return 0;
@@ -1150,21 +1150,21 @@ static s32 scaled( s32 value, s32 num, s32 den )
         value >>= 1;
         den >>= 1;
     }
-    return den > 0 ? (s32)((u32)value * (u32)num / (u32)den) : 0;
+    return den > 0 ? (int)((uint32_t)value * (uint32_t)num / (uint32_t)den) : 0;
 }
 
 /* how wide the row's cell "which" is */
-static s32 cell_wide( const TROW *row, u32 which )
+static int cell_wide( const TROW *row, unsigned int which )
 {
     return row->edge[which] - (which ? row->edge[which - 1] : row->left);
 }
 
-void we_insert_col( WDOC *doc, STORY *story, u32 pi, int after, s32 limit, WPOS *pos )
+void we_insert_col( WDOC *doc, STORY *story, unsigned int pi, int after, int limit, WPOS *pos )
 {
     TROW row;
-    u32 first, last, from, to, at, cells, where, like, index, mine_first, mine_end, rows_before = 0;
-    u32 fresh = 0;
-    s32 wide, span;
+    unsigned int first, last, from, to, at, cells, where, like, index, mine_first, mine_end, rows_before = 0;
+    unsigned int fresh = 0;
+    int wide, span;
     int cell = we_cell_of( story, pi ), have = 0;
 
     if ( cell < 0 || !table_of( story, pi, &first, &last ) || !table_sound( story, first, last ) ||
@@ -1185,12 +1185,12 @@ void we_insert_col( WDOC *doc, STORY *story, u32 pi, int after, s32 limit, WPOS 
         we_row_of( story, at, &from, &to );
         row = *story->para[to]->pap.row;
         cells = row.ncells;
-        where = (u32)cell + (after ? 1 : 0);
+        where = (unsigned int)cell + (after ? 1 : 0);
         if ( where > cells ) {
             where = cells;
         }
         /* as wide as the column the caret is in */
-        like = (u32)cell < cells ? (u32)cell : cells - 1;
+        like = (unsigned int)cell < cells ? (unsigned int)cell : cells - 1;
         wide = cell_wide( &row, like );
         if ( wide < 144 ) {
             wide = 144;
@@ -1199,7 +1199,7 @@ void we_insert_col( WDOC *doc, STORY *story, u32 pi, int after, s32 limit, WPOS 
             row.edge[index] = row.edge[index - 1] + wide;
         }
         row.edge[where] = (where ? row.edge[where - 1] : row.left) + wide;
-        row.ncells = (u8)(cells + 1);
+        row.ncells = (uint8_t)(cells + 1);
         /* held to the width of the text: every column gives a little */
         span = row.edge[cells] - row.left;
         if ( limit > row.left && row.edge[cells] > limit && span > 0 ) {
@@ -1240,11 +1240,11 @@ void we_insert_col( WDOC *doc, STORY *story, u32 pi, int after, s32 limit, WPOS 
     }
 }
 
-void we_delete_col( WDOC *doc, STORY *story, u32 pi, WPOS *pos )
+void we_delete_col( WDOC *doc, STORY *story, unsigned int pi, WPOS *pos )
 {
     TROW row;
-    u32 first, last, from, to, at, cells, index, cell_from, cell_to, mine_first, mine_end, before;
-    s32 wide;
+    unsigned int first, last, from, to, at, cells, index, cell_from, cell_to, mine_first, mine_end, before;
+    int wide;
     int cell = we_cell_of( story, pi ), have = 0, done;
 
     if ( cell < 0 || !table_of( story, pi, &first, &last ) || !table_sound( story, first, last ) ||
@@ -1258,21 +1258,21 @@ void we_delete_col( WDOC *doc, STORY *story, u32 pi, WPOS *pos )
         cells = row.ncells;
         before = story->count;
         done = 1;
-        if ( (u32)cell < cells && cells == 1 ) {
+        if ( (unsigned int)cell < cells && cells == 1 ) {
             /* its only column: the row goes */
             done = paras_remove( doc, story, from, to );
             if ( from == mine_first ) {
                 pos->para = from;
             }
-        } else if ( (u32)cell < cells ) {
-            wide = cell_wide( &row, (u32)cell );
-            for ( index = (u32)cell; index + 1 < cells; index++ ) {
+        } else if ( (unsigned int)cell < cells ) {
+            wide = cell_wide( &row, (unsigned int)cell );
+            for ( index = (unsigned int)cell; index + 1 < cells; index++ ) {
                 row.edge[index] = row.edge[index + 1] - wide;
             }
             row.edge[cells - 1] = 0;
-            row.ncells = (u8)(cells - 1);
-            cell_span( story, from, to, (u32)cell, &cell_from, &cell_to );
-            if ( (u32)cell + 1 < cells ) {
+            row.ncells = (uint8_t)(cells - 1);
+            cell_span( story, from, to, (unsigned int)cell, &cell_from, &cell_to );
+            if ( (unsigned int)cell + 1 < cells ) {
                 /* the cell after it moves up; the row's end is told the
                    new edges */
                 done = paras_remove( doc, story, cell_from, cell_to ) &&
@@ -1312,22 +1312,22 @@ void we_delete_col( WDOC *doc, STORY *story, u32 pi, WPOS *pos )
     }
 }
 
-s32 we_col_width( const STORY *story, u32 pi )
+int we_col_width( const STORY *story, unsigned int pi )
 {
-    u32 first, end;
+    unsigned int first, end;
     int cell = we_cell_of( story, pi );
 
-    if ( cell < 0 || !we_row_of( story, pi, &first, &end ) || (u32)cell >= story->para[end]->pap.row->ncells ) {
+    if ( cell < 0 || !we_row_of( story, pi, &first, &end ) || (unsigned int)cell >= story->para[end]->pap.row->ncells ) {
         return 0;
     }
-    return cell_wide( story->para[end]->pap.row, (u32)cell );
+    return cell_wide( story->para[end]->pap.row, (unsigned int)cell );
 }
 
-void we_set_col_width( WDOC *doc, STORY *story, u32 pi, s32 width )
+void we_set_col_width( WDOC *doc, STORY *story, unsigned int pi, int width )
 {
     TROW row;
-    u32 first, last, from, to, at, index;
-    s32 change;
+    unsigned int first, last, from, to, at, index;
+    int change;
     int cell = we_cell_of( story, pi );
 
     if ( cell < 0 || width < 144 || width > 31680 || !table_of( story, pi, &first, &last ) ) {
@@ -1338,14 +1338,14 @@ void we_set_col_width( WDOC *doc, STORY *story, u32 pi, s32 width )
             return;
         }
         row = *story->para[to]->pap.row;
-        if ( (u32)cell >= row.ncells ) {
+        if ( (unsigned int)cell >= row.ncells ) {
             continue;
         }
-        change = width - cell_wide( &row, (u32)cell );
+        change = width - cell_wide( &row, (unsigned int)cell );
         if ( change == 0 ) {
             continue;
         }
-        for ( index = (u32)cell; index < row.ncells; index++ ) {
+        for ( index = (unsigned int)cell; index < row.ncells; index++ ) {
             row.edge[index] += change;
         }
         if ( !row_set( doc, story, to, &row, 0 ) ) {
@@ -1355,11 +1355,11 @@ void we_set_col_width( WDOC *doc, STORY *story, u32 pi, s32 width )
 }
 
 /* an empty row above the row paragraph "pi" is in */
-void we_add_row_above( WDOC *doc, STORY *story, u32 pi, WPOS *pos )
+void we_add_row_above( WDOC *doc, STORY *story, unsigned int pi, WPOS *pos )
 {
     TROW row;
     PAP cell;
-    u32 first, end, index, cells;
+    unsigned int first, end, index, cells;
     int done = 1;
 
     if ( !we_row_of( story, pi, &first, &end ) ) {
@@ -1388,7 +1388,7 @@ void we_add_row_above( WDOC *doc, STORY *story, u32 pi, WPOS *pos )
     }
 }
 
-void chp_apply( CHP *chp, u32 mask, const CHP *value, u16 flag_mask )
+void chp_apply( CHP *chp, uint32_t mask, const CHP *value, uint16_t flag_mask )
 {
     if ( mask & CM_FONT ) {
         chp->font = value->font;
@@ -1403,14 +1403,14 @@ void chp_apply( CHP *chp, u32 mask, const CHP *value, u16 flag_mask )
         chp->hilite = value->hilite;
     }
     if ( mask & CM_FLAGS ) {
-        chp->flags = (u16)((chp->flags & ~flag_mask) | (value->flags & flag_mask));
+        chp->flags = (uint16_t)((chp->flags & ~flag_mask) | (value->flags & flag_mask));
     }
 }
 
 /* the stretch of one paragraph that lies between two places */
-static int span_of( const STORY *story, u32 pi, WPOS from, WPOS to, u32 *start, u32 *len )
+static int span_of( const STORY *story, unsigned int pi, WPOS from, WPOS to, unsigned int *start, unsigned int *len )
 {
-    u32 end;
+    unsigned int end;
 
     *start = pi == from.para ? from.off : 0;
     end = pi == to.para ? to.off : story->para[pi]->len;
@@ -1435,14 +1435,14 @@ static void order( const STORY *story, WPOS *from, WPOS *to )
     }
 }
 
-void we_set_chp( WDOC *doc, STORY *story, WPOS from, WPOS to, u32 mask, const CHP *value,
-                 u16 flag_mask )
+void we_set_chp( WDOC *doc, STORY *story, WPOS from, WPOS to, uint32_t mask, const CHP *value,
+                 uint16_t flag_mask )
 {
     WPARA *para;
     CHP chp;
-    u16 *attr;
-    u16 was, now;
-    u32 pi, start, len, index;
+    uint16_t *attr;
+    uint16_t was, now;
+    unsigned int pi, start, len, index;
 
     if ( story->count == 0 ) {
         return;
@@ -1453,7 +1453,7 @@ void we_set_chp( WDOC *doc, STORY *story, WPOS from, WPOS to, u32 mask, const CH
             continue;
         }
         para = story->para[pi];
-        attr = (u16 *)try_alloc( len * sizeof( u16 ) );
+        attr = (uint16_t *)try_alloc( len * sizeof( uint16_t ) );
         if ( attr == NULL ) {
             doc->failed = 1;
             return;
@@ -1469,7 +1469,7 @@ void we_set_chp( WDOC *doc, STORY *story, WPOS from, WPOS to, u32 mask, const CH
             }
             attr[index] = now;
         }
-        index = (u32)p_attr( doc, story, pi, start, len, attr );
+        index = (unsigned int)p_attr( doc, story, pi, start, len, attr );
         xfree( attr );
         if ( !index ) {
             return;
@@ -1477,10 +1477,10 @@ void we_set_chp( WDOC *doc, STORY *story, WPOS from, WPOS to, u32 mask, const CH
     }
 }
 
-int we_all_have( WDOC *doc, STORY *story, WPOS from, WPOS to, u16 flags )
+int we_all_have( WDOC *doc, STORY *story, WPOS from, WPOS to, uint16_t flags )
 {
     WPARA *para;
-    u32 pi, start, len, index, seen = 0;
+    unsigned int pi, start, len, index, seen = 0;
 
     if ( story->count == 0 ) {
         return 0;
@@ -1501,11 +1501,11 @@ int we_all_have( WDOC *doc, STORY *story, WPOS from, WPOS to, u16 flags )
     return (int)seen;
 }
 
-void we_set_pap( WDOC *doc, STORY *story, u32 first, u32 last, u32 mask, const PAP *value,
-                 u16 flag_mask )
+void we_set_pap( WDOC *doc, STORY *story, unsigned int first, unsigned int last, uint32_t mask, const PAP *value,
+                 uint16_t flag_mask )
 {
     PAP pap;
-    u32 pi;
+    unsigned int pi;
     int done;
 
     if ( story->count == 0 ) {
@@ -1515,7 +1515,7 @@ void we_set_pap( WDOC *doc, STORY *story, u32 first, u32 last, u32 mask, const P
         last = story->count - 1;
     }
     /* where a table's cells end is not something a command sets */
-    flag_mask &= (u16)~(PF_INTABLE | PF_CELLEND | PF_ROWEND);
+    flag_mask &= (uint16_t)~(PF_INTABLE | PF_CELLEND | PF_ROWEND);
     for ( pi = first; pi <= last; pi++ ) {
         if ( !pap_copy( &pap, &story->para[pi]->pap ) ) {
             doc->failed = 1;
@@ -1552,7 +1552,7 @@ void we_set_pap( WDOC *doc, STORY *story, u32 first, u32 last, u32 mask, const P
             pap.style = value->style;
         }
         if ( mask & PM_FLAGS ) {
-            pap.flags = (u16)((pap.flags & ~flag_mask) | (value->flags & flag_mask));
+            pap.flags = (uint16_t)((pap.flags & ~flag_mask) | (value->flags & flag_mask));
         }
         done = 1;
         if ( mask & PM_TABS ) {
@@ -1577,7 +1577,7 @@ void we_set_pap( WDOC *doc, STORY *story, u32 first, u32 last, u32 mask, const P
 static void copy_story( WDOC *dst, STORY *dst_story, WDOC *src, STORY *src_story, int depth );
 
 /* a CHP of one document as the same look in another */
-static u16 map_chp( WDOC *dst, WDOC *src, u16 id )
+static uint16_t map_chp( WDOC *dst, WDOC *src, uint16_t id )
 {
     CHP chp = *wd_chp_get( src, id );
     const WFONT *font = &src->font[chp.font < src->nfont ? chp.font : 0];
@@ -1585,15 +1585,15 @@ static u16 map_chp( WDOC *dst, WDOC *src, u16 id )
     if ( dst == src ) {
         return id;
     }
-    chp.font = (u16)wd_font( dst, font->name, font->family, font->fixed );
+    chp.font = (uint16_t)wd_font( dst, font->name, font->family, font->fixed );
     return wd_chp( dst, &chp );
 }
 
-static u8 map_style( WDOC *dst, WDOC *src, u8 id )
+static uint8_t map_style( WDOC *dst, WDOC *src, uint8_t id )
 {
     const WSTYLE *from;
     WSTYLE *made;
-    u32 had = dst->nstyle;
+    unsigned int had = dst->nstyle;
     int found;
 
     if ( dst == src || id == 0 || id >= src->nstyle ) {
@@ -1601,7 +1601,7 @@ static u8 map_style( WDOC *dst, WDOC *src, u8 id )
     }
     from = &src->style[id];
     found = wd_style( dst, from->name, from->kind );
-    if ( (u32)found >= had && found != 0 ) {
+    if ( (unsigned int)found >= had && found != 0 ) {
         /* new here: it brings its look with it */
         made = &dst->style[found];
         made->chp = *wd_chp_get( dst, map_chp( dst, src, wd_chp( src, &from->chp ) ) );
@@ -1611,11 +1611,11 @@ static u8 map_style( WDOC *dst, WDOC *src, u8 id )
         made->pap.ntabs = 0;
         made->pap.style = 0;
     }
-    return (u8)found;
+    return (uint8_t)found;
 }
 
 /* an object of one document made again in another: its number, or -1 */
-static int map_obj( WDOC *dst, WDOC *src, u32 which, int depth )
+static int map_obj( WDOC *dst, WDOC *src, unsigned int which, int depth )
 {
     const WOBJ *obj;
     STORY *note;
@@ -1646,13 +1646,13 @@ static int map_obj( WDOC *dst, WDOC *src, u32 which, int depth )
  * CHP numbers that document has for its looks, and its objects made
  * there.  -> 0 if there was no memory.  The caller frees both arrays.
  */
-static int map_text( WDOC *dst, WDOC *src, const WPARA *para, u32 start, u32 len, u16 **attr_out,
-                     WANCH **anch_out, u32 *nanch_out, int depth )
+static int map_text( WDOC *dst, WDOC *src, const WPARA *para, unsigned int start, unsigned int len, uint16_t **attr_out,
+                     WANCH **anch_out, unsigned int *nanch_out, int depth )
 {
-    u16 *attr = NULL;
+    uint16_t *attr = NULL;
     WANCH *anch = NULL;
-    u16 was = 0, now = 0;
-    u32 index, count, made = 0;
+    uint16_t was = 0, now = 0;
+    unsigned int index, count, made = 0;
     int obj;
 
     *attr_out = NULL;
@@ -1662,7 +1662,7 @@ static int map_text( WDOC *dst, WDOC *src, const WPARA *para, u32 start, u32 len
         return 1;
     }
     count = anch_count( para, start, len );
-    attr = (u16 *)try_alloc( len * sizeof( u16 ) );
+    attr = (uint16_t *)try_alloc( len * sizeof( uint16_t ) );
     if ( count ) {
         anch = (WANCH *)try_alloc( count * sizeof( WANCH ) );
     }
@@ -1680,10 +1680,10 @@ static int map_text( WDOC *dst, WDOC *src, const WPARA *para, u32 start, u32 len
         if ( para->text[start + index] == WCH_OBJ && made < count ) {
             /* a copy of the picture or note, the other document's own */
             obj = wd_obj_at( para, start + index );
-            obj = obj < 0 ? -1 : map_obj( dst, src, (u32)obj, depth );
+            obj = obj < 0 ? -1 : map_obj( dst, src, (unsigned int)obj, depth );
             if ( obj >= 0 ) {
                 anch[made].off = index;
-                anch[made].obj = (u32)obj;
+                anch[made].obj = (unsigned int)obj;
                 made++;
             }
         }
@@ -1702,9 +1702,9 @@ static void map_pap( WDOC *dst, WDOC *src, PAP *pap )
 static void copy_story( WDOC *dst, STORY *dst_story, WDOC *src, STORY *src_story, int depth )
 {
     WPARA *from, *made;
-    u16 *attr;
+    uint16_t *attr;
     WANCH *anch;
-    u32 pi, nanch;
+    unsigned int pi, nanch;
 
     for ( pi = 0; pi < src_story->count && !dst->failed; pi++ ) {
         from = src_story->para[pi];
@@ -1727,9 +1727,9 @@ WDOC *we_copy( WDOC *doc, STORY *story, WPOS from, WPOS to )
 {
     WDOC *piece;
     WPARA *para, *made;
-    u16 *attr;
+    uint16_t *attr;
     WANCH *anch;
-    u32 pi, start, len, nanch;
+    unsigned int pi, start, len, nanch;
 
     if ( story->count == 0 ) {
         return NULL;
@@ -1751,7 +1751,7 @@ WDOC *we_copy( WDOC *doc, STORY *story, WPOS from, WPOS to )
         map_pap( piece, doc, &made->pap );
         if ( pi == to.para ) {
             /* the last is text without its paragraph's end: no cell ends in it */
-            made->pap.flags &= (u16)~CELL_MARKS;
+            made->pap.flags &= (uint16_t)~CELL_MARKS;
             xfree( made->pap.row );
             made->pap.row = NULL;
         }
@@ -1774,9 +1774,9 @@ void we_paste( WDOC *doc, STORY *story, WPOS *pos, WDOC *piece )
 {
     WPARA *from;
     PAP pap;
-    u16 *attr;
+    uint16_t *attr;
     WANCH *anch;
-    u32 pi, nanch;
+    unsigned int pi, nanch;
     int done;
 
     if ( story->count == 0 || piece == NULL ) {
@@ -1798,7 +1798,7 @@ void we_paste( WDOC *doc, STORY *story, WPOS *pos, WDOC *piece )
             map_pap( doc, piece, &pap );
             /* the cell it is pasted into keeps its own end */
             if ( story->para[pos->para + 1]->pap.flags & PF_INTABLE ) {
-                pap.flags &= (u16)~CELL_MARKS;
+                pap.flags &= (uint16_t)~CELL_MARKS;
                 pap.flags |= PF_INTABLE;
                 xfree( pap.row );
                 pap.row = NULL;
@@ -1834,7 +1834,7 @@ void we_paste( WDOC *doc, STORY *story, WPOS *pos, WDOC *piece )
 
 /* a letter as its small one: ASCII, Latin-1, Greek and Cyrillic, which
    is what the code pages PMWRITE reads have letters from */
-static u32 fold( u32 code )
+static uint32_t fold( uint32_t code )
 {
     if ( code >= 'A' && code <= 'Z' ) {
         return code + 0x20;
@@ -1858,16 +1858,16 @@ static u32 fold( u32 code )
     return code;
 }
 
-static int is_word( u32 code )
+static int is_word( uint32_t code )
 {
     return (code >= '0' && code <= '9') || (code >= 'A' && code <= 'Z') ||
            (code >= 'a' && code <= 'z') || code == '_' || (code >= 0xC0 && code != 0xD7 && code != 0xF7 &&
            code < 0x2000);
 }
 
-static int match_at( const WPARA *para, u32 off, const u16 *what, u32 len, int flags )
+static int match_at( const WPARA *para, unsigned int off, const uint16_t *what, unsigned int len, int flags )
 {
-    u32 index;
+    unsigned int index;
 
     if ( len > para->len - off ) {
         return 0;
@@ -1889,10 +1889,10 @@ static int match_at( const WPARA *para, u32 off, const u16 *what, u32 len, int f
     return 1;
 }
 
-int we_find( WDOC *doc, STORY *story, WPOS from, const u16 *what, u32 len, int flags, WPOS *at )
+int we_find( WDOC *doc, STORY *story, WPOS from, const uint16_t *what, unsigned int len, int flags, WPOS *at )
 {
     const WPARA *para;
-    u32 pi, off;
+    unsigned int pi, off;
 
     (void)doc;
     if ( story->count == 0 || len == 0 ) {

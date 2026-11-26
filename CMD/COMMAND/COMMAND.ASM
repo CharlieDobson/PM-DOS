@@ -160,6 +160,20 @@ gc_prompt:
         ; CMD.EXE uses it, and on any other DOS it is a flush.
         mov     ah,0Dh
         int     21h
+
+        ; A PROMPT ON A SCREEN THAT CAN SHOW IT.  A program that ends in
+        ; a graphics mode leaves it on, as under MS-DOS, and a batch
+        ; file's next program finds it there.  But PM-DOS's console
+        ; writes characters into the text page, which no graphics mode
+        ; shows, so 21h/F0h AL=0Eh sets the text mode the last program
+        ; started on when the screen is in a graphics one.  On PM-DOS
+        ; only: another DOS draws the prompt into a graphics screen
+        ; through the BIOS, and has no F0h.
+        cmp     byte ptr [on_pmdos],0
+        je      gcp_shown
+        mov     ax,0F00Eh
+        int     21h
+gcp_shown:
         cmp     byte ptr [echo_on],0    ; ECHO OFF at the prompt hides
         je      gcp_read                ; the prompt, as it always has
         call    crlf
@@ -2811,6 +2825,7 @@ fp_hasext   db  0
 rd_append   db  0
 rd_long     db  0                       ; a redirection's name did not fit
 pn_triedroot db 0
+on_pmdos    db  0                       ; 30h's OEM byte said PM-DOS's kernel
 fn_sep      db  1, 0                    ; a word: put_dec saves it whole
 
 ; the files our own commands have open, for abandon to close

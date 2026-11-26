@@ -20,20 +20,21 @@
 
 typedef struct NAME {
     struct NAME *next;
-    u8   len;
-    char text[NAME_MAX + 1];    /* as last typed */
+    uint8_t len;
+    char    text[NAME_MAX + 1]; /* as last typed */
 } NAME;
 
 #define NBUCKETS    256
 
 static NAME *names[NBUCKETS];
 
-static u32 hash_name( const char *name, u32 len )
+static unsigned int hash_name( const char *name, unsigned int len )
 {
-    u32 hash = 0, i;
+    uint32_t hash = 0;
+    unsigned int i;
 
     for ( i = 0; i < len; i++ ) {
-        hash = hash * 31 + (u32)ch_upper( name[i] );
+        hash = hash * 31 + (uint32_t)ch_upper( name[i] );
     }
     return hash % NBUCKETS;
 }
@@ -52,7 +53,7 @@ void names_reset( void )
     }
 }
 
-static NAME *find_name( const char *name, u32 len )
+static NAME *find_name( const char *name, unsigned int len )
 {
     NAME *cur;
 
@@ -65,10 +66,10 @@ static NAME *find_name( const char *name, u32 len )
 }
 
 /* -> 1 if the spelling changed (or the name is new) */
-int names_learn( const char *name, u32 len )
+int names_learn( const char *name, unsigned int len )
 {
     NAME *cur;
-    u32 hash;
+    unsigned int hash;
 
     if ( len == 0 || len > NAME_MAX ) {
         return 0;
@@ -86,7 +87,7 @@ int names_learn( const char *name, u32 len )
         return 0;
     }
     hash = hash_name( name, len );
-    cur->len = (u8)len;
+    cur->len = (uint8_t)len;
     mem_cpy( cur->text, name, len );
     cur->text[len] = 0;
     cur->next = names[hash];
@@ -94,7 +95,7 @@ int names_learn( const char *name, u32 len )
     return 0;
 }
 
-const char *names_spelling( const char *name, u32 len )
+const char *names_spelling( const char *name, unsigned int len )
 {
     NAME *cur = find_name( name, len );
 
@@ -106,12 +107,12 @@ const char *names_spelling( const char *name, u32 len )
 /* ------------------------------------------------------------------ */
 
 typedef struct {
-    char *out;
-    u32   len, max;
-    int   cut;                  /* something did not fit */
+    char        *out;
+    unsigned int len, max;
+    int          cut;           /* something did not fit */
 } OUTBUF;
 
-static void put( OUTBUF *buf, const char *text, u32 len )
+static void put( OUTBUF *buf, const char *text, unsigned int len )
 {
     while ( len > 0 && buf->len + 1 < buf->max ) {
         buf->out[buf->len++] = *text++;
@@ -136,9 +137,9 @@ static void put_cstr( OUTBUF *buf, const char *text )
 }
 
 /* a name, a part at a time between its dots, each in its own spelling */
-static void put_name( OUTBUF *buf, const char *text, u32 len )
+static void put_name( OUTBUF *buf, const char *text, unsigned int len )
 {
-    u32 start = 0, end;
+    unsigned int start = 0, end;
     const char *spell;
 
     while ( start < len ) {
@@ -160,14 +161,14 @@ static const char hexdig[] = "0123456789ABCDEF";
 static void put_radix( OUTBUF *buf, TOKEN *tok )
 {
     char digits[16];
-    u32 val, mask;
+    uint32_t val, mask;
     int count = 0, hex = (tok->flags & TF_HEX) != 0;
 
     if ( tok->ntype == TY_LONG ) {
-        val = (u32)(s32)tok->num;
+        val = (uint32_t)(int32_t)tok->num;
         mask = 0xFFFFFFFFUL;
     } else {
-        val = (u32)(u16)(s16)(s32)tok->num;
+        val = (uint32_t)(uint16_t)(int16_t)(int32_t)tok->num;
         mask = 0xFFFFUL;
     }
     val &= mask;
@@ -184,7 +185,7 @@ static void put_radix( OUTBUF *buf, TOKEN *tok )
     while ( count ) {
         put_ch( buf, digits[--count] );
     }
-    if ( tok->ntype == TY_LONG && (u32)(s32)tok->num <= 0xFFFFUL ) {
+    if ( tok->ntype == TY_LONG && (uint32_t)(int32_t)tok->num <= 0xFFFFUL ) {
         put_ch( buf, '&' );
     }
 }
@@ -256,12 +257,12 @@ static int space_between( TOKEN *first, TOKEN *prev, TOKEN *cur )
     return 1;
 }
 
-int list_line( const char *src, u32 len, TOKEN *toks, char *out, u32 max )
+int list_line( const char *src, unsigned int len, TOKEN *toks, char *out, unsigned int max )
 {
     OUTBUF buf;
     TOKEN *tok, *prev = NULL;
     char num[40];
-    u32 lead = 0;
+    unsigned int lead = 0;
 
     buf.out = out;
     buf.len = 0;
@@ -280,7 +281,7 @@ int list_line( const char *src, u32 len, TOKEN *toks, char *out, u32 max )
         if ( prev != NULL ) {
             if ( tok->kind == TK_REM && (tok->flags & TF_APOS) ) {
                 /* a remark keeps the gap before it, as typed */
-                u32 from = prev->col + prev->len, gap = tok->col > from ? tok->col - from : 1;
+                unsigned int from = prev->col + prev->len, gap = tok->col > from ? tok->col - from : 1;
                 while ( gap-- ) {
                     put_ch( &buf, ' ' );
                 }
@@ -293,7 +294,7 @@ int list_line( const char *src, u32 len, TOKEN *toks, char *out, u32 max )
             put_cstr( &buf, kw_name( tok->kw ) );
             break;
         case TK_ID: {
-            u32 nlen = tok->len - (tok->kw ? 1 : 0);
+            unsigned int nlen = tok->len - (tok->kw ? 1 : 0);
             put_name( &buf, src + tok->col, nlen );
             if ( tok->kw ) {
                 put_ch( &buf, tok->kw );
@@ -305,7 +306,7 @@ int list_line( const char *src, u32 len, TOKEN *toks, char *out, u32 max )
             put_ch( &buf, ':' );
             break;
         case TK_LINENUM:
-            num_fmt_l( (s32)tok->num, num );
+            num_fmt_l( (int32_t)tok->num, num );
             put_cstr( &buf, num );
             break;
         case TK_NUM:

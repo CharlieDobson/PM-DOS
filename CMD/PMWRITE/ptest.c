@@ -29,7 +29,7 @@ int main( int argc, char **argv )
     FILE *file;
     WDOC *doc;
     OUT *out;
-    u8 *data;
+    uint8_t *data;
     long size;
     int id, rc;
 
@@ -50,12 +50,12 @@ int main( int argc, char **argv )
     fseek( file, 0, SEEK_END );
     size = ftell( file );
     fseek( file, 0, SEEK_SET );
-    data = (u8 *)malloc( (size_t)size + 1 );
+    data = (uint8_t *)malloc( (size_t)size + 1 );
     fread( data, 1, (size_t)size, file );
     fclose( file );
-    id = fmt_detect( data, (u32)size, argv[1] );
+    id = fmt_detect( data, (uint32_t)size, argv[1] );
     doc = wd_new();
-    if ( id == FMT_NONE || formats[id]->load( data, (u32)size, doc ) != WE_OK || wd_failed( doc ) ) {
+    if ( id == FMT_NONE || formats[id]->load( data, (uint32_t)size, doc ) != WE_OK || wd_failed( doc ) ) {
         fprintf( stderr, "PTEST: cannot read %s\n", argv[1] );
         return 2;
     }

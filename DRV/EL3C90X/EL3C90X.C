@@ -171,9 +171,9 @@
 #define K_EE8BIT    0x04
 
 /* a descriptor: next, status/header, buffer address, buffer length */
-typedef struct { u32 next, status, addr, length; } DESC;
+typedef struct { uint32_t next, status, addr, length; } DESC;
 
-typedef struct { u16 device; u8 kind; const char *name; } CHIP;
+typedef struct { uint16_t device; uint8_t kind; const char *name; } CHIP;
 
 static const CHIP chips[] = {
     { 0x9000, K_BOOMERANG, "3Com 3C900" }, { 0x9001, K_BOOMERANG, "3Com 3C900" },
@@ -194,26 +194,26 @@ static const CHIP chips[] = {
 
 static const CHIP *chip;
 static volatile DESC *rxd, *txd;
-static u8  *rxbuf[RXN];
-static u8  *txbuf[TXN];
-static int  rx_cur, tx_cur;
-static u8   xcvr = 0xFF;        /* the transceiver chosen at the first start */
-static u8   fdx;                /* the PHY agreed full duplex */
-static int  phy_addr = -1;
+static uint8_t *rxbuf[RXN];
+static uint8_t *txbuf[TXN];
+static int      rx_cur, tx_cur;
+static uint8_t  xcvr = 0xFF;    /* the transceiver chosen at the first start */
+static unsigned char fdx;       /* the PHY agreed full duplex */
+static int      phy_addr = -1;
 static const char *speed;       /* what the PHY agreed, for the name */
 
-static u32 align16( u32 p ) { return ( p + 15 ) & ~15L; }
+static uint32_t align16( uint32_t p ) { return ( p + 15 ) & ~15L; }
 
-static void el_cmd( u16 cmd )
+static void el_cmd( uint16_t cmd )
 {
-    u32 n;
+    unsigned int n;
     outw( net_port + EL_CMD, cmd );
     for ( n = 0; n < SPIN_CMD; n++ ) {
         if ( !( inw( net_port + EL_STATUS ) & ST_CMDBUSY ) ) break;
     }
 }
 
-static void el_window( int win ) { outw( net_port + EL_CMD, (u16)( CMD_SELWIN | win ) ); }
+static void el_window( int win ) { outw( net_port + EL_CMD, (uint16_t)( CMD_SELWIN | win ) ); }
 
 static void name_add( const char *text )
 {
@@ -227,12 +227,12 @@ static void name_add( const char *text )
 
 /* one EEPROM word: the command, then the busy bit waited on, 162us at
    a time (the read takes that long), at most eleven times */
-static u16 ee_word( int addr )
+static uint16_t ee_word( int addr )
 {
     int i;
 
     el_window( 0 );
-    outw( net_port + W0_EECMD, (u16)( ( chip->kind & K_EE8BIT ? EE_READ_8BIT : EE_READ ) + addr ) );
+    outw( net_port + W0_EECMD, (uint16_t)( ( chip->kind & K_EE8BIT ? EE_READ_8BIT : EE_READ ) + addr ) );
     for ( i = 0; i < 11; i++ ) {
         net_delay_us( 162 );
         if ( !( inw( net_port + W0_EECMD ) & EE_BUSY ) ) break;
@@ -244,8 +244,9 @@ int card_find( void )
 {
     PCI_ID one[2];
     int isio, i, from;
-    u32 at, need;
-    u8 *pool;
+    uint32_t at;
+    unsigned int need;
+    uint8_t *pool;
 
     one[1].vendor = 0;
     one[1].device = 0;
@@ -257,9 +258,9 @@ int card_find( void )
     if ( chip->device == 0 ) { net_strcpy( net_name, "3Com 3C90x" ); return 1; }
     net_strcpy( net_name, chip->name );
     net_pci_enable( net_pciaddr );
-    net_port = (u16)net_pci_bar( net_pciaddr, 0, &isio );
+    net_port = (uint16_t)net_pci_bar( net_pciaddr, 0, &isio );
     if ( net_port == 0 || !isio ) return 1;
-    net_irq = (u8)net_pci_irqline( net_pciaddr );
+    net_irq = (uint8_t)net_pci_irqline( net_pciaddr );
     net_bus = NICB_PCI;
     net_flags = NICF_WORD;
 
@@ -270,15 +271,15 @@ int card_find( void )
     el_cmd( CMD_DNSTALL );
     el_cmd( CMD_RXDISABLE );
     el_cmd( CMD_TXDISABLE );
-    el_cmd( (u16)( CMD_ACKINTR | ST_ACKMASK ) );
+    el_cmd( (uint16_t)( CMD_ACKINTR | ST_ACKMASK ) );
 
     /* the station address: the OEM words 10-12, as Linux reads it, and
        the 3Com words 0-2 when those are empty */
     for ( from = 10; ; from = 0 ) {
         for ( i = 0; i < 3; i++ ) {
-            u16 word = ee_word( from + i );
-            net_mac[i * 2] = (u8)( word >> 8 );
-            net_mac[i * 2 + 1] = (u8)word;
+            uint16_t word = ee_word( from + i );
+            net_mac[i * 2] = (uint8_t)( word >> 8 );
+            net_mac[i * 2 + 1] = (uint8_t)word;
         }
         if ( net_mac_ok( net_mac ) || from == 0 ) break;
     }
@@ -288,11 +289,11 @@ int card_find( void )
         need = RXN * sizeof( DESC ) + TXN * sizeof( DESC ) + ( RXN + TXN ) * BUFSZ + 16;
         pool = net_alloc( need );
         if ( pool == 0 ) return 1;
-        at = align16( (u32)pool );
+        at = align16( (uint32_t)pool );
         rxd = (volatile DESC *)at;  at += RXN * sizeof( DESC );
         txd = (volatile DESC *)at;  at += TXN * sizeof( DESC );
-        for ( i = 0; i < RXN; i++ ) { rxbuf[i] = (u8 *)at; at += BUFSZ; }
-        for ( i = 0; i < TXN; i++ ) { txbuf[i] = (u8 *)at; at += BUFSZ; }
+        for ( i = 0; i < RXN; i++ ) { rxbuf[i] = (uint8_t *)at; at += BUFSZ; }
+        for ( i = 0; i < TXN; i++ ) { txbuf[i] = (uint8_t *)at; at += BUFSZ; }
     }
     return 0;
 }
@@ -303,24 +304,24 @@ int card_find( void )
 
 /* each port cycle on PCI is several hundred nanoseconds, well over the
    200 the MII wants a half-clock to be; the read between is the delay */
-static void mdio_bit( u16 out )
+static void mdio_bit( uint16_t out )
 {
     outw( net_port + W4_PHYMGMT, out );
     (void)inw( net_port + W4_PHYMGMT );
-    outw( net_port + W4_PHYMGMT, (u16)( out | MDIO_CLK ) );
+    outw( net_port + W4_PHYMGMT, (uint16_t)( out | MDIO_CLK ) );
     (void)inw( net_port + W4_PHYMGMT );
 }
 
 /* register REG of the PHY at ADDR, with a full preamble every time (the
    B and C want one); FFFF when nothing answers.  Window 4 selected. */
-static u16 mii_read( int addr, int reg )
+static uint16_t mii_read( int addr, int reg )
 {
-    u32 cmd = ( 0xF6L << 10 ) | ( (u32)addr << 5 ) | (u32)reg;
-    u32 value = 0;
+    uint32_t cmd = ( 0xF6L << 10 ) | ( (uint32_t)addr << 5 ) | (uint32_t)reg;
+    uint32_t value = 0;
     int i;
 
     for ( i = 0; i < 32; i++ ) mdio_bit( MDIO_OUT | MDIO_DATA );
-    for ( i = 14; i >= 0; i-- ) mdio_bit( (u16)( MDIO_OUT | ( ( cmd >> i ) & 1 ? MDIO_DATA : 0 ) ) );
+    for ( i = 14; i >= 0; i-- ) mdio_bit( (uint16_t)( MDIO_OUT | ( ( cmd >> i ) & 1 ? MDIO_DATA : 0 ) ) );
     for ( i = 0; i < 19; i++ ) {
         outw( net_port + W4_PHYMGMT, 0 );
         (void)inw( net_port + W4_PHYMGMT );
@@ -329,7 +330,7 @@ static u16 mii_read( int addr, int reg )
         (void)inw( net_port + W4_PHYMGMT );
     }
     if ( value & 0x20000L ) return 0xFFFF;
-    return (u16)( value >> 1 );
+    return (uint16_t)( value >> 1 );
 }
 
 /* the PHY found (24 first: the 3C905CX answers at every address, and
@@ -339,7 +340,7 @@ static u16 mii_read( int addr, int reg )
 static int phy_check( int wait_tenths )
 {
     int i, addr;
-    u16 status = 0, both;
+    uint16_t status = 0, both;
 
     el_window( 4 );
     if ( phy_addr < 0 ) {
@@ -359,7 +360,7 @@ static int phy_check( int wait_tenths )
     fdx = 0;
     speed = 0;
     if ( status & 0x0020 ) {
-        both = (u16)( mii_read( phy_addr, MII_ANAR ) & mii_read( phy_addr, MII_ANLPAR ) );
+        both = (uint16_t)( mii_read( phy_addr, MII_ANAR ) & mii_read( phy_addr, MII_ANLPAR ) );
         if ( both & 0x0100 )      { speed = "100BASE-T full"; fdx = 1; }
         else if ( both & 0x0080 ) speed = "100BASE-T half";
         else if ( both & 0x0040 ) { speed = "10BASE-T full"; fdx = 1; }
@@ -372,15 +373,15 @@ static int phy_check( int wait_tenths )
    name with what is known of its link */
 static void choose_xcvr( void )
 {
-    u32 config;
-    u16 fitted;
+    uint32_t config;
+    uint16_t fitted;
     int link = -1;
 
     el_window( 3 );
     config = inl( net_port + W3_CONFIG );
     fitted = inw( net_port + W3_OPTIONS );
     if ( ( fitted & 0xFF ) == 0 ) fitted = OPT_MII;     /* Linux: the 3C916 */
-    xcvr = (u8)( ( config & CFG_XCVR ) >> 20 );
+    xcvr = (uint8_t)( ( config & CFG_XCVR ) >> 20 );
     if ( config & CFG_AUTO ) {
         if ( ( chip->kind & K_NWAY ) || xcvr == XCVR_NWAY ) xcvr = XCVR_NWAY;
         else if ( fitted & OPT_100TX ) xcvr = XCVR_100TX;
@@ -409,20 +410,20 @@ static void choose_xcvr( void )
    register (not for NWAY, as Linux leaves that one) */
 static void set_xcvr( void )
 {
-    u32 config;
-    u16 media;
+    uint32_t config;
+    uint16_t media;
 
     el_window( 3 );
     config = inl( net_port + W3_CONFIG );
-    outl( net_port + W3_CONFIG, ( config & ~CFG_XCVR ) | ( (u32)xcvr << 20 ) );
+    outl( net_port + W3_CONFIG, ( config & ~CFG_XCVR ) | ( (uint32_t)xcvr << 20 ) );
     media = inw( net_port + W3_MACCTRL );
     if ( IS_PHY( xcvr ) && fdx ) media |= MAC_FULLDUP;
-    else media &= (u16)~MAC_FULLDUP;
+    else media &= (uint16_t)~MAC_FULLDUP;
     outw( net_port + W3_MACCTRL, media );
     el_cmd( xcvr == XCVR_10B2 ? CMD_STARTCOAX : CMD_STOPCOAX );
     if ( xcvr != XCVR_NWAY ) {
         el_window( 4 );
-        media = (u16)( inw( net_port + W4_MEDIA ) & ~( MED_10TP | MED_SQE ) );
+        media = (uint16_t)( inw( net_port + W4_MEDIA ) & ~( MED_10TP | MED_SQE ) );
         if ( xcvr == XCVR_10T ) media |= MED_10TP;
         else if ( xcvr == XCVR_AUI ) media |= MED_SQE;
         else if ( xcvr == XCVR_100TX || xcvr == XCVR_100FX ) media |= MED_LNK;
@@ -450,29 +451,29 @@ static void el_start( void )
     el_cmd( CMD_STATSDIS );
 
     for ( i = 0; i < RXN; i++ ) {
-        rxd[i].next = (u32)&rxd[( i + 1 ) % RXN];
+        rxd[i].next = (uint32_t)&rxd[( i + 1 ) % RXN];
         rxd[i].status = 0;
-        rxd[i].addr = (u32)rxbuf[i];
+        rxd[i].addr = (uint32_t)rxbuf[i];
         rxd[i].length = BUFSZ | LAST_FRAG;
     }
     for ( i = 0; i < TXN; i++ ) {
         txd[i].next = 0;
         txd[i].status = 0;
-        txd[i].addr = (u32)txbuf[i];
+        txd[i].addr = (uint32_t)txbuf[i];
         txd[i].length = 0;
     }
     rx_cur = tx_cur = 0;
 
     el_window( 7 );
-    el_cmd( (u16)( CMD_SETRXTHRESH | ( 1536 >> 2 ) ) );
+    el_cmd( (uint16_t)( CMD_SETRXTHRESH | ( 1536 >> 2 ) ) );
     outl( net_port + OP_PKTSTATUS, 0x00000020L );
-    outl( net_port + OP_UPLISTPTR, (u32)&rxd[0] );
-    if ( chip->kind & K_BOOMERANG ) outb( net_port + OP_TXFREETHRESH, (u8)( BUFSZ >> 8 ) );
+    outl( net_port + OP_UPLISTPTR, (uint32_t)&rxd[0] );
+    if ( chip->kind & K_BOOMERANG ) outb( net_port + OP_TXFREETHRESH, (uint8_t)( BUFSZ >> 8 ) );
     outl( net_port + OP_DNLISTPTR, 0 );
 
     /* station, broadcast AND multicast (NetBEUI's functional address
        03-00-00-00-00-01 is a multicast) */
-    el_cmd( (u16)( CMD_SETFILTER | FILTER_STATION | FILTER_MULTI | FILTER_BCAST ) );
+    el_cmd( (uint16_t)( CMD_SETFILTER | FILTER_STATION | FILTER_MULTI | FILTER_BCAST ) );
     el_cmd( CMD_RXENABLE );
     el_cmd( CMD_TXENABLE );
     el_cmd( CMD_UPUNSTALL );
@@ -480,10 +481,10 @@ static void el_start( void )
 
     /* what may be seen whether polled or not; what was raised while it
        was set up acknowledged; then what may interrupt */
-    el_cmd( (u16)( CMD_SETSTATUS | ST_HOSTERR | ST_TXCOMP | ST_INTREQ | ST_DNCOMP | ST_UPCOMP ) );
-    el_cmd( (u16)( CMD_ACKINTR | ST_ACKMASK ) );
+    el_cmd( (uint16_t)( CMD_SETSTATUS | ST_HOSTERR | ST_TXCOMP | ST_INTREQ | ST_DNCOMP | ST_UPCOMP ) );
+    el_cmd( (uint16_t)( CMD_ACKINTR | ST_ACKMASK ) );
     if ( net_flags & NICF_POLLED ) el_cmd( CMD_SETINTR );
-    else el_cmd( (u16)( CMD_SETINTR | ST_INTLATCH | ST_HOSTERR | ST_TXCOMP | ST_UPCOMP ) );
+    else el_cmd( (uint16_t)( CMD_SETINTR | ST_INTLATCH | ST_HOSTERR | ST_TXCOMP | ST_UPCOMP ) );
 }
 
 int card_setup( void )
@@ -511,8 +512,8 @@ void card_stop( void )
    jabber also wants the transmitter reset (Linux's vortex_error). */
 static void tx_status_pop( void )
 {
-    u8  ts;
-    int i, reset = 0;
+    uint8_t ts;
+    int     i, reset = 0;
 
     for ( i = 0; i < 32; i++ ) {
         ts = inb( net_port + OP_TXSTATUS );
@@ -526,16 +527,16 @@ static void tx_status_pop( void )
            it again here); the frame in flight is lost */
         el_cmd( CMD_TXRESET );
         outl( net_port + OP_DNLISTPTR, 0 );
-        if ( chip->kind & K_BOOMERANG ) outb( net_port + OP_TXFREETHRESH, (u8)( BUFSZ >> 8 ) );
+        if ( chip->kind & K_BOOMERANG ) outb( net_port + OP_TXFREETHRESH, (uint8_t)( BUFSZ >> 8 ) );
     }
     el_cmd( CMD_TXENABLE );
 }
 
-int card_send( const u8 *frame, u32 len )
+int card_send( const uint8_t *frame, unsigned int len )
 {
     int entry = tx_cur;
     volatile DESC *d = &txd[entry];
-    u32 n;
+    unsigned int n;
 
     /* one frame at a time: the engine clears DnListPtr when it is done
        with the list, on every chip of the family */
@@ -550,10 +551,10 @@ int card_send( const u8 *frame, u32 len )
     }
     d->next = 0;
     d->status = len;                            /* the header: no indication asked */
-    d->addr = (u32)txbuf[entry];
+    d->addr = (uint32_t)txbuf[entry];
     d->length = len | LAST_FRAG;
     el_cmd( CMD_DNSTALL );
-    if ( inl( net_port + OP_DNLISTPTR ) == 0 ) outl( net_port + OP_DNLISTPTR, (u32)d );
+    if ( inl( net_port + OP_DNLISTPTR ) == 0 ) outl( net_port + OP_DNLISTPTR, (uint32_t)d );
     el_cmd( CMD_DNUNSTALL );
     tx_cur = ( entry + 1 ) % TXN;
     return 1;
@@ -563,9 +564,10 @@ int card_send( const u8 *frame, u32 len )
 static int rx_drain( void )
 {
     volatile DESC *d;
-    u32 status, len, n;
+    uint32_t status;
+    unsigned int len, n;
     int got = 0;
-    u8 *slot;
+    uint8_t *slot;
 
     for ( n = 0; n < RXN; n++ ) {
         d = &rxd[rx_cur];
@@ -593,8 +595,8 @@ static int rx_drain( void )
 
 int card_service( void )
 {
-    u16 st;
-    u32 n;
+    uint16_t st;
+    unsigned int n;
     int mine = 0;
 
     for ( n = 0; n < 8; n++ ) {
@@ -603,7 +605,7 @@ int card_service( void )
         if ( !( st & ( ST_INTLATCH | ST_HOSTERR | ST_TXCOMP | ST_INTREQ | ST_DNCOMP | ST_UPCOMP ) ) ) break;
         mine = 1;
         if ( st & ST_TXCOMP ) tx_status_pop();
-        el_cmd( (u16)( CMD_ACKINTR | ( st & ( ST_INTLATCH | ST_RXEARLY | ST_INTREQ | ST_DNCOMP | ST_UPCOMP ) ) ) );
+        el_cmd( (uint16_t)( CMD_ACKINTR | ( st & ( ST_INTLATCH | ST_RXEARLY | ST_INTREQ | ST_DNCOMP | ST_UPCOMP ) ) ) );
         if ( st & ST_HOSTERR ) {
             /* an adapter failure (a bus error, most likely): the card
                is started again from its rings up */

@@ -24,13 +24,13 @@
 #include "tree.h"
 
 typedef struct {
-    u32 eax, ebx, ecx, edx, esi, edi;
-    u32 flags;                  /* in: bit 0 = CF before the INT */
+    uint32_t eax, ebx, ecx, edx, esi, edi;
+    uint32_t flags;             /* in: bit 0 = CF before the INT */
 } REGS;
 
 void __cdecl int21( REGS *regs );
 void __cdecl break_handler( void );
-extern u8 break_hit;
+extern uint8_t break_hit;
 
 #define CF( regs )  ((regs).flags & 1)
 #define AX( regs )  ((regs).eax & 0xFFFF)
@@ -42,18 +42,18 @@ extern u8 break_hit;
 /* The buffers are one block from the heap, bought by sys_init(), so
    that they are not zeroes in the file (TREE.EXE goes on the full boot
    diskette). */
-static u8   *psp;
-static char *tail;              /* TAIL_MAX: the command line */
-static int   lfn_ok = 1;
-static u8   *find_rec;          /* FREC_MAX: 714Eh's record, or the DTA of 4Eh */
-static u8   *label_dta;         /* LDTA_MAX: the volume label's search */
+static uint8_t *psp;
+static char    *tail;           /* TAIL_MAX: the command line */
+static int      lfn_ok = 1;
+static uint8_t *find_rec;       /* FREC_MAX: 714Eh's record, or the DTA of 4Eh */
+static uint8_t *label_dta;      /* LDTA_MAX: the volume label's search */
 
 void __cdecl dos_entry( void )
 {
     tree_main();
 }
 
-static void call21( REGS *regs, u32 eax )
+static void call21( REGS *regs, uint32_t eax )
 {
     regs->eax = eax;
     regs->flags = 0;
@@ -88,16 +88,16 @@ int sys_init( void )
 {
     REGS regs;
     const char *full;
-    u32 len;
+    unsigned int len;
     int quoted;
 
     tail = (char *)xalloc( TAIL_MAX + FREC_MAX + LDTA_MAX );
-    find_rec = (u8 *)tail + TAIL_MAX;
+    find_rec = (uint8_t *)tail + TAIL_MAX;
     label_dta = find_rec + FREC_MAX;
 
     clear( &regs );
     call21( &regs, 0x6200 );
-    psp = (u8 *)regs.ebx;
+    psp = (uint8_t *)regs.ebx;
     len = psp[0x80];
     if ( len > 126 ) {
         len = 126;
@@ -140,9 +140,9 @@ const char *sys_cmdline( void )
 const char *sys_getenv( const char *name )
 {
     const char *env;
-    u32 len = str_len( name );
+    unsigned int len = str_len( name );
 
-    env = (const char *)*(u32 *)(psp + 0x2C);
+    env = (const char *)*(uint32_t *)(psp + 0x2C);
     if ( env == NULL ) {
         return NULL;
     }
@@ -155,14 +155,14 @@ const char *sys_getenv( const char *name )
     return NULL;
 }
 
-void sys_write( int handle, const char *buf, u32 len )
+void sys_write( int handle, const char *buf, unsigned int len )
 {
     REGS regs;
 
     clear( &regs );
-    regs.ebx = (u32)handle;
+    regs.ebx = (uint32_t)handle;
     regs.ecx = len;
-    regs.edx = (u32)buf;
+    regs.edx = (uint32_t)buf;
     call21( &regs, 0x4000 );
 }
 
@@ -171,7 +171,7 @@ void sys_exit( int code )
     REGS regs;
 
     clear( &regs );
-    call21( &regs, 0x4C00 | ((u32)code & 0xFF) );
+    call21( &regs, 0x4C00 | ((uint32_t)code & 0xFF) );
 }
 
 void sys_break_install( void )
@@ -179,7 +179,7 @@ void sys_break_install( void )
     REGS regs;
 
     clear( &regs );
-    regs.edx = (u32)break_handler;
+    regs.edx = (uint32_t)break_handler;
     call21( &regs, 0x2523 );
 }
 
@@ -206,7 +206,7 @@ int sys_drive_valid( int drv )
     REGS regs;
 
     clear( &regs );
-    regs.ebx = (u32)drv + 1;
+    regs.ebx = (uint32_t)drv + 1;
     call21( &regs, 0x4409 );
     return !(CF( regs ) && AX( regs ) == ERR_BADDRIVE);
 }
@@ -219,38 +219,38 @@ int sys_get_cwd( int drv, char *buf )
     buf[0] = 0;
     if ( lfn_ok ) {
         clear( &regs );
-        regs.edx = (u32)drv + 1;
-        regs.esi = (u32)buf;
+        regs.edx = (uint32_t)drv + 1;
+        regs.esi = (uint32_t)buf;
         call21( &regs, 0x7147 );
         if ( !lfn_missing( &regs ) ) {
             return result( &regs );
         }
     }
     clear( &regs );
-    regs.edx = (u32)drv + 1;
-    regs.esi = (u32)buf;
+    regs.edx = (uint32_t)drv + 1;
+    regs.esi = (uint32_t)buf;
     call21( &regs, 0x4700 );
     return result( &regs );
 }
 
-int sys_get_attr( const char *path, u16 *attr )
+int sys_get_attr( const char *path, uint16_t *attr )
 {
     REGS regs;
 
     if ( lfn_ok ) {
         clear( &regs );
         regs.ebx = 0;
-        regs.edx = (u32)path;
+        regs.edx = (uint32_t)path;
         call21( &regs, 0x7143 );
         if ( !lfn_missing( &regs ) ) {
-            *attr = (u16)regs.ecx;
+            *attr = (uint16_t)regs.ecx;
             return result( &regs );
         }
     }
     clear( &regs );
-    regs.edx = (u32)path;
+    regs.edx = (uint32_t)path;
     call21( &regs, 0x4300 );
-    *attr = (u16)regs.ecx;
+    *attr = (uint16_t)regs.ecx;
     return result( &regs );
 }
 
@@ -263,7 +263,7 @@ int sys_volume_label( int drv, char *label )
     REGS regs;
     char spec[8];
     const char *name;
-    u32 pos, got = 0;
+    unsigned int pos, got = 0;
 
     spec[0] = (char)('A' + drv);
     spec[1] = ':';
@@ -273,11 +273,11 @@ int sys_volume_label( int drv, char *label )
     spec[5] = '*';
     spec[6] = 0;
     clear( &regs );
-    regs.edx = (u32)label_dta;
+    regs.edx = (uint32_t)label_dta;
     call21( &regs, 0x1A00 );
     clear( &regs );
     regs.ecx = ATTR_VOLUME;
-    regs.edx = (u32)spec;
+    regs.edx = (uint32_t)spec;
     call21( &regs, 0x4E00 );
     if ( CF( regs ) ) {
         return (int)AX( regs );
@@ -301,35 +301,35 @@ int sys_volume_label( int drv, char *label )
 
 /* 69h: the serial number in the boot sector's extended BPB.  A disk
    formatted before DOS 4, a CD and a network drive have none. */
-int sys_volume_serial( int drv, u32 *serial )
+int sys_volume_serial( int drv, uint32_t *serial )
 {
     REGS regs;
-    u8 info[32];                /* info level, serial, label, FS name: 25 */
+    uint8_t info[32];           /* info level, serial, label, FS name: 25 */
 
     mem_set( info, 0, sizeof( info ) );
     clear( &regs );
-    regs.ebx = (u32)drv + 1;
-    regs.edx = (u32)info;
+    regs.ebx = (uint32_t)drv + 1;
+    regs.edx = (uint32_t)info;
     call21( &regs, 0x6900 );
     if ( CF( regs ) ) {
         return (int)AX( regs );
     }
-    *serial = *(u32 *)(info + 2);
+    *serial = *(uint32_t *)(info + 2);
     return 0;
 }
 
 /* 6521h: "len" bytes in capitals, the country's way; a-z if refused */
-void sys_upper( char *str, u32 len )
+void sys_upper( char *str, unsigned int len )
 {
     REGS regs;
-    u32 pos;
+    unsigned int pos;
 
     if ( len == 0 ) {
         return;
     }
     clear( &regs );
     regs.ecx = len;
-    regs.edx = (u32)str;
+    regs.edx = (uint32_t)str;
     call21( &regs, 0x6521 );
     if ( CF( regs ) ) {
         for ( pos = 0; pos < len; pos++ ) {
@@ -356,22 +356,22 @@ static void rec_from_dta( FINDREC *rec )
 
 /* The classic search cannot ask for a REQUIRED attribute, so the
    directory-only searches filter here, as 714Eh would have. */
-static u8 dta_required;
+static uint8_t dta_required;
 
 static int dta_skip( void )
 {
     return (find_rec[0x15] & dta_required) != dta_required;
 }
 
-int sys_find_first( const char *pattern, u16 attrs, FINDREC *rec, u32 *handle )
+int sys_find_first( const char *pattern, uint16_t attrs, FINDREC *rec, uint32_t *handle )
 {
     REGS regs;
 
     if ( lfn_ok ) {
         clear( &regs );
         regs.ecx = attrs;                   /* CL allowed, CH required */
-        regs.edx = (u32)pattern;
-        regs.edi = (u32)find_rec;
+        regs.edx = (uint32_t)pattern;
+        regs.edi = (uint32_t)find_rec;
         regs.esi = 1;                       /* times in DOS form */
         call21( &regs, 0x714E );
         if ( !lfn_missing( &regs ) ) {
@@ -384,12 +384,12 @@ int sys_find_first( const char *pattern, u16 attrs, FINDREC *rec, u32 *handle )
         }
     }
     clear( &regs );
-    regs.edx = (u32)find_rec;
+    regs.edx = (uint32_t)find_rec;
     call21( &regs, 0x1A00 );
-    dta_required = (u8)(attrs >> 8);
+    dta_required = (uint8_t)(attrs >> 8);
     clear( &regs );
     regs.ecx = attrs & 0xFF;
-    regs.edx = (u32)pattern;
+    regs.edx = (uint32_t)pattern;
     call21( &regs, 0x4E00 );
     if ( CF( regs ) ) {
         return (int)AX( regs );
@@ -402,14 +402,14 @@ int sys_find_first( const char *pattern, u16 attrs, FINDREC *rec, u32 *handle )
     return 0;
 }
 
-int sys_find_next( u32 handle, FINDREC *rec )
+int sys_find_next( uint32_t handle, FINDREC *rec )
 {
     REGS regs;
 
     if ( lfn_ok ) {
         clear( &regs );
         regs.ebx = handle;
-        regs.edi = (u32)find_rec;
+        regs.edi = (uint32_t)find_rec;
         regs.esi = 1;
         call21( &regs, 0x714F );
         if ( CF( regs ) ) {
@@ -429,7 +429,7 @@ int sys_find_next( u32 handle, FINDREC *rec )
     return 0;
 }
 
-void sys_find_close( u32 handle )
+void sys_find_close( uint32_t handle )
 {
     REGS regs;
 
@@ -444,7 +444,7 @@ void sys_find_close( u32 handle )
 /* the rest                                                            */
 /* ------------------------------------------------------------------ */
 
-void *sys_mem_alloc( u32 size )
+void *sys_mem_alloc( unsigned int size )
 {
     REGS regs;
 

@@ -7,25 +7,25 @@
 #include <string.h>
 #include <stdlib.h>
 
-void tls12_prf(const unsigned char *secret, int secretlen,
+void tls12_prf(const uint8_t *secret, int secretlen,
                const char *label,
-               const unsigned char *seed, int seedlen,
-               unsigned char *out, int outlen)
+               const uint8_t *seed, int seedlen,
+               uint8_t *out, int outlen)
 {
     int   llen = (int)strlen(label);
     int   lslen = llen + seedlen;      /* the P_hash "seed" = label || seed */
-    unsigned char *ls;                 /* label || seed                     */
-    unsigned char *tmp;                /* A(i) || label || seed             */
-    unsigned char A[SHA256_DIGEST_LEN];
-    unsigned char Anew[SHA256_DIGEST_LEN];
-    unsigned char block[SHA256_DIGEST_LEN];
+    uint8_t *ls;                       /* label || seed                     */
+    uint8_t *tmp;                      /* A(i) || label || seed             */
+    uint8_t A[SHA256_DIGEST_LEN];
+    uint8_t Anew[SHA256_DIGEST_LEN];
+    uint8_t block[SHA256_DIGEST_LEN];
     int   done = 0;
 
     if (outlen <= 0)
         return;
 
-    ls  = (unsigned char *)malloc(lslen);
-    tmp = (unsigned char *)malloc(SHA256_DIGEST_LEN + lslen);
+    ls  = (uint8_t *)malloc(lslen);
+    tmp = (uint8_t *)malloc(SHA256_DIGEST_LEN + lslen);
     if (ls == NULL || tmp == NULL) {   /* out of memory: zero-fill defensively */
         if (ls)  free(ls);
         if (tmp) free(tmp);
@@ -61,24 +61,24 @@ void tls12_prf(const unsigned char *secret, int secretlen,
 }
 
 /* P_SHA384 variant (digest length 48).  Same structure as tls12_prf. */
-void tls12_prf_sha384(const unsigned char *secret, int secretlen,
+void tls12_prf_sha384(const uint8_t *secret, int secretlen,
                       const char *label,
-                      const unsigned char *seed, int seedlen,
-                      unsigned char *out, int outlen)
+                      const uint8_t *seed, int seedlen,
+                      uint8_t *out, int outlen)
 {
     int   llen = (int)strlen(label);
     int   lslen = llen + seedlen;
-    unsigned char *ls, *tmp;
-    unsigned char A[SHA384_DIGEST_LEN];
-    unsigned char Anew[SHA384_DIGEST_LEN];
-    unsigned char block[SHA384_DIGEST_LEN];
+    uint8_t *ls, *tmp;
+    uint8_t A[SHA384_DIGEST_LEN];
+    uint8_t Anew[SHA384_DIGEST_LEN];
+    uint8_t block[SHA384_DIGEST_LEN];
     int   done = 0;
 
     if (outlen <= 0)
         return;
 
-    ls  = (unsigned char *)malloc(lslen);
-    tmp = (unsigned char *)malloc(SHA384_DIGEST_LEN + lslen);
+    ls  = (uint8_t *)malloc(lslen);
+    tmp = (uint8_t *)malloc(SHA384_DIGEST_LEN + lslen);
     if (ls == NULL || tmp == NULL) {
         if (ls)  free(ls);
         if (tmp) free(tmp);
@@ -114,8 +114,8 @@ void tls12_prf_sha384(const unsigned char *secret, int secretlen,
  * TLS 1.3 key schedule pieces (RFC 8446 7.1, RFC 5869): HKDF over
  * HMAC-SHA256 (hlen 32) or HMAC-SHA384 (hlen 48).
  * ------------------------------------------------------------------------ */
-static void hmac_by_len( int hlen, const unsigned char *key, int keylen,
-                         const unsigned char *msg, int msglen, unsigned char *out )
+static void hmac_by_len( int hlen, const uint8_t *key, int keylen,
+                         const uint8_t *msg, int msglen, uint8_t *out )
 {
     if ( hlen == 48 ) {
         hmac_sha384( key, keylen, msg, msglen, out );
@@ -124,10 +124,10 @@ static void hmac_by_len( int hlen, const unsigned char *key, int keylen,
     }
 }
 
-void tls13_hkdf_extract( int hlen, const unsigned char *salt, int saltlen,
-                         const unsigned char *ikm, int ikmlen, unsigned char *out )
+void tls13_hkdf_extract( int hlen, const uint8_t *salt, int saltlen,
+                         const uint8_t *ikm, int ikmlen, uint8_t *out )
 {
-    unsigned char zeros[48];
+    uint8_t zeros[48];
     memset( zeros, 0, sizeof( zeros ) );
     if ( salt == NULL || saltlen == 0 ) {
         salt = zeros; saltlen = hlen;
@@ -138,17 +138,17 @@ void tls13_hkdf_extract( int hlen, const unsigned char *salt, int saltlen,
     hmac_by_len( hlen, salt, saltlen, ikm, ikmlen, out );
 }
 
-void tls13_expand_label( int hlen, const unsigned char *secret,
+void tls13_expand_label( int hlen, const uint8_t *secret,
                          const char *label,
-                         const unsigned char *ctx, int ctxlen,
-                         unsigned char *out, int outlen )
+                         const uint8_t *ctx, int ctxlen,
+                         uint8_t *out, int outlen )
 {
     /* HkdfLabel = length(2) || "tls13 " + label <1 byte len> || context <1 byte len>
        then T(i) = HMAC( secret, T(i-1) || HkdfLabel || i ) */
-    unsigned char msg[48 + 2 + 1 + 6 + TLS13_LABEL_MAX + 1 + TLS13_CTX_MAX + 1];
-    unsigned char t[48];
+    uint8_t msg[48 + 2 + 1 + 6 + TLS13_LABEL_MAX + 1 + TLS13_CTX_MAX + 1];
+    uint8_t t[48];
     int llen = (int)strlen( label ), info, ilen, done = 0, tlen = 0, n;
-    unsigned char counter = 1;
+    uint8_t counter = 1;
 
     if ( llen > TLS13_LABEL_MAX || ctxlen < 0 || ctxlen > TLS13_CTX_MAX ||
          outlen <= 0 || outlen > 255 * hlen ) {
@@ -157,12 +157,12 @@ void tls13_expand_label( int hlen, const unsigned char *secret,
     }
     /* the info part sits after room for T(i-1) */
     info = 48;
-    msg[info + 0] = (unsigned char)( outlen >> 8 );
-    msg[info + 1] = (unsigned char)outlen;
-    msg[info + 2] = (unsigned char)( 6 + llen );
+    msg[info + 0] = (uint8_t)( outlen >> 8 );
+    msg[info + 1] = (uint8_t)outlen;
+    msg[info + 2] = (uint8_t)( 6 + llen );
     memcpy( msg + info + 3, "tls13 ", 6 );
     memcpy( msg + info + 9, label, llen );
-    msg[info + 9 + llen] = (unsigned char)ctxlen;
+    msg[info + 9 + llen] = (uint8_t)ctxlen;
     if ( ctxlen > 0 ) memcpy( msg + info + 10 + llen, ctx, ctxlen );
     ilen = 10 + llen + ctxlen;
 

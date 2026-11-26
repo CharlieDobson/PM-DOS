@@ -48,25 +48,25 @@
 
 int   sys_init( void );                     /* 0 = ok */
 const char *sys_cmdline( void );            /* command tail, NUL-terminated */
-void  sys_write( int handle, const char *buf, u32 len );
+void  sys_write( int handle, const char *buf, unsigned int len );
 int   sys_read_line( char *buf, int max );  /* echoes; -1 = end of input */
 int   sys_read_key( void );                 /* one key, echoed; -1 = end */
 void  sys_exit( int code );
 
 int   sys_get_drive( void );
 int   sys_drive_type( int drv );
-int   sys_truename_drive( int drv );        /* real drive of "X:\", -1 = unknown */
-int   sys_get_bpb( int drv, u8 *sector );   /* synthetic boot sector, 0 = ok */
+int   sys_truename_drive( int drv );            /* real drive of "X:\", -1 = unknown */
+int   sys_get_bpb( int drv, uint8_t *sector );  /* synthetic boot sector, 0 = ok */
 
 int   sys_lock( int drv, int fat32 );       /* 0 = locked or locking not needed */
 void  sys_unlock( int drv, int fat32 );
-int   sys_read_sec( int drv, u32 lba, u32 count, u32 bps, void *buf );
-int   sys_write_sec( int drv, u32 lba, u32 count, u32 bps, const void *buf,
+int   sys_read_sec( int drv, uint32_t lba, uint32_t count, uint32_t bps, void *buf );
+int   sys_write_sec( int drv, uint32_t lba, uint32_t count, uint32_t bps, const void *buf,
                      int kind );
 void  sys_reset_drive( int drv );           /* flush and invalidate buffers */
 
-void *sys_mem_alloc( u32 size );
-void  sys_get_datetime( u16 *dos_date, u16 *dos_time );
+void *sys_mem_alloc( unsigned int size );
+void  sys_get_datetime( uint16_t *dos_date, uint16_t *dos_time );
 int   sys_upcase( int ch );                 /* country upper case, ch >= 80h */
 
 #endif

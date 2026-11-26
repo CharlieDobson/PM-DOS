@@ -81,7 +81,7 @@ int   mouse_present( void );
 /* character, the edge of a panel, part of a button - and those bits   */
 /* a text screen never sees.                                           */
 /* ------------------------------------------------------------------ */
-typedef u32 CELL;
+typedef uint32_t CELL;
 
 #define CF_PIC_SHIFT    16              /* bits 16-21: a PIC_*, and the
                                            character is what it needs told */
@@ -129,25 +129,25 @@ enum {
 #define MC_LOWER_NOW    0x08
 
 typedef struct {
-    u8 desk;            /* the screen, and ordinary text on it */
-    u8 bright;          /* the title, the verdict, the line at the bottom */
-    u8 rule;            /* the lines under the title and over the bottom */
-    u8 mark;            /* the tick against a check that has finished */
-    u8 button;          /* < A button > */
-    u8 button_hot;      /* its access key */
-    u8 button_focus;    /* the one Enter would press */
-    u8 button_down;     /* held down by the mouse */
-    u8 button_shadow;   /* the shadow a button on the screen casts */
-    u8 dlg;             /* a box */
-    u8 dlg_frame;       /* its lines and its title */
-    u8 dlg_bright;      /* a heading in it */
-    u8 dlg_caption;     /* graphics: the bar its title is in */
-    u8 shadow;
-    u8 bar_done;        /* the progress bar */
-    u8 bar_todo;
-    u8 map;             /* the surface map: blocks not yet read */
-    u8 map_read;        /* ...and read */
-    u8 map_bad;
+    uint8_t desk;           /* the screen, and ordinary text on it */
+    uint8_t bright;         /* the title, the verdict, the line at the bottom */
+    uint8_t rule;           /* the lines under the title and over the bottom */
+    uint8_t mark;           /* the tick against a check that has finished */
+    uint8_t button;         /* < A button > */
+    uint8_t button_hot;     /* its access key */
+    uint8_t button_focus;   /* the one Enter would press */
+    uint8_t button_down;    /* held down by the mouse */
+    uint8_t button_shadow;  /* the shadow a button on the screen casts */
+    uint8_t dlg;            /* a box */
+    uint8_t dlg_frame;      /* its lines and its title */
+    uint8_t dlg_bright;     /* a heading in it */
+    uint8_t dlg_caption;    /* graphics: the bar its title is in */
+    uint8_t shadow;
+    uint8_t bar_done;       /* the progress bar */
+    uint8_t bar_todo;
+    uint8_t map;            /* the surface map: blocks not yet read */
+    uint8_t map_read;       /* ...and read */
+    uint8_t map_bad;
 } PALETTE;
 
 extern PALETTE pal;
@@ -156,24 +156,24 @@ extern int gfx_on;              /* the screen is a graphics one */
 
 void  scr_init( int graphics );
 void  scr_done( void );
-void  scr_ch( int row, int col, int ch, u8 attr );
-void  scr_putn( int row, int col, const char *text, int len, u8 attr );
-void  scr_put( int row, int col, const char *text, u8 attr );
-void  scr_hot( int row, int col, const char *text, u8 attr, u8 hot_attr );
+void  scr_ch( int row, int col, int ch, uint8_t attr );
+void  scr_putn( int row, int col, const char *text, int len, uint8_t attr );
+void  scr_put( int row, int col, const char *text, uint8_t attr );
+void  scr_hot( int row, int col, const char *text, uint8_t attr, uint8_t hot_attr );
 int   scr_hotlen( const char *text );
 int   scr_hotkey( const char *text );
-void  scr_fill( int row, int col, int len, int ch, u8 attr );
-void  scr_recolor( int row, int col, int len, u8 attr );
-void  scr_box( int top, int left, int bottom, int right, u8 attr );
+void  scr_fill( int row, int col, int len, int ch, uint8_t attr );
+void  scr_recolor( int row, int col, int len, uint8_t attr );
+void  scr_box( int top, int left, int bottom, int right, uint8_t attr );
 void  scr_shadow( int top, int left, int bottom, int right );
 void  scr_cursor( int row, int col, int kind );
 void  scr_flush( void );
 void  scr_dump( void );             /* test mode */
 void  scr_shot( void );             /* test mode */
 /* graphics only; a text screen is left as it is */
-void  scr_flag( int row, int col, int len, u32 flags );
-void  scr_pic( int row, int col, int pic, int data, u8 attr );
-void  scr_icon( int row, int col, int pic, u8 attr );   /* all its cells */
+void  scr_flag( int row, int col, int len, uint32_t flags );
+void  scr_pic( int row, int col, int pic, int data, uint8_t attr );
+void  scr_icon( int row, int col, int pic, uint8_t attr ); /* all its cells */
 
 /* ------------------------------------------------------------------ */
 /* GFX.C - the screen in a graphics mode                               */

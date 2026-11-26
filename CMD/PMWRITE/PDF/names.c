@@ -57,7 +57,7 @@ static char std_text[] =
 
 #define STD_COUNT   229
 
-static const u16 name_uni[] = {
+static const uint16_t name_uni[] = {
     0x0000, 0x0020, 0x0021, 0x0022, 0x0023, 0x0024, 0x0025, 0x0026, 0x2019,
     0x0028, 0x0029, 0x002A, 0x002B, 0x002C, 0x002D, 0x002E, 0x002F, 0x0030, 0x0031, 0x0032, 0x0033,
     0x0034, 0x0035, 0x0036, 0x0037, 0x0038, 0x0039, 0x003A, 0x003B, 0x003C, 0x003D, 0x003E, 0x003F, 0x0040,
@@ -116,7 +116,7 @@ static int names_made;
 static void names_make( void )
 {
     char *cur = std_text;
-    u32 index;
+    unsigned int index;
 
     for ( index = 0; index < NAME_COUNT; index++ ) {
         names[index] = cur;
@@ -143,7 +143,7 @@ const char *name_std( int sid )
     return sid >= 0 && sid < STD_COUNT ? names[sid] : NULL;
 }
 
-static int hex4( const char *text, int digits, u32 *val )
+static int hex4( const char *text, int digits, uint32_t *val )
 {
     int index, ch;
 
@@ -157,17 +157,18 @@ static int hex4( const char *text, int digits, u32 *val )
         } else {
             return 0;
         }
-        *val = *val * 16 + (u32)ch;
+        *val = *val * 16 + (uint32_t)ch;
     }
     return 1;
 }
 
 /* a glyph's name to Unicode: 0 if nothing is known of it */
-u16 name_to_uni( const char *name )
+uint16_t name_to_uni( const char *name )
 {
     char stem[40];
     const char *dot;
-    u32 index, val, len;
+    uint32_t val;
+    unsigned int index, len;
 
     if ( !names_made ) {
         names_make();
@@ -182,24 +183,24 @@ u16 name_to_uni( const char *name )
     }
     len = str_len( name );
     if ( name[0] == 'u' && name[1] == 'n' && name[2] == 'i' && len >= 7 && hex4( name + 3, 4, &val ) ) {
-        return (u16)val;
+        return (uint16_t)val;
     }
     if ( name[0] == 'u' && len >= 5 && len <= 7 && hex4( name + 1, (int)len - 1, &val ) && val < 0x10000UL ) {
-        return (u16)val;
+        return (uint16_t)val;
     }
     /* "a.sc", "one.oldstyle": the plain character */
     dot = str_chr( name, '.' );
-    if ( dot && dot != name && (u32)(dot - name) < sizeof( stem ) ) {
-        mem_cpy( stem, name, (u32)(dot - name) );
+    if ( dot && dot != name && (uint32_t)(dot - name) < sizeof( stem ) ) {
+        mem_cpy( stem, name, (uint32_t)(dot - name) );
         stem[dot - name] = 0;
         return name_to_uni( stem );
     }
     return 0;
 }
 
-const char *uni_to_name( u16 uni )
+const char *uni_to_name( uint16_t uni )
 {
-    u32 index;
+    unsigned int index;
 
     if ( !names_made ) {
         names_make();
@@ -222,13 +223,13 @@ const char *uni_to_name( u16 uni )
 /* ------------------------------------------------------------------ */
 
 /* Windows code page 1252, 80h to 9Fh */
-static const u16 win_high[32] = {
+static const uint16_t win_high[32] = {
     0x20AC, 0x2022, 0x201A, 0x0192, 0x201E, 0x2026, 0x2020, 0x2021, 0x02C6, 0x2030, 0x0160, 0x2039,
     0x0152, 0x2022, 0x017D, 0x2022, 0x2022, 0x2018, 0x2019, 0x201C, 0x201D, 0x2022, 0x2013, 0x2014,
     0x02DC, 0x2122, 0x0161, 0x203A, 0x0153, 0x2022, 0x017E, 0x0178 };
 
 /* Mac OS Roman, 80h to FFh, as PDF has it */
-static const u16 mac_high[128] = {
+static const uint16_t mac_high[128] = {
     0x00C4, 0x00C5, 0x00C7, 0x00C9, 0x00D1, 0x00D6, 0x00DC, 0x00E1, 0x00E0, 0x00E2, 0x00E4, 0x00E3,
     0x00E5, 0x00E7, 0x00E9, 0x00E8, 0x00EA, 0x00EB, 0x00ED, 0x00EC, 0x00EE, 0x00EF, 0x00F1, 0x00F3,
     0x00F2, 0x00F4, 0x00F6, 0x00F5, 0x00FA, 0x00F9, 0x00FB, 0x00FC, 0x2020, 0x00B0, 0x00A2, 0x00A3,
@@ -242,7 +243,7 @@ static const u16 mac_high[128] = {
     0x00AF, 0x02D8, 0x02D9, 0x02DA, 0x00B8, 0x02DD, 0x02DB, 0x02C7 };
 
 /* Adobe's standard encoding: the code of each of the names 1 to 149 */
-static const u8 std_codes[149] = {
+static const uint8_t std_codes[149] = {
     32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54,
     55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77,
     78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100,
@@ -254,7 +255,7 @@ static const u8 std_codes[149] = {
     225, 227, 232, 233, 234, 235, 241, 245, 248, 249, 250, 251 };
 
 /* the Symbol font's own, 20h to 7Eh and A0h to FEh */
-static const u16 symbol_low[95] = {
+static const uint16_t symbol_low[95] = {
     0x0020, 0x0021, 0x2200, 0x0023, 0x2203, 0x0025, 0x0026, 0x220B, 0x0028, 0x0029, 0x2217, 0x002B,
     0x002C, 0x2212, 0x002E, 0x002F, 0x0030, 0x0031, 0x0032, 0x0033, 0x0034, 0x0035, 0x0036, 0x0037,
     0x0038, 0x0039, 0x003A, 0x003B, 0x003C, 0x003D, 0x003E, 0x003F, 0x2245, 0x0391, 0x0392, 0x03A7,
@@ -263,7 +264,7 @@ static const u16 symbol_low[95] = {
     0x2234, 0x005D, 0x22A5, 0x005F, 0x203E, 0x03B1, 0x03B2, 0x03C7, 0x03B4, 0x03B5, 0x03C6, 0x03B3,
     0x03B7, 0x03B9, 0x03D5, 0x03BA, 0x03BB, 0x03BC, 0x03BD, 0x03BF, 0x03C0, 0x03B8, 0x03C1, 0x03C3,
     0x03C4, 0x03C5, 0x03D6, 0x03C9, 0x03BE, 0x03C8, 0x03B6, 0x007B, 0x007C, 0x007D, 0x223C };
-static const u16 symbol_high[95] = {
+static const uint16_t symbol_high[95] = {
     0x20AC, 0x03D2, 0x2032, 0x2264, 0x2044, 0x221E, 0x0192, 0x2663, 0x2666, 0x2665, 0x2660, 0x2194,
     0x2190, 0x2191, 0x2192, 0x2193, 0x00B0, 0x00B1, 0x2033, 0x2265, 0x00D7, 0x221D, 0x2202, 0x2022,
     0x00F7, 0x2260, 0x2261, 0x2248, 0x2026, 0x007C, 0x2014, 0x21B5, 0x2135, 0x2111, 0x211C, 0x2118,
@@ -273,11 +274,11 @@ static const u16 symbol_high[95] = {
     0x0028, 0x005B, 0x007C, 0x005B, 0x007B, 0x007B, 0x007B, 0x007C, 0x0000, 0x232A, 0x222B, 0x2320,
     0x007C, 0x2321, 0x0029, 0x007C, 0x0029, 0x005D, 0x007C, 0x005D, 0x007D, 0x007D, 0x007D };
 
-void enc_base( int which, u16 *uni )
+void enc_base( int which, uint16_t *uni )
 {
     int code;
 
-    mem_set( uni, 0, 256 * sizeof( u16 ) );
+    mem_set( uni, 0, 256 * sizeof( uint16_t ) );
     switch ( which ) {
     case ENC_STD:
         for ( code = 0; code < 149; code++ ) {
@@ -286,7 +287,7 @@ void enc_base( int which, u16 *uni )
         break;
     case ENC_MAC:
         for ( code = 32; code < 127; code++ ) {
-            uni[code] = (u16)code;
+            uni[code] = (uint16_t)code;
         }
         mem_cpy( uni + 128, mac_high, sizeof( mac_high ) );
         break;
@@ -296,7 +297,7 @@ void enc_base( int which, u16 *uni )
         break;
     default:
         for ( code = 32; code < 256; code++ ) {
-            uni[code] = (u16)code;
+            uni[code] = (uint16_t)code;
         }
         uni[127] = 0x2022;
         mem_cpy( uni + 128, win_high, sizeof( win_high ) );
@@ -329,7 +330,7 @@ const char *enc_std_name( int code )
 
 /* Unicode A0h to FFh in code page 437: a character, or 0 for one that
    takes more than one, or a letter without its accent */
-static const u8 latin1_437[96] = {
+static const uint8_t latin1_437[96] = {
     ' ',  0xAD, 0x9B, 0x9C, '*',  0x9D, '|',  0x15, '"',  0,    0xA6, 0xAE, 0xAA, '-',  0,    '-',
     0xF8, 0xF1, 0xFD, '3',  '\'', 0xE6, 0x14, 0xFA, ',',  '1',  0xA7, 0xAF, 0xAC, 0xAB, 0,    0xA8,
     'A',  'A',  'A',  'A',  0x8E, 0x8F, 0x92, 0x80, 'E',  0x90, 'E',  'E',  'I',  'I',  'I',  'I',
@@ -338,7 +339,7 @@ static const u8 latin1_437[96] = {
     'd',  0xA4, 0x95, 0xA2, 0x93, 'o',  0x94, 0xF6, 'o',  0x97, 0xA3, 0x96, 0x81, 'y',  't',  0x98 };
 
 typedef struct {
-    u16         uni;
+    uint16_t    uni;
     const char *text;
 } UNITEXT;
 
@@ -365,10 +366,10 @@ static const UNITEXT others[] = {
 /* A Unicode character as the text screen can show it: the characters
    into "out" (four at most), and how many.  None for a character that
    is no character - a soft hyphen's cousins, a private one. */
-int uni_to_cp437( u16 uni, char *out )
+int uni_to_cp437( uint16_t uni, char *out )
 {
     static const char plain[] = "AaAaAaCcCcCcCcDdDdEeEeEeEeEeGgGgGgGgHhHhIiIiIiIiIiJjJjKkk";
-    u32 index;
+    unsigned int index;
     int count = 0, base;
 
     if ( uni < 0x20 ) {

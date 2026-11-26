@@ -50,26 +50,26 @@
 /* ------------------------------------------------------------------ */
 
 typedef struct {
-    u32 name;                   /* where in "names" */
-    u32 crc, packed, size;
-    u32 local;                  /* its own header, from the file's start */
-    u16 method, flags;
+    unsigned int name;          /* where in "names" */
+    uint32_t     crc, packed, size;
+    uint32_t     local;         /* its own header, from the file's start */
+    uint16_t     method, flags;
 } ZENT;
 
 struct ZIP {
-    const u8 *data;
-    u32   len;
-    ZENT *ent;
-    u32   count;
-    char *names;
-    int   error;
+    const uint8_t *data;
+    uint32_t     len;
+    ZENT        *ent;
+    unsigned int count;
+    char        *names;
+    int          error;
 };
 
 /* the end record: where it is, or 0 for none (an archive cannot start
    with one) */
-static u32 zip_find_end( const u8 *data, u32 len, u32 *bias )
+static uint32_t zip_find_end( const uint8_t *data, uint32_t len, uint32_t *bias )
 {
-    u32 pos, low, dir_size, dir_at;
+    uint32_t pos, low, dir_size, dir_at;
 
     if ( len < END_LEN ) {
         return 0;
@@ -94,12 +94,13 @@ static u32 zip_find_end( const u8 *data, u32 len, u32 *bias )
     return 0;
 }
 
-ZIP *zip_open_why( const u8 *data, u32 len, int *why )
+ZIP *zip_open_why( const uint8_t *data, uint32_t len, int *why )
 {
     ZIP *zip;
-    const u8 *rec;
-    u32 end, bias = 0, dir_at, dir_size, total, pos, stop, count = 0, names = 0, index;
-    u32 name_len, skip, used = 0;
+    const uint8_t *rec;
+    uint32_t end, bias = 0, dir_at, dir_size, total, pos, stop;
+    uint32_t name_len, skip;
+    unsigned int count = 0, names = 0, index, used = 0;
     int dummy;
 
     if ( why == NULL ) {
@@ -161,8 +162,8 @@ ZIP *zip_open_why( const u8 *data, u32 len, int *why )
     for ( index = 0; index < count; index++ ) {
         rec = data + pos;
         name_len = LE16( rec + 28 );
-        zip->ent[index].flags = (u16)LE16( rec + 8 );
-        zip->ent[index].method = (u16)LE16( rec + 10 );
+        zip->ent[index].flags = (uint16_t)LE16( rec + 8 );
+        zip->ent[index].method = (uint16_t)LE16( rec + 10 );
         zip->ent[index].crc = LE32( rec + 16 );
         zip->ent[index].packed = LE32( rec + 20 );
         zip->ent[index].size = LE32( rec + 24 );
@@ -198,19 +199,19 @@ void zip_close( ZIP *zip )
     }
 }
 
-u32 zip_count( const ZIP *zip )
+unsigned int zip_count( const ZIP *zip )
 {
     return zip == NULL ? 0 : zip->count;
 }
 
-const char *zip_name( const ZIP *zip, u32 index )
+const char *zip_name( const ZIP *zip, unsigned int index )
 {
     return zip == NULL || index >= zip->count ? "" : zip->names + zip->ent[index].name;
 }
 
 int zip_find( const ZIP *zip, const char *name )
 {
-    u32 index;
+    unsigned int index;
 
     for ( index = 0; zip != NULL && index < zip->count; index++ ) {
         if ( str_cmp( zip->names + zip->ent[index].name, name ) == 0 ) {
@@ -222,7 +223,7 @@ int zip_find( const ZIP *zip, const char *name )
 
 int zip_ifind( const ZIP *zip, const char *name )
 {
-    u32 index;
+    unsigned int index;
 
     for ( index = 0; zip != NULL && index < zip->count; index++ ) {
         if ( str_icmp( zip->names + zip->ent[index].name, name ) == 0 ) {
@@ -232,7 +233,7 @@ int zip_ifind( const ZIP *zip, const char *name )
     return -1;
 }
 
-u32 zip_size( const ZIP *zip, u32 index )
+uint32_t zip_size( const ZIP *zip, unsigned int index )
 {
     return zip == NULL || index >= zip->count ? 0 : zip->ent[index].size;
 }
@@ -242,12 +243,12 @@ int zip_error( const ZIP *zip )
     return zip == NULL ? ZIP_NOMEM : zip->error;
 }
 
-u8 *zip_read( ZIP *zip, u32 index, u32 *len )
+uint8_t *zip_read( ZIP *zip, unsigned int index, uint32_t *len )
 {
     const ZENT *ent;
-    const u8 *head;
-    u8 *block;
-    u32 at, got = 0;
+    const uint8_t *head;
+    uint8_t *block;
+    uint32_t at, got = 0;
 
     *len = 0;
     if ( zip == NULL ) {
@@ -284,7 +285,7 @@ u8 *zip_read( ZIP *zip, u32 index, u32 *len )
          (ent->method == 8 && ent->size / 1032 > ent->packed) ) {
         return NULL;
     }
-    block = (u8 *)try_alloc( ent->size + 1 );
+    block = (uint8_t *)try_alloc( ent->size + 1 );
     if ( block == NULL ) {
         zip->error = ZIP_NOMEM;
         return NULL;
@@ -309,11 +310,11 @@ u8 *zip_read( ZIP *zip, u32 index, u32 *len )
     return block;
 }
 
-int zip_peek( ZIP *zip, u32 index, u8 *buf, u32 cap )
+int zip_peek( ZIP *zip, unsigned int index, uint8_t *buf, unsigned int cap )
 {
     const ZENT *ent;
-    const u8 *head;
-    u32 at, got;
+    const uint8_t *head;
+    uint32_t at, got;
 
     mem_set( buf, 0, cap );
     if ( zip == NULL || index >= zip->count || cap == 0 ) {
@@ -348,23 +349,23 @@ int zip_peek( ZIP *zip, u32 index, u8 *buf, u32 cap )
 /* ------------------------------------------------------------------ */
 
 typedef struct {
-    u32 name;                   /* where in "names" */
-    u32 name_len;
-    u32 crc, packed, size;
-    u32 local;                  /* from the archive's start */
-    u16 method, flags;
+    unsigned int name;          /* where in "names" */
+    uint32_t     name_len;
+    uint32_t     crc, packed, size;
+    uint32_t     local;         /* from the archive's start */
+    uint16_t     method, flags;
 } ZWENT;
 
 struct ZIPW {
-    OUT   *out;
-    u32    base;                /* where in the OUT the archive starts */
-    ZWENT *ent;
-    u32    count, cap;
-    char  *names;
-    u32    names_len, names_cap;
-    u16    date, time;
-    int    failed;
-    int    open;                /* a member is being written in pieces */
+    OUT         *out;
+    uint32_t     base;          /* where in the OUT the archive starts */
+    ZWENT       *ent;
+    unsigned int count, cap;
+    char        *names;
+    unsigned int names_len, names_cap;
+    uint16_t     date, time;
+    int          failed;
+    int          open;          /* a member is being written in pieces */
 };
 
 ZIPW *zipw_new( OUT *out )
@@ -382,8 +383,8 @@ ZIPW *zipw_new( OUT *out )
     if ( now.year < 1980 || now.year > 2107 ) {
         now.year = 1980;
     }
-    zipw->date = (u16)(((now.year - 1980) << 9) | ((now.month & 15) << 5) | (now.day & 31));
-    zipw->time = (u16)(((now.hour & 31) << 11) | ((now.minute & 63) << 5) | ((now.second / 2) & 31));
+    zipw->date = (uint16_t)(((now.year - 1980) << 9) | ((now.month & 15) << 5) | (now.day & 31));
+    zipw->time = (uint16_t)(((now.hour & 31) << 11) | ((now.minute & 63) << 5) | ((now.second / 2) & 31));
     return zipw;
 }
 
@@ -398,7 +399,7 @@ static ZWENT *zipw_entry( ZIPW *zipw, const char *name )
 {
     ZWENT *ent;
     char *names;
-    u32 len = str_len( name ), want, index;
+    unsigned int len = str_len( name ), want, index;
 
     if ( zipw->failed || zipw->open || zipw->count >= 0xFFFE || len == 0 || len > 0xFFFF ||
          zipw->names_len > 0x3FFFFFFFUL ) {
@@ -435,7 +436,7 @@ static ZWENT *zipw_entry( ZIPW *zipw, const char *name )
     mem_cpy( zipw->names + zipw->names_len, name, len );
     zipw->names_len += len;
     for ( index = 0; index < len; index++ ) {
-        if ( (u8)name[index] >= 0x80 ) {
+        if ( (uint8_t)name[index] >= 0x80 ) {
             ent->flags = FLAG_UTF8;
         }
     }
@@ -462,11 +463,11 @@ static void zipw_local( ZIPW *zipw, const ZWENT *ent )
     out_put( out, zipw->names + ent->name, ent->name_len );
 }
 
-int zipw_add( ZIPW *zipw, const char *name, const u8 *data, u32 len, int store )
+int zipw_add( ZIPW *zipw, const char *name, const uint8_t *data, uint32_t len, int store )
 {
     ZWENT *ent;
-    u8 *packed = NULL;
-    u32 packed_len = 0;
+    uint8_t *packed = NULL;
+    uint32_t packed_len = 0;
 
     if ( zipw == NULL ) {
         return 0;
@@ -513,11 +514,11 @@ int zipw_begin( ZIPW *zipw, const char *name )
     return out_error( zipw->out ) == 0;
 }
 
-static int zipw_piece( ZIPW *zipw, const u8 *data, u32 len, int last )
+static int zipw_piece( ZIPW *zipw, const uint8_t *data, uint32_t len, int last )
 {
     ZWENT *ent;
-    u8 *packed;
-    u32 packed_len;
+    uint8_t *packed;
+    uint32_t packed_len;
 
     if ( zipw == NULL || !zipw->open || zipw->failed ) {
         return 0;
@@ -541,7 +542,7 @@ static int zipw_piece( ZIPW *zipw, const u8 *data, u32 len, int last )
     return out_error( zipw->out ) == 0;
 }
 
-int zipw_write( ZIPW *zipw, const u8 *data, u32 len )
+int zipw_write( ZIPW *zipw, const uint8_t *data, uint32_t len )
 {
     return len == 0 ? 1 : zipw_piece( zipw, data, len, 0 );
 }
@@ -549,7 +550,7 @@ int zipw_write( ZIPW *zipw, const u8 *data, u32 len )
 int zipw_finish( ZIPW *zipw )
 {
     ZWENT *ent;
-    u32 end;
+    uint32_t end;
 
     if ( !zipw_piece( zipw, NULL, 0, 1 ) ) {
         return 0;
@@ -571,7 +572,8 @@ int zipw_end( ZIPW *zipw )
 {
     OUT *out;
     const ZWENT *ent;
-    u32 index, dir_at, dir_end;
+    uint32_t dir_at, dir_end;
+    unsigned int index;
     int ok;
 
     if ( zipw == NULL ) {

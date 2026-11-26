@@ -108,8 +108,8 @@ static void NumQuerySystem( void )
  * reads it field by field at fixed offsets. */
 #pragma pack(1)
 typedef struct {
-    UInt32         edi, esi, ebp, reserved, ebx, edx, ecx, eax;
-    unsigned short flags, es, ds, fs, gs, ip, cs, sp, ss;
+    uint32_t edi, esi, ebp, reserved, ebx, edx, ecx, eax;
+    uint16_t flags, es, ds, fs, gs, ip, cs, sp, ss;
 } NumRmRegs;
 #pragma pack()
 
@@ -118,7 +118,7 @@ static void NumQuerySystem( void )
     union  REGS    r;
     struct SREGS   sr;
     NumRmRegs      rm;
-    unsigned short rmSeg, selector;
+    uint16_t       rmSeg, selector;
     const char    *p;
     int            i;
 
@@ -131,8 +131,8 @@ static void NumQuerySystem( void )
     r.x.ebx = 4;
     int386( 0x31, &r, &r );
     if ( r.x.cflag ) return;
-    rmSeg    = (unsigned short)r.x.eax;
-    selector = (unsigned short)r.x.edx;
+    rmSeg    = (uint16_t)r.x.eax;
+    selector = (uint16_t)r.x.edx;
 
     /* DPMI 0300h - simulate INT 21h AH=38h in real mode, with DS:DX aimed at
      * the block we just obtained. */
@@ -146,7 +146,7 @@ static void NumQuerySystem( void )
     r.x.eax = 0x0300;
     r.x.ebx = 0x21;
     r.x.ecx = 0;
-    r.x.edi = (UInt32)&rm;
+    r.x.edi = (uint32_t)&rm;
     sr.es   = sr.ds;
     int386x( 0x31, &r, &r, &sr );
 
@@ -154,7 +154,7 @@ static void NumQuerySystem( void )
     {
         /* Low memory is mapped flat by the extender, so the block is simply
          * at segment*16.  Offset 7 is the separator - see the banner. */
-        p = (const char *)( (UInt32)rmSeg * 16 + 7 );
+        p = (const char *)( (uint32_t)rmSeg * 16 + 7 );
         for ( i = 0; i < NUM_SEP_MAX - 1 && p[i]; i++ ) ;
         if ( i > 0 && !p[i] )                 /* a terminated, non-empty string */
         {
@@ -229,7 +229,7 @@ static char *NumGroupDigits( const char *digits, char *buf )
     return buf;
 }
 
-char *NumFmt( UInt32 v, char *buf )
+char *NumFmt( uint32_t v, char *buf )
 {
     char digits[16];
     int  n = 0, i, j;
@@ -283,7 +283,7 @@ char *NumFmtD( double v, char *buf )
 
 #endif
 
-char *NumFmtRight( UInt32 v, char *buf, int width )
+char *NumFmtRight( uint32_t v, char *buf, int width )
 {
     char text[NUM_FMT_MAX];
     int  len, pad, i;

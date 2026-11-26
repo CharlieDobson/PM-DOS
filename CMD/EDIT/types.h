@@ -8,10 +8,7 @@
 #ifndef TYPES_H
 #define TYPES_H
 
-typedef unsigned char    u8;
-typedef unsigned short   u16;
-typedef unsigned long    u32;
-typedef long             s32;
+#include <stdint.h>
 
 #ifndef NULL
 #define NULL ((void *)0)

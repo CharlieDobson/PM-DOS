@@ -23,12 +23,12 @@
  */
 #include "shell.h"
 
-static DTREE   trees[26];
-static FINDREC rec;
-static char    scan_path[PATH_MAX + 16];
-static u32     scan_count;
-static u32     scan_shown;              /* when the screen last said how far */
-static int     scan_failed;
+static DTREE        trees[26];
+static FINDREC      rec;
+static char         scan_path[PATH_MAX + 16];
+static unsigned int scan_count;
+static unsigned int scan_shown;         /* when the screen last said how far */
+static int          scan_failed;
 
 int tree_reading;                       /* a drive is being read now */
 
@@ -58,18 +58,18 @@ static int node_insert( DTREE *tree, int at, const char *name, int parent, int d
     int index;
 
     if ( tree->count == tree->cap ) {
-        bigger = (TNODE *)xalloc( (u32)(tree->cap + 64) * sizeof( TNODE ) );
+        bigger = (TNODE *)xalloc( (unsigned int)(tree->cap + 64) * sizeof( TNODE ) );
         if ( tree->count ) {
-            mem_cpy( bigger, tree->node, (u32)tree->count * sizeof( TNODE ) );
+            mem_cpy( bigger, tree->node, (unsigned int)tree->count * sizeof( TNODE ) );
         }
         xfree( tree->node );
         tree->node = bigger;
         tree->cap += 64;
         xfree( tree->vis );
-        tree->vis = (int *)xalloc( (u32)tree->cap * sizeof( int ) );
+        tree->vis = (int *)xalloc( (unsigned int)tree->cap * sizeof( int ) );
     }
     if ( at < tree->count ) {
-        mem_cpy( tree->node + at + 1, tree->node + at, (u32)(tree->count - at) * sizeof( TNODE ) );
+        mem_cpy( tree->node + at + 1, tree->node + at, (unsigned int)(tree->count - at) * sizeof( TNODE ) );
         for ( index = at + 1; index <= tree->count; index++ ) {
             if ( tree->node[index].parent >= at ) {
                 tree->node[index].parent++;
@@ -79,7 +79,7 @@ static int node_insert( DTREE *tree, int at, const char *name, int parent, int d
     tree->count++;
     tree->node[at].name = str_dup( name );
     tree->node[at].parent = parent;
-    tree->node[at].depth = (u8)depth;
+    tree->node[at].depth = (uint8_t)depth;
     tree->node[at].flags = 0;
     return at;
 }
@@ -159,7 +159,7 @@ static void sort_names( char **names, int count )
 static void scan_note( void )
 {
     char line[48], num[16];
-    u32 now = sys_hundredths();
+    uint32_t now = sys_hundredths();
 
     if ( now - scan_shown < SCAN_EVERY ) {
         return;                         /* past midnight the difference is
@@ -177,8 +177,9 @@ static void scan_dir( DTREE *tree, int node )
 {
     char **names = NULL, **bigger;
     int count = 0, cap = 0, index, child, rc;
-    u32 handle, len = str_len( scan_path );
-    u16 attrs = (u16)(0x1010 | (opt.show_hidden ? ATTR_HIDDEN | ATTR_SYSTEM : 0));
+    uint32_t handle;
+    unsigned int len = str_len( scan_path );
+    uint16_t attrs = (uint16_t)(0x1010 | (opt.show_hidden ? ATTR_HIDDEN | ATTR_SYSTEM : 0));
 
     if ( len > PATH_MAX - 16 ) {
         return;                         /* deeper than a path can say */
@@ -191,9 +192,9 @@ static void scan_dir( DTREE *tree, int node )
                 continue;
             }
             if ( count == cap ) {
-                bigger = (char **)xalloc( (u32)(cap + 32) * sizeof( char * ) );
+                bigger = (char **)xalloc( (unsigned int)(cap + 32) * sizeof( char * ) );
                 if ( count ) {
-                    mem_cpy( bigger, names, (u32)count * sizeof( char * ) );
+                    mem_cpy( bigger, names, (unsigned int)count * sizeof( char * ) );
                 }
                 xfree( names );
                 names = bigger;
@@ -308,7 +309,7 @@ void tree_path( DTREE *tree, int node, char *buf )
     }
 }
 
-static int child_named( DTREE *tree, int parent, const char *name, u32 len )
+static int child_named( DTREE *tree, int parent, const char *name, unsigned int len )
 {
     int index, end = subtree_end( tree, parent );
 
@@ -325,7 +326,7 @@ static int child_named( DTREE *tree, int parent, const char *name, u32 len )
 int tree_find( DTREE *tree, const char *path )
 {
     int node = 0, child;
-    u32 len;
+    unsigned int len;
 
     if ( path[0] && path[1] == ':' ) {
         path += 2;
@@ -432,7 +433,7 @@ void tree_remove( DTREE *tree, int node )
     for ( index = node; index < end; index++ ) {
         xfree( tree->node[index].name );
     }
-    mem_cpy( tree->node + node, tree->node + end, (u32)(tree->count - end) * sizeof( TNODE ) );
+    mem_cpy( tree->node + node, tree->node + end, (unsigned int)(tree->count - end) * sizeof( TNODE ) );
     tree->count -= gone;
     for ( index = node; index < tree->count; index++ ) {
         if ( tree->node[index].parent >= end ) {

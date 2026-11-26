@@ -24,8 +24,8 @@ int insert_mode = 1;
 static int prefix;              /* ^Q or ^K waiting for its second key */
 static int literal;             /* ^P: the next key goes in as it is */
 static struct {
-    DOC *doc;
-    u32  line, col;
+    DOC         *doc;
+    unsigned int line, col;
 } marks[4];
 
 int view_text_rows( VIEW *view )
@@ -43,7 +43,7 @@ static LINE *cur_line( VIEW *view )
     return doc_line( view->doc, view->line );
 }
 
-static u32 line_end( VIEW *view, u32 line )
+static unsigned int line_end( VIEW *view, unsigned int line )
 {
     LINE *text = doc_line( view->doc, line );
 
@@ -60,10 +60,10 @@ POS view_pos( VIEW *view )
 }
 
 /* the column a character at-or-before "col" starts at */
-static u32 snap( VIEW *view, u32 line, u32 col )
+static unsigned int snap( VIEW *view, unsigned int line, unsigned int col )
 {
     LINE *text = doc_line( view->doc, line );
-    u32 index = doc_index_of( view->doc, text, col );
+    unsigned int index = doc_index_of( view->doc, text, col );
 
     return index < text->len ? doc_col_of( view->doc, text, index ) : col;
 }
@@ -74,13 +74,13 @@ void view_keep_visible( VIEW *view )
 
     if ( view->line < view->top ) {
         view->top = view->line;
-    } else if ( view->line >= view->top + (u32)rows ) {
-        view->top = view->line - (u32)rows + 1;
+    } else if ( view->line >= view->top + (unsigned int)rows ) {
+        view->top = view->line - (unsigned int)rows + 1;
     }
     if ( view->col < view->left ) {
         view->left = view->col;
-    } else if ( view->col >= view->left + (u32)cols ) {
-        view->left = view->col - (u32)cols + 1;
+    } else if ( view->col >= view->left + (unsigned int)cols ) {
+        view->left = view->col - (unsigned int)cols + 1;
     }
 }
 
@@ -122,7 +122,7 @@ void view_sel_clear( VIEW *view )
     view->sel = 0;
 }
 
-static POS clamp_pos( VIEW *view, u32 line, u32 col )
+static POS clamp_pos( VIEW *view, unsigned int line, unsigned int col )
 {
     LINE *text = doc_line( view->doc, line );
     POS pos;
@@ -149,7 +149,7 @@ void view_sel_range( VIEW *view, POS *from, POS *to )
     }
 }
 
-void view_goto( VIEW *view, u32 line, u32 col, int select )
+void view_goto( VIEW *view, unsigned int line, unsigned int col, int select )
 {
     if ( select ) {
         if ( !view->sel ) {
@@ -193,7 +193,7 @@ void view_delete_sel( VIEW *view )
 }
 
 /* text at the cursor, replacing a selection; 0 when there was no room */
-int view_insert_text( VIEW *view, const char *text, u32 len )
+int view_insert_text( VIEW *view, const char *text, unsigned int len )
 {
     POS pos;
 
@@ -238,12 +238,12 @@ static void draw_title( VIEW *view, int is_active )
     scr_putn( view->row, at, title, len, is_active ? pal.title : pal.frame );
 }
 
-static void draw_line( VIEW *view, int row, u32 line, POS *from, POS *to, int has_sel )
+static void draw_line( VIEW *view, int row, unsigned int line, POS *from, POS *to, int has_sel )
 {
     int cols = view_text_cols(), screen;
-    u32 col = 0, index = 0, sel_end;
+    unsigned int col = 0, index = 0, sel_end;
     LINE *text;
-    u8 attr;
+    uint8_t attr;
     int ch, width, tab;
 
     scr_fill( row, 1, cols, ' ', pal.text );
@@ -251,8 +251,8 @@ static void draw_line( VIEW *view, int row, u32 line, POS *from, POS *to, int ha
         return;
     }
     text = doc_line( view->doc, line );
-    while ( index < text->len && col < view->left + (u32)cols ) {
-        ch = (u8)text->text[index];
+    while ( index < text->len && col < view->left + (unsigned int)cols ) {
+        ch = (uint8_t)text->text[index];
         tab = ch == '\t' && !view->doc->binary;    /* binary: its glyph, one wide */
         width = tab ? (int)((col / tab_size + 1) * tab_size - col) : 1;
         attr = pal.text;
@@ -275,7 +275,7 @@ static void draw_line( VIEW *view, int row, u32 line, POS *from, POS *to, int ha
     /* a selection that runs on to the next line takes the line's end too */
     if ( has_sel && line >= from->line && line < to->line && (line > from->line || from->col <= text->len) ) {
         sel_end = doc_col_of( view->doc, text, text->len );
-        if ( sel_end >= view->left && sel_end < view->left + (u32)cols ) {
+        if ( sel_end >= view->left && sel_end < view->left + (unsigned int)cols ) {
             scr_recolor( row, 1 + (int)(sel_end - view->left), 1, pal.select );
         }
     }
@@ -286,16 +286,16 @@ static void draw_line( VIEW *view, int row, u32 line, POS *from, POS *to, int ha
 static int vthumb( VIEW *view )
 {
     int rows = view_text_rows( view );
-    u32 count = view->doc->count;
+    unsigned int count = view->doc->count;
 
-    return 1 + (count > 1 ? (int)((u32)view->line * (u32)(rows - 3) / (count - 1)) : 0);
+    return 1 + (count > 1 ? (int)((unsigned int)view->line * (unsigned int)(rows - 3) / (count - 1)) : 0);
 }
 
 static int hthumb( VIEW *view )
 {
     int width = scr_cols - 2;
 
-    return 2 + (int)((view->col > 255 ? 255 : view->col) * (u32)(width - 3) / 255);
+    return 2 + (int)((view->col > 255 ? 255 : view->col) * (unsigned int)(width - 3) / 255);
 }
 
 static void draw_vscroll( VIEW *view )
@@ -343,7 +343,7 @@ void view_draw( VIEW *view, int is_active )
     draw_title( view, is_active );
     for ( row = 0; row < rows; row++ ) {
         scr_ch( view->row + 1 + row, 0, 0xB3, pal.frame );
-        draw_line( view, view->row + 1 + row, view->top + (u32)row, &from, &to, has_sel );
+        draw_line( view, view->row + 1 + row, view->top + (unsigned int)row, &from, &to, has_sel );
     }
     draw_vscroll( view );
     if ( view->height >= 3 ) {
@@ -367,37 +367,37 @@ static int is_word( int ch )
            || ch == '_' || ch >= 0x80;
 }
 
-static void word_right( VIEW *view, u32 *line, u32 *col )
+static void word_right( VIEW *view, unsigned int *line, unsigned int *col )
 {
     LINE *text = doc_line( view->doc, *line );
-    u32 index = doc_index_of( view->doc, text, *col );
+    unsigned int index = doc_index_of( view->doc, text, *col );
 
-    while ( index < text->len && is_word( (u8)text->text[index] ) ) {
+    while ( index < text->len && is_word( (uint8_t)text->text[index] ) ) {
         index++;
     }
-    while ( index < text->len && !is_word( (u8)text->text[index] ) ) {
+    while ( index < text->len && !is_word( (uint8_t)text->text[index] ) ) {
         index++;
     }
     if ( index >= text->len && *line + 1 < view->doc->count ) {
         (*line)++;
         text = doc_line( view->doc, *line );
         index = 0;
-        while ( index < text->len && !is_word( (u8)text->text[index] ) ) {
+        while ( index < text->len && !is_word( (uint8_t)text->text[index] ) ) {
             index++;
         }
     }
     *col = doc_col_of( view->doc, text, index );
 }
 
-static void word_left( VIEW *view, u32 *line, u32 *col )
+static void word_left( VIEW *view, unsigned int *line, unsigned int *col )
 {
     LINE *text = doc_line( view->doc, *line );
-    u32 index = doc_index_of( view->doc, text, *col );
+    unsigned int index = doc_index_of( view->doc, text, *col );
 
     if ( index > text->len ) {
         index = text->len;
     }
-    while ( index > 0 && !is_word( (u8)text->text[index - 1] ) ) {
+    while ( index > 0 && !is_word( (uint8_t)text->text[index - 1] ) ) {
         index--;
     }
     if ( index == 0 ) {
@@ -408,11 +408,11 @@ static void word_left( VIEW *view, u32 *line, u32 *col )
         (*line)--;
         text = doc_line( view->doc, *line );
         index = text->len;
-        while ( index > 0 && !is_word( (u8)text->text[index - 1] ) ) {
+        while ( index > 0 && !is_word( (uint8_t)text->text[index - 1] ) ) {
             index--;
         }
     }
-    while ( index > 0 && is_word( (u8)text->text[index - 1] ) ) {
+    while ( index > 0 && is_word( (uint8_t)text->text[index - 1] ) ) {
         index--;
     }
     *col = doc_col_of( view->doc, text, index );
@@ -423,9 +423,9 @@ static int move_key( VIEW *view, int key )
 {
     int select = (key & K_SHIFT) != 0;
     int rows = view_text_rows( view ), cols = view_text_cols();
-    u32 line = view->line, col = view->col, keep_want = 1, end;
+    unsigned int line = view->line, col = view->col, keep_want = 1, end;
     LINE *text;
-    u32 index;
+    unsigned int index;
 
     switch ( key & ~K_SHIFT ) {
     case K_LEFT:
@@ -471,18 +471,18 @@ static int move_key( VIEW *view, int key )
         break;
     case K_PGUP:
     case CTRL( 'R' ):
-        line = line > (u32)(rows - 1) ? line - (u32)(rows - 1) : 0;
-        view->top = view->top > (u32)(rows - 1) ? view->top - (u32)(rows - 1) : 0;
+        line = line > (unsigned int)(rows - 1) ? line - (unsigned int)(rows - 1) : 0;
+        view->top = view->top > (unsigned int)(rows - 1) ? view->top - (unsigned int)(rows - 1) : 0;
         col = snap( view, line, view->want );
         break;
     case K_PGDN:
     case CTRL( 'C' ):
-        line += (u32)(rows - 1);
+        line += (unsigned int)(rows - 1);
         if ( line >= view->doc->count ) {
             line = view->doc->count - 1;
         }
-        if ( view->top + (u32)(rows - 1) < view->doc->count ) {
-            view->top += (u32)(rows - 1);
+        if ( view->top + (unsigned int)(rows - 1) < view->doc->count ) {
+            view->top += (unsigned int)(rows - 1);
         }
         col = snap( view, line, view->want );
         break;
@@ -511,8 +511,8 @@ static int move_key( VIEW *view, int key )
         if ( view->top > 0 ) {
             view->top--;
         }
-        if ( line >= view->top + (u32)rows ) {
-            line = view->top + (u32)rows - 1;
+        if ( line >= view->top + (unsigned int)rows ) {
+            line = view->top + (unsigned int)rows - 1;
             col = snap( view, line, view->want );
         }
         break;
@@ -527,13 +527,13 @@ static int move_key( VIEW *view, int key )
         }
         break;
     case K_CPGUP:
-        view->left = view->left > (u32)cols ? view->left - (u32)cols : 0;
-        col = col > (u32)cols ? col - (u32)cols : 0;
+        view->left = view->left > (unsigned int)cols ? view->left - (unsigned int)cols : 0;
+        col = col > (unsigned int)cols ? col - (unsigned int)cols : 0;
         keep_want = 0;
         break;
     case K_CPGDN:
-        view->left += (u32)cols;
-        col += (u32)cols;
+        view->left += (unsigned int)cols;
+        col += (unsigned int)cols;
         keep_want = 0;
         break;
     default:
@@ -583,7 +583,7 @@ static void new_line( VIEW *view )
     LINE *text;
     POS pos;
     char buf[81];
-    u32 indent = 0, tail;
+    unsigned int indent = 0, tail;
 
     if ( view->doc->readonly ) {
         return;
@@ -623,7 +623,7 @@ static void back_space( VIEW *view )
 {
     LINE *text;
     POS from, to;
-    u32 end;
+    unsigned int end;
 
     if ( view->doc->readonly ) {
         return;
@@ -700,7 +700,7 @@ static void delete_char( VIEW *view )
 static void delete_word( VIEW *view )
 {
     POS from = view_pos( view ), to;
-    u32 line = view->line, col = view->col;
+    unsigned int line = view->line, col = view->col;
 
     if ( view->doc->readonly ) {
         return;
@@ -724,7 +724,7 @@ static void cut_line( VIEW *view, int rest_only )
 {
     POS from, to;
     char *text;
-    u32 len;
+    unsigned int len;
 
     if ( view->doc->readonly ) {
         return;
@@ -761,7 +761,7 @@ static void cut_line( VIEW *view, int rest_only )
 static int shift_block( VIEW *view, int out )
 {
     POS from, to, at;
-    u32 line, last, remove;
+    unsigned int line, last, remove;
     LINE *text;
     char spaces[32];
 
@@ -786,7 +786,7 @@ static int shift_block( VIEW *view, int out )
             if ( text->len && text->text[0] == '\t' ) {
                 remove = 1;
             } else {
-                while ( remove < text->len && remove < (u32)tab_size && text->text[remove] == ' ' ) {
+                while ( remove < text->len && remove < (unsigned int)tab_size && text->text[remove] == ' ' ) {
                     remove++;
                 }
             }
@@ -796,7 +796,7 @@ static int shift_block( VIEW *view, int out )
                 doc_delete( view->doc, at, end );
             }
         } else if ( text->len ) {
-            doc_insert( view->doc, &at, spaces, (u32)(tab_size < 32 ? tab_size : 32) );
+            doc_insert( view->doc, &at, spaces, (unsigned int)(tab_size < 32 ? tab_size : 32) );
         }
     }
     /* keep the lines selected, whole */
@@ -812,7 +812,7 @@ static int shift_block( VIEW *view, int out )
 
 static void tab_key( VIEW *view, int back )
 {
-    u32 col = view->col, stop;
+    unsigned int col = view->col, stop;
     char spaces[32];
 
     if ( shift_block( view, back ) ) {
@@ -872,7 +872,7 @@ static int prefixed( VIEW *view, int first, int key )
         view_goto( view, view->top, snap( view, view->top, view->want ), 0 );
         break;
     case 'X':
-        view_goto( view, view->top + (u32)view_text_rows( view ) - 1, view->want, 0 );
+        view_goto( view, view->top + (unsigned int)view_text_rows( view ) - 1, view->want, 0 );
         view->col = snap( view, view->line, view->want );
         break;
     case 'Y': cut_line( view, 1 ); break;
@@ -932,7 +932,7 @@ int view_key( VIEW *view, int key )
         return 1;
     case CTRL( 'N' ):                          /* a line break after the cursor */
         if ( !view->doc->readonly ) {
-            u32 line = view->line, col = view->col;
+            unsigned int line = view->line, col = view->col;
             view_insert_text( view, "\n", 1 );
             view_goto( view, line, col, 0 );
         }
@@ -1015,7 +1015,7 @@ void view_mouse_to( VIEW *view, int row, int col, int select )
 {
     int rows = view_text_rows( view ), cols = view_text_cols();
     int text_row = row - view->row - 1, text_col = col - 1;
-    u32 line;
+    unsigned int line;
 
     if ( text_row < 0 ) {
         text_row = 0;
@@ -1029,11 +1029,11 @@ void view_mouse_to( VIEW *view, int row, int col, int select )
     if ( text_col >= cols ) {
         text_col = cols - 1;
     }
-    line = view->top + (u32)text_row;
+    line = view->top + (unsigned int)text_row;
     if ( line >= view->doc->count ) {
         line = view->doc->count - 1;
     }
-    view_goto( view, line, snap( view, line, view->left + (u32)text_col ), select );
+    view_goto( view, line, snap( view, line, view->left + (unsigned int)text_col ), select );
     view->want = view->col;
 }
 
@@ -1041,14 +1041,14 @@ void view_mouse_to( VIEW *view, int row, int col, int select )
 void view_select_word( VIEW *view )
 {
     LINE *text = cur_line( view );
-    u32 index = doc_index_of( view->doc, text, view->col ), start, end;
+    unsigned int index = doc_index_of( view->doc, text, view->col ), start, end;
 
-    if ( index >= text->len || !is_word( (u8)text->text[index] ) ) {
+    if ( index >= text->len || !is_word( (uint8_t)text->text[index] ) ) {
         return;
     }
-    for ( start = index; start > 0 && is_word( (u8)text->text[start - 1] ); start-- ) {
+    for ( start = index; start > 0 && is_word( (uint8_t)text->text[start - 1] ); start-- ) {
     }
-    for ( end = index; end < text->len && is_word( (u8)text->text[end] ); end++ ) {
+    for ( end = index; end < text->len && is_word( (uint8_t)text->text[end] ); end++ ) {
     }
     view->sel = 1;
     view->sel_line = view->line;
@@ -1062,7 +1062,7 @@ void view_select_word( VIEW *view )
 void view_scroll_part( VIEW *view, int part, int row, int col )
 {
     int rows = view_text_rows( view ), width = scr_cols - 2, first = view->row + 1, at;
-    u32 count = view->doc->count, line;
+    unsigned int count = view->doc->count, line;
 
     switch ( part ) {
     case VH_UP:
@@ -1088,15 +1088,15 @@ void view_scroll_part( VIEW *view, int part, int row, int col )
         if ( at > rows - 3 ) {
             at = rows - 3;
         }
-        line = (u32)at * (count - 1) / (u32)(rows - 3);
+        line = (unsigned int)at * (count - 1) / (unsigned int)(rows - 3);
         view_goto( view, line, snap( view, line, view->want ), 0 );
         break;
     case VH_LEFT:
         if ( view->left > 0 ) {
             view->left--;
         }
-        if ( view->col >= view->left + (u32)view_text_cols() ) {
-            view_goto( view, view->line, view->left + (u32)view_text_cols() - 1, 0 );
+        if ( view->col >= view->left + (unsigned int)view_text_cols() ) {
+            view_goto( view, view->line, view->left + (unsigned int)view_text_cols() - 1, 0 );
             view->want = view->col;
         }
         break;
@@ -1124,7 +1124,7 @@ void view_scroll_part( VIEW *view, int part, int row, int col )
         if ( at > width - 3 ) {
             at = width - 3;
         }
-        view_goto( view, view->line, (u32)at * 255 / (u32)(width - 3), 0 );
+        view_goto( view, view->line, (unsigned int)at * 255 / (unsigned int)(width - 3), 0 );
         view->want = view->col;
         break;
     }

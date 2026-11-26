@@ -5,7 +5,11 @@
  * NetBIOS-over-TCP (port 139): a session request, then every SMB message
  * rides a 4-byte NBT header (type, flags, 16-bit big-endian length).  The
  * SMB header is the 32-byte CIFS header; OEM (8-bit) strings, no signing.
- * Authentication is the old LM + NTLMv1 challenge-response.
+ * Authentication is the old LM + NTLMv1 challenge-response.  A reply is
+ * known by its MID, and a TRANS2 reply too big for the server's buffer
+ * is put together from the several messages it comes in (smb1_rx,
+ * trans2_txrx): the drives on one connection share one stream, so a
+ * reply left half-read would answer the next request, on any of them.
  *
  * A LAN Manager server (WfW 3.11, LAN Manager 2.x, OS/2 LAN Server) gets
  * what WfW's own redirector sends: the 13-word NEGOTIATE answer, a
@@ -26,20 +30,20 @@ void *memcpy( void *to, const void *from, unsigned len );
 void *memset( void *to, int value, unsigned len );
 
 /* ---- little helpers ---- */
-static void put16( unsigned char *p, unsigned int v ) { p[0] = (unsigned char)v; p[1] = (unsigned char)( v >> 8 ); }
-static void put32( unsigned char *p, unsigned long v ) { p[0] = (unsigned char)v; p[1] = (unsigned char)( v >> 8 ); p[2] = (unsigned char)( v >> 16 ); p[3] = (unsigned char)( v >> 24 ); }
-static unsigned int  get16( const unsigned char *p ) { return (unsigned int)p[0] | ( (unsigned int)p[1] << 8 ); }
-static unsigned long get32( const unsigned char *p ) { return (unsigned long)p[0] | ( (unsigned long)p[1] << 8 ) | ( (unsigned long)p[2] << 16 ) | ( (unsigned long)p[3] << 24 ); }
+static void put16( uint8_t *p, unsigned int v ) { p[0] = (uint8_t)v; p[1] = (uint8_t)( v >> 8 ); }
+static void put32( uint8_t *p, uint32_t v ) { p[0] = (uint8_t)v; p[1] = (uint8_t)( v >> 8 ); p[2] = (uint8_t)( v >> 16 ); p[3] = (uint8_t)( v >> 24 ); }
+static unsigned int  get16( const uint8_t *p ) { return (unsigned int)p[0] | ( (unsigned int)p[1] << 8 ); }
+static uint32_t      get32( const uint8_t *p ) { return (uint32_t)p[0] | ( (uint32_t)p[1] << 8 ) | ( (uint32_t)p[2] << 16 ) | ( (uint32_t)p[3] << 24 ); }
 
 static int slen( const char *s ) { int n = 0; while ( s[n] ) n++; return n; }
 static char supper( char ch ) { return ( ch >= 'a' && ch <= 'z' ) ? (char)( ch - 32 ) : ch; }
 
 /* copy an ASCIIZ string (with its NUL) to 'dst', uppercased when 'up';
    returns the number of bytes written, the NUL included */
-static int put_strz( unsigned char *dst, const char *src, int up )
+static int put_strz( uint8_t *dst, const char *src, int up )
 {
     int i = 0;
-    while ( src[i] ) { dst[i] = (unsigned char)( up ? supper( src[i] ) : src[i] ); i++; }
+    while ( src[i] ) { dst[i] = (uint8_t)( up ? supper( src[i] ) : src[i] ); i++; }
     dst[i] = 0;
     return i + 1;
 }
@@ -48,7 +52,7 @@ static int put_strz( unsigned char *dst, const char *src, int up )
 /* transport: NBT framing over the send/recv callbacks                    */
 /* ====================================================================== */
 
-static int send_all( smb1_client *cl, const unsigned char *buf, int len )
+static int send_all( smb1_client *cl, const uint8_t *buf, int len )
 {
     int off = 0, n;
     while ( off < len ) {
@@ -59,7 +63,7 @@ static int send_all( smb1_client *cl, const unsigned char *buf, int len )
     return 0;
 }
 
-static int read_n( smb1_client *cl, unsigned char *buf, int n )
+static int read_n( smb1_client *cl, uint8_t *buf, int n )
 {
     int off = 0, got;
     while ( off < n ) {
@@ -72,9 +76,9 @@ static int read_n( smb1_client *cl, unsigned char *buf, int n )
 
 /* receive one NBT message into 'out' (max 'cap'); skip keep-alives (0x85).
    returns the payload length, or <0. */
-static int nbt_recv( smb1_client *cl, unsigned char *out, int cap )
+static int nbt_recv( smb1_client *cl, uint8_t *out, int cap )
 {
-    unsigned char hdr[4];
+    uint8_t hdr[4];
     int len;
     for ( ;; ) {
         if ( read_n( cl, hdr, 4 ) < 0 ) return -1;
@@ -95,40 +99,48 @@ static int nbt_recv( smb1_client *cl, unsigned char *out, int cap )
 
 /* start a command: write the NBT placeholder and the 32-byte header,
    return the WordCount byte's address (the caller fills from there) */
-static unsigned char *smb1_begin( smb1_client *cl, int command )
+static uint8_t *smb1_begin( smb1_client *cl, int command )
 {
-    unsigned char *p = cl->sendbuf + 4;         /* the SMB header start */
+    uint8_t *p = cl->sendbuf + 4;               /* the SMB header start */
     memset( cl->sendbuf, 0, 37 );
     p[0] = 0xFF; p[1] = 'S'; p[2] = 'M'; p[3] = 'B';
-    p[4] = (unsigned char)command;              /* Command */
+    p[4] = (uint8_t)command;                    /* Command */
     p[9] = 0x18;                                /* Flags: canon + case-insensitive */
     put16( p + 10, cl->flags2 );                /* Flags2 */
     put16( p + 24, cl->tree_id );               /* TID */
     put16( p + 26, cl->pid );                   /* PID: ours, for the mount */
     put16( p + 28, cl->uid );                   /* UID */
+    if ( ( cl->mid & 0xFFFFU ) == 0xFFFFU ) cl->mid++;   /* FFFFh is the server's
+                                                   (its oplock breaks) */
+    cl->req_mid = cl->mid & 0xFFFFU;
     put16( p + 30, cl->mid++ );                 /* MID */
     return p + 32;                              /* -> WordCount */
 }
 
-/* send what was built (end -> just past the last byte) and receive the
-   reply into recvbuf.  Stores cl->last_status.  0 if a reply came (even
-   an error status), <0 on a transport failure or a malformed reply (a
-   success whose word or byte block runs past what was received). */
-static int smb1_txrx( smb1_client *cl, unsigned char *end )
-{
-    unsigned char *p = cl->sendbuf + 4;
-    int smblen = (int)( end - p );
-    cl->sendbuf[0] = 0;
-    cl->sendbuf[1] = (unsigned char)( ( smblen >> 16 ) & 1 );
-    cl->sendbuf[2] = (unsigned char)( smblen >> 8 );
-    cl->sendbuf[3] = (unsigned char)smblen;
-    cl->last_status = 0;                        /* no answer stays "no status" */
-    if ( send_all( cl, cl->sendbuf, smblen + 4 ) < 0 ) return -1;
+/* the most messages passed over while waiting for one reply */
+#define SMB1_MAXSKIP 64
 
-    cl->recvlen = nbt_recv( cl, cl->recvbuf, (int)sizeof( cl->recvbuf ) );
-    if ( cl->recvlen < 33 ) return -1;
-    if ( cl->recvbuf[0] != 0xFF || cl->recvbuf[1] != 'S' ||
-         cl->recvbuf[2] != 'M' || cl->recvbuf[3] != 'B' ) return -1;
+/* receive the reply to the request in flight into recvbuf.  A message
+   with another MID is not that reply but a piece of an older one that
+   was never read, and is passed over: taken as the answer, it would be
+   an earlier listing's entries answering this request, and every reply
+   after it one behind.  Stores cl->last_status.  0 if the reply came
+   (even an error status), <0 on a transport failure or a malformed
+   reply (a success whose word or byte block runs past what was
+   received). */
+static int smb1_rx( smb1_client *cl )
+{
+    int skipped = 0;
+
+    cl->last_status = 0;                        /* no answer stays "no status" */
+    for ( ;; ) {
+        cl->recvlen = nbt_recv( cl, cl->recvbuf, (int)sizeof( cl->recvbuf ) );
+        if ( cl->recvlen < 33 ) return -1;
+        if ( cl->recvbuf[0] != 0xFF || cl->recvbuf[1] != 'S' ||
+             cl->recvbuf[2] != 'M' || cl->recvbuf[3] != 'B' ) return -1;
+        if ( get16( cl->recvbuf + 30 ) == cl->req_mid ) break;
+        if ( ++skipped > SMB1_MAXSKIP ) { cl->broken = 1; return -1; }
+    }
     cl->last_status = get32( cl->recvbuf + 5 );
     if ( cl->last_status == 0 ) {
         /* the words and bytes a good reply carries must have come in */
@@ -139,25 +151,98 @@ static int smb1_txrx( smb1_client *cl, unsigned char *end )
     return 0;
 }
 
+/* send what was built (end -> just past the last byte) and receive the
+   reply into recvbuf (smb1_rx) */
+static int smb1_txrx( smb1_client *cl, uint8_t *end )
+{
+    uint8_t *p = cl->sendbuf + 4;
+    int smblen = (int)( end - p );
+    cl->sendbuf[0] = 0;
+    cl->sendbuf[1] = (uint8_t)( ( smblen >> 16 ) & 1 );
+    cl->sendbuf[2] = (uint8_t)( smblen >> 8 );
+    cl->sendbuf[3] = (uint8_t)smblen;
+    cl->last_status = 0;                        /* no answer stays "no status" */
+    if ( send_all( cl, cl->sendbuf, smblen + 4 ) < 0 ) return -1;
+    return smb1_rx( cl );
+}
+
 /* response accessors (the reply SMB is at recvbuf[0]) */
 static int r_wordcount( smb1_client *cl ) { return cl->recvbuf[32]; }
-static const unsigned char *r_words( smb1_client *cl ) { return cl->recvbuf + 33; }
+static const uint8_t *r_words( smb1_client *cl ) { return cl->recvbuf + 33; }
 static int r_bytecount( smb1_client *cl )
 {
     int wc = cl->recvbuf[32];
     return (int)get16( cl->recvbuf + 33 + wc * 2 );
 }
-static const unsigned char *r_bytes( smb1_client *cl )
+static const uint8_t *r_bytes( smb1_client *cl )
 {
     int wc = cl->recvbuf[32];
     return cl->recvbuf + 33 + wc * 2 + 2;
+}
+
+/* send a TRANS2 request and put its reply together.  A reply that does
+   not fit the server's buffer comes in several messages (Windows Server
+   2003's buffer is 16,644 bytes, so a listing of more than about 120
+   long names does), each with the request's MID, the totals, and a
+   piece of the parameters and of the data at a displacement.  The
+   pieces go to cl->trparm (*pcount bytes in all) and cl->trdata
+   (*dcount).  The request asked for no more than SMB1_TRANSPARM and
+   SMB1_TRANSDATA bytes.  0 when the reply came - an error status too,
+   which has no pieces - else <0.  A message that is not a TRANS2
+   answer, a reply larger than was asked for, or a piece outside it
+   ends the connection (cl->broken): the rest of that reply may still
+   be on its way. */
+static int trans2_txrx( smb1_client *cl, uint8_t *end, int *pcount, int *dcount )
+{
+    int tp = -1, td = -1, gotp = 0, gotd = 0;
+
+    *pcount = *dcount = 0;
+    if ( smb1_txrx( cl, end ) < 0 ) return -1;
+    if ( cl->last_status != 0 ) return 0;       /* an error: no pieces */
+    for ( ;; ) {
+        const uint8_t *rp;
+        int wc, ntp, ntd, pc, po, pd, dc, dof, dd, base;
+
+        wc = r_wordcount( cl );
+        if ( wc < 10 ) break;                    /* not a TRANS2 answer */
+        rp = r_words( cl );
+        ntp = (int)get16( rp + 0 );              /* TotalParameterCount */
+        ntd = (int)get16( rp + 2 );              /* TotalDataCount */
+        pc  = (int)get16( rp + 6 );              /* ParameterCount */
+        po  = (int)get16( rp + 8 );              /* ParameterOffset */
+        pd  = (int)get16( rp + 10 );             /* ParameterDisplacement */
+        dc  = (int)get16( rp + 12 );             /* DataCount */
+        dof = (int)get16( rp + 14 );             /* DataOffset */
+        dd  = (int)get16( rp + 16 );             /* DataDisplacement */
+        /* the first message sets the totals; a later one may only lower them */
+        if ( tp < 0 || ntp < tp ) tp = ntp;
+        if ( td < 0 || ntd < td ) td = ntd;
+        if ( tp > SMB1_TRANSPARM || td > SMB1_TRANSDATA ) break;
+        base = 33 + wc * 2 + 2;                  /* where the byte block starts */
+        if ( pc > 0 && ( po < base || po + pc > cl->recvlen || pd + pc > tp ) ) break;
+        if ( dc > 0 && ( dof < base || dof + dc > cl->recvlen || dd + dc > td ) ) break;
+        if ( pc + dc == 0 && ( gotp < tp || gotd < td ) ) break;   /* a piece of nothing */
+        if ( pc > 0 ) memcpy( cl->trparm + pd, cl->recvbuf + po, (unsigned)pc );
+        if ( dc > 0 ) memcpy( cl->trdata + dd, cl->recvbuf + dof, (unsigned)dc );
+        gotp += pc;
+        gotd += dc;
+        if ( gotp >= tp && gotd >= td ) {
+            *pcount = tp;
+            *dcount = td;
+            return 0;
+        }
+        if ( smb1_rx( cl ) < 0 ) return -1;      /* the next piece */
+        if ( cl->last_status != 0 ) return -1;   /* an error part-way */
+    }
+    cl->broken = 1;
+    return -1;
 }
 
 /* ====================================================================== */
 /* the NetBIOS session request                                            */
 /* ====================================================================== */
 
-static void nb_encode( const char *name, unsigned char type, unsigned char *out )
+static void nb_encode( const char *name, uint8_t type, uint8_t *out )
 {
     char padded[16];
     int i, n = slen( name );
@@ -165,8 +250,8 @@ static void nb_encode( const char *name, unsigned char type, unsigned char *out 
     padded[15] = (char)type;
     out[0] = 0x20;
     for ( i = 0; i < 16; i++ ) {
-        out[1 + i * 2]     = (unsigned char)( 'A' + ( ( padded[i] >> 4 ) & 0x0F ) );
-        out[1 + i * 2 + 1] = (unsigned char)( 'A' + ( padded[i] & 0x0F ) );
+        out[1 + i * 2]     = (uint8_t)( 'A' + ( ( padded[i] >> 4 ) & 0x0F ) );
+        out[1 + i * 2 + 1] = (uint8_t)( 'A' + ( padded[i] & 0x0F ) );
     }
     out[33] = 0;
 }
@@ -180,7 +265,7 @@ unsigned int smb1_vc_number = 0;
 
 static int nbt_session_request( smb1_client *cl, const char *server )
 {
-    unsigned char pkt[4 + 68];
+    uint8_t pkt[4 + 68];
     const char *called = server;
     int n = slen( server ), i, isip = 1;
 
@@ -196,7 +281,7 @@ static int nbt_session_request( smb1_client *cl, const char *server )
 
     /* the response is a bare 4-byte NBT header: 0x82 positive, else no */
     {
-        unsigned char hdr[4];
+        uint8_t hdr[4];
         if ( read_n( cl, hdr, 4 ) < 0 ) return -1;
         if ( hdr[0] != 0x82 ) return -1;
     }
@@ -222,9 +307,9 @@ static const char *const dialects[] = {
 
 static int do_negotiate( smb1_client *cl )
 {
-    unsigned char *p, *b, *end;
-    const unsigned char *w;
-    unsigned long maxbuf;
+    uint8_t *p, *b, *end;
+    const uint8_t *w;
+    uint32_t maxbuf;
     int keylen, wc, idx, i;
 
     cl->flags2 = SMB_FLAGS2;
@@ -277,9 +362,9 @@ static int do_negotiate( smb1_client *cl )
    the 24-byte LM response when the server encrypts, else the password in
    capitals with its NUL; no password is a lone NUL.  Returns the length
    written to 'out' (64 bytes at most). */
-static int lm_password( smb1_client *cl, const char *password, unsigned char *out )
+static int lm_password( smb1_client *cl, const char *password, uint8_t *out )
 {
-    unsigned char h[16];
+    uint8_t h[16];
     int i;
 
     if ( password == (const char *)0 || password[0] == 0 ) { out[0] = 0; return 1; }
@@ -288,7 +373,7 @@ static int lm_password( smb1_client *cl, const char *password, unsigned char *ou
         desl( h, cl->challenge, out );
         return 24;
     }
-    for ( i = 0; i < 63 && password[i]; i++ ) out[i] = (unsigned char)supper( password[i] );
+    for ( i = 0; i < 63 && password[i]; i++ ) out[i] = (uint8_t)supper( password[i] );
     out[i] = 0;
     return i + 1;
 }
@@ -296,9 +381,9 @@ static int lm_password( smb1_client *cl, const char *password, unsigned char *ou
 static int do_session_setup( smb1_client *cl, const char *user,
                              const char *password, const char *domain )
 {
-    unsigned char *p = smb1_begin( cl, 0x73 );  /* SESSION_SETUP_ANDX */
-    unsigned char *w = p + 1, *b, *q;
-    unsigned char lm[24], nt[24], h[16];
+    uint8_t *p = smb1_begin( cl, 0x73 );        /* SESSION_SETUP_ANDX */
+    uint8_t *w = p + 1, *b, *q;
+    uint8_t lm[24], nt[24], h[16];
 
     nt_hash( password, h ); desl( h, cl->challenge, nt );
     lm_hash( password, h ); desl( h, cl->challenge, lm );
@@ -337,8 +422,8 @@ static int do_session_setup( smb1_client *cl, const char *user,
 static int do_session_setup_lm( smb1_client *cl, const char *user,
                                 const char *password, const char *domain )
 {
-    unsigned char *p = smb1_begin( cl, 0x73 );  /* SESSION_SETUP_ANDX */
-    unsigned char *w = p + 1, *b, *q;
+    uint8_t *p = smb1_begin( cl, 0x73 );        /* SESSION_SETUP_ANDX */
+    uint8_t *w = p + 1, *b, *q;
     int pwlen;
 
     p[0] = 10;                                  /* WordCount */
@@ -372,8 +457,8 @@ static int do_session_setup_lm( smb1_client *cl, const char *user,
 static int do_tree_connect( smb1_client *cl, const char *server, const char *share,
                             const char *password )
 {
-    unsigned char *p = smb1_begin( cl, 0x75 );  /* TREE_CONNECT_ANDX */
-    unsigned char *w = p + 1, *b, *q;
+    uint8_t *p = smb1_begin( cl, 0x75 );        /* TREE_CONNECT_ANDX */
+    uint8_t *w = p + 1, *b, *q;
     int pwlen;
 
     p[0] = 4;                                   /* WordCount */
@@ -412,7 +497,7 @@ int smb1_tree_connect( smb1_client *cl, const char *server, const char *share,
 }
 
 int smb1_connect( smb1_client *cl, smb_send_fn send, smb_recv_fn recv, void *ioctx,
-                  unsigned long seed,
+                  uint32_t seed,
                   const char *server, const char *share,
                   const char *user, const char *password, const char *domain )
 {
@@ -441,14 +526,14 @@ int smb1_connect( smb1_client *cl, smb_send_fn send, smb_recv_fn recv, void *ioc
 /* share-relative path -> "\dir\name" (backslash, leading backslash)      */
 /* ====================================================================== */
 
-static int build_path( unsigned char *dst, const char *dir, const char *leaf )
+static int build_path( uint8_t *dst, const char *dir, const char *leaf )
 {
     int n = 0, i;
     dst[n++] = '\\';
-    for ( i = 0; dir && dir[i]; i++ ) dst[n++] = (unsigned char)( ( dir[i] == '/' ) ? '\\' : dir[i] );
+    for ( i = 0; dir && dir[i]; i++ ) dst[n++] = (uint8_t)( ( dir[i] == '/' ) ? '\\' : dir[i] );
     if ( leaf ) {
         if ( n > 1 && dst[n - 1] != '\\' ) dst[n++] = '\\';
-        for ( i = 0; leaf[i]; i++ ) dst[n++] = (unsigned char)leaf[i];
+        for ( i = 0; leaf[i]; i++ ) dst[n++] = (uint8_t)leaf[i];
     }
     dst[n] = 0;
     return n;
@@ -465,11 +550,11 @@ static int build_path( unsigned char *dst, const char *dir, const char *leaf )
 /* a DOS date and time -> a Windows FILETIME, so a SEARCH entry comes back
    in the same smb2_dirent shape as an NT one.  32x32->64 multiplies, no
    64-bit type (SMBSRVDOS.C does the same). */
-static void umul32( unsigned long a, unsigned long b, unsigned long *hi, unsigned long *lo )
+static void umul32( uint32_t a, uint32_t b, uint32_t *hi, uint32_t *lo )
 {
-    unsigned long a0 = a & 0xFFFF, a1 = a >> 16, b0 = b & 0xFFFF, b1 = b >> 16;
-    unsigned long p0 = a0 * b0, p1 = a0 * b1, p2 = a1 * b0, p3 = a1 * b1;
-    unsigned long mid = ( p0 >> 16 ) + ( p1 & 0xFFFF ) + ( p2 & 0xFFFF );
+    uint32_t a0 = a & 0xFFFF, a1 = a >> 16, b0 = b & 0xFFFF, b1 = b >> 16;
+    uint32_t p0 = a0 * b0, p1 = a0 * b1, p2 = a1 * b0, p3 = a1 * b1;
+    uint32_t mid = ( p0 >> 16 ) + ( p1 & 0xFFFF ) + ( p2 & 0xFFFF );
     *lo = ( p0 & 0xFFFF ) | ( mid << 16 );
     *hi = p3 + ( p1 >> 16 ) + ( p2 >> 16 ) + ( mid >> 16 );
 }
@@ -483,19 +568,19 @@ static long days_from_civil( int year, int month, int day )
     doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
     return era * 146097 + (long)doe - 719468;
 }
-static void dos_filetime( unsigned int date, unsigned int time, unsigned long *lo, unsigned long *hi )
+static void dos_filetime( unsigned int date, unsigned int time, uint32_t *lo, uint32_t *hi )
 {
     int year  = 1980 + (int)( ( date >> 9 ) & 0x7F );
     int month = (int)( ( date >> 5 ) & 0x0F );
     int day   = (int)( date & 0x1F );
-    unsigned long secs, shi, slo, phi, plo, sum;
+    uint32_t secs, shi, slo, phi, plo, sum;
 
     if ( date == 0 ) { *lo = 0; *hi = 0; return; }        /* no date */
     if ( month < 1 ) month = 1;
     if ( month > 12 ) month = 12;
     if ( day < 1 ) day = 1;
     secs = ( ( time >> 11 ) & 0x1F ) * 3600UL + ( ( time >> 5 ) & 0x3F ) * 60UL + ( time & 0x1F ) * 2UL;
-    umul32( (unsigned long)( days_from_civil( year, month, day ) + 134774L ), 86400UL, &shi, &slo );
+    umul32( (uint32_t)( days_from_civil( year, month, day ) + 134774L ), 86400UL, &shi, &slo );
     sum = slo + secs;
     if ( sum < slo ) shi++;
     umul32( sum, 10000000UL, &phi, &plo );                 /* seconds -> 100ns */
@@ -512,7 +597,7 @@ static int list_dir_search( smb1_client *cl, const char *dir,
                             void ( *emit )( void *user, const smb2_dirent *entry ),
                             void *user )
 {
-    unsigned char key[21];
+    uint8_t key[21];
     int first = 1, maxcount, rounds = 0;
 
     maxcount = ( cl->max_buffer - 64 ) / SEARCH_ENTRY;
@@ -520,9 +605,9 @@ static int list_dir_search( smb1_client *cl, const char *dir,
     if ( maxcount < 1 ) maxcount = 1;
 
     for ( ;; ) {
-        unsigned char *p = smb1_begin( cl, 0x81 );    /* SEARCH */
-        unsigned char *w = p + 1, *bc, *q;
-        const unsigned char *rb, *e;
+        uint8_t *p = smb1_begin( cl, 0x81 );          /* SEARCH */
+        uint8_t *w = p + 1, *bc, *q;
+        const uint8_t *rb, *e;
         int count, dlen, i, k;
 
         p[0] = 2;                                     /* WordCount */
@@ -576,12 +661,12 @@ static int list_dir_search( smb1_client *cl, const char *dir,
 
 /* READ (0x0A): 5 words (FID, count, offset, remaining); the answer's data
    follows a 0x01 buffer format and its own length */
-static int read_core( smb1_client *cl, const smb2_fh *fh, unsigned long off,
-                      unsigned char *buf, int len )
+static int read_core( smb1_client *cl, const smb2_fh *fh, uint32_t off,
+                      uint8_t *buf, int len )
 {
-    unsigned char *p = smb1_begin( cl, 0x0A );       /* READ */
-    unsigned char *w = p + 1;
-    const unsigned char *rb;
+    uint8_t *p = smb1_begin( cl, 0x0A );             /* READ */
+    uint8_t *w = p + 1;
+    const uint8_t *rb;
     int dlen;
 
     p[0] = 5;                                         /* WordCount */
@@ -606,11 +691,11 @@ static int read_core( smb1_client *cl, const smb2_fh *fh, unsigned long off,
 
 /* WRITE (0x0B): 5 words, then the data after a 0x01 buffer format and its
    length.  (A count of 0 would cut the file at 'off': never sent here.) */
-static int write_core( smb1_client *cl, const smb2_fh *fh, unsigned long off,
-                       const unsigned char *buf, int len )
+static int write_core( smb1_client *cl, const smb2_fh *fh, uint32_t off,
+                       const uint8_t *buf, int len )
 {
-    unsigned char *p = smb1_begin( cl, 0x0B );       /* WRITE */
-    unsigned char *w = p + 1, *q;
+    uint8_t *p = smb1_begin( cl, 0x0B );             /* WRITE */
+    uint8_t *w = p + 1, *q;
 
     p[0] = 5;                                         /* WordCount */
     put16( w + 0, get16( fh->file_id ) );             /* FID */
@@ -647,16 +732,16 @@ static int write_core( smb1_client *cl, const smb2_fh *fh, unsigned long off,
    which has the short name's length at 68 and its 24 bytes at 70
    (Unicode whatever the session's strings are, on Windows and Samba
    alike), 64 at level 0x101, which has none. */
-static int find_walk( const unsigned char *data, int dcount, int fixed,
+static int find_walk( const uint8_t *data, int dcount, int fixed,
                       char *last_name,
                       void ( *emit )( void *user, const smb2_dirent *entry ),
                       void *user )
 {
     int off = 0, count = 0;
     while ( off + fixed <= dcount ) {
-        const unsigned char *e = data + off;
-        unsigned long next = get32( e + 0 );
-        unsigned long namelen = get32( e + 60 );
+        const uint8_t *e = data + off;
+        uint32_t next = get32( e + 0 );
+        uint32_t namelen = get32( e + 60 );
         smb2_dirent de;
         int i, cap;
 
@@ -690,10 +775,22 @@ static int find_walk( const unsigned char *data, int dcount, int fixed,
         count++;
 
         if ( next == 0 ) break;
-        if ( next < 64 || next > (unsigned long)( dcount - off ) ) break;
+        if ( next < 64 || next > (uint32_t)( dcount - off ) ) break;
         off += (int)next;
     }
     return count;
+}
+
+/* FIND_CLOSE2 (0x34): end a search the server still holds; its answer
+   does not matter */
+static void find_close( smb1_client *cl, unsigned int sid )
+{
+    uint8_t *p = smb1_begin( cl, 0x34 );
+    p[0] = 1;                                    /* WordCount */
+    put16( p + 1, sid );                         /* SID */
+    put16( p + 3, 0 );                           /* ByteCount */
+    cl->stage = "find close";
+    smb1_txrx( cl, p + 5 );
 }
 
 int smb1_list_dir( smb1_client *cl, const char *dir, const char *pattern,
@@ -701,7 +798,7 @@ int smb1_list_dir( smb1_client *cl, const char *dir, const char *pattern,
                    void *user )
 {
     unsigned int  sid = 0, level = FIND_BOTH_LEVEL;
-    int           eos = 0, total = 0, first = 1;
+    int           eos = 0, first = 1, open = 0, rc = 0;
     char          last_name[260];
 
     (void)pattern;
@@ -709,18 +806,17 @@ int smb1_list_dir( smb1_client *cl, const char *dir, const char *pattern,
     if ( cl->lm ) return list_dir_search( cl, dir, emit, user );
 
     while ( !eos ) {
-        unsigned char *p = smb1_begin( cl, 0x32 );   /* TRANSACTION2 */
-        unsigned char *w = p + 1;
-        unsigned char *bc, *name, *parm;
-        const unsigned char *rp, *rdata;
-        int plen, parmoff, rwc;
-        int dcount, got;
+        uint8_t *p = smb1_begin( cl, 0x32 );         /* TRANSACTION2 */
+        uint8_t *w = p + 1;
+        uint8_t *bc, *name, *parm;
+        int plen, parmoff;
+        int pcount, dcount, got;
 
         p[0] = 15;                                   /* WordCount */
         /* fixed TRANS2 words (14) then one setup word */
         put16( w + 0, 0 );   put16( w + 2, 0 );      /* TotalParam/Data (fill below) */
         put16( w + 4, 10 );                          /* MaxParameterCount */
-        put16( w + 6, (unsigned int)sizeof( cl->recvbuf ) - 512 ); /* MaxDataCount */
+        put16( w + 6, SMB1_TRANSDATA );              /* MaxDataCount: what trdata holds */
         w[8] = 0; w[9] = 0;                          /* MaxSetupCount / Reserved */
         put16( w + 10, 0 );                          /* Flags */
         put32( w + 12, 0 );                          /* Timeout */
@@ -750,7 +846,8 @@ int smb1_list_dir( smb1_client *cl, const char *dir, const char *pattern,
             put16( parm + 2, 256 );                  /* SearchCount */
             put16( parm + 4, level );
             put32( parm + 6, 0 );                    /* ResumeKey */
-            put16( parm + 10, 0x000C );              /* Flags: continue + close@EOS */
+            put16( parm + 10, 0x000E );              /* Flags: continue + resume keys
+                                                        + close@EOS */
             plen = 12 + put_strz( parm + 12, last_name, 0 );
         }
 
@@ -763,7 +860,7 @@ int smb1_list_dir( smb1_client *cl, const char *dir, const char *pattern,
         put16( bc, (unsigned int)( ( parm + plen ) - ( bc + 2 ) ) ); /* ByteCount */
 
         cl->stage = first ? "find first" : "find next";
-        if ( smb1_txrx( cl, parm + plen ) < 0 ) return -1;
+        if ( trans2_txrx( cl, parm + plen, &pcount, &dcount ) < 0 ) { rc = -1; break; }
         if ( cl->last_status != 0 ) {
             /* a server without the short names' level: the plain one */
             if ( first && level == FIND_BOTH_LEVEL &&
@@ -775,48 +872,97 @@ int smb1_list_dir( smb1_client *cl, const char *dir, const char *pattern,
                 level = FIND_DIR_LEVEL;
                 continue;
             }
-            if ( first ) return -1;                  /* FINDFIRST failed */
+            if ( first ) rc = -1;                    /* FINDFIRST failed */
             break;                                   /* NEXT: no more (ok) */
         }
-        rwc = r_wordcount( cl );
-        if ( rwc < 10 ) return -1;
-        rp = r_words( cl );
-        /* TRANS2 response params/data by their offsets from the SMB header */
-        {
-            int rparmoff = (int)get16( rp + 8 );
-            int rdataoff = (int)get16( rp + 14 );
-            const unsigned char *rparm = cl->recvbuf + rparmoff;
-            int pcount = (int)get16( rp + 6 );
-            dcount = (int)get16( rp + 12 );
-            rdata = cl->recvbuf + rdataoff;
-            if ( rdataoff + dcount > cl->recvlen ) dcount = cl->recvlen - rdataoff;
-            if ( dcount < 0 ) dcount = 0;
-            if ( pcount > 0 && rparmoff + pcount > cl->recvlen ) return -1;
 
-            if ( first ) {
-                if ( pcount >= 6 ) { sid = get16( rparm + 0 ); eos = (int)get16( rparm + 4 ); }
-                first = 0;
-            } else {
-                if ( pcount >= 4 ) eos = (int)get16( rparm + 2 );
-            }
+        /* FIND_FIRST2's parameters: SID, SearchCount, EndOfSearch, ...;
+           FIND_NEXT2's: SearchCount, EndOfSearch, ... */
+        if ( first ) {
+            if ( pcount < 6 ) { rc = -1; break; }
+            sid = get16( cl->trparm + 0 );
+            eos = (int)get16( cl->trparm + 4 );
+            open = 1;
+            first = 0;
+        } else {
+            if ( pcount < 4 ) { rc = -1; break; }
+            eos = (int)get16( cl->trparm + 2 );
         }
+        if ( eos ) open = 0;                         /* close@EOS: the server ended it */
 
-        got = find_walk( rdata, dcount, ( level == FIND_BOTH_LEVEL ) ? 94 : 64, last_name, emit, user );
-        total += got;
+        got = find_walk( cl->trdata, dcount, ( level == FIND_BOTH_LEVEL ) ? 94 : 64, last_name, emit, user );
         if ( got == 0 ) break;                       /* nothing more came */
     }
-    return 0;
+
+    /* a search the server still holds (ended early, or a FIND_NEXT2
+       failed) is closed, or it stays open there until the logoff: a
+       server keeps only so many.  What went wrong stays reported. */
+    if ( open && !cl->broken ) {
+        const char   *stage  = cl->stage;
+        uint32_t status = cl->last_status;
+        find_close( cl, sid );
+        cl->stage = stage;
+        cl->last_status = status;
+    }
+    return rc;
 }
 
 /* ====================================================================== */
 /* open / read / write / close                                            */
 /* ====================================================================== */
 
-int smb1_open_disp( smb1_client *cl, const char *path, int write,
-                    unsigned long disposition, smb2_fh *fh )
+/* TRANS2 QUERY_FILE_INFORMATION (Setup 7) at level 0x102, SMB_QUERY_FILE_
+   STANDARD_INFO: AllocationSize (8), EndOfFile (8), NumberOfLinks (4),
+   DeletePending (1), Directory (1).  Parameters FID (2) and the level
+   (2); the answer's one parameter word is EaErrorOffset.  It is asked
+   after every open because OPEN_ANDX's DataSize is 32 bits: a file of
+   4GB and more looked 4GB smaller, and a disk image on a share past
+   that size would not mount (DOS\IMAGE.INC, IMF_NET).  0, or -1 when
+   the server will not say - WfW's answers every TRANS2 with an error -
+   and the caller keeps the 32-bit size. */
+#define FILE_STD_LEVEL  0x0102U     /* SMB_QUERY_FILE_STANDARD_INFO */
+
+static int file_size_trans2( smb1_client *cl, unsigned int fid,
+                             uint32_t *size_lo, uint32_t *size_hi )
 {
-    unsigned char *p = smb1_begin( cl, 0x2D );        /* OPEN_ANDX */
-    unsigned char *w = p + 1, *bc, *q;
+    uint8_t *p = smb1_begin( cl, 0x32 );             /* TRANSACTION2 */
+    uint8_t *w = p + 1, *bc, *parm;
+    const uint8_t *d;
+    int parmoff, pcount, dcount;
+
+    p[0] = 15;                                       /* WordCount */
+    memset( w, 0, 30 );
+    put16( w + 0, 4 );                               /* TotalParameterCount */
+    put16( w + 4, 2 );                               /* MaxParameterCount */
+    put16( w + 6, 64 );                              /* MaxDataCount */
+    w[26] = 1;                                       /* SetupCount */
+    put16( w + 28, 7 );                              /* Setup[0]: QUERY_FILE_INFORMATION */
+    bc = w + 30;
+    parm = bc + 2;
+    *parm++ = 0;                                     /* the TRANS2 name: a NUL */
+    while ( ( (int)( parm - ( cl->sendbuf + 4 ) ) ) & 3 ) *parm++ = 0;
+    parmoff = (int)( parm - ( cl->sendbuf + 4 ) );
+    put16( parm, fid );
+    put16( parm + 2, FILE_STD_LEVEL );
+    put16( w + 18, 4 );                              /* ParameterCount */
+    put16( w + 20, (unsigned int)parmoff );          /* ParameterOffset */
+    put16( w + 24, (unsigned int)( parmoff + 4 ) );  /* DataOffset (no data) */
+    put16( bc, (unsigned int)( ( parm + 4 ) - ( bc + 2 ) ) );
+
+    cl->stage = "file-size";
+    if ( trans2_txrx( cl, parm + 4, &pcount, &dcount ) < 0 ) return -1;
+    if ( cl->last_status != 0 || dcount < 16 ) return -1;
+    d = cl->trdata;
+    *size_lo = get32( d + 8 );                       /* EndOfFile */
+    *size_hi = get32( d + 12 );
+    return 0;
+}
+
+int smb1_open_disp( smb1_client *cl, const char *path, int write,
+                    uint32_t disposition, smb2_fh *fh )
+{
+    uint8_t *p = smb1_begin( cl, 0x2D );              /* OPEN_ANDX */
+    uint8_t *w = p + 1, *bc, *q;
     unsigned int openfn, access;
 
     /* OpenFunction: bit4 (0x10) create-if-absent; low bits action-if-present
@@ -841,7 +987,7 @@ int smb1_open_disp( smb1_client *cl, const char *path, int write,
 
     bc = w + 30;                                      /* ByteCount (2) at w+30 */
     q = bc + 2;
-    { unsigned char pb[300]; int n = build_path( pb, path, (const char *)0 ); memcpy( q, pb, n + 1 ); q += n + 1; }
+    { uint8_t pb[300]; int n = build_path( pb, path, (const char *)0 ); memcpy( q, pb, n + 1 ); q += n + 1; }
     put16( bc, (unsigned int)( q - ( bc + 2 ) ) );
 
     cl->stage = "open";
@@ -854,13 +1000,27 @@ int smb1_open_disp( smb1_client *cl, const char *path, int write,
     fh->attr    = get16( r_words( cl ) + 6 );
     fh->size_lo = get32( r_words( cl ) + 12 );          /* DataSize (32-bit) */
     fh->size_hi = 0;
+
+    /* ...which is all OPEN_ANDX has room for.  The dialect with TRANS2
+       (not LANMAN's) is asked for the 64-bit size; a server that will
+       not say keeps the 32-bit one, and the open stands either way. */
+    if ( !cl->lm && !( fh->attr & 0x10 ) ) {
+        uint32_t lo, hi;
+        const char *stage = cl->stage;
+        if ( file_size_trans2( cl, get16( fh->file_id ), &lo, &hi ) == 0 ) {
+            fh->size_lo = lo;
+            fh->size_hi = hi;
+        }
+        cl->stage = stage;
+        cl->last_status = 0;
+    }
     return 0;
 }
 
-int smb1_read( smb1_client *cl, const smb2_fh *fh, unsigned long off_lo, unsigned long off_hi,
-               unsigned char *buf, int len )
+int smb1_read( smb1_client *cl, const smb2_fh *fh, uint32_t off_lo, uint32_t off_hi,
+               uint8_t *buf, int len )
 {
-    unsigned char *p, *w;
+    uint8_t *p, *w;
     int dlen, doff;
 
     if ( len <= 0 ) return 0;
@@ -900,10 +1060,10 @@ int smb1_read( smb1_client *cl, const smb2_fh *fh, unsigned long off_lo, unsigne
     return dlen;
 }
 
-int smb1_write( smb1_client *cl, const smb2_fh *fh, unsigned long off_lo, unsigned long off_hi,
-                const unsigned char *buf, int len )
+int smb1_write( smb1_client *cl, const smb2_fh *fh, uint32_t off_lo, uint32_t off_hi,
+                const uint8_t *buf, int len )
 {
-    unsigned char *p, *w, *bc, *data;
+    uint8_t *p, *w, *bc, *data;
     int doff;
 
     if ( len <= 0 ) return 0;
@@ -947,8 +1107,8 @@ int smb1_write( smb1_client *cl, const smb2_fh *fh, unsigned long off_lo, unsign
 
 int smb1_close_file( smb1_client *cl, const smb2_fh *fh )
 {
-    unsigned char *p = smb1_begin( cl, 0x04 );        /* CLOSE */
-    unsigned char *w = p + 1;
+    uint8_t *p = smb1_begin( cl, 0x04 );              /* CLOSE */
+    uint8_t *w = p + 1;
 
     p[0] = 3;                                         /* WordCount */
     put16( w + 0, get16( fh->file_id ) );             /* FID */
@@ -966,14 +1126,14 @@ int smb1_close_file( smb1_client *cl, const smb2_fh *fh )
 
 static int path_cmd( smb1_client *cl, int command, int is_delete, const char *path )
 {
-    unsigned char *p = smb1_begin( cl, command );
-    unsigned char *w = p + 1, *bc, *q;
+    uint8_t *p = smb1_begin( cl, command );
+    uint8_t *w = p + 1, *bc, *q;
 
     if ( is_delete ) { p[0] = 1; put16( w, 0 ); bc = w + 2; }   /* SearchAttributes=0 */
     else             { p[0] = 0; bc = w; }
     q = bc + 2;
     *q++ = 0x04;                                      /* buffer format: ASCII */
-    { unsigned char pb[300]; int n = build_path( pb, path, (const char *)0 ); memcpy( q, pb, n + 1 ); q += n + 1; }
+    { uint8_t pb[300]; int n = build_path( pb, path, (const char *)0 ); memcpy( q, pb, n + 1 ); q += n + 1; }
     put16( bc, (unsigned int)( q - ( bc + 2 ) ) );
 
     cl->stage = "pathop";
@@ -998,10 +1158,10 @@ int smb1_isdir ( smb1_client *cl, const char *path ) { return path_cmd( cl, 0x10
    BytesPerSector (4). */
 static int fs_size_trans2( smb1_client *cl, smb_fs_size *fs )
 {
-    unsigned char *p = smb1_begin( cl, 0x32 );       /* TRANSACTION2 */
-    unsigned char *w = p + 1, *bc, *parm;
-    const unsigned char *rp, *d;
-    int parmoff, rdataoff, dcount;
+    uint8_t *p = smb1_begin( cl, 0x32 );             /* TRANSACTION2 */
+    uint8_t *w = p + 1, *bc, *parm;
+    const uint8_t *d;
+    int parmoff, pcount, dcount;
 
     p[0] = 15;                                       /* WordCount */
     memset( w, 0, 30 );
@@ -1022,14 +1182,9 @@ static int fs_size_trans2( smb1_client *cl, smb_fs_size *fs )
     put16( bc, (unsigned int)( ( parm + 2 ) - ( bc + 2 ) ) );
 
     cl->stage = "fs-size";
-    if ( smb1_txrx( cl, parm + 2 ) < 0 ) return -1;
-    if ( cl->last_status != 0 || r_wordcount( cl ) < 10 ) return -1;
-    rp = r_words( cl );
-    dcount = (int)get16( rp + 12 );
-    rdataoff = (int)get16( rp + 14 );
-    if ( dcount < 24 || rdataoff < 33 || rdataoff > cl->recvlen || dcount > cl->recvlen - rdataoff )
-        return -1;
-    d = cl->recvbuf + rdataoff;
+    if ( trans2_txrx( cl, parm + 2, &pcount, &dcount ) < 0 ) return -1;
+    if ( cl->last_status != 0 || dcount < 24 ) return -1;
+    d = cl->trdata;
     fs->total_lo = get32( d + 0 );
     fs->total_hi = get32( d + 4 );
     fs->free_lo  = get32( d + 8 );
@@ -1044,8 +1199,8 @@ static int fs_size_trans2( smb1_client *cl, smb_fs_size *fs )
    reported smaller than it is (the server picks the shape). */
 static int fs_size_core( smb1_client *cl, smb_fs_size *fs )
 {
-    unsigned char *p = smb1_begin( cl, 0x80 );
-    const unsigned char *rw;
+    uint8_t *p = smb1_begin( cl, 0x80 );
+    const uint8_t *rw;
 
     p[0] = 0;                                        /* WordCount */
     put16( p + 1, 0 );                               /* ByteCount */
@@ -1074,9 +1229,9 @@ int smb1_fs_size( smb1_client *cl, smb_fs_size *fs )
    attribute lets a hidden, system or directory entry be renamed too. */
 int smb1_rename( smb1_client *cl, const char *oldpath, const char *newpath )
 {
-    unsigned char *p = smb1_begin( cl, 0x07 );
-    unsigned char *w = p + 1, *bc, *q;
-    unsigned char pb[300];
+    uint8_t *p = smb1_begin( cl, 0x07 );
+    uint8_t *w = p + 1, *bc, *q;
+    uint8_t pb[300];
     int n;
 
     p[0] = 1;                                         /* WordCount */
@@ -1098,7 +1253,7 @@ int smb1_rename( smb1_client *cl, const char *oldpath, const char *newpath )
 
 void smb1_disconnect( smb1_client *cl )
 {
-    unsigned char *p;
+    uint8_t *p;
     if ( cl->tree_id ) {
         p = smb1_begin( cl, 0x71 );                   /* TREE_DISCONNECT */
         p[0] = 0; put16( p + 1, 0 );
@@ -1108,4 +1263,4 @@ void smb1_disconnect( smb1_client *cl )
 }
 
 const char   *smb1_stage( const smb1_client *cl )  { return cl->stage ? cl->stage : "?"; }
-unsigned long smb1_status( const smb1_client *cl ) { return cl->last_status; }
+uint32_t smb1_status( const smb1_client *cl ) { return cl->last_status; }

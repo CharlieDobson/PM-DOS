@@ -16,21 +16,23 @@
 #ifndef NETSPLOR_RNG_H
 #define NETSPLOR_RNG_H
 
+#include <stdint.h>
+
 typedef struct {
-    unsigned char key[32];
-    unsigned int  counter;
+    uint8_t       key[32];
+    uint32_t      counter;
 } nst_rng;
 
 /* Seed from gathered OS entropy (call once). */
 void rng_init(nst_rng *r);
 
 /* Seed deterministically from a caller-supplied buffer (mainly for tests). */
-void rng_seed(nst_rng *r, const unsigned char *seed, int len);
+void rng_seed(nst_rng *r, const uint8_t *seed, int len);
 
 /* Fold additional entropy into the state at any time. */
-void rng_stir(nst_rng *r, const unsigned char *data, int len);
+void rng_stir(nst_rng *r, const uint8_t *data, int len);
 
 /* Produce 'len' pseudo-random bytes. */
-void rng_bytes(nst_rng *r, unsigned char *out, int len);
+void rng_bytes(nst_rng *r, uint8_t *out, int len);
 
 #endif /* NETSPLOR_RNG_H */

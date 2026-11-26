@@ -55,63 +55,63 @@ extern int pdfw_save( WDOC *doc, OUT *out, int variant );
 extern const char *const pdfw_variants[];
 
 #define UNIT        64                  /* places are in 64ths of a point */
-#define PTS( count ) ((s32)(count) * UNIT)
-#define TWIPS( val ) ((s32)(val) * 5 / 16)
+#define PTS( count ) ((int)(count) * UNIT)
+#define TWIPS( val ) ((int)(val) * 5 / 16)
 
 #define PAGE_CHARS  400000UL            /* of one page: the rest are let go */
 #define LOOKS       256                 /* fonts in their styles and colors */
 
 /* a character as it lay on the page */
 typedef struct {
-    s32 xpos, ypos;
-    u16 uni;
-    u16 wide;                           /* how far it moved the pen */
-    u16 size;                           /* of its type */
-    u16 look;
+    int      xpos, ypos;
+    uint16_t uni;
+    uint16_t wide;                      /* how far it moved the pen */
+    uint16_t size;                      /* of its type */
+    uint16_t look;
 } PCH;
 
 /* a font in a style and a color, as the file names it */
 typedef struct {
-    char name[FONT_NAME_LEN];
-    u32  rgb;
-    u8   flags;                         /* FF_* */
-    u8   made;                          /* "font" has been asked for */
-    u16  font;                          /* the document's number for it */
+    char     name[FONT_NAME_LEN];
+    uint32_t rgb;
+    uint8_t  flags;                     /* FF_* */
+    uint8_t  made;                      /* "font" has been asked for */
+    uint16_t font;                      /* the document's number for it */
 } LOOK;
 
 /* a line, or the part of one that is in a column */
 typedef struct {
-    u32 first, count;                   /* its characters, in order across */
-    s32 left, right, base;
-    s32 col_left, col_right;            /* of the column it is in */
-    u16 size;                           /* the largest type in it */
-    u16 flow;                           /* pieces of one flow may be one paragraph */
-    u8  joins;                          /* the next piece carries the paragraph on */
-    u8  alone;                          /* a line of a table or of a list of contents */
-    u16 spare;
+    unsigned int first, count;          /* its characters, in order across */
+    int          left, right, base;
+    int          col_left, col_right;   /* of the column it is in */
+    uint16_t     size;                  /* the largest type in it */
+    uint16_t     flow;                  /* pieces of one flow may be one paragraph */
+    uint8_t      joins;                 /* the next piece carries the paragraph on */
+    uint8_t      alone;                 /* a line of a table or of a list of contents */
+    uint16_t     spare;
 } PIECE;
 
 /* the reading in hand.  Static: a jump out of the PDF code puts the
    registers back, and nothing here may be lost to that. */
 static struct {
-    WDOC   *wdoc;
-    WBUILD  wb;
-    LOOK   *looks;
-    u32     nlooks;
-    PCH    *chars;                      /* the page's, in its pool */
-    u32     count, cap;
-    const char *last_name;              /* the font of the character before: */
-    u32     last_rgb;                   /* most characters are in the same one */
-    int     last_flags;
-    u16     last_look;
-    int     page;
-    int     turned;                     /* text at an angle was passed over */
-    int     columns;                    /* a page was in two columns */
-    int     images;
-    int     unknown;                    /* characters with no Unicode */
-    s32     min_left, max_right;        /* of all the text, for the margins */
-    s32     min_top, max_bottom;
-    s32     page_wide, page_high;       /* the first page */
+    WDOC        *wdoc;
+    WBUILD       wb;
+    LOOK        *looks;
+    unsigned int nlooks;
+    PCH         *chars;                 /* the page's, in its pool */
+    unsigned int count, cap;
+    const char  *last_name;             /* the font of the character before: */
+    uint32_t     last_rgb;              /* most characters are in the same one */
+    int          last_flags;
+    uint16_t     last_look;
+    int          page;
+    int          turned;                /* text at an angle was passed over */
+    int          columns;               /* a page was in two columns */
+    int          images;
+    int          unknown;               /* characters with no Unicode */
+    int          min_left, max_right;   /* of all the text, for the margins */
+    int          min_top, max_bottom;
+    int          page_wide, page_high;  /* the first page */
 } job;
 
 static const char *load_password;
@@ -121,7 +121,7 @@ void fmt_pdf_password( const char *text )
     load_password = text;
 }
 
-static int fp_detect( const u8 *data, u32 len, const char *ext )
+static int fp_detect( const uint8_t *data, uint32_t len, const char *ext )
 {
     (void)ext;
     return mem_find( data, len < 1024 ? len : 1024, "%PDF-" ) >= 0 ? 100 : 0;
@@ -150,7 +150,7 @@ static int is_lower( int ch )
 static void name_clean( const char *raw, char *out )
 {
     char work[FONT_NAME_LEN];
-    u32 len = 0, index, put = 0;
+    unsigned int len = 0, index, put = 0;
 
     for ( index = 0; raw[index] && raw[index] != '-' && raw[index] != ',' && len < FONT_NAME_LEN - 1;
           index++ ) {
@@ -174,11 +174,11 @@ static void name_clean( const char *raw, char *out )
 }
 
 /* which look a character has: found, or added while there is room */
-static u16 look_of( const TEXTCH *ch )
+static uint16_t look_of( const TEXTCH *ch )
 {
     char name[FONT_NAME_LEN];
     LOOK *look;
-    u32 index;
+    unsigned int index;
     int flags = ch->flags & (FF_FIXED | FF_SERIF | FF_ITALIC | FF_BOLD | FF_SYMBOL | FF_DINGBATS);
 
     if ( ch->name == job.last_name && ch->rgb == job.last_rgb && flags == job.last_flags ) {
@@ -199,21 +199,21 @@ static u16 look_of( const TEXTCH *ch )
             mem_set( look, 0, sizeof( *look ) );
             str_cpy( look->name, name );
             look->rgb = ch->rgb;
-            look->flags = (u8)flags;
+            look->flags = (uint8_t)flags;
         }
     }
     job.last_name = ch->name;
     job.last_rgb = ch->rgb;
     job.last_flags = flags;
-    job.last_look = (u16)index;
-    return (u16)index;
+    job.last_look = (uint16_t)index;
+    return (uint16_t)index;
 }
 
 /* the character properties of a look at a size */
-static void look_chp( u16 which, u16 size, CHP *chp )
+static void look_chp( uint16_t which, uint16_t size, CHP *chp )
 {
     LOOK *look = &job.looks[which < job.nlooks ? which : 0];
-    u32 half = ((u32)size + UNIT / 4) / (UNIT / 2);
+    unsigned int half = ((unsigned int)size + UNIT / 4) / (UNIT / 2);
 
     if ( !look->made ) {
         look->made = 1;
@@ -224,18 +224,18 @@ static void look_chp( u16 which, u16 size, CHP *chp )
                first font, which shows what it can of them */
             look->font = 0;
         } else if ( look->name[0] ) {
-            look->font = (u16)wd_font( job.wdoc, look->name,
-                                       (look->flags & FF_FIXED) ? FAM_MODERN
-                                       : (look->flags & FF_SERIF) ? FAM_ROMAN : FAM_ANY,
-                                       (look->flags & FF_FIXED) ? 1 : 0 );
+            look->font = (uint16_t)wd_font( job.wdoc, look->name,
+                                            (look->flags & FF_FIXED) ? FAM_MODERN
+                                            : (look->flags & FF_SERIF) ? FAM_ROMAN : FAM_ANY,
+                                            (look->flags & FF_FIXED) ? 1 : 0 );
         } else {
-            look->font = (u16)((look->flags & FF_FIXED) ? wd_font( job.wdoc, "Courier New", FAM_MODERN, 1 )
+            look->font = (uint16_t)((look->flags & FF_FIXED) ? wd_font( job.wdoc, "Courier New", FAM_MODERN, 1 )
                                                         : 0);
         }
     }
     chp->font = look->font;
-    chp->size = (u16)(half < 2 ? 2 : (half > 3276 ? 3276 : half));
-    chp->flags = (u16)(((look->flags & FF_BOLD) ? CF_BOLD : 0) | ((look->flags & FF_ITALIC) ? CF_ITALIC : 0));
+    chp->size = (uint16_t)(half < 2 ? 2 : (half > 3276 ? 3276 : half));
+    chp->flags = (uint16_t)(((look->flags & FF_BOLD) ? CF_BOLD : 0) | ((look->flags & FF_ITALIC) ? CF_ITALIC : 0));
     chp->color = (look->rgb & 0xFFFFFFUL) ? (look->rgb & 0xFFFFFFUL) : COLOR_AUTO;
     chp->hilite = 0;
     chp->spare = 0;
@@ -249,7 +249,7 @@ static void look_chp( u16 which, u16 size, CHP *chp )
 static void note( const TEXTCH *ch )
 {
     PCH *grown, *put;
-    u32 cap;
+    unsigned int cap;
 
     if ( ch->uni < 0x20 && ch->uni != 0x09 ) {
         return;
@@ -281,9 +281,9 @@ static void note( const TEXTCH *ch )
         put->xpos = put[-1].xpos + 1;
         put->ypos = put[-1].ypos;
     }
-    put->uni = (u16)(ch->uni == 0x09 || ch->uni == 0xA0 ? 0x20 : ch->uni);
-    put->wide = (u16)(ch->advance > I2FX( 1000 ) ? 64000U : (u32)(ch->advance < 0 ? 0 : ch->advance >> 10));
-    put->size = (u16)(ch->size > I2FX( 1000 ) ? 64000U : (u32)(ch->size < FX_ONE ? UNIT : ch->size >> 10));
+    put->uni = (uint16_t)(ch->uni == 0x09 || ch->uni == 0xA0 ? 0x20 : ch->uni);
+    put->wide = (uint16_t)(ch->advance > I2FX( 1000 ) ? 64000U : (uint32_t)(ch->advance < 0 ? 0 : ch->advance >> 10));
+    put->size = (uint16_t)(ch->size > I2FX( 1000 ) ? 64000U : (uint32_t)(ch->size < FX_ONE ? UNIT : ch->size >> 10));
     put->look = look_of( ch );
     if ( ch->uni == 0xFFFD ) {
         job.unknown++;
@@ -292,10 +292,10 @@ static void note( const TEXTCH *ch )
 }
 
 /* by height, or across: a shell sort, as everywhere in the PDF code */
-static void sort_chars( PCH *list, u32 count, int across )
+static void sort_chars( PCH *list, unsigned int count, int across )
 {
     PCH hold;
-    u32 gap, at, back;
+    unsigned int gap, at, back;
 
     for ( gap = 1; gap < count / 3; gap = gap * 3 + 1 ) {
     }
@@ -314,11 +314,11 @@ static void sort_chars( PCH *list, u32 count, int across )
 
 /* a piece of the characters first to first + count: 0 if it is all
    spaces */
-static int piece_make( PIECE *piece, u32 first, u32 count )
+static int piece_make( PIECE *piece, unsigned int first, unsigned int count )
 {
     PCH *ch;
-    u32 index, dots = 0;
-    s32 end;
+    unsigned int index, dots = 0;
+    int end;
 
     while ( count && job.chars[first].uni == 0x20 ) {
         first++;
@@ -342,7 +342,7 @@ static int piece_make( PIECE *piece, u32 first, u32 count )
         if ( ch->uni != 0x20 ) {
             /* a gap of two ems, or a row of dots, is a table's or a
                contents list's: such a line is no part of a paragraph */
-            if ( ch->xpos - piece->right >= 2 * (s32)ch->size && index > first ) {
+            if ( ch->xpos - piece->right >= 2 * (int)ch->size && index > first ) {
                 piece->alone = 1;
             }
             dots = ch->uni == '.' ? dots + 1 : 0;
@@ -363,11 +363,11 @@ static int piece_make( PIECE *piece, u32 first, u32 count )
 /* the widest gap in a line with a dozen characters either side of it:
    0 if it has none of a quarter of an inch.  *split is the first
    character after it. */
-static s32 line_gap( u32 first, u32 count, s32 *lo, s32 *hi, u32 *split )
+static int line_gap( unsigned int first, unsigned int count, int *lo, int *hi, unsigned int *split )
 {
     PCH *ch;
-    u32 index, seen = 0, at = 0;
-    s32 end = 0, gap, widest = 0;
+    unsigned int index, seen = 0, at = 0;
+    int end = 0, gap, widest = 0;
 
     for ( index = first; index < first + count; index++ ) {
         ch = &job.chars[index];
@@ -398,15 +398,15 @@ static s32 line_gap( u32 first, u32 count, s32 *lo, s32 *hi, u32 *split )
 }
 
 /* how wide the first word of a piece is */
-static s32 first_word( const PIECE *piece )
+static int first_word( const PIECE *piece )
 {
     PCH *ch;
-    u32 index;
-    s32 end = piece->left;
+    unsigned int index;
+    int end = piece->left;
 
     for ( index = piece->first; index < piece->first + piece->count; index++ ) {
         ch = &job.chars[index];
-        if ( ch->uni == 0x20 || ch->xpos - end > (s32)ch->size / 5 ) {
+        if ( ch->uni == 0x20 || ch->xpos - end > (int)ch->size / 5 ) {
             break;
         }
         end = ch->xpos + ch->wide;
@@ -414,7 +414,7 @@ static s32 first_word( const PIECE *piece )
     return end - piece->left;
 }
 
-static int is_letter( u32 code )
+static int is_letter( uint32_t code )
 {
     return is_upper( (int)code ) || is_lower( (int)code ) || (code >= 0xC0 && code <= 0x24F && code != 0xD7 &&
            code != 0xF7);
@@ -426,19 +426,19 @@ static int is_letter( u32 code )
 
 /* which pieces carry on the paragraph of the piece before: the rules
    at the top of the file */
-static void join_pieces( PIECE *pieces, u32 count )
+static void join_pieces( PIECE *pieces, unsigned int count )
 {
-    u16 leads[256];
+    uint16_t leads[256];
     PIECE *cur, *next;
-    u32 index, samples = 0, most = 0;
-    s32 lead, usual = 0, limit, big, small, body_left = 0;
+    unsigned int index, samples = 0, most = 0;
+    int lead, usual = 0, limit, big, small, body_left = 0;
     int lines = 1;
 
     /* how far apart this page's lines usually are */
     mem_set( leads, 0, sizeof( leads ) );
     for ( index = 0; index + 1 < count; index++ ) {
         lead = pieces[index + 1].base - pieces[index].base;
-        if ( pieces[index + 1].flow == pieces[index].flow && lead > 0 && lead < 4 * (s32)pieces[index].size &&
+        if ( pieces[index + 1].flow == pieces[index].flow && lead > 0 && lead < 4 * (int)pieces[index].size &&
              lead / 16 < 256 ) {
             leads[lead / 16]++;
             samples++;
@@ -450,7 +450,7 @@ static void join_pieces( PIECE *pieces, u32 count )
                 most = index;
             }
         }
-        usual = (s32)most * 16 + 8;
+        usual = (int)most * 16 + 8;
     }
 
     for ( index = 0; index + 1 < count; index++ ) {
@@ -460,9 +460,9 @@ static void join_pieces( PIECE *pieces, u32 count )
         big = cur->size > next->size ? cur->size : next->size;
         small = cur->size > next->size ? next->size : cur->size;
         limit = usual ? usual * 13 / 10 + 16 : big * 8 / 5;
-        cur->joins = (u8)(next->flow == cur->flow && !cur->alone && !next->alone && lead > 0 && lead <= limit &&
-                          big * 10 <= small * 11 &&
-                          cur->right + big / 4 + first_word( next ) >= cur->col_right - big / 8);
+        cur->joins = (uint8_t)(next->flow == cur->flow && !cur->alone && !next->alone && lead > 0 && lead <= limit &&
+                               big * 10 <= small * 11 &&
+                               cur->right + big / 4 + first_word( next ) >= cur->col_right - big / 8);
         if ( cur->joins && lines >= 2 &&
              (next->left > body_left + big * 3 / 4 || next->left < body_left - big * 3 / 4) ) {
             cur->joins = 0;             /* indented, or outdented: a paragraph's first line */
@@ -488,12 +488,12 @@ static void emit_char( PCH *ch )
 }
 
 /* a paragraph: the pieces first to last */
-static void emit_para( PIECE *pieces, u32 first, u32 last )
+static void emit_para( PIECE *pieces, unsigned int first, unsigned int last )
 {
     PIECE *piece, *lead = &pieces[first];
     PCH *ch, *prev;
-    u32 at, index, end;
-    s32 reach, gap, body_left, middle;
+    unsigned int at, index, end;
+    int reach, gap, body_left, middle;
     int space, centered = 1, flush = last > first;
 
     for ( at = first; at <= last; at++ ) {
@@ -519,13 +519,13 @@ static void emit_para( PIECE *pieces, u32 first, u32 last )
             gap = ch->xpos - reach;
             /* the same character struck twice in one place is a bold
                made by hand: once is enough */
-            if ( prev && prev->uni == ch->uni && ch->xpos - prev->xpos < (s32)ch->size / 10 &&
+            if ( prev && prev->uni == ch->uni && ch->xpos - prev->xpos < (int)ch->size / 10 &&
                  ch->xpos >= prev->xpos && ch->wide ) {
                 continue;
             }
-            if ( prev && gap >= 2 * (s32)ch->size ) {
+            if ( prev && gap >= 2 * (int)ch->size ) {
                 wb_char( &job.wb, WCH_TAB );
-            } else if ( prev && (space || gap > (s32)ch->size / 5) ) {
+            } else if ( prev && (space || gap > (int)ch->size / 5) ) {
                 wb_char( &job.wb, ' ' );
             }
             space = 0;
@@ -539,16 +539,16 @@ static void emit_para( PIECE *pieces, u32 first, u32 last )
             wb_char( &job.wb, ' ' );    /* the line's end was a space between words */
         }
         middle = (piece->left + piece->right) / 2 - (piece->col_left + piece->col_right) / 2;
-        if ( middle > (s32)piece->size / 2 || middle < -(s32)piece->size / 2 ||
-             piece->left < piece->col_left + (s32)piece->size ) {
+        if ( middle > (int)piece->size / 2 || middle < -(int)piece->size / 2 ||
+             piece->left < piece->col_left + (int)piece->size ) {
             centered = 0;
         }
-        if ( at < last && piece->right < piece->col_right - (s32)piece->size / 3 ) {
+        if ( at < last && piece->right < piece->col_right - (int)piece->size / 3 ) {
             flush = 0;
         }
     }
     body_left = last > first ? pieces[first + 1].left : lead->left;
-    job.wb.pap.align = (u8)(centered ? AL_CENTER : (flush ? AL_JUSTIFY : AL_LEFT));
+    job.wb.pap.align = (uint8_t)(centered ? AL_CENTER : (flush ? AL_JUSTIFY : AL_LEFT));
     job.wb.pap.left = 0;
     job.wb.pap.first = 0;
     if ( !centered ) {
@@ -568,12 +568,12 @@ static void emit_para( PIECE *pieces, u32 first, u32 last )
 
 /* the page's lines as pieces in the order they are read, a page of two
    columns' left column before its right: how many */
-static u32 page_pieces( PIECE *pieces, PIECE *held )
+static unsigned int page_pieces( PIECE *pieces, PIECE *held )
 {
     PIECE whole;
-    u32 start, end, count = 0, nheld = 0, lines = 0, hits = 0, misses = 0, split = 0, index, run;
-    s32 top, tall, lo = 0, hi = 0, gut_lo = 0, gut_hi = 0, gutter = 0, left, right;
-    u16 flow = 1;
+    unsigned int start, end, count = 0, nheld = 0, lines = 0, hits = 0, misses = 0, split = 0, index, run;
+    int top, tall, lo = 0, hi = 0, gut_lo = 0, gut_hi = 0, gutter = 0, left, right;
+    uint16_t flow = 1;
     int two;
 
     /* lines: everything whose baseline is within a third of the type's
@@ -635,22 +635,22 @@ static u32 page_pieces( PIECE *pieces, PIECE *held )
             /* a part in each column: the left is read now, the right
                when the column's end is reached */
             pieces[count++].flow = flow;
-            held[nheld++].flow = (u16)(flow + 1);
+            held[nheld++].flow = (uint16_t)(flow + 1);
         } else if ( two && whole.right <= gutter ) {
             whole.flow = flow;
             pieces[count++] = whole;
         } else if ( two && whole.left >= gutter ) {
-            whole.flow = (u16)(flow + 1);
+            whole.flow = (uint16_t)(flow + 1);
             held[nheld++] = whole;
         } else {
             /* a line across the page: the columns above it end here */
             mem_cpy( &pieces[count], held, nheld * sizeof( PIECE ) );
             count += nheld;
             nheld = 0;
-            whole.flow = two ? (u16)(flow + 2) : flow;
+            whole.flow = two ? (uint16_t)(flow + 2) : flow;
             pieces[count++] = whole;
             if ( two ) {
-                flow = (u16)(flow + 3);
+                flow = (uint16_t)(flow + 3);
             }
         }
     }
@@ -679,8 +679,8 @@ static u32 page_pieces( PIECE *pieces, PIECE *held )
     }
     /* what the margins are made from */
     for ( index = 0; index < count; index++ ) {
-        top = pieces[index].base - (s32)pieces[index].size * 5 / 6;
-        tall = pieces[index].base + (s32)pieces[index].size / 4;
+        top = pieces[index].base - (int)pieces[index].size * 5 / 6;
+        tall = pieces[index].base + (int)pieces[index].size / 4;
         job.min_top = top < job.min_top ? top : job.min_top;
         job.max_bottom = tall > job.max_bottom ? tall : job.max_bottom;
     }
@@ -698,7 +698,7 @@ static void page_convert( void )
     PAGE page;
     VIEW view;
     PIECE *pieces, *held;
-    u32 count, start, end;
+    unsigned int count, start, end;
     fx wide, high, swap;
 
     job.chars = NULL;
@@ -759,8 +759,9 @@ static void page_convert( void )
 static void info_text( DICT *info, const char *key, char *out )
 {
     OBJ *val = dict_get( info, key );
-    const u8 *text;
-    u32 len, index, put = 0, code;
+    const uint8_t *text;
+    unsigned int len, index, put = 0;
+    uint32_t code;
 
     if ( val->type != T_STR ) {
         return;
@@ -769,15 +770,15 @@ static void info_text( DICT *info, const char *key, char *out )
     len = val->u.str.len;
     if ( len >= 2 && text[0] == 0xFE && text[1] == 0xFF ) {
         for ( index = 2; index + 1 < len && put + 4 < INFO_LEN; index += 2 ) {
-            code = ((u32)text[index] << 8) | text[index + 1];
+            code = ((uint32_t)text[index] << 8) | text[index + 1];
             if ( code >= 0x20 && (code < 0xD800 || code > 0xDFFF) ) {
-                put += (u32)utf8_put( (u8 *)out + put, code );
+                put += (unsigned int)utf8_put( (uint8_t *)out + put, code );
             }
         }
     } else {
         for ( index = 0; index < len && put + 4 < INFO_LEN; index++ ) {
             if ( text[index] >= 0x20 ) {
-                put += (u32)utf8_put( (u8 *)out + put, text[index] );
+                put += (unsigned int)utf8_put( (uint8_t *)out + put, text[index] );
             }
         }
     }
@@ -786,9 +787,9 @@ static void info_text( DICT *info, const char *key, char *out )
 
 /* the smallest type in a paragraph, in half points: 0 if it has no
    text to speak of */
-static u32 para_size( WDOC *wdoc, const WPARA *para )
+static unsigned int para_size( WDOC *wdoc, const WPARA *para )
 {
-    u32 off, least = 0, size;
+    unsigned int off, least = 0, size;
 
     for ( off = 0; off < para->len; off++ ) {
         if ( para->text[off] <= 0x20 ) {
@@ -809,17 +810,17 @@ static u32 para_size( WDOC *wdoc, const WPARA *para )
    was no memory for the counting, and then none of it is done. */
 static int headings( WDOC *wdoc )
 {
-    u32 *by_size, *by_chp;
+    unsigned int *by_size, *by_chp;
     WPARA *para;
-    u32 index, off, body = 0, best = 0, size, tops[3], level;
+    unsigned int index, off, body = 0, best = 0, size, tops[3], level;
     int style;
 
-    by_size = (u32 *)try_alloc( (SIZES + wdoc->nchp + 1) * sizeof( u32 ) );
+    by_size = (unsigned int *)try_alloc( (SIZES + wdoc->nchp + 1) * sizeof( unsigned int ) );
     if ( by_size == NULL ) {
         return 0;
     }
     by_chp = by_size + SIZES;
-    mem_set( by_size, 0, (SIZES + wdoc->nchp + 1) * sizeof( u32 ) );
+    mem_set( by_size, 0, (SIZES + wdoc->nchp + 1) * sizeof( unsigned int ) );
     for ( index = 0; index < wdoc->body.count; index++ ) {
         para = wdoc->body.para[index];
         for ( off = 0; off < para->len; off++ ) {
@@ -844,7 +845,7 @@ static int headings( WDOC *wdoc )
     if ( body == 0 ) {
         return 1;
     }
-    wdoc->style[0].chp = *wd_chp_get( wdoc, (u16)best );
+    wdoc->style[0].chp = *wd_chp_get( wdoc, (uint16_t)best );
     wdoc->style[0].chp.flags = 0;
 
     /* the three largest sizes that whole short paragraphs are in */
@@ -877,7 +878,7 @@ static int headings( WDOC *wdoc )
         style = wd_style( wdoc, level == 0 ? "Heading 1" : (level == 1 ? "Heading 2" : "Heading 3"),
                           STY_HEADING1 + (int)level );
         if ( style > 0 && style < 256 ) {
-            para->pap.style = (u8)style;
+            para->pap.style = (uint8_t)style;
         }
     }
     return 1;
@@ -886,9 +887,9 @@ static int headings( WDOC *wdoc )
 /* the paper from the first page, and the margins from where the text
    was: never less than a quarter of an inch, nor more than a third of
    the paper */
-static s32 margin( s32 found, s32 paper )
+static int margin( int found, int paper )
 {
-    s32 twips = TWIPS( found );
+    int twips = TWIPS( found );
 
     if ( twips < 360 ) {
         twips = 360;
@@ -906,7 +907,7 @@ static void page_setup( WDOC *wdoc )
     }
     page->width = TWIPS( job.page_wide );
     page->height = TWIPS( job.page_high );
-    page->landscape = (u8)(page->width > page->height);
+    page->landscape = (uint8_t)(page->width > page->height);
     if ( job.max_right > job.min_left ) {
         page->left = margin( job.min_left, page->width );
         page->right = margin( job.page_wide - job.max_right, page->width );
@@ -937,7 +938,7 @@ static int reason( int why )
     return WE_FORMAT;
 }
 
-static int fp_load( const u8 *data, u32 len, WDOC *wdoc )
+static int fp_load( const uint8_t *data, uint32_t len, WDOC *wdoc )
 {
     static JMPBUF trap;
     DICT *info;

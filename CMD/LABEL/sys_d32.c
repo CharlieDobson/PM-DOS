@@ -35,8 +35,8 @@
 #include "label.h"
 
 typedef struct {
-    u32 eax, ebx, ecx, edx, esi, edi;
-    u32 flags;                  /* in: bit 0 = CF before the INT */
+    uint32_t eax, ebx, ecx, edx, esi, edi;
+    uint32_t flags;             /* in: bit 0 = CF before the INT */
 } REGS;
 
 void __cdecl int21( REGS *regs );
@@ -51,7 +51,7 @@ void __cdecl dos_entry( void )
     label_main();
 }
 
-static void call21( REGS *regs, u32 eax )
+static void call21( REGS *regs, uint32_t eax )
 {
     regs->eax = eax;
     int21( regs );
@@ -65,12 +65,12 @@ static void clear( REGS *regs )
 int sys_init( void )
 {
     REGS regs;
-    u8 *psp;
-    u32 len;
+    uint8_t *psp;
+    unsigned int len;
 
     clear( &regs );
     call21( &regs, 0x6200 );
-    psp = (u8 *)regs.ebx;
+    psp = (uint8_t *)regs.ebx;
     len = psp[0x80];
     if ( len > 126 ) {
         len = 126;
@@ -85,14 +85,14 @@ const char *sys_cmdline( void )
     return tail;
 }
 
-void sys_write( int handle, const char *buf, u32 len )
+void sys_write( int handle, const char *buf, unsigned int len )
 {
     REGS regs;
 
     clear( &regs );
-    regs.ebx = (u32)handle;
+    regs.ebx = (uint32_t)handle;
     regs.ecx = len;
-    regs.edx = (u32)buf;
+    regs.edx = (uint32_t)buf;
     call21( &regs, 0x4000 );
 }
 
@@ -110,12 +110,12 @@ static int stdin_is_device( void )
 static int read_byte( void )
 {
     REGS regs;
-    u8 ch;
+    uint8_t ch;
 
     clear( &regs );
     regs.ebx = 0;
     regs.ecx = 1;
-    regs.edx = (u32)&ch;
+    regs.edx = (uint32_t)&ch;
     call21( &regs, 0x3F00 );
     if ( CF( regs ) || regs.eax == 0 ) {
         return -1;
@@ -126,20 +126,20 @@ static int read_byte( void )
 int sys_read_line( char *buf, int max )
 {
     REGS regs;
-    u8 kb[258];
+    uint8_t kb[258];
     int len = 0, ch;
 
     if ( stdin_is_device() ) {                  /* DOS echoes the line */
-        kb[0] = (u8)(max > 255 ? 255 : max);
+        kb[0] = (uint8_t)(max > 255 ? 255 : max);
         kb[1] = 0;
         clear( &regs );
-        regs.edx = (u32)kb;
+        regs.edx = (uint32_t)kb;
         call21( &regs, 0x0A00 );
         len = kb[1];
         if ( len > max - 1 ) {
             len = max - 1;
         }
-        mem_cpy( buf, kb + 2, (u32)len );
+        mem_cpy( buf, kb + 2, (unsigned int)len );
         buf[len] = 0;
         sys_write( H_OUT, "\n", 1 );            /* DOS echoed only CR */
         return len;
@@ -148,7 +148,7 @@ int sys_read_line( char *buf, int max )
         ch = read_byte();
         if ( ch < 0 ) {
             buf[len] = 0;
-            sys_write( H_OUT, buf, (u32)len );
+            sys_write( H_OUT, buf, (unsigned int)len );
             sys_write( H_OUT, "\r\n", 2 );
             return len ? len : -1;
         }
@@ -163,7 +163,7 @@ int sys_read_line( char *buf, int max )
         }
     }
     buf[len] = 0;
-    sys_write( H_OUT, buf, (u32)len );
+    sys_write( H_OUT, buf, (unsigned int)len );
     sys_write( H_OUT, "\r\n", 2 );
     return len;
 }
@@ -204,7 +204,7 @@ void sys_exit( int code )
     REGS regs;
 
     clear( &regs );
-    call21( &regs, 0x4C00 | ((u32)code & 0xFF) );
+    call21( &regs, 0x4C00 | ((uint32_t)code & 0xFF) );
 }
 
 int sys_get_drive( void )
@@ -221,7 +221,7 @@ int sys_drive_type( int drv )
     REGS regs;
 
     clear( &regs );
-    regs.ebx = (u32)drv + 1;
+    regs.ebx = (uint32_t)drv + 1;
     call21( &regs, 0x4409 );
     if ( CF( regs ) ) {
         return AX( regs ) == 1 ? DRV_LOCAL : DRV_INVALID;
@@ -238,7 +238,7 @@ int sys_drive_type( int drv )
        MOUNT - and that gets DOS's answer for a CD-ROM.  A drive F101h
        cannot mount at all is left for the boot sector read to refuse. */
     clear( &regs );
-    regs.edx = (u32)drv + 1;
+    regs.edx = (uint32_t)drv + 1;
     call21( &regs, 0xF101 );
     if ( !CF( regs ) && (regs.eax & 0xFF) == 0 ) {
         return DRV_REMOTE;
@@ -257,8 +257,8 @@ int sys_truename_drive( int drv )
     in[3] = 0;
     out[0] = 0;
     clear( &regs );
-    regs.esi = (u32)in;
-    regs.edi = (u32)out;
+    regs.esi = (uint32_t)in;
+    regs.edi = (uint32_t)out;
     call21( &regs, 0x6000 );
     if ( CF( regs ) || out[1] != ':' ) {
         return -1;
@@ -273,17 +273,17 @@ int sys_truename_drive( int drv )
  * build too.  Until PM-DOS v0.60 this call took a path and returned a
  * layout of PM-DOS's own, and this file carried a decoder for it.
  */
-int sys_get_bpb( int drv, u8 *sector )
+int sys_get_bpb( int drv, uint8_t *sector )
 {
     REGS regs;
-    u8 buf[0x40];
+    uint8_t buf[0x40];
 
     mem_set( buf, 0, sizeof( buf ) );
     WR16( buf, 0x3F );
     clear( &regs );
-    regs.edx = (u32)drv + 1;
+    regs.edx = (uint32_t)drv + 1;
     regs.ecx = 0x3F;
-    regs.edi = (u32)buf;
+    regs.edi = (uint32_t)buf;
     call21( &regs, 0x7302 );
     if ( CF( regs ) ) {
         return -1;
@@ -292,12 +292,12 @@ int sys_get_bpb( int drv, u8 *sector )
     return 0;
 }
 
-static int lock_call( int drv, u32 cx )
+static int lock_call( int drv, uint32_t cx )
 {
     REGS regs;
 
     clear( &regs );
-    regs.ebx = (u32)drv + 1;                    /* BH = lock level 0 */
+    regs.ebx = (uint32_t)drv + 1;               /* BH = lock level 0 */
     regs.ecx = cx;
     regs.edx = 0;
     call21( &regs, 0x440D );
@@ -327,40 +327,40 @@ void sys_unlock( int drv, int fat32 )
     }
 }
 
-static int ext_error( u32 ax )
+static int ext_error( uint32_t ax )
 {
     return ax >= DE_FIRST && ax <= DE_LAST ? (int)ax : DE_GENERAL;
 }
 
-static int disk_io( int drv, u32 lba, u32 count, void *buf, u32 mode )
+static int disk_io( int drv, uint32_t lba, uint32_t count, void *buf, uint32_t mode )
 {
     REGS regs;
-    u8 pkt[10];
+    uint8_t pkt[10];
 
     WR32( pkt, lba );
     WR16( pkt + 4, count );
-    WR32( pkt + 6, (u32)buf );
+    WR32( pkt + 6, (uint32_t)buf );
     clear( &regs );
-    regs.ebx = (u32)pkt;
+    regs.ebx = (uint32_t)pkt;
     regs.ecx = 0xFFFFFFFFul;
-    regs.edx = (u32)drv + 1;
+    regs.edx = (uint32_t)drv + 1;
     regs.esi = mode;
     regs.flags = 1;
     call21( &regs, 0x7305 );
     return CF( regs ) ? ext_error( AX( regs ) ) : 0;
 }
 
-int sys_read_sec( int drv, u32 lba, u32 count, u32 bps, void *buf )
+int sys_read_sec( int drv, uint32_t lba, uint32_t count, uint32_t bps, void *buf )
 {
     (void)bps;
     return disk_io( drv, lba, count, buf, 0 );
 }
 
-int sys_write_sec( int drv, u32 lba, u32 count, u32 bps, const void *buf,
+int sys_write_sec( int drv, uint32_t lba, uint32_t count, uint32_t bps, const void *buf,
                    int kind )
 {
     (void)bps;
-    return disk_io( drv, lba, count, (void *)buf, 1u | ((u32)kind << 13) );
+    return disk_io( drv, lba, count, (void *)buf, 1u | ((uint32_t)kind << 13) );
 }
 
 void sys_reset_drive( int drv )
@@ -369,13 +369,13 @@ void sys_reset_drive( int drv )
 
     clear( &regs );
     regs.ecx = 1;                               /* flush and invalidate */
-    regs.edx = (u32)drv + 1;
+    regs.edx = (uint32_t)drv + 1;
     call21( &regs, 0x710D );
     clear( &regs );
     call21( &regs, 0x0D00 );
 }
 
-void *sys_mem_alloc( u32 size )
+void *sys_mem_alloc( unsigned int size )
 {
     REGS regs;
 
@@ -385,22 +385,22 @@ void *sys_mem_alloc( u32 size )
     return CF( regs ) ? NULL : (void *)regs.eax;
 }
 
-void sys_get_datetime( u16 *dos_date, u16 *dos_time )
+void sys_get_datetime( uint16_t *dos_date, uint16_t *dos_time )
 {
     REGS regs;
-    u32 year, mon, day;
+    uint32_t year, mon, day;
 
     clear( &regs );
     call21( &regs, 0x2A00 );
     year = regs.ecx & 0xFFFF;
     mon = (regs.edx >> 8) & 0xFF;
     day = regs.edx & 0xFF;
-    *dos_date = (u16)(((year - 1980) << 9) | (mon << 5) | day);
+    *dos_date = (uint16_t)(((year - 1980) << 9) | (mon << 5) | day);
     clear( &regs );
     call21( &regs, 0x2C00 );
-    *dos_time = (u16)((((regs.ecx >> 8) & 0xFF) << 11) |
-                      ((regs.ecx & 0xFF) << 5) |
-                      (((regs.edx >> 8) & 0xFF) >> 1));
+    *dos_time = (uint16_t)((((regs.ecx >> 8) & 0xFF) << 11) |
+                           ((regs.ecx & 0xFF) << 5) |
+                           (((regs.edx >> 8) & 0xFF) >> 1));
 }
 
 /* 6520h: capitalize one character by the country table */
@@ -409,7 +409,7 @@ int sys_upcase( int ch )
     REGS regs;
 
     clear( &regs );
-    regs.edx = (u32)ch & 0xFF;
+    regs.edx = (uint32_t)ch & 0xFF;
     call21( &regs, 0x6520 );
     return CF( regs ) ? ch : (int)(regs.edx & 0xFF);
 }

@@ -20,18 +20,18 @@ void ecp384_init(void);
  *   r,s  : signature integers (big-endian, DER INTEGER contents)
  * Returns 0 if valid, -1 otherwise.
  */
-int ecdsa_verify_p384(const unsigned char pub[97],
-                      const unsigned char *hash, int hashlen,
-                      const unsigned char *r, int rlen,
-                      const unsigned char *s, int slen);
+int ecdsa_verify_p384(const uint8_t pub[97],
+                      const uint8_t *hash, int hashlen,
+                      const uint8_t *r, int rlen,
+                      const uint8_t *s, int slen);
 
 /* ECDH on P-384, for a server that offers no other group.
  *   ecp384_keygen : priv(48) random in [1, n-1], pub(97) = priv*G (SEC1).
  *   ecp384_ecdh   : out(48) = X of priv * peer; peer must be on the curve.
  * Both return 0, or -1 on failure.
  */
-int ecp384_keygen( nst_rng *rng, unsigned char priv[48], unsigned char pub[97] );
-int ecp384_ecdh( const unsigned char priv[48], const unsigned char peer[97],
-                 unsigned char out[48] );
+int ecp384_keygen( nst_rng *rng, uint8_t priv[48], uint8_t pub[97] );
+int ecp384_ecdh( const uint8_t priv[48], const uint8_t peer[97],
+                 uint8_t out[48] );
 
 #endif /* NETSPLOR_ECP384_H */

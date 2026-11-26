@@ -38,7 +38,7 @@ static const char usage[] =
 /* the topics visited: Alt+B goes back through them */
 typedef struct {
     int topic;
-    u32 top, line, col;
+    unsigned int top, line, col;
 } PLACE;
 
 #define HIST_MAX 32
@@ -193,7 +193,7 @@ static void follow_link( void )
         topic = hlp_find_n( link.ctx, link.ctx_len );
         if ( topic < 0 ) {
             len = link.ctx_len < RL_MAX ? link.ctx_len : RL_MAX;
-            mem_cpy( name, link.ctx, (u32)len );
+            mem_cpy( name, link.ctx, (unsigned int)len );
             name[len] = 0;
         }
     } else {
@@ -201,7 +201,7 @@ static void follow_link( void )
         rl = (RLINE *)xalloc( sizeof( RLINE ) );
         hlp_render( topics[view.topic].first + view.line, rl );
         len = link.end - link.start;
-        mem_cpy( name, rl->ch + link.start, (u32)len );
+        mem_cpy( name, rl->ch + link.start, (unsigned int)len );
         name[len] = 0;
         xfree( rl );
         topic = hlp_find( name );
@@ -222,7 +222,7 @@ void help_show( const char *context )
     CTL ctl[3];
     DLG dlg;
     int topic, rows, width = 64, len;
-    u32 index, count, used = 0;
+    unsigned int index, count, used = 0;
 
     topic = context ? hlp_find( context ) : -1;
     if ( topic < 0 ) {
@@ -242,11 +242,11 @@ void help_show( const char *context )
         if ( len > width - 8 ) {
             len = width - 8;
         }
-        if ( used + (u32)len + 2 >= sizeof( text ) ) {
+        if ( used + (unsigned int)len + 2 >= sizeof( text ) ) {
             break;
         }
-        mem_cpy( text + used, line, (u32)len );
-        used += (u32)len;
+        mem_cpy( text + used, line, (unsigned int)len );
+        used += (unsigned int)len;
         text[used++] = '\n';
     }
     while ( used > 0 && text[used - 1] == '\n' ) {
@@ -340,7 +340,7 @@ void app_command( int cmd )
 
 static void parse_line( const char *line )
 {
-    u32 used = 0;
+    unsigned int used = 0;
 
     while ( *line == ' ' || *line == '\t' ) {
         line++;
@@ -365,8 +365,8 @@ static void parse_line( const char *line )
 static int find_help_file( void )
 {
     const char *own = sys_program_path(), *path = sys_getenv( "PATH" ), *slash;
-    u16 attr;
-    u32 len, end;
+    uint16_t attr;
+    unsigned int len, end;
 
     if ( sys_get_attr( "HELP.HLP", &attr ) == 0 ) {
         str_cpy( hlp_path, "HELP.HLP" );
@@ -374,7 +374,7 @@ static int find_help_file( void )
     }
     slash = str_rchr( own, '\\' );
     if ( slash ) {
-        len = (u32)(slash + 1 - own);
+        len = (unsigned int)(slash + 1 - own);
         if ( len < PATH_MAX - 10 ) {
             mem_cpy( hlp_path, own, len );
             str_cpy( hlp_path + len, "HELP.HLP" );
@@ -470,7 +470,7 @@ static void scroll_held( int part )
 /* the status bar's buttons, clicked, are the keys they name */
 static int status_word( const char *word, int col )
 {
-    u32 len = str_len( word ), start;
+    unsigned int len = str_len( word ), start;
 
     for ( start = 0; status_text[start]; start++ ) {
         if ( str_nicmp( status_text + start, word, len ) == 0 ) {

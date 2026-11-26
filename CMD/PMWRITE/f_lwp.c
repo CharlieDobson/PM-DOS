@@ -63,27 +63,27 @@
 enum { LWP_OTHER, LWP_BODY, LWP_HEADER, LWP_FOOTER, LWP_CELL, LWP_NOTE };
 
 typedef struct {
-    u32 low, high;
+    uint32_t low, high;
 } LWPID;
 #define LWP_NULL( id )  ((id).low == 0 && (id).high == 0)
 
 typedef struct {
-    u32 low;
-    u16 high, spare;
-    u32 pos;
+    uint32_t low;
+    uint16_t high, spare;
+    uint32_t pos;
 } LWPKEY;
 
 typedef struct {
-    const u8 *ptr;
-    u32   len, pos;
-    int   bad;                  /* something was asked for past the end */
-    u8   *heap;                 /* the unpacked bytes, when it was packed */
-    u32   type;
+    const uint8_t *ptr;
+    uint32_t len, pos;
+    int      bad;               /* something was asked for past the end */
+    uint8_t *heap;              /* the unpacked bytes, when it was packed */
+    uint32_t type;
 } LWPCUR;
 
 typedef struct {
-    LWPID id, layout, first;
-    u8    kind, used;
+    LWPID   id, layout, first;
+    uint8_t kind, used;
 } LWPSTORY;
 
 typedef struct {
@@ -93,48 +93,48 @@ typedef struct {
 } LWPSTYLE;
 
 typedef struct {
-    u8  bits;                   /* 01h it sets the size, 02h the color, 10h the face */
-    u8  spare;
-    u16 size, face;
-    u32 color;
+    uint8_t  bits;              /* 01h it sets the size, 02h the color, 10h the face */
+    uint8_t  spare;
+    uint16_t size, face;
+    uint32_t color;
 } LWPFNAME;
 
 typedef struct {
-    u16 bits, mask;
-    u8  cap, under;
+    uint16_t bits, mask;
+    uint8_t  cap, under;
 } LWPFATTR;
 
 typedef struct {
-    const u8 *data;
-    u32   len;
-    WDOC *doc;
-    u32   rev;
-    LWPKEY *key;
-    u32   nkey, key_cap;
-    u32  *time;
-    u32   ntime;
-    LWPSTORY *story;
-    u32   nstory, story_cap;
-    LWPSTYLE *style;
-    u32   nstyle;
-    LWPFNAME *fname;
-    u32   nfname;
-    LWPFATTR *fattr;
-    u32   nfattr;
-    u16  *face;                 /* the document's number for each face */
-    u32   nface;
-    u32   budget;               /* objects that may still be opened */
-    u32   depth;
-    u32   next_note;
-    s32   text_width;
-    int   nomem;
+    const uint8_t *data;
+    uint32_t     len;
+    WDOC        *doc;
+    uint32_t     rev;
+    LWPKEY      *key;
+    unsigned int nkey, key_cap;
+    uint32_t    *time;
+    unsigned int ntime;
+    LWPSTORY    *story;
+    unsigned int nstory, story_cap;
+    LWPSTYLE    *style;
+    unsigned int nstyle;
+    LWPFNAME    *fname;
+    unsigned int nfname;
+    LWPFATTR    *fattr;
+    unsigned int nfattr;
+    uint16_t    *face;          /* the document's number for each face */
+    unsigned int nface;
+    unsigned int budget;        /* objects that may still be opened */
+    unsigned int depth;
+    unsigned int next_note;
+    int          text_width;
+    int          nomem;
 } LWP;
 
 /* ------------------------------------------------------------------ */
 /* an object's bytes                                                   */
 /* ------------------------------------------------------------------ */
 
-static u32 lc_8( LWPCUR *cur )
+static uint32_t lc_8( LWPCUR *cur )
 {
     if ( cur->bad || cur->pos >= cur->len ) {
         cur->bad = 1;
@@ -143,9 +143,9 @@ static u32 lc_8( LWPCUR *cur )
     return cur->ptr[cur->pos++];
 }
 
-static u32 lc_16( LWPCUR *cur )
+static uint32_t lc_16( LWPCUR *cur )
 {
-    u32 value;
+    uint32_t value;
 
     if ( cur->bad || !IN_RANGE( cur->pos, 2, cur->len ) ) {
         cur->bad = 1;
@@ -156,9 +156,9 @@ static u32 lc_16( LWPCUR *cur )
     return value;
 }
 
-static u32 lc_32( LWPCUR *cur )
+static uint32_t lc_32( LWPCUR *cur )
 {
-    u32 value;
+    uint32_t value;
 
     if ( cur->bad || !IN_RANGE( cur->pos, 4, cur->len ) ) {
         cur->bad = 1;
@@ -169,7 +169,7 @@ static u32 lc_32( LWPCUR *cur )
     return value;
 }
 
-static void lc_skip( LWPCUR *cur, u32 count )
+static void lc_skip( LWPCUR *cur, uint32_t count )
 {
     if ( cur->bad || !IN_RANGE( cur->pos, count, cur->len ) ) {
         cur->bad = 1;
@@ -189,7 +189,7 @@ static void lc_extra( LWPCUR *cur )
    time stamp from the table, or 0 and the stamp itself; then the count */
 static void lc_id( const LWP *lwp, LWPCUR *cur, LWPID *id )
 {
-    u32 index = lc_8( cur );
+    uint32_t index = lc_8( cur );
 
     if ( index != 0 ) {
         id->low = index <= lwp->ntime ? lwp->time[index - 1] : 0xFFFFFFFFUL;
@@ -212,9 +212,10 @@ static void lc_headtail( const LWP *lwp, LWPCUR *cur, LWPID *head )
 
 /* a string: its size on disk, its length, its bytes.  "out" may be
    NULL; what is kept is the ASCII of it. */
-static void lc_atom( LWPCUR *cur, char *out, u32 max )
+static void lc_atom( LWPCUR *cur, char *out, unsigned int max )
 {
-    u32 disk = lc_16( cur ), len = lc_16( cur ), index, have = 0;
+    uint32_t disk = lc_16( cur ), len = lc_16( cur );
+    unsigned int index, have = 0;
 
     if ( out != NULL ) {
         out[0] = 0;
@@ -252,9 +253,9 @@ static void lc_close( LWPCUR *cur )
 
 /* runs of zeros put back.  The top two bits of a byte say what follows:
    00 zeros; 01 zeros and then bytes; 10 one zero and bytes; 11 bytes. */
-static int lwp_expand( const u8 *src, u32 len, u8 *dst, u32 *out_len )
+static int lwp_expand( const uint8_t *src, uint32_t len, uint8_t *dst, uint32_t *out_len )
 {
-    u32 pos = 0, out = 0, code, zeros, count;
+    uint32_t pos = 0, out = 0, code, zeros, count;
 
     while ( pos < len ) {
         code = src[pos++];
@@ -290,9 +291,9 @@ static int lwp_expand( const u8 *src, u32 len, u8 *dst, u32 *out_len )
 
 /* the object whose header is at "at" in the file -> 1 and a cursor on
    its fields, to be closed */
-static int lwp_object( LWP *lwp, u32 at, LWPCUR *cur )
+static int lwp_object( LWP *lwp, uint32_t at, LWPCUR *cur )
 {
-    u32 flags, pos, size, need;
+    uint32_t flags, pos, size, need;
 
     mem_set( cur, 0, sizeof( LWPCUR ) );
     if ( !IN_RANGE( at, 4, lwp->len ) ) {
@@ -320,7 +321,7 @@ static int lwp_object( LWP *lwp, u32 at, LWPCUR *cur )
         cur->len = size;
         return 1;
     }
-    cur->heap = (u8 *)try_alloc( LWP_EXPAND );
+    cur->heap = (uint8_t *)try_alloc( LWP_EXPAND );
     if ( cur->heap == NULL ) {
         lwp->nomem = 1;
         return 0;
@@ -339,10 +340,12 @@ static int lwp_object( LWP *lwp, u32 at, LWPCUR *cur )
 
 /* "count" numbers, the first whole and the rest as what they add to the
    one before, and then where each object is */
-static int lwp_keys( LWP *lwp, LWPCUR *cur, u32 count )
+static int lwp_keys( LWP *lwp, LWPCUR *cur, uint32_t count )
 {
     LWPKEY *fresh;
-    u32 index, low = 0, high = 0, step, cap;
+    unsigned int index;
+    uint32_t low = 0, high = 0, step;
+    unsigned int cap;
 
     if ( count == 0 ) {
         return 1;
@@ -369,7 +372,7 @@ static int lwp_keys( LWP *lwp, LWPCUR *cur, u32 count )
             high = (high + step + 1) & 0xFFFF;
         }
         lwp->key[lwp->nkey + index].low = low;
-        lwp->key[lwp->nkey + index].high = (u16)high;
+        lwp->key[lwp->nkey + index].high = (uint16_t)high;
         lwp->key[lwp->nkey + index].spare = 0;
     }
     for ( index = 0; index < count && !cur->bad; index++ ) {
@@ -384,12 +387,13 @@ static int lwp_keys( LWP *lwp, LWPCUR *cur, u32 count )
 
 static int lwp_times( LWP *lwp, LWPCUR *cur )
 {
-    u32 count = lc_16( cur ), index;
+    uint32_t count = lc_16( cur );
+    unsigned int index;
 
     if ( cur->bad || !IN_RANGE( cur->pos, count * 4, cur->len ) ) {
         return 0;
     }
-    lwp->time = (u32 *)try_alloc( (count + 1) * sizeof( u32 ) );
+    lwp->time = (uint32_t *)try_alloc( (count + 1) * sizeof( uint32_t ) );
     if ( lwp->time == NULL ) {
         lwp->nomem = 1;
         return 0;
@@ -406,10 +410,10 @@ static int lwp_key_less( const LWPKEY *lhs, const LWPKEY *rhs )
     return lhs->low < rhs->low || (lhs->low == rhs->low && lhs->high < rhs->high);
 }
 
-static void lwp_sort( LWPKEY *key, u32 count )
+static void lwp_sort( LWPKEY *key, unsigned int count )
 {
     LWPKEY hold;
-    u32 gap, index, back;
+    unsigned int gap, index, back;
 
     for ( gap = count / 2; gap > 0; gap = gap == 2 ? 1 : gap * 5 / 11 ) {
         for ( index = gap; index < count; index++ ) {
@@ -422,10 +426,12 @@ static void lwp_sort( LWPKEY *key, u32 count )
     }
 }
 
-static int lwp_index( LWP *lwp, u32 root )
+static int lwp_index( LWP *lwp, uint32_t root )
 {
     LWPCUR cur, leaf;
-    u32 count, index, at, mark;
+    uint32_t count;
+    unsigned int index;
+    uint32_t at, mark;
     int ok = 0;
 
     if ( root > lwp->len || !lwp_object( lwp, root + LWP_BASE, &cur ) ) {
@@ -460,13 +466,13 @@ static int lwp_index( LWP *lwp, u32 root )
 }
 
 /* where an object is: its place among the keys, or -1 */
-static s32 lwp_find( const LWP *lwp, const LWPID *id )
+static int lwp_find( const LWP *lwp, const LWPID *id )
 {
-    u32 low = 0, high = lwp->nkey, mid;
+    unsigned int low = 0, high = lwp->nkey, mid;
     LWPKEY want;
 
     want.low = id->low;
-    want.high = (u16)id->high;
+    want.high = (uint16_t)id->high;
     while ( low < high ) {
         mid = low + (high - low) / 2;
         if ( lwp_key_less( &lwp->key[mid], &want ) ) {
@@ -476,14 +482,14 @@ static s32 lwp_find( const LWP *lwp, const LWPID *id )
         }
     }
     if ( low < lwp->nkey && lwp->key[low].low == id->low && lwp->key[low].high == id->high && id->high <= 0xFFFF ) {
-        return (s32)low;
+        return (int)low;
     }
     return -1;
 }
 
 static int lwp_open( LWP *lwp, const LWPID *id, LWPCUR *cur )
 {
-    s32 where = LWP_NULL( *id ) ? -1 : lwp_find( lwp, id );
+    int where = LWP_NULL( *id ) ? -1 : lwp_find( lwp, id );
 
     mem_set( cur, 0, sizeof( LWPCUR ) );
     if ( where < 0 || lwp->budget == 0 || lwp->key[where].pos > lwp->len ) {
@@ -493,9 +499,9 @@ static int lwp_open( LWP *lwp, const LWPID *id, LWPCUR *cur )
     return lwp_object( lwp, lwp->key[where].pos + LWP_BASE, cur );
 }
 
-static u32 lwp_type( const LWP *lwp, const LWPID *id )
+static uint32_t lwp_type( const LWP *lwp, const LWPID *id )
 {
-    s32 where = LWP_NULL( *id ) ? -1 : lwp_find( lwp, id );
+    int where = LWP_NULL( *id ) ? -1 : lwp_find( lwp, id );
 
     if ( where < 0 || lwp->key[where].pos > lwp->len || !IN_RANGE( lwp->key[where].pos + LWP_BASE, 2, lwp->len ) ) {
         return 0xFFFF;
@@ -510,7 +516,7 @@ static u32 lwp_type( const LWP *lwp, const LWPID *id )
 /* a member of a list that has children and a name: the next one, the
    one before, the first child (and the last, if there is a first), the
    parent, the name */
-static void lwp_list( const LWP *lwp, LWPCUR *cur, LWPID *next, LWPID *child, char *name, u32 max )
+static void lwp_list( const LWP *lwp, LWPCUR *cur, LWPID *next, LWPID *child, char *name, unsigned int max )
 {
     LWPID skip;
 
@@ -522,7 +528,7 @@ static void lwp_list( const LWP *lwp, LWPCUR *cur, LWPID *next, LWPID *child, ch
 }
 
 /* ...and one that may also have properties */
-static void lwp_plist( const LWP *lwp, LWPCUR *cur, LWPID *next, LWPID *child, char *name, u32 max )
+static void lwp_plist( const LWP *lwp, LWPCUR *cur, LWPID *next, LWPID *child, char *name, unsigned int max )
 {
     LWPID skip;
 
@@ -540,17 +546,17 @@ static void lwp_common( LWPCUR *cur )
     lc_extra( cur );
 }
 
-static s32 lwp_twips( u32 units )
+static int lwp_twips( uint32_t units )
 {
-    s32 value = (s32)units;
+    int32_t value = (int32_t)units;
     int minus = value < 0;
-    u32 size = (u32)(minus ? -value : value);
+    uint32_t size = (uint32_t)(minus ? -value : value);
 
     size = (size / 16384) * 5 + ((size % 16384) * 5) / 16384;
     if ( size > 31680 ) {
         size = 31680;
     }
-    return minus ? -(s32)size : (s32)size;
+    return minus ? -(int)size : (int)size;
 }
 
 /* ------------------------------------------------------------------ */
@@ -560,15 +566,16 @@ static s32 lwp_twips( u32 units )
 /* a font number is two: which size-color-face in the top word, which
    set of attributes in the bottom one, both counted from 1.  Each says
    which of its values it sets; the rest stay as they are. */
-static void lwp_font( const LWP *lwp, u32 number, CHP *chp )
+static void lwp_font( const LWP *lwp, uint32_t number, CHP *chp )
 {
     static const struct {
-        u16 bit, flag;
+        uint16_t bit, flag;
     } attrs[] = {
         { 0x0001, CF_BOLD }, { 0x0002, CF_ITALIC }, { 0x0004, CF_STRIKE },
         { 0x0100, CF_SUPER }, { 0x0200, CF_SUB }, { 0x0400, CF_SMALLCAPS }
     };
-    u32 name = number >> 16, attr = number & 0xFFFF, index;
+    uint32_t name = number >> 16, attr = number & 0xFFFF;
+    unsigned int index;
     const LWPFNAME *fname;
     const LWPFATTR *fattr;
 
@@ -588,19 +595,19 @@ static void lwp_font( const LWP *lwp, u32 number, CHP *chp )
         fattr = &lwp->fattr[attr - 1];
         for ( index = 0; index < sizeof( attrs ) / sizeof( attrs[0] ); index++ ) {
             if ( fattr->mask & attrs[index].bit ) {
-                chp->flags &= (u16)~attrs[index].flag;
+                chp->flags &= (uint16_t)~attrs[index].flag;
                 if ( fattr->bits & attrs[index].bit ) {
                     chp->flags |= attrs[index].flag;
                 }
             }
         }
         if ( fattr->under >= 1 && fattr->under <= 5 ) {
-            chp->flags &= (u16)~(CF_UNDER | CF_DUNDER | CF_WUNDER);
-            chp->flags |= (u16)(fattr->under == 2 ? CF_UNDER : fattr->under == 3 || fattr->under == 5 ? CF_DUNDER
-                                : fattr->under == 4 ? CF_WUNDER : 0);
+            chp->flags &= (uint16_t)~(CF_UNDER | CF_DUNDER | CF_WUNDER);
+            chp->flags |= (uint16_t)(fattr->under == 2 ? CF_UNDER : fattr->under == 3 || fattr->under == 5 ? CF_DUNDER
+                                     : fattr->under == 4 ? CF_WUNDER : 0);
         }
         if ( fattr->cap >= 1 && fattr->cap <= 4 ) {
-            chp->flags &= (u16)~CF_ALLCAPS;
+            chp->flags &= (uint16_t)~CF_ALLCAPS;
             if ( fattr->cap == 2 ) {
                 chp->flags |= CF_ALLCAPS;
             }
@@ -613,7 +620,9 @@ static void lwp_font( const LWP *lwp, u32 number, CHP *chp )
 static int lwp_font_tables( LWP *lwp, LWPCUR *cur )
 {
     char name[FONT_NAME_LEN];
-    u32 count, index, red, green, blue, kind, size;
+    uint32_t count;
+    unsigned int index;
+    uint32_t red, green, blue, kind, size;
 
     count = lc_16( cur );
     if ( cur->bad || count > 8192 ) {
@@ -625,10 +634,10 @@ static int lwp_font_tables( LWP *lwp, LWPCUR *cur )
         return 0;
     }
     for ( index = 0; index < count && !cur->bad; index++ ) {
-        lwp->fname[index].bits = (u8)lc_8( cur );
+        lwp->fname[index].bits = (uint8_t)lc_8( cur );
         lc_8( cur );
         size = lc_32( cur ) / 32768UL;      /* 65536 to the point, kept as half points */
-        lwp->fname[index].size = (u16)(size > 1638 ? 0 : size);
+        lwp->fname[index].size = (uint16_t)(size > 1638 ? 0 : size);
         lc_skip( cur, 4 );
         red = lc_16( cur ) & 255;
         green = lc_16( cur ) & 255;
@@ -637,7 +646,7 @@ static int lwp_font_tables( LWP *lwp, LWPCUR *cur )
         lwp->fname[index].color = kind != 0 || (red | green | blue) == 0 ? COLOR_AUTO : RGB( red, green, blue );
         lc_skip( cur, 8 );
         lc_extra( cur );
-        lwp->fname[index].face = (u16)lc_16( cur );
+        lwp->fname[index].face = (uint16_t)lc_16( cur );
         lc_16( cur );
         lc_extra( cur );
         lwp->fname[index].spare = 0;
@@ -647,7 +656,7 @@ static int lwp_font_tables( LWP *lwp, LWPCUR *cur )
     if ( cur->bad || count > 8192 ) {
         return 0;
     }
-    lwp->face = (u16 *)try_alloc( (count + 1) * sizeof( u16 ) );
+    lwp->face = (uint16_t *)try_alloc( (count + 1) * sizeof( uint16_t ) );
     if ( lwp->face == NULL ) {
         lwp->nomem = 1;
         return 0;
@@ -656,7 +665,7 @@ static int lwp_font_tables( LWP *lwp, LWPCUR *cur )
         lc_atom( cur, name, FONT_NAME_LEN );
         lc_skip( cur, 10 );
         lc_extra( cur );
-        lwp->face[index] = (u16)wd_font( lwp->doc, name[0] ? name : "Times New Roman", FAM_ANY, -1 );
+        lwp->face[index] = (uint16_t)wd_font( lwp->doc, name[0] ? name : "Times New Roman", FAM_ANY, -1 );
     }
     lwp->nface = cur->bad ? 0 : count;
     lc_extra( cur );
@@ -671,11 +680,11 @@ static int lwp_font_tables( LWP *lwp, LWPCUR *cur )
         return 0;
     }
     for ( index = 0; index < count && !cur->bad; index++ ) {
-        lwp->fattr[index].bits = (u16)lc_16( cur );
-        lwp->fattr[index].mask = (u16)lc_16( cur );
+        lwp->fattr[index].bits = (uint16_t)lc_16( cur );
+        lwp->fattr[index].mask = (uint16_t)lc_16( cur );
         lc_skip( cur, 4 );
-        lwp->fattr[index].cap = (u8)lc_8( cur );
-        lwp->fattr[index].under = (u8)lc_8( cur );
+        lwp->fattr[index].cap = (uint8_t)lc_8( cur );
+        lwp->fattr[index].under = (uint8_t)lc_8( cur );
         lc_extra( cur );
     }
     lwp->nfattr = cur->bad ? 0 : count;
@@ -698,7 +707,9 @@ static void lwp_fonts_drop( LWP *lwp )
 static int lwp_document( LWP *lwp, LWPCUR *cur )
 {
     LWPID id, child;
-    u32 flags, count, index, tag;
+    uint32_t flags, count;
+    unsigned int index;
+    uint32_t tag;
 
     lwp_plist( lwp, cur, &id, &child, NULL, 0 );
     lc_id( lwp, cur, &id );                 /* the socket, flags */
@@ -790,7 +801,7 @@ static int lwp_document( LWP *lwp, LWPCUR *cur )
 static void lwp_fonts( LWP *lwp )
 {
     LWPCUR cur;
-    u32 index;
+    unsigned int index;
     int ok;
 
     for ( index = 0; index < lwp->nkey; index++ ) {
@@ -835,9 +846,9 @@ static int lwp_piece( LWP *lwp, const LWPID *id, LWPCUR *cur )
 
 /* one of a spacing piece's four records -> what kind (0 a multiple of
    the line, 1 extra, 2 a height) and the two values */
-static u32 lwp_space( LWPCUR *cur, u32 *amount, u32 *multiple )
+static uint32_t lwp_space( LWPCUR *cur, uint32_t *amount, uint32_t *multiple )
 {
-    u32 kind = 3;
+    uint32_t kind = 3;
 
     *amount = 0;
     *multiple = 0;
@@ -851,11 +862,11 @@ static u32 lwp_space( LWPCUR *cur, u32 *amount, u32 *multiple )
     return cur->bad ? 3 : kind;
 }
 
-static u16 lwp_gap( u32 kind, u32 amount, u32 multiple )
+static uint16_t lwp_gap( uint32_t kind, uint32_t amount, uint32_t multiple )
 {
-    s32 value = kind == 0 ? (s32)((multiple >> 8) * 240 >> 8) : kind == 3 ? 0 : lwp_twips( amount );
+    int value = kind == 0 ? (int)((multiple >> 8) * 240 >> 8) : kind == 3 ? 0 : lwp_twips( amount );
 
-    return (u16)(value < 0 ? 0 : value > 31680 ? 31680 : value);
+    return (uint16_t)(value < 0 ? 0 : value > 31680 ? 31680 : value);
 }
 
 /* what a style or a paragraph says of its alignment, its indents and
@@ -863,11 +874,11 @@ static u16 lwp_gap( u32 kind, u32 amount, u32 multiple )
 static void lwp_pieces( LWP *lwp, PAP *pap, const LWPID *align, const LWPID *indent, const LWPID *spacing )
 {
     LWPCUR piece;
-    u32 kind, amount, multiple;
-    s32 every, first, rest;
+    uint32_t kind, amount, multiple;
+    int every, first, rest;
 
     if ( lwp_piece( lwp, align, &piece ) ) {
-        static const u8 sides[8] = { AL_LEFT, AL_RIGHT, AL_CENTER, AL_JUSTIFY, AL_JUSTIFY, AL_LEFT, AL_RIGHT, AL_LEFT };
+        static const uint8_t sides[8] = { AL_LEFT, AL_RIGHT, AL_CENTER, AL_JUSTIFY, AL_JUSTIFY, AL_LEFT, AL_RIGHT, AL_LEFT };
 
         pap->align = sides[lc_8( &piece ) & 7];
         lc_close( &piece );
@@ -888,13 +899,13 @@ static void lwp_pieces( LWP *lwp, PAP *pap, const LWPID *align, const LWPID *ind
     if ( lwp_piece( lwp, spacing, &piece ) ) {
         kind = lwp_space( &piece, &amount, &multiple );
         if ( kind == 0 && multiple != 0 ) {
-            pap->line = (u16)((multiple >> 8) * 240 >> 8);
+            pap->line = (uint16_t)((multiple >> 8) * 240 >> 8);
             if ( pap->line < 120 || pap->line > 1200 ) {
                 pap->line = 240;
             }
         } else if ( kind == 2 && lwp_twips( amount ) >= 20 ) {
             pap->line_rule = LS_EXACT;
-            pap->line = (u16)lwp_twips( amount );
+            pap->line = (uint16_t)lwp_twips( amount );
         }
         if ( lwp->rev >= 0x0D ) {
             lwp_space( &piece, &amount, &multiple );
@@ -922,7 +933,8 @@ static const LWPSTYLE *lwp_style( LWP *lwp, const LWPID *id )
     LWPSTYLE *style;
     LWPCUR cur;
     LWPID next, child, skip, align, spacing, indent;
-    u32 index, font, final, count;
+    unsigned int index;
+    uint32_t font, final, count;
     int number, what = STY_OTHER;
 
     for ( index = 0; index < lwp->nstyle; index++ ) {
@@ -989,7 +1001,7 @@ static const LWPSTYLE *lwp_style( LWP *lwp, const LWPID *id )
     }
     number = name[0] ? wd_style( lwp->doc, name, what ) : 0;
     if ( number != 0 || what == STY_NORMAL ) {
-        style->pap.style = (u8)number;
+        style->pap.style = (uint8_t)number;
         lwp->doc->style[number].chp = style->chp;
         lwp->doc->style[number].pap = style->pap;
     }
@@ -1001,13 +1013,13 @@ static const LWPSTYLE *lwp_style( LWP *lwp, const LWPID *id )
 /* stories, paragraphs, tables                                         */
 /* ------------------------------------------------------------------ */
 
-static void lwp_story( LWP *lwp, WBUILD *wb, u32 which );
+static void lwp_story( LWP *lwp, WBUILD *wb, unsigned int which );
 
 /* text as it is packed: bytes of a code page, and where a zero byte
    comes, UTF-16 to a zero word */
-static void lwp_text( WBUILD *wb, const u8 *text, u32 len, int codepage )
+static void lwp_text( WBUILD *wb, const uint8_t *text, uint32_t len, int codepage )
 {
-    u32 pos = 0, code;
+    uint32_t pos = 0, code;
     int wide = 0;
 
     while ( pos < len ) {
@@ -1034,13 +1046,13 @@ static void lwp_text( WBUILD *wb, const u8 *text, u32 len, int codepage )
 }
 
 /* the story a layout holds, or -1 */
-static s32 lwp_story_of( const LWP *lwp, const LWPID *layout )
+static int lwp_story_of( const LWP *lwp, const LWPID *layout )
 {
-    u32 index;
+    unsigned int index;
 
     for ( index = 0; index < lwp->nstory; index++ ) {
         if ( lwp->story[index].layout.low == layout->low && lwp->story[index].layout.high == layout->high ) {
-            return (s32)index;
+            return (int)index;
         }
     }
     return -1;
@@ -1053,8 +1065,9 @@ static void lwp_row( LWP *lwp, WBUILD *wb, const LWPID *first_cell )
     LWPCUR cur;
     LWPID id = *first_cell, next, child;
     WPARA *para = NULL;
-    u32 start, index, cells = 0, type;
-    s32 which;
+    unsigned int start, index, cells = 0;
+    uint32_t type;
+    int which;
 
     while ( !LWP_NULL( id ) && cells < MAX_CELLS && lwp_open( lwp, &id, &cur ) ) {
         type = cur.type;
@@ -1064,7 +1077,7 @@ static void lwp_row( LWP *lwp, WBUILD *wb, const LWPID *first_cell )
             start = wb->story->count;
             which = lwp_story_of( lwp, &id );
             if ( which >= 0 && !lwp->story[which].used ) {
-                lwp_story( lwp, wb, (u32)which );
+                lwp_story( lwp, wb, (unsigned int)which );
             }
             if ( wb->story->count == start ) {
                 wd_para_add( lwp->doc, wb->story, NULL );
@@ -1088,10 +1101,10 @@ static void lwp_row( LWP *lwp, WBUILD *wb, const LWPID *first_cell )
         return;
     }
     mem_set( &row, 0, sizeof( row ) );
-    row.ncells = (u8)cells;
+    row.ncells = (uint8_t)cells;
     row.borders = 1;
     for ( index = 0; index < cells; index++ ) {
-        row.edge[index] = lwp->text_width / (s32)cells * (s32)(index + 1);
+        row.edge[index] = lwp->text_width / (int)cells * (int)(index + 1);
     }
     para->pap.flags |= PF_ROWEND;
     if ( !pap_set_row( &para->pap, &row ) ) {
@@ -1101,11 +1114,11 @@ static void lwp_row( LWP *lwp, WBUILD *wb, const LWPID *first_cell )
 
 /* the layouts under a table's: rows are set out, anything else is
    looked into */
-static void lwp_layouts( LWP *lwp, WBUILD *wb, const LWPID *first, u32 depth )
+static void lwp_layouts( LWP *lwp, WBUILD *wb, const LWPID *first, unsigned int depth )
 {
     LWPCUR cur;
     LWPID id = *first, next, child;
-    u32 type;
+    uint32_t type;
 
     while ( !LWP_NULL( id ) && depth < LWP_MAX_DEPTH && lwp_open( lwp, &id, &cur ) ) {
         type = cur.type;
@@ -1174,7 +1187,8 @@ static void lwp_para( LWP *lwp, WBUILD *wb, const LWPID *id, LWPID *next )
     LWPID skip, style_id, table[4], own[3];
     const LWPSTYLE *style;
     CHP base;
-    u32 flag, tag, type, mod, len, font, codepage, end, ntable = 0, index;
+    uint32_t flag, tag, type, mod, len, font, codepage, end;
+    unsigned int ntable = 0, index;
     int ended = 0;
 
     mem_set( next, 0, sizeof( LWPID ) );
@@ -1341,7 +1355,7 @@ static void lwp_para( LWP *lwp, WBUILD *wb, const LWPID *id, LWPID *next )
     }
 }
 
-static void lwp_story( LWP *lwp, WBUILD *wb, u32 which )
+static void lwp_story( LWP *lwp, WBUILD *wb, unsigned int which )
 {
     LWPID id, next;
 
@@ -1364,7 +1378,8 @@ static void lwp_stories( LWP *lwp )
     LWPSTORY *fresh, *story;
     LWPCUR cur;
     LWPID next, child, only, head, skip;
-    u32 index, cap, type;
+    unsigned int index, cap;
+    uint32_t type;
 
     for ( index = 0; index < lwp->nkey; index++ ) {
         if ( lwp->key[index].pos > lwp->len || !IN_RANGE( lwp->key[index].pos + LWP_BASE, 2, lwp->len ) ||
@@ -1406,12 +1421,12 @@ static void lwp_stories( LWP *lwp )
             story->id.high = lwp->key[index].high;
             story->layout = LWP_NULL( only ) ? head : only;
             type = lwp_type( lwp, &story->layout );
-            story->kind = (u8)(type == VO_PAGE ? LWP_BODY : type == VO_HEADER ? LWP_HEADER : type == VO_FOOTER ? LWP_FOOTER
-                               : type == VO_CELL || type == VO_CONNCELL ? LWP_CELL : type == VO_FNCELL ? LWP_NOTE
-                               : LWP_OTHER);
+            story->kind = (uint8_t)(type == VO_PAGE ? LWP_BODY : type == VO_HEADER ? LWP_HEADER : type == VO_FOOTER ? LWP_FOOTER
+                                    : type == VO_CELL || type == VO_CONNCELL ? LWP_CELL : type == VO_FNCELL ? LWP_NOTE
+                                    : LWP_OTHER);
             /* "continued on the next page" and its twin are Word Pro's
                own words, not the document's */
-            story->used = (u8)(type == VO_CONTON || type == VO_CONTFROM);
+            story->used = (uint8_t)(type == VO_CONTON || type == VO_CONTFROM);
             lwp->nstory++;
         }
         lc_close( &cur );
@@ -1425,7 +1440,8 @@ static void lwp_page( LWP *lwp, const LWPID *layout )
     PAGESETUP *page = &lwp->doc->page;
     LWPCUR cur, piece;
     LWPID id = *layout, next, child, skip, based, geometry, margins;
-    u32 depth, got;
+    unsigned int depth;
+    uint32_t got;
     int have_size = 0, have_margins = 0;
 
     for ( depth = 0; depth < 4 && !(have_size && have_margins) && lwp_open( lwp, &id, &cur ); depth++ ) {
@@ -1481,14 +1497,14 @@ static void lwp_page( LWP *lwp, const LWPID *layout )
         }
         id = based;
     }
-    page->landscape = (u8)(page->width > page->height);
+    page->landscape = (uint8_t)(page->width > page->height);
 }
 
 /* ------------------------------------------------------------------ */
 /* the format                                                          */
 /* ------------------------------------------------------------------ */
 
-static int lwp_detect( const u8 *data, u32 len, const char *ext )
+static int lwp_detect( const uint8_t *data, uint32_t len, const char *ext )
 {
     (void)ext;
     if ( len < 0x46 || mem_cmp( data, "WordPro", 8 ) != 0 || mem_cmp( data + 0x10, "LWP7", 4 ) != 0 ) {
@@ -1507,11 +1523,11 @@ static void lwp_free( LWP *lwp )
     xfree( lwp );
 }
 
-static int lwp_load( const u8 *data, u32 len, WDOC *doc )
+static int lwp_load( const uint8_t *data, uint32_t len, WDOC *doc )
 {
     LWP *lwp;
     WBUILD wb;
-    u32 index, kind;
+    unsigned int index, kind;
     int rc;
 
     if ( lwp_detect( data, len, "" ) == 0 ) {

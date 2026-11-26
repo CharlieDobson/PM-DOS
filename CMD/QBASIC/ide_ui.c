@@ -205,7 +205,7 @@ static void menu_draw_pull( int menu, int sel )
     const MITEM *items = menus[menu].items;
     int count = menus[menu].count, width = menus[menu].width;
     int left = menu_left( menu ), index, row, keys;
-    u8 attr, hot;
+    uint8_t attr, hot;
 
     scr_box( 1, left, count + 2, left + width - 1, pal.menu );
     for ( index = 0; index < count; index++ ) {
@@ -494,7 +494,7 @@ static int focusable( CTL *ctl )
 }
 
 /* the letters show while Alt is held */
-static u8 hot_attr( void )
+static uint8_t hot_attr( void )
 {
     return key_alt_held() ? pal.menu_hot : pal.menu;
 }
@@ -621,7 +621,7 @@ static void draw_list( DLG *dlg, CTL *ctl, int focus )
 static void draw_button( DLG *dlg, CTL *ctl, int index, int focus_is_button )
 {
     int row = dlg->top + ctl->row, col = dlg->left + ctl->col, len, first;
-    u8 bracket = pal.menu;
+    uint8_t bracket = pal.menu;
 
     if ( index == dlg->focus || (ctl->is_default && !focus_is_button) ) {
         bracket = pal.menu_hot;
@@ -830,7 +830,7 @@ static int edit_key( DLG *dlg, CTL *ctl, int key )
             ctl->buf[0] = 0;
             ctl->caret = 0;
         } else if ( ctl->caret > 0 ) {
-            mem_cpy( ctl->buf + ctl->caret - 1, ctl->buf + ctl->caret, (u32)(len - ctl->caret + 1) );
+            mem_cpy( ctl->buf + ctl->caret - 1, ctl->buf + ctl->caret, (unsigned int)(len - ctl->caret + 1) );
             ctl->caret--;
         }
         ctl->fresh = 0;
@@ -843,7 +843,7 @@ static int edit_key( DLG *dlg, CTL *ctl, int key )
             ctl->buf[0] = 0;
             ctl->caret = 0;
         } else if ( ctl->caret < len ) {
-            mem_cpy( ctl->buf + ctl->caret, ctl->buf + ctl->caret + 1, (u32)(len - ctl->caret) );
+            mem_cpy( ctl->buf + ctl->caret, ctl->buf + ctl->caret + 1, (unsigned int)(len - ctl->caret) );
         }
         ctl->fresh = 0;
         if ( dlg->changed ) {
@@ -859,7 +859,7 @@ static int edit_key( DLG *dlg, CTL *ctl, int key )
         }
         ctl->fresh = 0;
         if ( len < ctl->max - 1 ) {
-            mem_cpy( ctl->buf + ctl->caret + 1, ctl->buf + ctl->caret, (u32)(len - ctl->caret + 1) );
+            mem_cpy( ctl->buf + ctl->caret + 1, ctl->buf + ctl->caret, (unsigned int)(len - ctl->caret + 1) );
             ctl->buf[ctl->caret++] = (char)key;
         }
         if ( dlg->changed ) {

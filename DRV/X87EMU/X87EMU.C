@@ -37,10 +37,10 @@ typedef char seg_fits[sizeof( x87seg ) == 12 ? 1 : -1];
 
 /* A flat pointer to len bytes at sreg:off, or 0 if the program could
    not reach every one of them itself */
-static u8 *reach( x87ctx *c, int sreg, u32 off, u32 len )
+static uint8_t *reach( x87ctx *c, int sreg, uint32_t off, unsigned int len )
 {
     x87seg *seg = &c->segs[sreg];
-    u32 lin;
+    uint32_t lin;
 
     if ( !seg->ok || off > seg->limit || seg->limit - off < len - 1 ) {
         return 0;
@@ -49,13 +49,13 @@ static u8 *reach( x87ctx *c, int sreg, u32 off, u32 len )
     if ( !fpu_uok( lin, len ) ) {
         return 0;
     }
-    return (u8 *)lin;
+    return (uint8_t *)lin;
 }
 
 /* The memory operand, len bytes of it */
-u8 *xs_mem( x87ctx *c, u32 len )
+uint8_t *xs_mem( x87ctx *c, unsigned int len )
 {
-    u8 *ptr = reach( c, c->easeg, c->ea, len );
+    uint8_t *ptr = reach( c, c->easeg, c->ea, len );
 
     if ( !ptr ) {
         c->fault = TRAP_GP;
@@ -64,9 +64,9 @@ u8 *xs_mem( x87ctx *c, u32 len )
 }
 
 /* The next byte of the instruction */
-static int fetch( x87ctx *c, u8 *byte )
+static int fetch( x87ctx *c, uint8_t *byte )
 {
-    u8 *ptr;
+    uint8_t *ptr;
 
     if ( c->next - c->start >= MAXLEN ) {
         return 0;
@@ -80,9 +80,9 @@ static int fetch( x87ctx *c, u8 *byte )
     return 1;
 }
 
-static int fetch_disp( x87ctx *c, u32 *value, int size )
+static int fetch_disp( x87ctx *c, uint32_t *value, int size )
 {
-    u8 byte;
+    uint8_t byte;
     int i;
 
     *value = 0;
@@ -90,7 +90,7 @@ static int fetch_disp( x87ctx *c, u32 *value, int size )
         if ( !fetch( c, &byte ) ) {
             return 0;
         }
-        *value |= (u32)byte << ( 8 * i );
+        *value |= (uint32_t)byte << ( 8 * i );
     }
     if ( size == 1 && ( *value & 0x80 ) ) {
         *value |= 0xFFFFFF00;
@@ -101,7 +101,7 @@ static int fetch_disp( x87ctx *c, u32 *value, int size )
 }
 
 /* A general register by its number in an instruction */
-static u32 gpr( x87ctx *c, int num )
+static uint32_t gpr( x87ctx *c, int num )
 {
     x87frame *fr = c->frame;
 
@@ -127,11 +127,11 @@ static u32 gpr( x87ctx *c, int num )
 /* The operand's offset and segment, from ModRM and what follows it */
 static int decode_ea( x87ctx *c )
 {
-    u32 mod = c->modrm >> 6;
-    u32 rm = c->modrm & 7;
-    u32 addr = 0, disp;
-    s32 defseg = SEG_DS;
-    u8 sib;
+    unsigned int mod = c->modrm >> 6;
+    unsigned int rm = c->modrm & 7;
+    uint32_t addr = 0, disp;
+    int defseg = SEG_DS;
+    uint8_t sib;
 
     if ( c->a16 ) {
         if ( mod == 0 && rm == 6 ) {
@@ -178,7 +178,7 @@ static int decode_ea( x87ctx *c )
         addr &= 0xFFFF;
     } else {
         if ( rm == 4 ) {
-            u32 index, base;
+            unsigned int index, base;
 
             if ( !fetch( c, &sib ) ) {
                 return 0;
@@ -237,12 +237,12 @@ static int phys( x87ctx *c, int i )
 
 static void set_top( x87ctx *c, int value )
 {
-    c->st->sw = (u16)( ( c->st->sw & ~SW_TOP ) | ( ( value & 7 ) << 11 ) );
+    c->st->sw = (uint16_t)( ( c->st->sw & ~SW_TOP ) | ( ( value & 7 ) << 11 ) );
 }
 
 /* Raise status bits.  -> 1 if any of them is unmasked, which for IE, DE
    and ZE means the instruction must leave everything as it was. */
-int xs_stop( x87ctx *c, u32 bits )
+int xs_stop( x87ctx *c, uint32_t bits )
 {
     c->exc |= bits;
     return ( bits & SW_EXC & ~c->st->cw ) != 0;
@@ -285,7 +285,7 @@ void xs_put( x87ctx *c, int i, const wide *w )
     int reg = phys( c, i );
 
     x_pack( &c->st->st[reg], w );
-    c->st->empty &= (u8)~( 1 << reg );
+    c->st->empty &= (uint8_t)~( 1 << reg );
 }
 
 void xs_putraw( x87ctx *c, int i, const xreg *x )
@@ -293,12 +293,12 @@ void xs_putraw( x87ctx *c, int i, const xreg *x )
     int reg = phys( c, i );
 
     c->st->st[reg] = *x;
-    c->st->empty &= (u8)~( 1 << reg );
+    c->st->empty &= (uint8_t)~( 1 << reg );
 }
 
 void xs_pop( x87ctx *c )
 {
-    c->st->empty |= (u8)( 1 << phys( c, 0 ) );
+    c->st->empty |= (uint8_t)( 1 << phys( c, 0 ) );
     set_top( c, top( c ) + 1 );
 }
 
@@ -342,16 +342,16 @@ int xs_under( x87ctx *c )
 }
 
 /* C0, C1, C2 and C3 together */
-void xs_cc( x87ctx *c, u32 cc )
+void xs_cc( x87ctx *c, uint32_t cc )
 {
-    c->st->sw = (u16)( ( c->st->sw & ~SW_CC ) | ( cc & SW_CC ) );
+    c->st->sw = (uint16_t)( ( c->st->sw & ~SW_CC ) | ( cc & SW_CC ) );
 }
 
 /* A result into ST(i): fitted to prec bits and the register's range,
    and C1 said for whether it was rounded up */
 void xs_result( x87ctx *c, int i, wide *r, int prec )
 {
-    u32 flags = 0;
+    uint32_t flags = 0;
 
     if ( r->kind == K_FIN ) {
         flags = w_fit( r, prec, EXT_EMIN, EXT_EMAX, xs_rc( c ) );
@@ -360,7 +360,7 @@ void xs_result( x87ctx *c, int i, wide *r, int prec )
         }
     }
     c->exc |= flags & SW_EXC;
-    c->st->sw = (u16)( ( c->st->sw & ~SW_C1 ) | ( flags & SW_C1 ) );
+    c->st->sw = (uint16_t)( ( c->st->sw & ~SW_C1 ) | ( flags & SW_C1 ) );
     xs_put( c, i, r );
 }
 
@@ -368,9 +368,9 @@ void xs_result( x87ctx *c, int i, wide *r, int prec )
  * The environment: FNSTENV, FLDENV, FNSAVE, FRSTOR
  *-------------------------------------------------------------------*/
 
-static u32 tag_word( x87ctx *c )
+static uint32_t tag_word( x87ctx *c )
 {
-    u32 tags = 0, tag;
+    uint32_t tags = 0, tag;
     wide w;
     int reg;
 
@@ -392,35 +392,35 @@ static u32 tag_word( x87ctx *c )
     return tags;
 }
 
-static void put16( u8 *ptr, u32 value )
+static void put16( uint8_t *ptr, uint32_t value )
 {
-    ptr[0] = (u8)value;
-    ptr[1] = (u8)( value >> 8 );
+    ptr[0] = (uint8_t)value;
+    ptr[1] = (uint8_t)( value >> 8 );
 }
 
-static void put32( u8 *ptr, u32 value )
+static void put32( uint8_t *ptr, uint32_t value )
 {
     put16( ptr, value );
     put16( ptr + 2, value >> 16 );
 }
 
-static u32 get16( const u8 *ptr )
+static uint32_t get16( const uint8_t *ptr )
 {
-    return (u32)ptr[0] | ( (u32)ptr[1] << 8 );
+    return (uint32_t)ptr[0] | ( (uint32_t)ptr[1] << 8 );
 }
 
-static u32 get32( const u8 *ptr )
+static uint32_t get32( const uint8_t *ptr )
 {
     return get16( ptr ) | ( get16( ptr + 2 ) << 16 );
 }
 
 /* The environment's length in the layout the operand size picks */
-static u32 env_len( x87ctx *c )
+static unsigned int env_len( x87ctx *c )
 {
     return c->o16 ? 14 : 28;
 }
 
-static void store_env( x87ctx *c, u8 *ptr )
+static void store_env( x87ctx *c, uint8_t *ptr )
 {
     x87state *st = c->st;
 
@@ -438,43 +438,43 @@ static void store_env( x87ctx *c, u8 *ptr )
     put32( ptr + 4, 0xFFFF0000 | st->sw );
     put32( ptr + 8, 0xFFFF0000 | tag_word( c ) );
     put32( ptr + 12, st->fip );
-    put32( ptr + 16, st->fcs | ( (u32)( st->fop & 0x7FF ) << 16 ) );
+    put32( ptr + 16, st->fcs | ( (uint32_t)( st->fop & 0x7FF ) << 16 ) );
     put32( ptr + 20, st->fdp );
     put32( ptr + 24, 0xFFFF0000 | st->fds );
 }
 
-static void load_env( x87ctx *c, const u8 *ptr )
+static void load_env( x87ctx *c, const uint8_t *ptr )
 {
     x87state *st = c->st;
-    u32 tags;
+    uint32_t tags;
     int reg;
 
     if ( c->o16 ) {
-        st->cw = (u16)get16( ptr );
-        st->sw = (u16)get16( ptr + 2 );
+        st->cw = (uint16_t)get16( ptr );
+        st->sw = (uint16_t)get16( ptr + 2 );
         tags = get16( ptr + 4 );
         st->fip = get16( ptr + 6 );
-        st->fcs = (u16)get16( ptr + 8 );
+        st->fcs = (uint16_t)get16( ptr + 8 );
         st->fdp = get16( ptr + 10 );
-        st->fds = (u16)get16( ptr + 12 );
+        st->fds = (uint16_t)get16( ptr + 12 );
         st->fop = 0;
     } else {
-        st->cw = (u16)get32( ptr );
-        st->sw = (u16)get32( ptr + 4 );
+        st->cw = (uint16_t)get32( ptr );
+        st->sw = (uint16_t)get32( ptr + 4 );
         tags = get32( ptr + 8 );
         st->fip = get32( ptr + 12 );
-        st->fcs = (u16)get32( ptr + 16 );
-        st->fop = (u16)( ( get32( ptr + 16 ) >> 16 ) & 0x7FF );
+        st->fcs = (uint16_t)get32( ptr + 16 );
+        st->fop = (uint16_t)( ( get32( ptr + 16 ) >> 16 ) & 0x7FF );
         st->fdp = get32( ptr + 20 );
-        st->fds = (u16)get32( ptr + 24 );
+        st->fds = (uint16_t)get32( ptr + 24 );
     }
-    st->cw = (u16)( ( st->cw & 0x1F7F ) | 0x0040 );
+    st->cw = (uint16_t)( ( st->cw & 0x1F7F ) | 0x0040 );
     /* only "empty" is kept of the tags: the 387 works the rest out
        again from what is in the register */
     st->empty = 0;
     for ( reg = 0; reg < 8; reg++ ) {
         if ( ( ( tags >> ( 2 * reg ) ) & 3 ) == 3 ) {
-            st->empty |= (u8)( 1 << reg );
+            st->empty |= (uint8_t)( 1 << reg );
         }
     }
 }
@@ -493,8 +493,8 @@ void x87_init( x87state *st )
 
 static void op_env( x87ctx *c, int save, int regs )
 {
-    u32 len = env_len( c ) + ( regs ? 80 : 0 );
-    u8 *ptr = xs_mem( c, len );
+    unsigned int len = env_len( c ) + ( regs ? 80 : 0 );
+    uint8_t *ptr = xs_mem( c, len );
     xreg *x;
     int i;
 
@@ -522,7 +522,7 @@ static void op_env( x87ctx *c, int save, int regs )
             x = &c->st->st[phys( c, i )];
             x->lo = get32( ptr + env_len( c ) + 10 * i );
             x->hi = get32( ptr + env_len( c ) + 10 * i + 4 );
-            x->se = (u16)get16( ptr + env_len( c ) + 10 * i + 8 );
+            x->se = (uint16_t)get16( ptr + env_len( c ) + 10 * i + 8 );
             x->pad = 0;
         }
     }
@@ -603,7 +603,7 @@ static void op_xch( x87ctx *c, int other )
 /* FCMOVcc: the condition from EFLAGS, as the ModRM byte names it */
 static void op_cmov( x87ctx *c, int negate )
 {
-    u32 flags = c->frame->eflags;
+    uint32_t flags = c->frame->eflags;
     int cond;
     xreg x;
     wide w;
@@ -648,7 +648,7 @@ static void op_cmov( x87ctx *c, int negate )
    as no operation */
 static int no_wait( x87ctx *c )
 {
-    u32 reg = ( c->modrm >> 3 ) & 7;
+    unsigned int reg = ( c->modrm >> 3 ) & 7;
 
     if ( c->modrm < 0xC0 ) {
         return ( c->esc == 1 && reg >= 6 ) || ( c->esc == 5 && reg >= 6 );
@@ -661,7 +661,7 @@ static int no_wait( x87ctx *c )
    instructions, which leave the last instruction pointer alone */
 static int control( x87ctx *c )
 {
-    u32 reg = ( c->modrm >> 3 ) & 7;
+    unsigned int reg = ( c->modrm >> 3 ) & 7;
 
     if ( no_wait( c ) ) {
         return 1;
@@ -676,10 +676,10 @@ static int control( x87ctx *c )
  *-------------------------------------------------------------------*/
 static void run( x87ctx *c )
 {
-    u32 reg = ( c->modrm >> 3 ) & 7;
+    unsigned int reg = ( c->modrm >> 3 ) & 7;
     int rm = c->modrm & 7;
     int mem = c->modrm < 0xC0;
-    u8 *ptr;
+    uint8_t *ptr;
 
     switch ( c->esc ) {
     case 0:                             /* D8: m32 arithmetic, ST(0) op ST(i) */
@@ -708,7 +708,7 @@ static void run( x87ctx *c )
             case 5:
                 ptr = xs_mem( c, 2 );
                 if ( ptr ) {
-                    c->st->cw = (u16)( ( get16( ptr ) & 0x1F7F ) | 0x0040 );
+                    c->st->cw = (uint16_t)( ( get16( ptr ) & 0x1F7F ) | 0x0040 );
                 }
                 return;
             case 6:
@@ -846,7 +846,7 @@ static void run( x87ctx *c )
         }
         switch ( reg ) {
         case 0:                         /* FFREE */
-            c->st->empty |= (u8)( 1 << phys( c, rm ) );
+            c->st->empty |= (uint8_t)( 1 << phys( c, rm ) );
             return;
         case 1:                         /* FXCH4 */
             op_xch( c, rm );
@@ -908,7 +908,7 @@ static void run( x87ctx *c )
         }
         switch ( reg ) {
         case 0:                         /* FFREEP */
-            c->st->empty |= (u8)( 1 << phys( c, rm ) );
+            c->st->empty |= (uint8_t)( 1 << phys( c, rm ) );
             xs_pop( c );
             return;
         case 1:                         /* FXCH7 */
@@ -939,12 +939,12 @@ static void run( x87ctx *c )
 /*---------------------------------------------------------------------
  * The way in
  *-------------------------------------------------------------------*/
-u32 x87_trap( x87frame *frame, x87seg *segs, x87state *st )
+uint32_t x87_trap( x87frame *frame, x87seg *segs, x87state *st )
 {
     x87ctx ctx;
     x87ctx *c = &ctx;
     x87state before;
-    u8 byte;
+    uint8_t byte;
 
     c->frame = frame;
     c->segs = segs;
@@ -997,7 +997,7 @@ u32 x87_trap( x87frame *frame, x87seg *segs, x87state *st )
     if ( byte < 0xD8 || byte > 0xDF ) {
         return TRAP_UD;                 /* nothing else raises 7 with EM */
     }
-    c->esc = (u8)( byte - 0xD8 );
+    c->esc = (uint8_t)( byte - 0xD8 );
     if ( !fetch( c, &c->modrm ) ) {
         return TRAP_GP;
     }
@@ -1019,14 +1019,14 @@ u32 x87_trap( x87frame *frame, x87seg *segs, x87state *st )
     }
     if ( !control( c ) ) {
         st->fip = c->start;
-        st->fcs = (u16)segs[SEG_CS].sel;
-        st->fop = (u16)( ( (u32)c->esc << 8 ) | c->modrm );
+        st->fcs = (uint16_t)segs[SEG_CS].sel;
+        st->fop = (uint16_t)( ( (uint32_t)c->esc << 8 ) | c->modrm );
         if ( c->modrm < 0xC0 ) {
             st->fdp = c->ea;
             st->fds = segs[c->easeg].sel;
         }
     }
-    st->sw |= (u16)( c->exc & ( SW_EXC | SW_SF ) );
+    st->sw |= (uint16_t)( c->exc & ( SW_EXC | SW_SF ) );
     if ( st->sw & ~st->cw & SW_EXC ) {
         st->sw |= SW_ES | SW_B;
     } else {

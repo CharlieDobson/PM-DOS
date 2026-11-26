@@ -23,19 +23,19 @@
 #include "szarc.h"      /* SzProgress, and the shared SZ_ERR_* result codes */
 
 typedef struct {
-    char   name[SZ_MAX_NAME];   /* stored path (back-slashes)               */
-    UInt32 size;                /* uncompressed size                        */
-    UInt16 modDate, modTime;    /* MS-DOS packed, local time                */
-    UInt32 attrib;              /* DOS attribute bits                       */
-    int    isDir;               /* always 0: cabinets hold no directories   */
-    int    folder;              /* index of the (set-wide) folder it is in  */
-    UInt32 offset;              /* where it starts in that folder's output  */
+    char     name[SZ_MAX_NAME];  /* stored path (back-slashes)              */
+    uint32_t size;               /* uncompressed size                       */
+    uint16_t modDate, modTime;   /* MS-DOS packed, local time               */
+    uint32_t attrib;             /* DOS attribute bits                      */
+    int      isDir;              /* always 0: cabinets hold no directories  */
+    int      folder;             /* index of the (set-wide) folder it is in */
+    uint32_t offset;             /* where it starts in that folder's output */
 } CabEntry;
 
 typedef struct CabArchive CabArchive;
 
 /* Does this start like a cabinet?  'sig' is the first 'len' bytes. */
-int  CabProbe( const unsigned char *sig, int len );
+int  CabProbe( const uint8_t *sig, int len );
 
 /* Open and parse.  SZ_ERR_SIG when there is no cabinet in the file,
  * SZ_ERR_VOLUME when it is one of a set and another member is missing. */
@@ -50,7 +50,7 @@ const CabEntry *CabGetEntry( CabArchive *cab, int index );
 
 /* A folder's packed size on its first member, as 7z does for a solid
  * block; 0xFFFFFFFF on the rest. */
-UInt32 CabEntryPacked( CabArchive *cab, int index );
+uint32_t CabEntryPacked( CabArchive *cab, int index );
 
 /* "Store", "MSZIP", "Quantum", "LZX", or "?" for a method this does not
  * know. */
@@ -62,7 +62,7 @@ int  CabVolumeCount( CabArchive *cab );
 /* What the last extraction or test could check: how many data blocks carried
  * a checksum (all of which matched, or it would have failed) and how many
  * carried none - the field is optional, and a writer may leave it 0. */
-void CabChecksumCount( CabArchive *cab, UInt32 *checked, UInt32 *bare );
+void CabChecksumCount( CabArchive *cab, uint32_t *checked, uint32_t *bare );
 
 int  CabExtractAll( CabArchive *cab, const char *destDir,
                     SzProgress prog, void *user );
@@ -70,14 +70,14 @@ int  CabExtractItems( CabArchive *cab, const int *indices, int count,
                       const char *destDir, SzProgress prog, void *user );
 
 /* Peak bytes one extraction needs; see ArcMemNeeded in ARCFILE.H. */
-UInt32 CabMemNeeded( CabArchive *cab );
+uint32_t CabMemNeeded( CabArchive *cab );
 
 void CabClose( CabArchive *cab );
 
 /* Delete entries - ArcDeleteItems in ARCFILE.H; the arguments are set out
  * in ARCFILE.C.  Whole folders are copied or dropped; a folder that keeps
  * only some of its files is decoded and those compressed again as MSZIP. */
-int  CabDeleteWrite( CabArchive *cab, const Byte *del, FILE *out,
+int  CabDeleteWrite( CabArchive *cab, const uint8_t *del, FILE *out,
                      ArcCompProgress prog, void *user, const char **why );
 
 #endif /* CABARC_H */

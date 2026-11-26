@@ -27,19 +27,19 @@
 /* fixed point                                                         */
 /* ------------------------------------------------------------------ */
 
-typedef s32 fx;                         /* 16.16 */
+typedef int32_t fx;                     /* 16.16 */
 
 #define FX_ONE          0x10000L
 #define FX_HALF         0x8000L
 #define FX_MAX          0x7FFFFFFFL
-#define I2FX( val )     ((fx)((s32)(val) * 65536L))
-#define FX_FLOOR( val ) ((s32)(val) >> 16)
-#define FX_CEIL( val )  (((s32)(val) + 0xFFFFL) >> 16)
-#define FX_ROUND( val ) (((s32)(val) + 0x8000L) >> 16)
-#define FX_FRAC( val )  ((s32)(val) & 0xFFFFL)
+#define I2FX( val )     ((fx)((int32_t)(val) * 65536L))
+#define FX_FLOOR( val ) ((int32_t)(val) >> 16)
+#define FX_CEIL( val )  (((int32_t)(val) + 0xFFFFL) >> 16)
+#define FX_ROUND( val ) (((int32_t)(val) + 0x8000L) >> 16)
+#define FX_FRAC( val )  ((int32_t)(val) & 0xFFFFL)
 
 /* (lhs * rhs) >> shift through the 64-bit product; shift is 0..31 */
-s32 mul_shr( s32 lhs, s32 rhs, u32 shift );
+int32_t mul_shr( int32_t lhs, int32_t rhs, uint32_t shift );
 #pragma aux mul_shr =       \
     "imul edx"              \
     "shrd eax,edx,cl"       \
@@ -47,44 +47,44 @@ s32 mul_shr( s32 lhs, s32 rhs, u32 shift );
 
 #define fx_mul( lhs, rhs )  mul_shr( (lhs), (rhs), 16 )
 
-u32 umul_hi( u32 lhs, u32 rhs );
+uint32_t umul_hi( uint32_t lhs, uint32_t rhs );
 #pragma aux umul_hi = "mul edx" parm [eax] [edx] value [edx] modify [eax];
 
 /* hi:lo / den; the caller has made sure hi < den */
-u32 udiv64( u32 hi, u32 lo, u32 den );
+uint32_t udiv64( uint32_t hi, uint32_t lo, uint32_t den );
 #pragma aux udiv64 = "div ebx" parm [edx] [eax] [ebx] value [eax] modify [edx];
 
 /* the highest set bit of a value that is not zero */
-int bit_top( u32 val );
+int bit_top( uint32_t val );
 #pragma aux bit_top = "bsr eax,eax" parm [eax] value [eax];
 
-s32 mul_div( s32 lhs, s32 rhs, s32 den );       /* saturates */
-fx  fx_div( fx num, fx den );                   /* saturates */
-u32 isqrt( u32 val );
-fx  fx_sqrt( fx val );
-fx  fx_hypot( fx dx, fx dy );
-fx  fx_sin( int deg );           /* of a whole number of degrees */
-fx  fx_cos( int deg );
-fx  fx_pow( fx base, fx expo );
-fx  fx_log2( fx val );
-fx  fx_atan2( fx dy, fx dx );   /* in degrees, 0 up to 360 */
+int32_t  mul_div( int32_t lhs, int32_t rhs, int32_t den );  /* saturates */
+fx       fx_div( fx num, fx den );                          /* saturates */
+uint32_t isqrt( uint32_t val );
+fx       fx_sqrt( fx val );
+fx       fx_hypot( fx dx, fx dy );
+fx       fx_sin( int deg );      /* of a whole number of degrees */
+fx       fx_cos( int deg );
+fx       fx_pow( fx base, fx expo );
+fx       fx_log2( fx val );
+fx       fx_atan2( fx dy, fx dx ); /* in degrees, 0 up to 360 */
 
 /* a number as the file has it: man * 2^exp, man zero or normalised so
    that 2^29 <= |man| < 2^30 */
 typedef struct {
-    s32 man;
-    s32 exp;
+    int32_t man;
+    int32_t exp;
 } REAL;
 
-REAL real_int( s32 val );
-REAL real_fx( fx val );
-REAL real_mul( REAL lhs, REAL rhs );
-REAL real_div( REAL lhs, REAL rhs );
-REAL real_add( REAL lhs, REAL rhs );
-REAL real_neg( REAL val );
-fx   real_to_fx( REAL val );            /* saturates */
-s32  real_to_int( REAL val );           /* towards zero, saturates */
-REAL real_dec( u32 digits, int scale ); /* digits / 10^scale (scale may be negative) */
+REAL    real_int( int32_t val );
+REAL    real_fx( fx val );
+REAL    real_mul( REAL lhs, REAL rhs );
+REAL    real_div( REAL lhs, REAL rhs );
+REAL    real_add( REAL lhs, REAL rhs );
+REAL    real_neg( REAL val );
+fx      real_to_fx( REAL val );                 /* saturates */
+int32_t real_to_int( REAL val );                /* towards zero, saturates */
+REAL    real_dec( uint32_t digits, int scale ); /* digits / 10^scale (scale may be negative) */
 
 /* a matrix as PDF writes one: x' = a*x + c*y + e, y' = b*x + d*y + f */
 typedef struct {
@@ -125,15 +125,15 @@ typedef struct DICT DICT;
 typedef struct ARR  ARR;
 
 struct OBJ {
-    u8  type;
-    u8  spare;
-    u16 gen;                    /* T_REF */
+    uint8_t  type;
+    uint8_t  spare;
+    uint16_t gen;               /* T_REF */
     union {
-        s32   ival;             /* T_BOOL, T_INT; T_REF: the object's number */
-        REAL  real;
+        int32_t ival;           /* T_BOOL, T_INT; T_REF: the object's number */
+        REAL    real;
         struct {
-            u8  *ptr;           /* T_STR; T_NAME and T_OP end with a NUL too */
-            u32  len;
+            uint8_t *ptr;       /* T_STR; T_NAME and T_OP end with a NUL too */
+            uint32_t len;
         } str;
         ARR  *arr;
         DICT *dict;             /* T_DICT, T_STREAM */
@@ -141,8 +141,8 @@ struct OBJ {
 };
 
 struct ARR {
-    u32  count;
-    OBJ *items;
+    unsigned int count;
+    OBJ         *items;
 };
 
 typedef struct {
@@ -151,36 +151,36 @@ typedef struct {
 } DENT;
 
 struct DICT {
-    u32   count;
-    DENT *ents;
-    u32   num;                  /* the object this is, 0 if it is inside one */
-    u16   gen;
-    u8    crypt_off;            /* its stream is not encrypted */
-    u8    spare;
-    u32   stm_pos;              /* T_STREAM: where the data is in the file... */
-    const u8 *stm_mem;          /* ...or in memory */
-    u32   stm_len;              /* in memory only: /Length says for a file */
+    unsigned int count;
+    DENT        *ents;
+    uint32_t     num;               /* the object this is, 0 if it is inside one */
+    uint16_t     gen;
+    uint8_t      crypt_off;         /* its stream is not encrypted */
+    uint8_t      spare;
+    uint32_t     stm_pos;           /* T_STREAM: where the data is in the file... */
+    const uint8_t *stm_mem;         /* ...or in memory */
+    uint32_t     stm_len;           /* in memory only: /Length says for a file */
 };
 
 extern OBJ obj_null;
 
-OBJ  *obj_resolve( OBJ *obj );                  /* through a reference; never NULL */
-OBJ  *dict_raw( DICT *dict, const char *key );  /* NULL if it is not there */
-OBJ  *dict_get( DICT *dict, const char *key );  /* resolved; &obj_null if not there */
-OBJ  *dict_get2( DICT *dict, const char *key, const char *abbrev );
-s32   dict_int( DICT *dict, const char *key, s32 def );
-fx    dict_fx( DICT *dict, const char *key, fx def );
+OBJ    *obj_resolve( OBJ *obj );                  /* through a reference; never NULL */
+OBJ    *dict_raw( DICT *dict, const char *key );  /* NULL if it is not there */
+OBJ    *dict_get( DICT *dict, const char *key );  /* resolved; &obj_null if not there */
+OBJ    *dict_get2( DICT *dict, const char *key, const char *abbrev );
+int32_t dict_int( DICT *dict, const char *key, int32_t def );
+fx      dict_fx( DICT *dict, const char *key, fx def );
 const char *dict_name( DICT *dict, const char *key );   /* "" if it is not a name */
-DICT *dict_dict( DICT *dict, const char *key );         /* NULL if it is not one */
-ARR  *dict_arr( DICT *dict, const char *key );
-OBJ  *arr_get( ARR *arr, u32 index );           /* resolved; &obj_null past the end */
-s32   obj_int( OBJ *obj );
-fx    obj_fx( OBJ *obj );
-REAL  obj_real( OBJ *obj );
-int   obj_is_num( OBJ *obj );
-int   obj_is_name( OBJ *obj, const char *name );
-DICT *obj_dict( OBJ *obj );                     /* of a dictionary or a stream, else NULL */
-const char *obj_name( OBJ *obj );               /* "" if it is not a name */
+DICT   *dict_dict( DICT *dict, const char *key );       /* NULL if it is not one */
+ARR    *dict_arr( DICT *dict, const char *key );
+OBJ    *arr_get( ARR *arr, unsigned int index );      /* resolved; &obj_null past the end */
+int32_t obj_int( OBJ *obj );
+fx      obj_fx( OBJ *obj );
+REAL    obj_real( OBJ *obj );
+int     obj_is_num( OBJ *obj );
+int     obj_is_name( OBJ *obj, const char *name );
+DICT   *obj_dict( OBJ *obj );                     /* of a dictionary or a stream, else NULL */
+const char *obj_name( OBJ *obj );                 /* "" if it is not a name */
 
 /* ------------------------------------------------------------------ */
 /* input                                                               */
@@ -194,28 +194,28 @@ const char *obj_name( OBJ *obj );               /* "" if it is not a name */
  */
 typedef struct IN IN;
 struct IN {
-    u8   *cur, *end;            /* what has been produced and not yet read */
+    uint8_t *cur, *end;         /* what has been produced and not yet read */
     int  (*fill)( IN *in );     /* produce more: 0 when there is none */
     void (*done)( IN *in );     /* give back what fill needed, if anything */
-    IN   *src;                  /* the IN this one reads, closed with it */
-    u32   pos;                  /* the file: the offset "end" is at */
-    u8    at_eof;
+    IN      *src;               /* the IN this one reads, closed with it */
+    uint32_t pos;               /* the file: the offset "end" is at */
+    uint8_t  at_eof;
 };
 
 #define IN_GETC( in )   ((in)->cur < (in)->end ? (int)*(in)->cur++ : in_more( in ))
 
-int   in_more( IN *in );                /* the next byte, or -1 */
-int   in_peek( IN *in );                /* ...without taking it */
-u32   in_read( IN *in, u8 *buf, u32 len );
-u32   in_skip( IN *in, u32 count );
-void  in_close( IN *in );               /* and everything behind it */
-IN   *in_new( u32 extra, int (*fill)( IN * ), IN *src );
+int      in_more( IN *in );             /* the next byte, or -1 */
+int      in_peek( IN *in );             /* ...without taking it */
+uint32_t in_read( IN *in, uint8_t *buf, uint32_t len );
+uint32_t in_skip( IN *in, uint32_t count );
+void     in_close( IN *in );            /* and everything behind it */
+IN      *in_new( unsigned int extra, int (*fill)( IN * ), IN *src );
 #define IN_STATE( in, type )    ((type *)((in) + 1))
 
-IN   *in_file( u32 pos, u32 len );      /* the PDF file; len ~0 for "to the end" */
-u32   in_tell( IN *in );                /* of an in_file */
-IN   *in_mem( const u8 *data, u32 len );
-IN   *in_borrow( IN *parent, u32 limit );   /* the next bytes of another, not copied */
+IN      *in_file( uint32_t pos, uint32_t len );  /* the PDF file; len ~0 for "to the end" */
+uint32_t in_tell( IN *in );                      /* of an in_file */
+IN      *in_mem( const uint8_t *data, uint32_t len );
+IN      *in_borrow( IN *parent, uint32_t limit ); /* the next bytes of another, not copied */
 
 /* FILTER.C and the decoders behind it */
 IN   *flt_inflate( IN *src );
@@ -226,8 +226,8 @@ IN   *flt_rle( IN *src );
 IN   *flt_predict( IN *src, int predictor, int colors, int bpc, int columns );
 IN   *flt_ccitt( IN *src, DICT *parms );
 IN   *flt_dct( IN *src, DICT *parms );
-IN   *flt_rc4( IN *src, const u8 *key, u32 keylen );
-IN   *flt_aes( IN *src, const u8 *key, u32 keylen );
+IN   *flt_rc4( IN *src, const uint8_t *key, uint32_t keylen );
+IN   *flt_aes( IN *src, const uint8_t *key, uint32_t keylen );
 
 /* what a DCT stream turned out to be, for the image that asked */
 extern int dct_width, dct_height, dct_comps;
@@ -237,16 +237,16 @@ extern int dct_width, dct_height, dct_comps;
 /* ------------------------------------------------------------------ */
 
 typedef struct {
-    IN   *in;
-    POOL *pool;                 /* where strings, arrays and dictionaries go */
-    int   content;              /* a content stream: no "n g R", and an operator
+    IN      *in;
+    POOL    *pool;              /* where strings, arrays and dictionaries go */
+    int      content;           /* a content stream: no "n g R", and an operator
                                    is a T_OP */
-    u32   num;                  /* strings are decrypted as this object's... */
-    u16   gen;
-    u8    crypt;                /* ...if this says to */
-    u8    has_pend;
-    OBJ   pend;                 /* a number read ahead while looking for R */
-    char  word[64];             /* the last T_OP */
+    uint32_t num;               /* strings are decrypted as this object's... */
+    uint16_t gen;
+    uint8_t  crypt;             /* ...if this says to */
+    uint8_t  has_pend;
+    OBJ      pend;              /* a number read ahead while looking for R */
+    char     word[64];          /* the last T_OP */
 } LEX;
 
 void  lex_init( LEX *lex, IN *in, POOL *pool, int content );
@@ -263,10 +263,10 @@ int   is_delim( int ch );
 /* ------------------------------------------------------------------ */
 
 typedef struct {
-    u32 pos;                    /* the offset, or the object stream's number */
-    u16 gen;                    /* the generation, or the index in that stream */
-    u8  type;                   /* 0 free, 1 in the file, 2 in an object stream */
-    u8  spare;
+    uint32_t pos;               /* the offset, or the object stream's number */
+    uint16_t gen;               /* the generation, or the index in that stream */
+    uint8_t  type;              /* 0 free, 1 in the file, 2 in an object stream */
+    uint8_t  spare;
 } XENT;
 
 #define CRYPT_NONE  0
@@ -275,29 +275,29 @@ typedef struct {
 #define CRYPT_AES256 3          /* AESV3: 256 bits, one key */
 
 typedef struct {
-    u32   file;                 /* the handle; 0 when the file is in memory... */
-    const u8 *mem;              /* ...here (pdf_open_mem) */
-    u32   size;
-    u32   base;                 /* bytes of junk before "%PDF" */
-    int   ver_major, ver_minor;
-    POOL *pool;                 /* the document's own: trailer, catalogue */
-    POOL *page_pool;            /* the page being shown */
-    XENT *xref;
-    u32   xref_count;
-    DICT *trailer;
-    DICT *root;
-    int   page_count;
-    int   repaired;             /* the table was rebuilt by reading the file */
+    uint32_t     file;                 /* the handle; 0 when the file is in memory... */
+    const uint8_t *mem;                /* ...here (pdf_open_mem) */
+    uint32_t     size;
+    uint32_t     base;                 /* bytes of junk before "%PDF" */
+    int          ver_major, ver_minor;
+    POOL        *pool;                 /* the document's own: trailer, catalogue */
+    POOL        *page_pool;            /* the page being shown */
+    XENT        *xref;
+    unsigned int xref_count;
+    DICT        *trailer;
+    DICT        *root;
+    int          page_count;
+    int          repaired;             /* the table was rebuilt by reading the file */
     /* encryption */
-    int   encrypted;
-    int   stm_crypt, str_crypt; /* CRYPT_* */
-    u8    key[32];
-    u32   key_len;
-    int   crypt_rev;
-    DICT *crypt_dict;
-    u8    file_id[64];
-    u32   file_id_len;
-    int   crypt_meta;
+    int          encrypted;
+    int          stm_crypt, str_crypt; /* CRYPT_* */
+    uint8_t      key[32];
+    uint32_t     key_len;
+    int          crypt_rev;
+    DICT        *crypt_dict;
+    uint8_t      file_id[64];
+    uint32_t     file_id_len;
+    int          crypt_meta;
 } PDFDOC;
 
 extern PDFDOC doc;
@@ -318,27 +318,27 @@ void  pdf_fail( int why );      /* does not return */
 /* One document is open at a time.  An open that fails leaves nothing
    open, except PE_PASSWORD, which waits for pdf_password and
    pdf_open_finish - or for pdf_close. */
-int   pdf_open( const char *path );             /* PE_* */
-int   pdf_open_mem( const u8 *data, u32 len );  /* the same, of a file that is in memory:
-                                                   the bytes stay the caller's, and stay put */
-int   pdf_password( const char *pw, u32 len );  /* 1 = it opens the file */
-void  pdf_close( void );                        /* the file, its fonts and its glyphs */
-int   pdf_reclaim( void );                      /* a cache given back: 1 if one was.  For
-                                                   the program's mem_reclaim (RT.H) */
-void  pdf_done( void );                         /* pdf_close, and the work space too */
-OBJ  *pdf_load( u32 num );                      /* an object by number; never NULL */
-void  pdf_page_begin( void );                   /* a new pool, an empty cache */
-void  pdf_page_end( void );
-IN   *pdf_stream( OBJ *stm );                   /* its data, decoded; NULL if it
-                                                   cannot be */
-IN   *pdf_stream_raw( OBJ *stm, int *last_filter );   /* up to an image's own filter */
-u8   *pdf_stream_all( OBJ *stm, u32 *len, u32 max );  /* all of it, in the page pool */
-u8   *pdf_stream_pool( OBJ *stm, POOL *pool, u32 *len, u32 max );
-u32   pdf_stream_length( DICT *dict );
-IN   *pdf_filter_chain( IN *in, OBJ *holder, int stop_at_image, int *last_filter );
-const char *pdf_last_filter( OBJ *stm );        /* the name of its last filter, or "" */
-DICT *pdf_filter_parms( OBJ *stm, int index );
-int   pdf_filter_count( OBJ *stm );
+int      pdf_open( const char *path );                       /* PE_* */
+int      pdf_open_mem( const uint8_t *data, uint32_t len );  /* the same, of a file that is in memory:
+                                                                the bytes stay the caller's, and stay put */
+int      pdf_password( const char *pw, uint32_t len );       /* 1 = it opens the file */
+void     pdf_close( void );                                  /* the file, its fonts and its glyphs */
+int      pdf_reclaim( void );                                /* a cache given back: 1 if one was.  For
+                                                                the program's mem_reclaim (RT.H) */
+void     pdf_done( void );                                   /* pdf_close, and the work space too */
+OBJ     *pdf_load( uint32_t num );                           /* an object by number; never NULL */
+void     pdf_page_begin( void );                             /* a new pool, an empty cache */
+void     pdf_page_end( void );
+IN      *pdf_stream( OBJ *stm );                             /* its data, decoded; NULL if it
+                                                                cannot be */
+IN      *pdf_stream_raw( OBJ *stm, int *last_filter );             /* up to an image's own filter */
+uint8_t *pdf_stream_all( OBJ *stm, uint32_t *len, uint32_t max );  /* all of it, in the page pool */
+uint8_t *pdf_stream_pool( OBJ *stm, POOL *pool, uint32_t *len, uint32_t max );
+uint32_t pdf_stream_length( DICT *dict );
+IN      *pdf_filter_chain( IN *in, OBJ *holder, int stop_at_image, int *last_filter );
+const char *pdf_last_filter( OBJ *stm );                     /* the name of its last filter, or "" */
+DICT    *pdf_filter_parms( OBJ *stm, int index );
+int      pdf_filter_count( OBJ *stm );
 const char *pdf_filter_name( OBJ *stm, int index );
 
 /* a page */
@@ -355,21 +355,21 @@ int   pdf_open_finish( void );                  /* after a password was taken: P
 
 /* CRYPT.C */
 int   crypt_setup( DICT *enc );                 /* PE_* */
-void  crypt_object_key( u32 num, u32 gen, int aes, u8 *key, u32 *keylen );
-void  crypt_string( u32 num, u32 gen, u8 *data, u32 *len );
-IN   *crypt_stream( IN *src, u32 num, u32 gen );
+void  crypt_object_key( uint32_t num, uint32_t gen, int aes, uint8_t *key, uint32_t *keylen );
+void  crypt_string( uint32_t num, uint32_t gen, uint8_t *data, uint32_t *len );
+IN   *crypt_stream( IN *src, uint32_t num, uint32_t gen );
 
-void  md5( const u8 *data, u32 len, u8 *digest );
-void  sha256( const u8 *data, u32 len, u8 *digest );
-void  sha512( const u8 *data, u32 len, u8 *digest, int bytes );    /* 48: SHA-384 */
+void  md5( const uint8_t *data, uint32_t len, uint8_t *digest );
+void  sha256( const uint8_t *data, uint32_t len, uint8_t *digest );
+void  sha512( const uint8_t *data, uint32_t len, uint8_t *digest, int bytes ); /* 48: SHA-384 */
 int   crypt_selftest( void );
 typedef struct {
-    u32 state[4];
-    u32 count;
-    u8  buf[64];
+    uint32_t state[4];
+    uint32_t count;
+    uint8_t  buf[64];
 } MD5CTX;
 void  md5_init( MD5CTX *ctx );
-void  md5_update( MD5CTX *ctx, const u8 *data, u32 len );
-void  md5_final( MD5CTX *ctx, u8 *digest );
+void  md5_update( MD5CTX *ctx, const uint8_t *data, uint32_t len );
+void  md5_final( MD5CTX *ctx, uint8_t *digest );
 
 #endif

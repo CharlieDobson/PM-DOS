@@ -39,17 +39,17 @@
 #define PATH_MAX        260     /* the long-name API's own limit, NUL included */
 
 typedef struct {
-    u8   attr;
-    u16  time, date;            /* last written, DOS form */
-    u32  size;
-    char name[PATH_MAX];        /* the long name - the 8.3 when there is none */
-    char alias[14];             /* the 8.3 name */
+    uint8_t  attr;
+    uint16_t time, date;        /* last written, DOS form */
+    uint32_t size;
+    char     name[PATH_MAX];    /* the long name - the 8.3 when there is none */
+    char     alias[14];         /* the 8.3 name */
 } FINDREC;
 
 int   sys_init( void );
 const char *sys_cmdline( void );
 const char *sys_getenv( const char *name );
-void  sys_write( int handle, const char *buf, u32 len );
+void  sys_write( int handle, const char *buf, unsigned int len );
 int   sys_stdin_is_console( void );
 int   sys_read_key( void );                 /* no echo; -1 at end of input */
 void  sys_exit( int code );
@@ -62,27 +62,27 @@ int   sys_get_drive( void );
 int   sys_drive_valid( int drv );
 int   sys_get_cwd( int drv, char *buf );    /* "DIR\SUB", no drive, no lead '\' */
 int   sys_truename( const char *path, char *out, int form );   /* 7160h CL */
-int   sys_get_attr( const char *path, u16 *attr );
-int   sys_set_attr( const char *path, u16 attr );
+int   sys_get_attr( const char *path, uint16_t *attr );
+int   sys_set_attr( const char *path, uint16_t attr );
 int   sys_mkdir( const char *path );
 int   sys_delete( const char *path );
 int   sys_is_device( const char *path );    /* a character device by name */
 
-int   sys_find_first( const char *pattern, u16 attrs, FINDREC *rec, u32 *handle );
-int   sys_find_next( u32 handle, FINDREC *rec );
-void  sys_find_close( u32 handle );
+int   sys_find_first( const char *pattern, uint16_t attrs, FINDREC *rec, uint32_t *handle );
+int   sys_find_next( uint32_t handle, FINDREC *rec );
+void  sys_find_close( uint32_t handle );
 
-int   sys_open_read( const char *path, u32 *handle );
-int   sys_create( const char *path, u32 *handle );
-int   sys_read( u32 handle, void *buf, u32 len, u32 *done );
-int   sys_write_file( u32 handle, const void *buf, u32 len, u32 *done );
-int   sys_close( u32 handle );
-int   sys_get_ftime( u32 handle, u16 *date, u16 *time );
-int   sys_set_ftime( u32 handle, u16 date, u16 time );
+int   sys_open_read( const char *path, uint32_t *handle );
+int   sys_create( const char *path, uint32_t *handle );
+int   sys_read( uint32_t handle, void *buf, unsigned int len, unsigned int *done );
+int   sys_write_file( uint32_t handle, const void *buf, unsigned int len, unsigned int *done );
+int   sys_close( uint32_t handle );
+int   sys_get_ftime( uint32_t handle, uint16_t *date, uint16_t *time );
+int   sys_set_ftime( uint32_t handle, uint16_t date, uint16_t time );
 
 int   sys_get_verify( void );
 void  sys_set_verify( int on );
 void  sys_date_format( int *order, char *sep );     /* 0 MDY, 1 DMY, 2 YMD */
-void *sys_mem_alloc( u32 size );
+void *sys_mem_alloc( unsigned int size );
 
 #endif

@@ -30,8 +30,8 @@
 #include "mode.h"
 
 typedef struct {
-    u32 eax, ebx, ecx, edx, esi, edi;
-    u32 flags;                  /* in: bit 0 = CF before the INT */
+    uint32_t eax, ebx, ecx, edx, esi, edi;
+    uint32_t flags;             /* in: bit 0 = CF before the INT */
 } REGS;
 
 void __cdecl int21( REGS *regs );
@@ -42,7 +42,7 @@ void __cdecl int21( REGS *regs );
 #define TAIL_MAX    130
 
 #define F0( al )            (0xF000UL | (al))
-#define F1( al, fn )        (0xF100UL | (al) | ((u32)(fn) << 16))
+#define F1( al, fn )        (0xF100UL | (al) | ((uint32_t)(fn) << 16))
 
 #define LMF_READ    0
 #define LMF_RAM     1
@@ -52,15 +52,15 @@ void __cdecl int21( REGS *regs );
 #define MDF_RETRY   2
 #define MDF_LPTOUT  3
 
-static u8  *psp;
-static char tail[TAIL_MAX];
+static uint8_t *psp;
+static char     tail[TAIL_MAX];
 
 void __cdecl dos_entry( void )
 {
     mode_main();
 }
 
-static void call21( REGS *regs, u32 eax )
+static void call21( REGS *regs, uint32_t eax )
 {
     regs->eax = eax;
     regs->flags = 0;
@@ -84,11 +84,11 @@ static int result( REGS *regs )
 int sys_init( void )
 {
     REGS regs;
-    u32 len;
+    unsigned int len;
 
     clear( &regs );
     call21( &regs, 0x6200 );
-    psp = (u8 *)regs.ebx;
+    psp = (uint8_t *)regs.ebx;
     len = psp[0x80];
     if ( len > 126 ) {
         len = 126;
@@ -103,14 +103,14 @@ const char *sys_cmdline( void )
     return tail;
 }
 
-void sys_write( int handle, const char *buf, u32 len )
+void sys_write( int handle, const char *buf, unsigned int len )
 {
     REGS regs;
 
     clear( &regs );
-    regs.ebx = (u32)handle;
+    regs.ebx = (uint32_t)handle;
     regs.ecx = len;
-    regs.edx = (u32)buf;
+    regs.edx = (uint32_t)buf;
     call21( &regs, 0x4000 );
 }
 
@@ -119,42 +119,42 @@ void sys_exit( int code )
     REGS regs;
 
     clear( &regs );
-    call21( &regs, 0x4C00 | ((u32)code & 0xFF) );
+    call21( &regs, 0x4C00 | ((uint32_t)code & 0xFF) );
 }
 
 /* ------------------------------------------------------------------ */
 /* low memory and the BIOS                                             */
 /* ------------------------------------------------------------------ */
 
-static int low_read( u32 addr, void *buf, u32 len )
+static int low_read( uint32_t addr, void *buf, unsigned int len )
 {
     REGS regs;
 
     clear( &regs );
     regs.ebx = addr;
     regs.ecx = len;
-    regs.edi = (u32)buf;
+    regs.edi = (uint32_t)buf;
     call21( &regs, F1( 0x20, LMF_READ ) );
     return result( &regs );
 }
 
-u16 sys_low_word( u32 addr )
+uint16_t sys_low_word( uint32_t addr )
 {
-    u16 word = 0;
+    uint16_t word = 0;
 
     low_read( addr, &word, 2 );
     return word;
 }
 
-u8 sys_low_byte( u32 addr )
+uint8_t sys_low_byte( uint32_t addr )
 {
-    u8 byte = 0;
+    uint8_t byte = 0;
 
     low_read( addr, &byte, 1 );
     return byte;
 }
 
-int sys_low_ram( u32 addr )
+int sys_low_ram( uint32_t addr )
 {
     REGS regs;
 
@@ -169,8 +169,8 @@ int sys_bios( int intno, BQ *bq )
     REGS regs;
 
     clear( &regs );
-    regs.edx = (u32)intno;
-    regs.esi = (u32)bq;
+    regs.edx = (uint32_t)intno;
+    regs.esi = (uint32_t)bq;
     call21( &regs, F1( 0x21, 0 ) );
     return result( &regs );
 }
@@ -197,10 +197,10 @@ int sys_text_mode( int mode, int scan, int font8, int equip )
     REGS regs;
 
     clear( &regs );
-    regs.ebx = (u32)(mode & 0xFF) | ((u32)scan << 8);
-    regs.ecx = (u32)(font8 ? 1 : 0);
+    regs.ebx = (uint32_t)(mode & 0xFF) | ((uint32_t)scan << 8);
+    regs.ecx = (uint32_t)(font8 ? 1 : 0);
     if ( equip ) {
-        regs.ecx |= (u32)(0x80 | equip) << 8;
+        regs.ecx |= (uint32_t)(0x80 | equip) << 8;
     }
     call21( &regs, F0( 0x0C ) );
     return result( &regs );
@@ -212,7 +212,7 @@ int sys_equip( int bits )
 
     clear( &regs );
     regs.ebx = 0xFF;
-    regs.ecx = (u32)(0x80 | bits) << 8;
+    regs.ecx = (uint32_t)(0x80 | bits) << 8;
     call21( &regs, F0( 0x0C ) );
     return result( &regs );
 }
@@ -222,7 +222,7 @@ int sys_kb_rate( int byte )
     REGS regs;
 
     clear( &regs );
-    regs.ebx = (u32)byte;
+    regs.ebx = (uint32_t)byte;
     call21( &regs, F0( 0x0D ) );
     return result( &regs );
 }
@@ -251,7 +251,7 @@ int sys_port_route( int lpt, int com )
     REGS regs;
 
     clear( &regs );
-    regs.ebx = (u32)lpt | ((u32)com << 8);
+    regs.ebx = (uint32_t)lpt | ((uint32_t)com << 8);
     call21( &regs, F1( 0x28, MDF_ROUTE ) );
     return result( &regs );
 }
@@ -261,7 +261,7 @@ int sys_port_retry( int dev, int retry )
     REGS regs;
 
     clear( &regs );
-    regs.ebx = (u32)dev | ((u32)retry << 8);
+    regs.ebx = (uint32_t)dev | ((uint32_t)retry << 8);
     call21( &regs, F1( 0x28, MDF_RETRY ) );
     return result( &regs );
 }
@@ -271,7 +271,7 @@ int sys_lpt_out( int lpt, int byte, int *status )
     REGS regs;
 
     clear( &regs );
-    regs.ebx = (u32)lpt | ((u32)(byte & 0xFF) << 8);
+    regs.ebx = (uint32_t)lpt | ((uint32_t)(byte & 0xFF) << 8);
     call21( &regs, F1( 0x28, MDF_LPTOUT ) );
     *status = (int)(regs.eax & 0xFF);
     return result( &regs );
@@ -286,8 +286,8 @@ int sys_open( const char *name, int mode, int *handle )
     REGS regs;
 
     clear( &regs );
-    regs.edx = (u32)name;
-    call21( &regs, 0x3D00 | (u32)(mode & 0xFF) );
+    regs.edx = (uint32_t)name;
+    call21( &regs, 0x3D00 | (uint32_t)(mode & 0xFF) );
     *handle = (int)AX( regs );
     return result( &regs );
 }
@@ -297,53 +297,53 @@ void sys_close( int handle )
     REGS regs;
 
     clear( &regs );
-    regs.ebx = (u32)handle;
+    regs.ebx = (uint32_t)handle;
     call21( &regs, 0x3E00 );
 }
 
-int sys_read( int handle, void *buf, u32 len, u32 *got )
+int sys_read( int handle, void *buf, unsigned int len, unsigned int *got )
 {
     REGS regs;
 
     clear( &regs );
-    regs.ebx = (u32)handle;
+    regs.ebx = (uint32_t)handle;
     regs.ecx = len;
-    regs.edx = (u32)buf;
+    regs.edx = (uint32_t)buf;
     call21( &regs, 0x3F00 );
     *got = CF( regs ) ? 0 : regs.eax;
     return result( &regs );
 }
 
-int sys_devinfo( int handle, u16 *info )
+int sys_devinfo( int handle, uint16_t *info )
 {
     REGS regs;
 
     clear( &regs );
-    regs.ebx = (u32)handle;
+    regs.ebx = (uint32_t)handle;
     call21( &regs, 0x4400 );
-    *info = (u16)regs.edx;
+    *info = (uint16_t)regs.edx;
     return result( &regs );
 }
 
-int sys_setinfo( int handle, u16 info )
+int sys_setinfo( int handle, uint16_t info )
 {
     REGS regs;
 
     clear( &regs );
-    regs.ebx = (u32)handle;
+    regs.ebx = (uint32_t)handle;
     regs.edx = info & 0xFF;
     call21( &regs, 0x4401 );
     return result( &regs );
 }
 
-int sys_ioctl_write( int handle, const void *buf, u32 len )
+int sys_ioctl_write( int handle, const void *buf, unsigned int len )
 {
     REGS regs;
 
     clear( &regs );
-    regs.ebx = (u32)handle;
+    regs.ebx = (uint32_t)handle;
     regs.ecx = len;
-    regs.edx = (u32)buf;
+    regs.edx = (uint32_t)buf;
     call21( &regs, 0x4403 );
     return result( &regs );
 }
@@ -353,9 +353,9 @@ int sys_genioctl( int handle, int cat, int func, void *block )
     REGS regs;
 
     clear( &regs );
-    regs.ebx = (u32)handle;
-    regs.ecx = ((u32)cat << 8) | (u32)func;
-    regs.edx = (u32)block;
+    regs.ebx = (uint32_t)handle;
+    regs.ecx = ((uint32_t)cat << 8) | (uint32_t)func;
+    regs.edx = (uint32_t)block;
     call21( &regs, 0x440C );
     return result( &regs );
 }
@@ -370,13 +370,13 @@ int sys_break( int set, int on )
     was = (int)(regs.edx & 0xFF);
     if ( set ) {
         clear( &regs );
-        regs.edx = (u32)(on ? 1 : 0);
+        regs.edx = (uint32_t)(on ? 1 : 0);
         call21( &regs, 0x3301 );
     }
     return was;
 }
 
-void *sys_mem_alloc( u32 size )
+void *sys_mem_alloc( unsigned int size )
 {
     REGS regs;
 

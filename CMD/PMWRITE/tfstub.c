@@ -49,7 +49,7 @@ int tf_flags( const TFACE *face )
     return face->flags;
 }
 
-u32 tf_advance( TFACE *face, u32 code )
+unsigned int tf_advance( TFACE *face, uint32_t code )
 {
     if ( face->base == TFB_COURIER ) {
         return 600;
@@ -65,7 +65,7 @@ void tf_metrics( TFACE *face, int *ascent, int *descent, int *gap )
     *gap = 0;
 }
 
-s32 tf_draw( TFACE *face, s32 em, s32 pen_x, s32 base_y, const u16 *text, u32 len, COVER *cover )
+int32_t tf_draw( TFACE *face, int32_t em, int32_t pen_x, int32_t base_y, const uint16_t *text, unsigned int len, COVER *cover )
 {
     (void)face;
     (void)em;

@@ -74,23 +74,23 @@ static int  mode_now;
 static int  last_error;
 static int  found_entry = -1;   /* the entry for a screen found that is none of ours */
 
-static CELL *want;              /* the screen as it should be */
-static CELL *shown;             /* the screen as it was last given */
-static int  hw_rows = 25, hw_cols = 80;         /* the text screen as the kernel has it */
-static int  dos_rows, dos_cols;                 /* ...and as it was found */
-static int  dos_row, dos_col;                   /* the cursor then */
-static u16 *dos_cells;                          /* what was on it */
-static int  lines_changed;      /* sys_set_lines was used: the screen found is gone */
-static int  cur_row, cur_col, cur_kind = CUR_HIDE;
-static int  shown_row = -1, shown_col = -1, shown_kind = -1;
-static int  desk_color = 7;
+static CELL     *want;           /* the screen as it should be */
+static CELL     *shown;          /* the screen as it was last given */
+static int       hw_rows = 25, hw_cols = 80;    /* the text screen as the kernel has it */
+static int       dos_rows, dos_cols;            /* ...and as it was found */
+static int       dos_row, dos_col;              /* the cursor then */
+static uint16_t *dos_cells;                     /* what was on it */
+static int       lines_changed;  /* sys_set_lines was used: the screen found is gone */
+static int       cur_row, cur_col, cur_kind = CUR_HIDE;
+static int       shown_row = -1, shown_col = -1, shown_kind = -1;
+static int       desk_color = 7;
 
-static PANE panes[MAX_PANES];
-static int  car_x, car_y, car_h;        /* the pane caret the application wants; car_h 0 for none */
-static int  car_blinks = 1;
-static int  car_phase = 1;              /* it is in the half of its blink that shows */
-static int  car_showing;                /* it was wanted and uncovered at the last flush */
-static u32  car_time;
+static PANE     panes[MAX_PANES];
+static int      car_x, car_y, car_h;    /* the pane caret the application wants; car_h 0 for none */
+static int      car_blinks = 1;
+static int      car_phase = 1;          /* it is in the half of its blink that shows */
+static int      car_showing;            /* it was wanted and uncovered at the last flush */
+static uint32_t car_time;
 
 static void mouse_start( void );
 static void mouse_stop( void );
@@ -102,9 +102,9 @@ static void key_start( void );
 /* ------------------------------------------------------------------ */
 
 /* as much of "src" as "max" bytes hold, with the NUL */
-static void fit( char *dst, const char *src, u32 max )
+static void fit( char *dst, const char *src, unsigned int max )
 {
-    u32 len = str_len( src );
+    unsigned int len = str_len( src );
 
     if ( max == 0 ) {
         return;
@@ -117,7 +117,7 @@ static void fit( char *dst, const char *src, u32 max )
 }
 
 /* hundredths from "then" to "now", across midnight */
-static u32 since( u32 then, u32 now )
+static uint32_t since( uint32_t then, uint32_t now )
 {
     return now >= then ? now - then : now + 8640000UL - then;
 }
@@ -126,8 +126,8 @@ static void forget_shown( void )
 {
     int index;
 
-    mem_set( want, 0, (u32)MAX_ROWS * MAX_COLS * sizeof( CELL ) );
-    mem_set( shown, 0xFF, (u32)MAX_ROWS * MAX_COLS * sizeof( CELL ) );
+    mem_set( want, 0, (unsigned int)MAX_ROWS * MAX_COLS * sizeof( CELL ) );
+    mem_set( shown, 0xFF, (unsigned int)MAX_ROWS * MAX_COLS * sizeof( CELL ) );
     shown_row = shown_col = shown_kind = -1;
     for ( index = 0; index < MAX_PANES; index++ ) {
         panes[index].on = 0;
@@ -152,8 +152,8 @@ static void text_entry( int rows, int cols, int found )
     mode = &modes[nmodes];
     mem_set( mode, 0, sizeof( *mode ) );
     mode->backend = DB_TEXT;
-    mode->rows = (u16)rows;
-    mode->cols = (u16)cols;
+    mode->rows = (uint16_t)rows;
+    mode->cols = (uint16_t)cols;
     mode->colors = 16;
     if ( found ) {
         sfmt( mode->name, sizeof( mode->name ), "Text, %d lines of %d", rows, cols );
@@ -169,7 +169,7 @@ static void drop_entry( int index )
     if ( index < 0 || index >= nmodes ) {
         return;
     }
-    mem_cpy( &modes[index], &modes[index + 1], (u32)(nmodes - index - 1) * sizeof( DISPMODE ) );
+    mem_cpy( &modes[index], &modes[index + 1], (unsigned int)(nmodes - index - 1) * sizeof( DISPMODE ) );
     nmodes--;
     if ( found_entry == index ) {
         found_entry = -1;
@@ -358,19 +358,19 @@ int disp_set_mode( int index )
 void disp_init( void )
 {
     int rows, cols;
-    u32 count;
+    unsigned int count;
 
     sys_screen_size( &rows, &cols );
     dos_rows = rows;
     dos_cols = cols;
     sys_get_cursor( &dos_row, &dos_col );
-    count = (u32)rows * (u32)cols;
-    dos_cells = (u16 *)try_alloc( count * 2 );
+    count = (unsigned int)rows * (unsigned int)cols;
+    dos_cells = (uint16_t *)try_alloc( count * 2 );
     if ( dos_cells != NULL ) {
         sys_get_cells( 0, dos_cells, count );
     }
-    want = (CELL *)xalloc( (u32)MAX_ROWS * MAX_COLS * sizeof( CELL ) );
-    shown = (CELL *)xalloc( (u32)MAX_ROWS * MAX_COLS * sizeof( CELL ) );
+    want = (CELL *)xalloc( (unsigned int)MAX_ROWS * MAX_COLS * sizeof( CELL ) );
+    shown = (CELL *)xalloc( (unsigned int)MAX_ROWS * MAX_COLS * sizeof( CELL ) );
 
     nmodes = 0;
     text_entry( 25, 80, 0 );
@@ -413,7 +413,7 @@ void disp_done( void )
     dos_screen();
     sys_screen_size( &rows, &cols );
     if ( rows == dos_rows && cols == dos_cols && dos_cells != NULL ) {
-        sys_put_cells( 0, dos_cells, (u32)rows * (u32)cols );
+        sys_put_cells( 0, dos_cells, (unsigned int)rows * (unsigned int)cols );
         sys_cursor( dos_row, dos_col );
     } else {
         sys_cls();
@@ -437,7 +437,7 @@ void scr_repaint( void )
 {
     int index;
 
-    mem_set( shown, 0xFF, (u32)MAX_ROWS * MAX_COLS * sizeof( CELL ) );
+    mem_set( shown, 0xFF, (unsigned int)MAX_ROWS * MAX_COLS * sizeof( CELL ) );
     shown_row = shown_col = shown_kind = -1;
     for ( index = 0; index < MAX_PANES; index++ ) {
         panes[index].ndamage = 0;       /* every cell of it will be uncovered */
@@ -456,29 +456,29 @@ void scr_desk( int color )
 /* drawing cells                                                       */
 /* ------------------------------------------------------------------ */
 
-void scr_ch( int row, int col, int ch, u8 attr )
+void scr_ch( int row, int col, int ch, uint8_t attr )
 {
     if ( row >= 0 && row < scr_rows && col >= 0 && col < scr_cols ) {
-        want[row * MAX_COLS + col] = ((u32)attr << 8) | (u32)(ch & 0xFF);
+        want[row * MAX_COLS + col] = ((uint32_t)attr << 8) | (uint32_t)(ch & 0xFF);
     }
 }
 
-void scr_putn( int row, int col, const char *text, int len, u8 attr )
+void scr_putn( int row, int col, const char *text, int len, uint8_t attr )
 {
     int pos;
 
     for ( pos = 0; pos < len; pos++ ) {
-        scr_ch( row, col + pos, (u8)text[pos], attr );
+        scr_ch( row, col + pos, (uint8_t)text[pos], attr );
     }
 }
 
-void scr_put( int row, int col, const char *text, u8 attr )
+void scr_put( int row, int col, const char *text, uint8_t attr )
 {
     scr_putn( row, col, text, (int)str_len( text ), attr );
 }
 
 /* exactly "width" cells: the text, cut short or padded with blanks */
-void scr_putw( int row, int col, const char *text, int width, u8 attr )
+void scr_putw( int row, int col, const char *text, int width, uint8_t attr )
 {
     int len = (int)str_len( text );
 
@@ -492,7 +492,7 @@ void scr_putw( int row, int col, const char *text, int width, u8 attr )
 /* "&File": the character after '&' in hot_attr - and underlined, on a
    graphics screen - with the '&' not shown.  hot_attr the same as attr
    is how a caller says the access keys are not being shown. */
-void scr_hot( int row, int col, const char *text, u8 attr, u8 hot_attr )
+void scr_hot( int row, int col, const char *text, uint8_t attr, uint8_t hot_attr )
 {
     int hot = 0;
 
@@ -502,13 +502,13 @@ void scr_hot( int row, int col, const char *text, u8 attr, u8 hot_attr )
             continue;
         }
         if ( hot == 1 ) {
-            scr_ch( row, col, (u8)*text, hot_attr );
+            scr_ch( row, col, (uint8_t)*text, hot_attr );
             if ( gfx_on && hot_attr != attr ) {
                 scr_flag( row, col, 1, CELLF_UNDER );
             }
             hot = 2;
         } else {
-            scr_ch( row, col, (u8)*text, attr );
+            scr_ch( row, col, (uint8_t)*text, attr );
         }
         col++;
     }
@@ -533,7 +533,7 @@ int scr_hotkey( const char *text )
     return amp && amp[1] ? ch_upper( amp[1] ) : 0;
 }
 
-void scr_fill( int row, int col, int len, int ch, u8 attr )
+void scr_fill( int row, int col, int len, int ch, uint8_t attr )
 {
     int pos;
 
@@ -543,7 +543,7 @@ void scr_fill( int row, int col, int len, int ch, u8 attr )
 }
 
 /* a pane's cell has no character to keep: it becomes a blank */
-void scr_recolor( int row, int col, int len, u8 attr )
+void scr_recolor( int row, int col, int len, uint8_t attr )
 {
     int pos;
     CELL *cell;
@@ -555,15 +555,15 @@ void scr_recolor( int row, int col, int len, u8 attr )
         if ( pos >= 0 && pos < scr_cols ) {
             cell = &want[row * MAX_COLS + pos];
             if ( *cell & CELLF_PANE ) {
-                *cell = ((u32)attr << 8) | ' ';
+                *cell = ((uint32_t)attr << 8) | ' ';
             } else {
-                *cell = (*cell & ~0xFF00UL) | ((u32)attr << 8);
+                *cell = (*cell & ~0xFF00UL) | ((uint32_t)attr << 8);
             }
         }
     }
 }
 
-void scr_flag( int row, int col, int len, u32 flags )
+void scr_flag( int row, int col, int len, uint32_t flags )
 {
     int pos;
 
@@ -578,7 +578,7 @@ void scr_flag( int row, int col, int len, u32 flags )
     }
 }
 
-void scr_box( int top, int left, int bottom, int right, u8 attr )
+void scr_box( int top, int left, int bottom, int right, uint8_t attr )
 {
     int row;
 
@@ -598,7 +598,7 @@ void scr_box( int top, int left, int bottom, int right, u8 attr )
 /* the shadow a box casts: two columns to its right, one row below.
    What is under it keeps its characters and loses its colours; a
    pane's pixels cannot be dimmed, so there the shadow is plain. */
-void scr_shadow( int top, int left, int bottom, int right, u8 attr )
+void scr_shadow( int top, int left, int bottom, int right, uint8_t attr )
 {
     int row;
 
@@ -618,7 +618,7 @@ void scr_cursor( int row, int col, int kind )
     cur_kind = kind;
 }
 
-u32 scr_cell( int row, int col )
+uint32_t scr_cell( int row, int col )
 {
     CELL cell;
 
@@ -682,7 +682,7 @@ int pane_place( int pane, int row, int col, int rows, int cols )
     pn->on = 1;
     for ( at_row = row; at_row < row + rows; at_row++ ) {
         for ( at_col = col; at_col < col + cols; at_col++ ) {
-            want[at_row * MAX_COLS + at_col] = CELLF_PANE | (u32)pane;
+            want[at_row * MAX_COLS + at_col] = CELLF_PANE | (uint32_t)pane;
         }
     }
     return 1;
@@ -859,7 +859,7 @@ static void flush_panes( void )
         top = pn->row * CELL_H;
         right = left + pn->cols * CELL_W - 1;
         bottom = top + pn->rows * CELL_H - 1;
-        mine = CELLF_PANE | (u32)pane;
+        mine = CELLF_PANE | (uint32_t)pane;
         for ( index = 0; index < pn->ndamage; index++ ) {
             rect = pn->damage[index];
             if ( rect.x0 < left ) {
@@ -940,7 +940,7 @@ static int caret_clear( void )
 
 static void flush_text( void )
 {
-    static u16 run[MAX_COLS];
+    static uint16_t run[MAX_COLS];
     int row, first, last, col;
     CELL *wrow, *srow;
 
@@ -955,12 +955,12 @@ static void flush_text( void )
         for ( last = scr_cols - 1; wrow[last] == srow[last]; last-- ) {
         }
         for ( col = first; col <= last; col++ ) {
-            run[col - first] = (u16)wrow[col];
+            run[col - first] = (uint16_t)wrow[col];
             srow[col] = wrow[col];
         }
         /* the cell's number is counted in the screen's own columns,
            which may be more than are used */
-        sys_put_cells( (u32)row * (u32)hw_cols + (u32)first, run, (u32)(last - first + 1) );
+        sys_put_cells( (unsigned int)row * (unsigned int)hw_cols + (unsigned int)first, run, (unsigned int)(last - first + 1) );
     }
     if ( cur_kind != shown_kind ) {
         sys_cursor_shape( cur_kind );
@@ -1029,18 +1029,18 @@ void scr_flush( void )
 
 MEVENT mouse;
 
-static int    mouse_on;
-static int    mouse_xmax = 639, mouse_ymax = 199;       /* a text screen's, as the driver counts */
-static MEVENT mqueue[MQ_SIZE];
-static int    mq_head, mq_tail;
-static int    m_x, m_y, m_held;         /* as last seen: the driver's position, the buttons */
-static int    last_x = -100, last_y = -100, last_button;        /* the last press */
-static u32    last_time;
-static int    moves_wanted;
-static int    shape_wanted = MP_ARROW;
-static int    testing;
-static int    test_shift;
-static int    click_here;       /* test mode: the input just before was a
+static int      mouse_on;
+static int      mouse_xmax = 639, mouse_ymax = 199;     /* a text screen's, as the driver counts */
+static MEVENT   mqueue[MQ_SIZE];
+static int      mq_head, mq_tail;
+static int      m_x, m_y, m_held;       /* as last seen: the driver's position, the buttons */
+static int      last_x = -100, last_y = -100, last_button;      /* the last press */
+static uint32_t last_time;
+static int      moves_wanted;
+static int      shape_wanted = MP_ARROW;
+static int      testing;
+static int      test_shift;
+static int      click_here;     /* test mode: the input just before was a
                                    click, and here */
 
 static int mouse_next( void );
@@ -1080,7 +1080,7 @@ static void queue_event( int kind, int button, int x, int y, int wheel )
 {
     MEVENT *event;
     int next, px, py, row, col, newest;
-    u32 now;
+    uint32_t now;
 
     locate( x, y, &px, &py, &row, &col );
     if ( kind == ME_DOWN ) {
@@ -1325,12 +1325,12 @@ static void test_mouse( int buttons, int x, int y )
 /* the keyboard                                                        */
 /* ------------------------------------------------------------------ */
 
-static int  shift_seen;
-static int  alt_armed;
-static u32  dump_handle;
-static int  dump_open;
-static char shot_stem[PATH_LEN];        /* the log's path, less its extension */
-static int  shot_count;
+static int      shift_seen;
+static int      alt_armed;
+static uint32_t dump_handle;
+static int      dump_open;
+static char     shot_stem[PATH_LEN];    /* the log's path, less its extension */
+static int      shot_count;
 
 static void key_start( void )
 {
@@ -1395,10 +1395,10 @@ static int held( int shift, int with_shift )
    back into the plain key and what was held. */
 static int ext_key( int scan, int shift )
 {
-    static const u8 ctrl_nav[] = { 0x73, 0x4B, 0x74, 0x4D, 0x75, 0x4F, 0x76, 0x51, 0x77, 0x47,
+    static const uint8_t ctrl_nav[] = { 0x73, 0x4B, 0x74, 0x4D, 0x75, 0x4F, 0x76, 0x51, 0x77, 0x47,
                                    0x84, 0x49, 0x8D, 0x48, 0x8F, 0x4C, 0x91, 0x50, 0x92, 0x52,
                                    0x93, 0x53 };
-    static const u8 alt_nav[] = { 0x97, 0x47, 0x98, 0x48, 0x99, 0x49, 0x9B, 0x4B, 0x9D, 0x4D,
+    static const uint8_t alt_nav[] = { 0x97, 0x47, 0x98, 0x48, 0x99, 0x49, 0x9B, 0x4B, 0x9D, 0x4D,
                                   0x9F, 0x4F, 0xA0, 0x50, 0xA1, 0x51, 0xA2, 0x52, 0xA3, 0x53 };
     static const char row1[] = "QWERTYUIOP";    /* 10h..19h */
     static const char row2[] = "ASDFGHJKL";     /* 1Eh..26h */
@@ -1602,7 +1602,7 @@ static int test_key( void )
         if ( lo < 0 ) {
             return K_EOF;
         }
-        queue_event( ME_WHEEL, m_held, m_x, m_y, (int)(s8)lo );
+        queue_event( ME_WHEEL, m_held, m_x, m_y, (int)(int8_t)lo );
         return 0;
     }
     before = test_shift;
@@ -1616,7 +1616,7 @@ static int test_key( void )
 /* the caret's other half, when its time has come */
 static void blink( void )
 {
-    u32 now = sys_hundredths();
+    uint32_t now = sys_hundredths();
 
     if ( since( car_time, now ) >= BLINK_TIME ) {
         car_time = now;
@@ -1632,7 +1632,7 @@ static void blink( void )
 static int key_wait( int hundredths )
 {
     int shift, raw, got, flags, key, blinking;
-    u32 start = hundredths >= 0 ? sys_hundredths() : 0;
+    uint32_t start = hundredths >= 0 ? sys_hundredths() : 0;
 
     for ( ;; ) {
         if ( mouse_next() ) {
@@ -1676,7 +1676,7 @@ static int key_wait( int hundredths )
         if ( blinking ) {
             blink();
         }
-        if ( hundredths >= 0 && since( start, sys_hundredths() ) >= (u32)hundredths ) {
+        if ( hundredths >= 0 && since( start, sys_hundredths() ) >= (uint32_t)hundredths ) {
             return K_TICK;
         }
     }
@@ -1719,7 +1719,7 @@ int key_alt_letter( int key )
 
 void scr_log( const char *text )
 {
-    u32 done;
+    uint32_t done;
 
     if ( dump_open ) {
         sys_write( dump_handle, text, str_len( text ), &done );
@@ -1732,7 +1732,7 @@ void scr_log( const char *text )
 void scr_dump( void )
 {
     char line[MAX_COLS + 8];
-    u32 done;
+    uint32_t done;
     int row, col;
     CELL cell;
 
@@ -1743,7 +1743,7 @@ void scr_dump( void )
         for ( col = 0; col < scr_cols; col++ ) {
             cell = want[row * MAX_COLS + col];
             line[col] = (cell & CELLF_PANE) ? ' ' : (char)(cell & 0xFF);
-            if ( (u8)line[col] < ' ' ) {
+            if ( (uint8_t)line[col] < ' ' ) {
                 line[col] = '.';
             }
         }
@@ -1752,7 +1752,7 @@ void scr_dump( void )
         }
         line[col++] = '\r';
         line[col++] = '\n';
-        sys_write( dump_handle, line, (u32)col, &done );
+        sys_write( dump_handle, line, (uint32_t)col, &done );
     }
     sfmt( line, sizeof( line ), "[%s] [cursor %d,%d %s] [caret %d,%d,%d]", modes[mode_now].name,
           cur_row, cur_col, cur_kind == CUR_BLOCK ? "block" : cur_kind == CUR_HIDE ? "hidden" : "line",

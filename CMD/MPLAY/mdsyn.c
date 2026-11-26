@@ -58,7 +58,7 @@
 #define SYN_BLOCK_FAST  32
 #define MIX_MAX         32              /* frames mixed at a time */
 #define ATT_MAX         4095            /* silence, in attenuation units */
-#define ENV_MAX         ((s32)ATT_MAX << 16)
+#define ENV_MAX         ((int32_t)ATT_MAX << 16)
 #define ENV_DONE        (8L << 16)      /* an attack this close to the top has arrived */
 #define AUDIBLE         3300            /* quieter than this (about -78 dB) is not heard */
 #define MIX_SHIFT       2               /* a voice at full level is a quarter of full scale... */
@@ -75,51 +75,51 @@ enum { ST_ATTACK, ST_DECAY, ST_SUSTAIN, ST_RELEASE, ST_QUICK, ST_OFF };
 /* one operator: [0] is the level the modulator feeds back from, [1]
    and [2] the left and right (or the only) outputs */
 typedef struct {
-    u32  phase, inc, inc_base;
-    s32  env;                   /* the envelope's attenuation, 16 bits of fraction */
-    s32  tot[3], step[3];       /* the attenuations now, and their change a sample */
-    u32  base;                  /* total level, key scaling, velocity, volume */
-    u32  ksl, alias;            /* parts of base */
-    u8   ar, dr, rr;            /* rates as the chip has them, 0..63 */
-    u8   stage, egt, am, vib;
-    s32  sl;                    /* the sustain level */
-    const u16 *wave;
+    uint32_t phase, inc, inc_base;
+    int32_t  env;               /* the envelope's attenuation, 16 bits of fraction */
+    int32_t  tot[3], step[3];   /* the attenuations now, and their change a sample */
+    uint32_t base;              /* total level, key scaling, velocity, volume */
+    uint32_t ksl, alias;        /* parts of base */
+    uint8_t  ar, dr, rr;        /* rates as the chip has them, 0..63 */
+    uint8_t  stage, egt, am, vib;
+    int32_t  sl;                /* the sustain level */
+    const uint16_t *wave;
 } SOP;
 
 typedef struct {
-    SOP  op[2];
-    s32  fb1, fb2;              /* the modulator's last two outputs */
-    s32  fb_mask;               /* 0 for no feedback */
-    u32  fb_shift;
-    u32  pan[3];                /* 0, left, right */
-    u32  vib_depth;             /* Q16 */
-    u8   con;                   /* 1: the operators are added */
-    u8   active;
-    u8   pending;               /* a new note waits for the old one to fade */
-    u8   stop_wanted;           /* let go before its first block was out */
-    u8   young;                 /* still in its first block */
-    u32  level;                 /* the quietest output's attenuation at the last step */
+    SOP      op[2];
+    int32_t  fb1, fb2;          /* the modulator's last two outputs */
+    int32_t  fb_mask;           /* 0 for no feedback */
+    uint32_t fb_shift;
+    uint32_t pan[3];            /* 0, left, right */
+    uint32_t vib_depth;         /* Q16 */
+    uint8_t  con;               /* 1: the operators are added */
+    uint8_t  active;
+    uint8_t  pending;           /* a new note waits for the old one to fade */
+    uint8_t  stop_wanted;       /* let go before its first block was out */
+    uint8_t  young;             /* still in its first block */
+    uint32_t level;             /* the quietest output's attenuation at the last step */
 } SVOICE;
 
 typedef struct {
-    u16  wave[4][1024];         /* bit 15 the sign, the rest attenuation */
-    u32  dec_step[64];          /* a decay rate as units a sample, Q16 */
-    u32  atk_frac[64];          /* an attack: the share of the attenuation a block takes off, Q16 */
-    u32  quick;                 /* the steal fade, a sample */
-    u32  block, blk_left;
-    u32  lfo_vib, lfo_am, vib_inc, am_inc;
-    s32  vib_now;               /* -256..256 */
-    u32  am_now;                /* units */
-    s32  alias_pitch;           /* a modulator above this pitch is turned down */
-    u32  gain, recover;         /* the master gain (Q12), and how far it may rise a frame (Q8) */
-    s32  mix[MIX_MAX * 2];
-    u32  pmod[MIX_MAX];         /* a modulator's block, as the carrier's phase offsets */
-    SVOICE v[MD_MAXVOICES];
+    uint16_t wave[4][1024];     /* bit 15 the sign, the rest attenuation */
+    uint32_t dec_step[64];      /* a decay rate as units a sample, Q16 */
+    uint32_t atk_frac[64];      /* an attack: the share of the attenuation a block takes off, Q16 */
+    uint32_t quick;             /* the steal fade, a sample */
+    uint32_t block, blk_left;
+    uint32_t lfo_vib, lfo_am, vib_inc, am_inc;
+    int32_t  vib_now;           /* -256..256 */
+    uint32_t am_now;            /* units */
+    int32_t  alias_pitch;       /* a modulator above this pitch is turned down */
+    uint32_t gain, recover;     /* the master gain (Q12), and how far it may rise a frame (Q8) */
+    int32_t  mix[MIX_MAX * 2];
+    uint32_t pmod[MIX_MAX];     /* a modulator's block, as the carrier's phase offsets */
+    SVOICE   v[MD_MAXVOICES];
 } SYN;
 
 /* -log2( sin( (i + 0.5) * pi / 512 ) ) * 256: a quarter of a sine as
    attenuation units (TOOLS\MKTAB.PL) */
-static const u16 syn_logsin[256] = {
+static const uint16_t syn_logsin[256] = {
     2137, 1731, 1543, 1419, 1326, 1252, 1190, 1137, 1091, 1050, 1013,  979,
      949,  920,  894,  869,  846,  825,  804,  785,  767,  749,  732,  717,
      701,  687,  672,  659,  646,  633,  621,  609,  598,  587,  576,  566,
@@ -145,7 +145,7 @@ static const u16 syn_logsin[256] = {
 };
 
 /* 32768 * 2^(-i / 256): an attenuation's fraction as an amplitude */
-static const u16 syn_exp[256] = {
+static const uint16_t syn_exp[256] = {
     32768, 32679, 32591, 32503, 32415, 32327, 32240, 32153, 32066, 31979, 31893, 31806,
     31720, 31635, 31549, 31464, 31379, 31294, 31209, 31125, 31041, 30957, 30873, 30790,
     30706, 30623, 30541, 30458, 30376, 30293, 30212, 30130, 30048, 29967, 29886, 29805,
@@ -176,7 +176,7 @@ static const u16 syn_exp[256] = {
    up are at once), and a decay through 96 dB (39280.64 ms at rate 4,
    the same steps).  0 is never.  From the OPL's published rate tables
    (TOOLS\MKTAB.PL) */
-static const u32 syn_atk_us[64] = {
+static const uint32_t syn_atk_us[64] = {
            0UL,        0UL,        0UL,        0UL,  2826240UL,  2260992UL,  1884160UL,  1614994UL,
      1413120UL,  1130496UL,   942080UL,   807497UL,   706560UL,   565248UL,   471040UL,   403749UL,
       353280UL,   282624UL,   235520UL,   201874UL,   176640UL,   141312UL,   117760UL,   100937UL,
@@ -187,7 +187,7 @@ static const u32 syn_atk_us[64] = {
          345UL,      276UL,      230UL,      197UL,        1UL,        1UL,        1UL,        1UL
 };
 
-static const u32 syn_dec_us[64] = {
+static const uint32_t syn_dec_us[64] = {
            0UL,        0UL,        0UL,        0UL, 39280640UL, 31424512UL, 26187093UL, 22446080UL,
     19640320UL, 15712256UL, 13093547UL, 11223040UL,  9820160UL,  7856128UL,  6546773UL,  5611520UL,
      4910080UL,  3928064UL,  3273387UL,  2805760UL,  2455040UL,  1964032UL,  1636693UL,  1402880UL,
@@ -199,10 +199,10 @@ static const u32 syn_dec_us[64] = {
 };
 
 /* the OPL's frequency multiples, doubled: 1/2, 1, 2 ... 10, 10, 12, 12, 15, 15 */
-static const u8 syn_mult2[16] = { 1, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 20, 24, 24, 30, 30 };
+static const uint8_t syn_mult2[16] = { 1, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 20, 24, 24, 30, 30 };
 
 /* the same as pitch: 768 * log2( multiple ), 1/64 semitone */
-static const s16 syn_mult_pitch[16] = {
+static const int16_t syn_mult_pitch[16] = {
     -768, 0, 768, 1217, 1536, 1783, 1985, 2156, 2304, 2434, 2551, 2551, 2753, 2753, 3000, 3000
 };
 
@@ -210,9 +210,9 @@ static const s16 syn_mult_pitch[16] = {
 /* setting up                                                          */
 /* ------------------------------------------------------------------ */
 /* 2^-x, x with 16 bits of fraction, as Q16 */
-static u32 syn_exp2neg( u32 x )
+static uint32_t syn_exp2neg( uint32_t x )
 {
-    u32 ip = x >> 16, idx = (x >> 8) & 0xFF, e0, e1, val;
+    uint32_t ip = x >> 16, idx = (x >> 8) & 0xFF, e0, e1, val;
 
     if ( ip >= 16 ) {
         return 0;
@@ -226,7 +226,8 @@ static u32 syn_exp2neg( u32 x )
 int syn_open( MDSTATE *md )
 {
     SYN *syn;
-    u32 i, q, j, mag, samples, x, lo, hi, mid, nyq;
+    unsigned int i, q, j;
+    uint32_t mag, samples, x, lo, hi, mid, nyq;
 
     syn = (SYN *)try_alloc( sizeof( SYN ) );
     if ( syn == NULL ) {
@@ -240,10 +241,10 @@ int syn_open( MDSTATE *md )
             j = 255 - j;
         }
         mag = syn_logsin[j];
-        syn->wave[0][i] = (u16)(mag | (q >= 2 ? 0x8000 : 0));
-        syn->wave[1][i] = (u16)(q < 2 ? mag : ATT_MAX);
-        syn->wave[2][i] = (u16)mag;
-        syn->wave[3][i] = (u16)((q & 1) ? ATT_MAX : mag);
+        syn->wave[0][i] = (uint16_t)(mag | (q >= 2 ? 0x8000 : 0));
+        syn->wave[1][i] = (uint16_t)(q < 2 ? mag : ATT_MAX);
+        syn->wave[2][i] = (uint16_t)mag;
+        syn->wave[3][i] = (uint16_t)((q & 1) ? ATT_MAX : mag);
     }
     syn->block = md->fast ? SYN_BLOCK_FAST : SYN_BLOCK;
     syn->blk_left = syn->block;
@@ -259,7 +260,7 @@ int syn_open( MDSTATE *md )
             syn->atk_frac[i] = x >= (16UL << 16) ? 0x10000UL : 0x10000UL - syn_exp2neg( x );
         }
     }
-    syn->quick = (u32)ENV_MAX / (2 * syn->block);
+    syn->quick = (uint32_t)ENV_MAX / (2 * syn->block);
     syn->gain = GAIN_NOMINAL;
     syn->recover = GAIN_NOMINAL * 256UL / GAIN_RECOVER_MS * 1000UL / md->rate;
     syn->vib_inc = fx_umuldiv( 399770UL, 65536UL, md->rate );      /* 6.1 Hz */
@@ -270,13 +271,13 @@ int syn_open( MDSTATE *md )
     hi = 132 * 64 - 1;
     while ( lo < hi ) {
         mid = (lo + hi) / 2;
-        if ( md_pitch_hz( (s32)mid ) < nyq ) {
+        if ( md_pitch_hz( (int32_t)mid ) < nyq ) {
             lo = mid + 1;
         } else {
             hi = mid;
         }
     }
-    syn->alias_pitch = (s32)lo;
+    syn->alias_pitch = (int32_t)lo;
     md->syn = syn;
     return DE_OK;
 }
@@ -292,7 +293,7 @@ void syn_close( MDSTATE *md )
 void syn_reset( MDSTATE *md )
 {
     SYN *syn = (SYN *)md->syn;
-    u32 i;
+    unsigned int i;
 
     for ( i = 0; i < MD_MAXVOICES; i++ ) {
         syn->v[i].active = 0;
@@ -304,7 +305,7 @@ void syn_reset( MDSTATE *md )
 int syn_sounding( MDSTATE *md )
 {
     SYN *syn = (SYN *)md->syn;
-    u32 i;
+    unsigned int i;
 
     for ( i = 0; i < md->voices; i++ ) {
         if ( syn->v[i].active ) {
@@ -324,9 +325,9 @@ int syn_sounding( MDSTATE *md )
    turned it well down, and for the noise of a cymbal it does not
    matter.  Half the note is under 8 kHz and the rate at least 8000, so
    the step for it fits in 32 bits before the multiple. */
-static u32 syn_inc( const MDSTATE *md, u32 hz, int mult, int carrier )
+static uint32_t syn_inc( const MDSTATE *md, uint32_t hz, int mult, int carrier )
 {
-    u32 m2 = syn_mult2[mult & 15], nyq = (md->rate / 2) << 16, half = hz >> 1;
+    uint32_t m2 = syn_mult2[mult & 15], nyq = (md->rate / 2) << 16, half = hz >> 1;
 
     if ( carrier ) {
         while ( half > 0 && half >= nyq / m2 ) {
@@ -342,14 +343,14 @@ static void syn_freqs( MDSTATE *md, int voice )
     SVOICE *sv = &syn->v[voice];
     const MDVOICE *vc = &md->voice[voice];
     const MDCHAN *ch = &md->chan[vc->chan];
-    u32 hz = md_pitch_hz( md_voice_pitch( md, vc ) ), depth;
+    uint32_t hz = md_pitch_hz( md_voice_pitch( md, vc ) ), depth;
     int k;
 
     for ( k = 0; k < 2; k++ ) {
         sv->op[k].inc_base = syn_inc( md, hz, vc->patch->op[k].misc & 15, k == 1 || sv->con );
         sv->op[k].inc = sv->op[k].inc_base;
     }
-    depth = vc->drum ? 0 : (u32)ch->modulation * (MOD_CENTS * 3787UL / 100) / 127;
+    depth = vc->drum ? 0 : (uint32_t)ch->modulation * (MOD_CENTS * 3787UL / 100) / 127;
     sv->vib_depth = depth;
 }
 
@@ -360,11 +361,11 @@ static void syn_bases( MDSTATE *md, int voice )
     SVOICE *sv = &syn->v[voice];
     const MDVOICE *vc = &md->voice[voice];
     const MDPATCH *patch = vc->patch;
-    u32 att = md_voice_att( md, vc ), bright = md_vel_att[vc->vel & 0x7F] >> 2, base;
+    uint32_t att = md_voice_att( md, vc ), bright = md_vel_att[vc->vel & 0x7F] >> 2, base;
     int k;
 
     for ( k = 0; k < 2; k++ ) {
-        base = (u32)(patch->op[k].level & 0x3F) * 32 + sv->op[k].ksl;
+        base = (uint32_t)(patch->op[k].level & 0x3F) * 32 + sv->op[k].ksl;
         if ( k == 1 || sv->con ) {
             base += att;
         } else {
@@ -378,7 +379,7 @@ static void syn_pans( MDSTATE *md, int voice )
 {
     SYN *syn = (SYN *)md->syn;
     SVOICE *sv = &syn->v[voice];
-    u32 pan = md->chan[md->voice[voice].chan].pan;
+    uint32_t pan = md->chan[md->voice[voice].chan].pan;
 
     if ( pan < 1 ) {
         pan = 1;
@@ -396,10 +397,10 @@ static void syn_pans( MDSTATE *md, int voice )
 /* the envelope                                                        */
 /* ------------------------------------------------------------------ */
 /* An operator's envelope over the next "count" samples */
-static void syn_env( SYN *syn, SOP *op, u32 count )
+static void syn_env( SYN *syn, SOP *op, unsigned int count )
 {
-    s32 env = op->env;
-    u32 frac;
+    int32_t env = op->env;
+    uint32_t frac;
 
     switch ( op->stage ) {
     case ST_ATTACK:
@@ -407,28 +408,28 @@ static void syn_env( SYN *syn, SOP *op, u32 count )
         if ( count != syn->block ) {
             frac = frac * count / syn->block;
         }
-        env -= fx_mul16( env, (s32)frac );
+        env -= fx_mul16( env, (int32_t)frac );
         if ( env < ENV_DONE ) {
             env = 0;
             op->stage = ST_DECAY;
         }
         break;
     case ST_DECAY:
-        env += (s32)(syn->dec_step[op->dr] * count);
+        env += (int32_t)(syn->dec_step[op->dr] * count);
         if ( env >= op->sl ) {
             env = op->sl;
             op->stage = op->egt ? ST_SUSTAIN : ST_RELEASE;
         }
         break;
     case ST_RELEASE:
-        env += (s32)(syn->dec_step[op->rr] * count);
+        env += (int32_t)(syn->dec_step[op->rr] * count);
         if ( env >= ENV_MAX ) {
             env = ENV_MAX;
             op->stage = ST_OFF;
         }
         break;
     case ST_QUICK:
-        env += (s32)(syn->quick * count);
+        env += (int32_t)(syn->quick * count);
         if ( env >= ENV_MAX ) {
             env = ENV_MAX;
             op->stage = ST_OFF;
@@ -443,14 +444,14 @@ static void syn_env( SYN *syn, SOP *op, u32 count )
 
 /* Where an operator's outputs will be in "count" samples, and the steps
    to them.  -> the quietest of them */
-static u32 syn_aim( SYN *syn, SVOICE *sv, int k, int first, int last, u32 count )
+static uint32_t syn_aim( SYN *syn, SVOICE *sv, int k, int first, int last, unsigned int count )
 {
     SOP *op = &sv->op[k];
-    u32 att, aim, quiet = ATT_MAX;
-    s32 diff;
+    uint32_t att, aim, quiet = ATT_MAX;
+    int32_t diff;
     int x;
 
-    att = (u32)(op->env >> 16) + op->base + (op->am ? syn->am_now : 0);
+    att = (uint32_t)(op->env >> 16) + op->base + (op->am ? syn->am_now : 0);
     for ( x = first; x <= last; x++ ) {
         aim = att + sv->pan[x];
         if ( aim > ATT_MAX ) {
@@ -459,13 +460,13 @@ static u32 syn_aim( SYN *syn, SVOICE *sv, int k, int first, int last, u32 count 
         if ( aim < quiet ) {
             quiet = aim;
         }
-        diff = ((s32)aim << 16) - op->tot[x];
+        diff = ((int32_t)aim << 16) - op->tot[x];
         if ( count == SYN_BLOCK ) {
             op->step[x] = diff >> 4;
         } else if ( count == SYN_BLOCK_FAST ) {
             op->step[x] = diff >> 5;
         } else {
-            op->step[x] = diff / (s32)count;
+            op->step[x] = diff / (int32_t)count;
         }
     }
     return quiet;
@@ -475,12 +476,12 @@ static void syn_begin( MDSTATE *md, int voice );
 
 /* One voice's step: its envelopes, vibrato and the ramps for the next
    "count" samples.  "first" is the step a note starts with. */
-static void syn_tick( MDSTATE *md, int voice, u32 count, int first )
+static void syn_tick( MDSTATE *md, int voice, unsigned int count, int first )
 {
     SYN *syn = (SYN *)md->syn;
     SVOICE *sv = &syn->v[voice];
-    u32 quiet, depth;
-    s32 shift;
+    uint32_t quiet, depth;
+    int32_t shift;
     int k;
 
     if ( !first ) {
@@ -514,9 +515,9 @@ static void syn_tick( MDSTATE *md, int voice, u32 count, int first )
                 depth = VIB_DEPTH;
             }
             if ( depth != 0 ) {
-                shift = (s32)depth * syn->vib_now / 256;
+                shift = (int32_t)depth * syn->vib_now / 256;
                 sv->op[k].inc = sv->op[k].inc_base
-                                + (u32)fx_mul16( (s32)sv->op[k].inc_base, shift );
+                                + (uint32_t)fx_mul16( (int32_t)sv->op[k].inc_base, shift );
             } else {
                 sv->op[k].inc = sv->op[k].inc_base;
             }
@@ -525,7 +526,7 @@ static void syn_tick( MDSTATE *md, int voice, u32 count, int first )
     if ( sv->con ) {
         quiet = syn_aim( syn, sv, 0, 0, md->out_ch, count );
         k = (int)syn_aim( syn, sv, 1, 1, md->out_ch, count );
-        sv->level = (u32)k < quiet ? (u32)k : quiet;
+        sv->level = (uint32_t)k < quiet ? (uint32_t)k : quiet;
     } else {
         syn_aim( syn, sv, 0, 0, 0, count );
         sv->level = syn_aim( syn, sv, 1, 1, md->out_ch, count );
@@ -534,13 +535,13 @@ static void syn_tick( MDSTATE *md, int voice, u32 count, int first )
 
 /* A rate of the patch (0..15) as the chip runs it: four steps for each,
    plus the key scaling; 0 stays 0, which never moves */
-static u8 syn_rate( u32 rate, u32 ks )
+static uint8_t syn_rate( uint32_t rate, uint32_t ks )
 {
     if ( rate == 0 ) {
         return 0;
     }
     rate = rate * 4 + ks;
-    return (u8)(rate > 63 ? 63 : rate);
+    return (uint8_t)(rate > 63 ? 63 : rate);
 }
 
 /* The note the voice now holds, from the start */
@@ -552,17 +553,17 @@ static void syn_begin( MDSTATE *md, int voice )
     const MDPATCH *patch = vc->patch;
     const MDOP *src;
     SOP *op;
-    u32 fnum, block, ks, rate, sl;
-    s32 pitch, over;
+    uint32_t fnum, block, ks, rate, sl;
+    int32_t pitch, over;
     int k, x, fb;
 
     pitch = md_voice_pitch( md, vc );
     md_fnum( md_pitch_hz( pitch ), &fnum, &block );
     ks = block * 2 + (fnum >> 9);
-    sv->con = (u8)(patch->fbc & 1);
+    sv->con = (uint8_t)(patch->fbc & 1);
     fb = (patch->fbc >> 1) & 7;
     sv->fb_mask = fb ? -1L : 0;
-    sv->fb_shift = 10 + (u32)fb;
+    sv->fb_shift = 10 + (uint32_t)fb;
     sv->fb1 = sv->fb2 = 0;
     for ( k = 0; k < 2; k++ ) {
         op = &sv->op[k];
@@ -574,29 +575,29 @@ static void syn_begin( MDSTATE *md, int voice )
             op->step[x] = 0;
         }
         op->stage = ST_ATTACK;
-        op->egt = (u8)((src->misc & OP_EGT) != 0);
-        op->am = (u8)((src->misc & OP_AM) != 0);
-        op->vib = (u8)((src->misc & OP_VIB) != 0);
+        op->egt = (uint8_t)((src->misc & OP_EGT) != 0);
+        op->am = (uint8_t)((src->misc & OP_AM) != 0);
+        op->vib = (uint8_t)((src->misc & OP_VIB) != 0);
         op->wave = syn->wave[src->wave & 3];
         rate = (src->misc & OP_KSR) ? ks : ks >> 2;
         op->ar = syn_rate( src->ad >> 4, rate );
         op->dr = syn_rate( src->ad & 15, rate );
         op->rr = syn_rate( src->sr & 15, rate );
         sl = src->sr >> 4;
-        op->sl = sl == 15 ? ENV_MAX : (s32)(sl * 128) << 16;
+        op->sl = sl == 15 ? ENV_MAX : (int32_t)(sl * 128) << 16;
         /* key scaling of level: 6, 3 or 1.5 dB an octave above G1 */
         over = pitch / 3 - KSL_FROM;
         op->ksl = 0;
         if ( over > 0 ) {
             switch ( src->level >> 6 ) {
             case 1:
-                op->ksl = (u32)over / 2;
+                op->ksl = (uint32_t)over / 2;
                 break;
             case 2:
-                op->ksl = (u32)over / 4;
+                op->ksl = (uint32_t)over / 4;
                 break;
             case 3:
-                op->ksl = (u32)over;
+                op->ksl = (uint32_t)over;
                 break;
             }
         }
@@ -604,14 +605,14 @@ static void syn_begin( MDSTATE *md, int voice )
     }
     over = (pitch + syn_mult_pitch[patch->op[0].misc & 15] - syn->alias_pitch) / 3;
     if ( over > 0 ) {
-        sv->op[0].alias = (u32)over;
+        sv->op[0].alias = (uint32_t)over;
     }
     syn_freqs( md, voice );
     syn_bases( md, voice );
     syn_pans( md, voice );
     sv->active = 1;
     sv->pending = 0;
-    sv->stop_wanted = (u8)(md->voice[voice].state == VS_OFF);
+    sv->stop_wanted = (uint8_t)(md->voice[voice].state == VS_OFF);
     syn_tick( md, voice, syn->blk_left, 1 );
     sv->young = 1;               /* a key-off now waits for the end of this block */
 }
@@ -713,24 +714,24 @@ void syn_pan( MDSTATE *md, int voice )
 /* The modulator over a block, as the phase offsets it gives the
    carrier.  On its own the loop keeps few enough values for a 486's
    registers. */
-static void syn_mod( SVOICE *sv, u32 *pmod, u32 count )
+static void syn_mod( SVOICE *sv, uint32_t *pmod, unsigned int count )
 {
-    const u16 *wm = sv->op[0].wave;
-    u32 pm = sv->op[0].phase, im = sv->op[0].inc, fs = sv->fb_shift, w, a;
-    s32 tm = sv->op[0].tot[0], sm = sv->op[0].step[0], f1 = sv->fb1, f2 = sv->fb2, val;
-    u32 *end = pmod + count;
+    const uint16_t *wm = sv->op[0].wave;
+    uint32_t pm = sv->op[0].phase, im = sv->op[0].inc, fs = sv->fb_shift, w, a;
+    int32_t tm = sv->op[0].tot[0], sm = sv->op[0].step[0], f1 = sv->fb1, f2 = sv->fb2, val;
+    uint32_t *end = pmod + count;
 
     if ( sv->fb_mask != 0 ) {
         while ( pmod < end ) {
-            w = wm[(pm + ((u32)(f1 + f2) << fs)) >> 22];
-            a = (w & 0x0FFF) + ((u32)tm >> 16);
-            val = (s32)(syn_exp[a & 0xFF] >> (a >> 8));
+            w = wm[(pm + ((uint32_t)(f1 + f2) << fs)) >> 22];
+            a = (w & 0x0FFF) + ((uint32_t)tm >> 16);
+            val = (int32_t)(syn_exp[a & 0xFF] >> (a >> 8));
             if ( w & 0x8000 ) {
                 val = -val;
             }
             f2 = f1;
             f1 = val;
-            *pmod++ = (u32)val << 19;
+            *pmod++ = (uint32_t)val << 19;
             pm += im;
             tm += sm;
         }
@@ -739,12 +740,12 @@ static void syn_mod( SVOICE *sv, u32 *pmod, u32 count )
     } else {
         while ( pmod < end ) {
             w = wm[pm >> 22];
-            a = (w & 0x0FFF) + ((u32)tm >> 16);
-            val = (s32)(syn_exp[a & 0xFF] >> (a >> 8));
+            a = (w & 0x0FFF) + ((uint32_t)tm >> 16);
+            val = (int32_t)(syn_exp[a & 0xFF] >> (a >> 8));
             if ( w & 0x8000 ) {
                 val = -val;
             }
-            *pmod++ = (u32)val << 19;
+            *pmod++ = (uint32_t)val << 19;
             pm += im;
             tm += sm;
         }
@@ -754,20 +755,20 @@ static void syn_mod( SVOICE *sv, u32 *pmod, u32 count )
 }
 
 /* The carrier, its left and right different */
-static void syn_car_stereo( SVOICE *sv, const u32 *pmod, s32 *mix, u32 count )
+static void syn_car_stereo( SVOICE *sv, const uint32_t *pmod, int32_t *mix, unsigned int count )
 {
-    const u16 *wc = sv->op[1].wave;
-    u32 pc = sv->op[1].phase, ic = sv->op[1].inc, w, a, b;
-    s32 tl = sv->op[1].tot[1], sl = sv->op[1].step[1];
-    s32 tr = sv->op[1].tot[2], sr = sv->op[1].step[2];
-    s32 left, right, *end = mix + 2 * count;
+    const uint16_t *wc = sv->op[1].wave;
+    uint32_t pc = sv->op[1].phase, ic = sv->op[1].inc, w, a, b;
+    int32_t tl = sv->op[1].tot[1], sl = sv->op[1].step[1];
+    int32_t tr = sv->op[1].tot[2], sr = sv->op[1].step[2];
+    int32_t left, right, *end = mix + 2 * count;
 
     while ( mix < end ) {
         w = wc[(pc + *pmod++) >> 22];
-        a = (w & 0x0FFF) + ((u32)tl >> 16);
-        b = (w & 0x0FFF) + ((u32)tr >> 16);
-        left = (s32)(syn_exp[a & 0xFF] >> (a >> 8));
-        right = (s32)(syn_exp[b & 0xFF] >> (b >> 8));
+        a = (w & 0x0FFF) + ((uint32_t)tl >> 16);
+        b = (w & 0x0FFF) + ((uint32_t)tr >> 16);
+        left = (int32_t)(syn_exp[a & 0xFF] >> (a >> 8));
+        right = (int32_t)(syn_exp[b & 0xFF] >> (b >> 8));
         if ( w & 0x8000 ) {
             mix[0] -= left;
             mix[1] -= right;
@@ -787,17 +788,18 @@ static void syn_car_stereo( SVOICE *sv, const u32 *pmod, s32 *mix, u32 count )
 
 /* The carrier with one output: the only channel ("step" 1), or the
    same sample to both sides ("step" 2, a voice in the middle) */
-static void syn_car_one( SVOICE *sv, const u32 *pmod, s32 *mix, u32 count, u32 step )
+static void syn_car_one( SVOICE *sv, const uint32_t *pmod, int32_t *mix, unsigned int count,
+                         unsigned int step )
 {
-    const u16 *wc = sv->op[1].wave;
-    u32 pc = sv->op[1].phase, ic = sv->op[1].inc, w, a;
-    s32 tl = sv->op[1].tot[1], sl = sv->op[1].step[1], val, *end = mix + step * count;
+    const uint16_t *wc = sv->op[1].wave;
+    uint32_t pc = sv->op[1].phase, ic = sv->op[1].inc, w, a;
+    int32_t tl = sv->op[1].tot[1], sl = sv->op[1].step[1], val, *end = mix + step * count;
 
     if ( step == 2 ) {
         while ( mix < end ) {
             w = wc[(pc + *pmod++) >> 22];
-            a = (w & 0x0FFF) + ((u32)tl >> 16);
-            val = (s32)(syn_exp[a & 0xFF] >> (a >> 8));
+            a = (w & 0x0FFF) + ((uint32_t)tl >> 16);
+            val = (int32_t)(syn_exp[a & 0xFF] >> (a >> 8));
             if ( w & 0x8000 ) {
                 val = -val;
             }
@@ -811,8 +813,8 @@ static void syn_car_one( SVOICE *sv, const u32 *pmod, s32 *mix, u32 count, u32 s
     } else {
         while ( mix < end ) {
             w = wc[(pc + *pmod++) >> 22];
-            a = (w & 0x0FFF) + ((u32)tl >> 16);
-            val = (s32)(syn_exp[a & 0xFF] >> (a >> 8));
+            a = (w & 0x0FFF) + ((uint32_t)tl >> 16);
+            val = (int32_t)(syn_exp[a & 0xFF] >> (a >> 8));
             if ( w & 0x8000 ) {
                 val = -val;
             }
@@ -827,32 +829,33 @@ static void syn_car_one( SVOICE *sv, const u32 *pmod, s32 *mix, u32 count, u32 s
 
 /* One operator heard on its own (the two added): its outputs into the
    mix, and with "fb" its feedback from tot[0] as well */
-static void syn_alone( SVOICE *sv, int k, s32 *mix, u32 count, u32 outs, int fb )
+static void syn_alone( SVOICE *sv, int k, int32_t *mix, unsigned int count, unsigned int outs, int fb )
 {
     SOP *op = &sv->op[k];
-    const u16 *wv = op->wave;
-    u32 ph = op->phase, inc = op->inc, fs = sv->fb_shift, w, a, i;
-    s32 t0 = op->tot[0], s0 = op->step[0], tl = op->tot[1], sl = op->step[1];
-    s32 tr = op->tot[2], sr = op->step[2], f1 = sv->fb1, f2 = sv->fb2, val;
+    const uint16_t *wv = op->wave;
+    uint32_t ph = op->phase, inc = op->inc, fs = sv->fb_shift, w, a;
+    unsigned int i;
+    int32_t t0 = op->tot[0], s0 = op->step[0], tl = op->tot[1], sl = op->step[1];
+    int32_t tr = op->tot[2], sr = op->step[2], f1 = sv->fb1, f2 = sv->fb2, val;
 
     for ( i = 0; i < count; i++ ) {
         if ( fb ) {
-            w = wv[(ph + ((u32)(f1 + f2) << fs)) >> 22];
-            a = (w & 0x0FFF) + ((u32)t0 >> 16);
-            val = (s32)(syn_exp[a & 0xFF] >> (a >> 8));
+            w = wv[(ph + ((uint32_t)(f1 + f2) << fs)) >> 22];
+            a = (w & 0x0FFF) + ((uint32_t)t0 >> 16);
+            val = (int32_t)(syn_exp[a & 0xFF] >> (a >> 8));
             f2 = f1;
             f1 = (w & 0x8000) ? -val : val;
             t0 += s0;
         } else {
             w = wv[ph >> 22];
         }
-        a = (w & 0x0FFF) + ((u32)tl >> 16);
-        val = (s32)(syn_exp[a & 0xFF] >> (a >> 8));
+        a = (w & 0x0FFF) + ((uint32_t)tl >> 16);
+        val = (int32_t)(syn_exp[a & 0xFF] >> (a >> 8));
         *mix += (w & 0x8000) ? -val : val;
         tl += sl;
         if ( outs == 2 ) {
-            a = (w & 0x0FFF) + ((u32)tr >> 16);
-            val = (s32)(syn_exp[a & 0xFF] >> (a >> 8));
+            a = (w & 0x0FFF) + ((uint32_t)tr >> 16);
+            val = (int32_t)(syn_exp[a & 0xFF] >> (a >> 8));
             mix[1] += (w & 0x8000) ? -val : val;
             tr += sr;
         }
@@ -877,13 +880,14 @@ static void syn_alone( SVOICE *sv, int k, s32 *mix, u32 count, u32 outs, int fb 
    suddenly may still go past, and full scale holds those: a flattened
    peak is far less audible than a step.  Most of the time the gain sits
    at GAIN_NOMINAL. */
-static void syn_out( SYN *syn, s16 *pcm, u32 count, u32 outs )
+static void syn_out( SYN *syn, int16_t *pcm, unsigned int count, unsigned int outs )
 {
-    u32 total = count * outs, i, ch, peak = 0, mag, target, fit;
-    s32 gain, step, val;
+    unsigned int total = count * outs, i, ch;
+    uint32_t peak = 0, mag, target, fit;
+    int32_t gain, step, val;
 
     for ( i = 0; i < total; i++ ) {
-        mag = (u32)(syn->mix[i] < 0 ? -syn->mix[i] : syn->mix[i]);
+        mag = (uint32_t)(syn->mix[i] < 0 ? -syn->mix[i] : syn->mix[i]);
         if ( mag > peak ) {
             peak = mag;
         }
@@ -898,24 +902,24 @@ static void syn_out( SYN *syn, s16 *pcm, u32 count, u32 outs )
             target = fit;
         }
     }
-    gain = (s32)syn->gain << 8;
-    step = (((s32)target - (s32)syn->gain) << 8) / (s32)count;
+    gain = (int32_t)syn->gain << 8;
+    step = (((int32_t)target - (int32_t)syn->gain) << 8) / (int32_t)count;
     for ( i = 0; i < count; i++ ) {
         gain += step;
         for ( ch = 0; ch < outs; ch++ ) {
             val = fx_mulsh( syn->mix[i * outs + ch], gain >> 8, 12 + MIX_SHIFT );
-            pcm[i * outs + ch] = (s16)FX_SAT16( val );
+            pcm[i * outs + ch] = (int16_t)FX_SAT16( val );
         }
     }
     syn->gain = target;
 }
 
-void syn_render( MDSTATE *md, s16 *pcm, u32 frames )
+void syn_render( MDSTATE *md, int16_t *pcm, unsigned int frames )
 {
     SYN *syn = (SYN *)md->syn;
     SVOICE *sv;
-    u32 count, total, i, outs = md->out_ch;
-    s32 val;
+    unsigned int count, total, i, outs = md->out_ch;
+    int32_t val;
 
     while ( frames > 0 ) {
         count = syn->blk_left;
@@ -926,7 +930,7 @@ void syn_render( MDSTATE *md, s16 *pcm, u32 frames )
             count = MIX_MAX;
         }
         total = count * outs;
-        mem_set( syn->mix, 0, total * sizeof( s32 ) );
+        mem_set( syn->mix, 0, total * sizeof( int32_t ) );
         for ( i = 0; i < md->voices; i++ ) {
             sv = &syn->v[i];
             if ( !sv->active ) {
@@ -956,11 +960,11 @@ void syn_render( MDSTATE *md, s16 *pcm, u32 frames )
             if ( !md->fast ) {
                 syn->lfo_vib += syn->vib_inc * syn->block;
                 syn->lfo_am += syn->am_inc * syn->block;
-                val = (s32)(syn->lfo_vib >> 22);
+                val = (int32_t)(syn->lfo_vib >> 22);
                 syn->vib_now = val < 512 ? val - 256 : 768 - val;
-                val = (s32)(syn->lfo_am >> 22);
+                val = (int32_t)(syn->lfo_am >> 22);
                 val = val < 512 ? val : 1023 - val;
-                syn->am_now = (u32)val * TREM_DEPTH / 512;
+                syn->am_now = (uint32_t)val * TREM_DEPTH / 512;
             }
             for ( i = 0; i < md->voices; i++ ) {
                 if ( syn->v[i].active ) {

@@ -57,7 +57,7 @@ static PLCARD card;
 static int drv = -1;
 static AUD_INFOBLOCK hw;
 static int cpu_class = 2;
-static u32 cpu_speed;
+static uint32_t cpu_speed;
 static char cpu_label[16] = "486";
 static PLSET set = { PQ_AUTO, 0, -1, 0, 1 };
 
@@ -79,53 +79,53 @@ static int card_open;
 
 /* the output */
 static AUD_OPENBLOCK ofmt;
-static u32 in_rate, out_rate;
-static int in_ch, out_ch, out_bits, out_frame;
-static u32 rs_step;                     /* input frames an output frame, 16.16 */
-static s32 rs_pos;                      /* where the next output frame is, 16.16, from
+static uint32_t in_rate, out_rate;
+static int      in_ch, out_ch, out_bits, out_frame;
+static uint32_t rs_step;                /* input frames an output frame, 16.16 */
+static int32_t  rs_pos;                 /* where the next output frame is, 16.16, from
                                            the piece's first frame; -1.0 is the last
                                            frame of the piece before */
-static s32 rs_prev[2];
-static int volume = 100, balance;
-static s32 gain_left = 256, gain_right = 256;   /* software volume, 256 = full */
-static int soft_volume;                 /* the card has no mixer */
+static int32_t  rs_prev[2];
+static int      volume = 100, balance;
+static int32_t  gain_left = 256, gain_right = 256; /* software volume, 256 = full */
+static int      soft_volume;            /* the card has no mixer */
 
 /* buffers */
-static s16 *pcm;
-static u8 *outbuf;
-static u32 out_room;
-static u32 out_have, out_used;          /* bytes converted and not yet taken */
+static int16_t *pcm;
+static uint8_t *outbuf;
+static unsigned int out_room;
+static unsigned int out_have, out_used; /* bytes converted and not yet taken */
 static DECEV *dev;
 static AUDEV *aev;
-static u32 ev_have, ev_used;
+static unsigned int ev_have, ev_used;
 
 /* counts since the file was opened or sought */
-static u32 base_ms;                     /* where frame 0 is in the file */
-static u32 dec_frames;                  /* decoded, at the codec's rate */
-static u32 out_frames;                  /* converted, at the card's rate */
-static u32 played_last;                 /* the card's count at the last look */
-static u32 dry_frames;                  /* frames the card played that were not ours: silence */
-static u32 underruns;
-static u32 irq_seen;
-static u8 drv_state_seen;
+static uint32_t base_ms;                /* where frame 0 is in the file */
+static uint32_t dec_frames;             /* decoded, at the codec's rate */
+static uint32_t out_frames;             /* converted, at the card's rate */
+static uint32_t played_last;            /* the card's count at the last look */
+static uint32_t dry_frames;             /* frames the card played that were not ours: silence */
+static uint32_t underruns;
+static uint32_t irq_seen;
+static uint8_t drv_state_seen;
 
 /* the clock that stands in for a card */
-static u32 clock_start, clock_frames;
+static uint32_t clock_start, clock_frames;
 static int clock_running;
 
 /* what was decoded, for the analyzer: mono, at the codec's rate */
-static s16 *hist;
-static u8 snap_level[LEVEL_SNAPS][LEVEL_BANDS];
-static u32 snap_frame[LEVEL_SNAPS];
-static u32 snap_count;
+static int16_t *hist;
+static uint8_t snap_level[LEVEL_SNAPS][LEVEL_BANDS];
+static uint32_t snap_frame[LEVEL_SNAPS];
+static uint32_t snap_count;
 
 /* the load */
-static u32 load_work_ms, load_sound_ms;
+static uint32_t load_work_ms, load_sound_ms;
 static int load_now;
-static u32 load_high_since;
+static uint32_t load_high_since;
 static int auto_step;                   /* steps taken down by the governor */
 
-static int open_again( u32 at_ms );
+static int open_again( uint32_t at_ms );
 static void synth_quiet( int drop );
 
 /* ------------------------------------------------------------------ */
@@ -168,7 +168,7 @@ int cpu_has_id( void );
     value [eax] modify exact [eax ecx];
 
 /* CPUID 1: the family in bits 8-11 */
-u32 cpu_signature( void );
+uint32_t cpu_signature( void );
 #pragma aux cpu_signature = \
     "push ebx" \
     "mov eax,1" \
@@ -180,15 +180,15 @@ u32 cpu_signature( void );
    in a millisecond, near enough: the loop runs for about 110 ms of the
    millisecond clock.  This is what decides the first guess at what
    the machine can play; the load measured while playing corrects it. */
-static u32 bench( void )
+static uint32_t bench( void )
 {
-    u32 start, now, count = 0, acc = 1, val = 0x12345678UL;
+    uint32_t start, now, count = 0, acc = 1, val = 0x12345678UL;
     int i;
 
     start = sys_clock_ms();
     do {
         for ( i = 0; i < 256; i++ ) {
-            acc += (u32)fx_mulhi( (s32)val, (s32)(acc | 0x10000UL) );
+            acc += (uint32_t)fx_mulhi( (int32_t)val, (int32_t)(acc | 0x10000UL) );
             val = val * 69069UL + 1;
         }
         count += 256;
@@ -202,7 +202,7 @@ static u32 bench( void )
 
 static void find_cpu( void )
 {
-    u32 speed, family;
+    uint32_t speed, family;
 
     if ( !cpu_has_ac() ) {
         str_cpy( cpu_label, "386" );
@@ -234,7 +234,7 @@ int pl_cpu_class( void )
     return cpu_class;
 }
 
-u32 pl_cpu_speed( void )
+uint32_t pl_cpu_speed( void )
 {
     return cpu_speed;
 }
@@ -247,9 +247,9 @@ const char *pl_cpu_name( void )
 /* ------------------------------------------------------------------ */
 /* the driver                                                          */
 /* ------------------------------------------------------------------ */
-static int drv_call( u32 fn, void *buf, u32 len, u32 *answer )
+static int drv_call( uint32_t fn, void *buf, uint32_t len, uint32_t *answer )
 {
-    u32 dummy;
+    uint32_t dummy;
 
     if ( drv < 0 ) {
         return 1;
@@ -259,7 +259,7 @@ static int drv_call( u32 fn, void *buf, u32 len, u32 *answer )
 
 int pl_init( void )
 {
-    u32 answer;
+    uint32_t answer;
     char num[16];
 
     mem_set( &card, 0, sizeof( card ) );
@@ -298,14 +298,14 @@ int pl_init( void )
             str_catn( card.line, num, sizeof( card.line ) );
         }
     }
-    hist = (s16 *)try_alloc( HIST * sizeof( s16 ) );
-    pcm = (s16 *)try_alloc( PIECE * 2 * sizeof( s16 ) );
+    hist = (int16_t *)try_alloc( HIST * sizeof( int16_t ) );
+    pcm = (int16_t *)try_alloc( PIECE * 2 * sizeof( int16_t ) );
     dev = (DECEV *)try_alloc( EV_PIECE * sizeof( DECEV ) );
     aev = (AUDEV *)try_alloc( EV_PIECE * sizeof( AUDEV ) );
     if ( hist == NULL || pcm == NULL || dev == NULL || aev == NULL ) {
         return 0;
     }
-    mem_set( hist, 0, HIST * sizeof( s16 ) );
+    mem_set( hist, 0, HIST * sizeof( int16_t ) );
     eq_live.on = 0;
     eq_live.serial = 1;
     eqtd_init();
@@ -355,8 +355,8 @@ const PLSET *pl_get_settings( void )
 /* ------------------------------------------------------------------ */
 static void apply_volume( void )
 {
-    s32 left = volume, right = volume;
-    u8 lr[2];
+    int32_t left = volume, right = volume;
+    uint8_t lr[2];
 
     if ( balance > 0 ) {
         left = left * (100 - balance) / 100;
@@ -367,8 +367,8 @@ static void apply_volume( void )
     left = left * left * 255 / 10000;
     right = right * right * 255 / 10000;
     if ( card_open && !soft_volume ) {
-        lr[0] = (u8)left;
-        lr[1] = (u8)right;
+        lr[0] = (uint8_t)left;
+        lr[1] = (uint8_t)right;
         drv_call( AUD_VOLUME, lr, 2, NULL );
         gain_left = gain_right = 256;
     } else {
@@ -386,7 +386,7 @@ void pl_set_volume( int vol, int bal )
 
 void pl_set_eq( const EQSET *eq )
 {
-    u16 serial = (u16)(eq_live.serial + 1);
+    uint16_t serial = (uint16_t)(eq_live.serial + 1);
 
     eq_live = *eq;
     eq_live.serial = serial;
@@ -397,9 +397,9 @@ void pl_set_eq( const EQSET *eq )
 /* converting: the codec's samples to the card's bytes                 */
 /* ------------------------------------------------------------------ */
 /* one output frame from a left/right pair, onto "out" -> past it */
-static u8 *put_frame( u8 *out, s32 left, s32 right )
+static uint8_t *put_frame( uint8_t *out, int32_t left, int32_t right )
 {
-    s32 mono;
+    int32_t mono;
 
     if ( soft_volume ) {
         left = (left * gain_left) >> 8;
@@ -408,29 +408,30 @@ static u8 *put_frame( u8 *out, s32 left, s32 right )
     if ( out_ch == 1 ) {
         mono = (left + right) >> 1;
         if ( out_bits == 8 ) {
-            *out++ = (u8)((FX_SAT16( mono ) >> 8) + 128);
+            *out++ = (uint8_t)((FX_SAT16( mono ) >> 8) + 128);
         } else {
-            *(s16 *)out = (s16)FX_SAT16( mono );
+            *(int16_t *)out = (int16_t)FX_SAT16( mono );
             out += 2;
         }
     } else if ( out_bits == 8 ) {
-        out[0] = (u8)((FX_SAT16( left ) >> 8) + 128);
-        out[1] = (u8)((FX_SAT16( right ) >> 8) + 128);
+        out[0] = (uint8_t)((FX_SAT16( left ) >> 8) + 128);
+        out[1] = (uint8_t)((FX_SAT16( right ) >> 8) + 128);
         out += 2;
     } else {
-        ((s16 *)out)[0] = (s16)FX_SAT16( left );
-        ((s16 *)out)[1] = (s16)FX_SAT16( right );
+        ((int16_t *)out)[0] = (int16_t)FX_SAT16( left );
+        ((int16_t *)out)[1] = (int16_t)FX_SAT16( right );
         out += 4;
     }
     return out;
 }
 
 /* "frames" of pcm into outbuf -> output frames made */
-static u32 convert( const s16 *in, u32 frames )
+static unsigned int convert( const int16_t *in, unsigned int frames )
 {
-    u8 *out = outbuf;
-    u32 made = 0, i, idx, frac;
-    s32 left, right, l0, r0, l1, r1;
+    uint8_t *out = outbuf;
+    unsigned int made = 0, i, idx;
+    uint32_t frac;
+    int32_t left, right, l0, r0, l1, r1;
 
     if ( frames == 0 ) {
         return 0;
@@ -451,15 +452,15 @@ static u32 convert( const s16 *in, u32 frames )
         return frames;
     }
     /* interpolating: rs_pos -1.0 is the last frame of the piece before */
-    while ( rs_pos < (s32)((frames - 1) << 16) && (u32)(out - outbuf) + 4 <= out_room ) {
+    while ( rs_pos < (int32_t)((frames - 1) << 16) && (unsigned int)(out - outbuf) + 4 <= out_room ) {
         if ( rs_pos < 0 ) {
             l0 = rs_prev[0];
             r0 = rs_prev[1];
             idx = 0;
-            frac = (u32)(rs_pos + 0x10000L);
+            frac = (uint32_t)(rs_pos + 0x10000L);
         } else {
-            idx = (u32)rs_pos >> 16;
-            frac = (u32)rs_pos & 0xFFFF;
+            idx = (unsigned int)rs_pos >> 16;
+            frac = (uint32_t)rs_pos & 0xFFFF;
             if ( in_ch == 2 ) {
                 l0 = in[idx * 2];
                 r0 = in[idx * 2 + 1];
@@ -474,13 +475,13 @@ static u32 convert( const s16 *in, u32 frames )
         } else {
             l1 = r1 = in[idx];
         }
-        left = l0 + (((l1 - l0) * (s32)(frac >> 1)) >> 15);
-        right = r0 + (((r1 - r0) * (s32)(frac >> 1)) >> 15);
+        left = l0 + (((l1 - l0) * (int32_t)(frac >> 1)) >> 15);
+        right = r0 + (((r1 - r0) * (int32_t)(frac >> 1)) >> 15);
         out = put_frame( out, left, right );
         made++;
-        rs_pos += (s32)rs_step;
+        rs_pos += (int32_t)rs_step;
     }
-    rs_pos -= (s32)(frames << 16);
+    rs_pos -= (int32_t)(frames << 16);
     if ( in_ch == 2 ) {
         rs_prev[0] = in[(frames - 1) * 2];
         rs_prev[1] = in[(frames - 1) * 2 + 1];
@@ -491,15 +492,16 @@ static u32 convert( const s16 *in, u32 frames )
 }
 
 /* what was decoded, mono, into the analyzer's history */
-static void remember( const s16 *in, u32 frames )
+static void remember( const int16_t *in, unsigned int frames )
 {
-    u32 i, at = dec_frames;
+    unsigned int i;
+    uint32_t at = dec_frames;
 
     if ( hist == NULL ) {
         return;
     }
     for ( i = 0; i < frames; i++ ) {
-        hist[(at + i) & (HIST - 1)] = in_ch == 2 ? (s16)(((s32)in[i * 2] + in[i * 2 + 1]) >> 1) : in[i];
+        hist[(at + i) & (HIST - 1)] = in_ch == 2 ? (int16_t)(((int32_t)in[i * 2] + in[i * 2 + 1]) >> 1) : in[i];
     }
 }
 
@@ -550,15 +552,16 @@ void pl_close( void )
 /* real time or better, which leaves a quarter of the processor for   */
 /* the screen and the card.  A mono file or a lower rate costs less in */
 /* proportion.  Wave and VOC files cost next to nothing; MIDI's        */
-/* synthesizer chooses its own rate.                                   */
+/* synthesizer chooses its own rate.  FLAC is not listed: every sample */
+/* has to be rebuilt in every mode, so no mode is cheaper to decode.   */
 /* ------------------------------------------------------------------ */
 #define MODES           6
-static const u8 mode_down[MODES] = { 0, 1, 0, 1, 2, 2 };
-static const u8 mode_mono[MODES] = { 0, 0, 1, 1, 0, 1 };
+static const uint8_t mode_down[MODES] = { 0, 1, 0, 1, 2, 2 };
+static const uint8_t mode_mono[MODES] = { 0, 0, 1, 1, 0, 1 };
 
 typedef struct {
     const char *codec;          /* the CODEC's name */
-    u16 cost[MODES];
+    uint16_t cost[MODES];
 } CODECCOST;
 
 static const CODECCOST costs[] = {
@@ -572,7 +575,7 @@ static const CODECCOST costs[] = {
 /* the mode for this file on this machine: 0 (everything) .. MODES - 1 */
 static int auto_mode( const CODEC *dec, const DECINFO *info )
 {
-    u32 cost, speed = cpu_speed ? cpu_speed : 1;
+    uint32_t cost, speed = cpu_speed ? cpu_speed : 1;
     int i, mode;
 
     for ( i = 0; i < (int)(sizeof( costs ) / sizeof( costs[0] )); i++ ) {
@@ -621,15 +624,15 @@ static void choose_opts( DECOPT *opt, int mode )
         fast = mode >= 4;
         break;
     }
-    opt->down = (u8)down;
+    opt->down = (uint8_t)down;
 
-    opt->mono = (u8)mono;
-    opt->fast = (u8)fast;
+    opt->mono = (uint8_t)mono;
+    opt->fast = (uint8_t)fast;
     opt->eq = &eq_live;
     /* MIDI: the chip if there is one, else the synthesizer at a rate the
        processor can carry */
     if ( set.synth >= 0 ) {
-        opt->synth = (u8)set.synth;
+        opt->synth = (uint8_t)set.synth;
     } else if ( card.flags & AUDF_OPL3 ) {
         opt->synth = SYN_OPL3;
     } else if ( card.flags & AUDF_OPL2 ) {
@@ -656,19 +659,19 @@ static void choose_opts( DECOPT *opt, int mode )
    DE_NOMEM */
 static int open_output( void )
 {
-    u32 answer, want_rate, max_out;
+    uint32_t answer, want_rate, max_out;
 
     in_rate = dinfo.rate;
     in_ch = dinfo.channels;
     events_mode = (dinfo.flags & DIF_EVENTS) != 0;
     mem_set( &ofmt, 0, sizeof( ofmt ) );
     want_rate = in_rate;
-    if ( set.rate_limit >= 8000 && want_rate > (u32)set.rate_limit ) {
-        want_rate = (u32)set.rate_limit;
+    if ( set.rate_limit >= 8000 && want_rate > (uint32_t)set.rate_limit ) {
+        want_rate = (uint32_t)set.rate_limit;
     }
     ofmt.rate = want_rate;
-    ofmt.channels = (u8)in_ch;
-    ofmt.bits = (u8)((card.bits & AUDB_16) ? 16 : 8);
+    ofmt.channels = (uint8_t)in_ch;
+    ofmt.bits = (uint8_t)((card.bits & AUDB_16) ? 16 : 8);
     if ( events_mode ) {
         ofmt.bits = 8;
         ofmt.channels = 1;
@@ -713,7 +716,7 @@ static int open_output( void )
     if ( out_room < PIECE * 4 ) {
         out_room = PIECE * 4;
     }
-    outbuf = (u8 *)try_alloc( out_room );
+    outbuf = (uint8_t *)try_alloc( out_room );
     if ( outbuf == NULL ) {
         close_card();
         return DE_NOMEM;
@@ -729,7 +732,7 @@ static int info_fits( void )
     return dinfo.rate >= 1000 && dinfo.rate <= 384000UL && dinfo.channels >= 1 && dinfo.channels <= 2;
 }
 
-static void reset_counts( u32 at_ms )
+static void reset_counts( uint32_t at_ms )
 {
     base_ms = at_ms;
     dec_frames = out_frames = 0;
@@ -744,16 +747,16 @@ static void reset_counts( u32 at_ms )
     snap_count = 0;
     rs_pos = 0;
     if ( hist != NULL ) {
-        mem_set( hist, 0, HIST * sizeof( s16 ) );
+        mem_set( hist, 0, HIST * sizeof( int16_t ) );
     }
 }
 
 /* the file opened in the mode its codec and this machine call for, one
    step cheaper for every step the governor has taken */
-static int open_at( u32 at_ms, int step )
+static int open_at( uint32_t at_ms, int step )
 {
     int rc, mode;
-    u32 landed;
+    uint32_t landed;
 
     choose_opts( &dopt, step );
     rc = dec_open( &src, path_now, &dopt, &codec, &dstate, &dinfo );
@@ -823,10 +826,10 @@ int pl_open( const char *path, DECINFO *info )
    count would pass the frames the card was ever given, "how far ahead"
    would come out negative - a huge number, unsigned - and the engine
    would believe itself ahead for ever and never decode again. */
-static u32 frames_played( void )
+static uint32_t frames_played( void )
 {
     AUD_STATBLOCK st;
-    u32 answer, now, raw, given;
+    uint32_t answer, now, raw, given;
 
     if ( card_open ) {
         if ( !card_running ) {
@@ -848,7 +851,7 @@ static u32 frames_played( void )
         now = sys_clock_ms();
         raw = clock_frames + fx_umuldiv( now - clock_start, out_rate, 1000 );
     }
-    given = out_frames - (out_frame ? (out_have - out_used) / (u32)out_frame : 0);
+    given = out_frames - (out_frame ? (out_have - out_used) / (uint32_t)out_frame : 0);
     if ( (long)(raw - dry_frames - given) > 0 ) {
         dry_frames = raw - given;
     }
@@ -914,7 +917,7 @@ void pl_pause( void )
 static void synth_quiet( int drop )
 {
     AUDEV quiet[96];
-    u32 count = 0, ch, bank, banks;
+    unsigned int count = 0, ch, bank, banks;
 
     if ( !events_mode || !card_open ) {
         return;
@@ -926,12 +929,12 @@ static void synth_quiet( int drop )
     if ( dopt.synth == SYN_MPU ) {
         for ( ch = 0; ch < 16; ch++ ) {
             quiet[count].kind = EV_MPU;
-            quiet[count++].val = (u8)(0xB0 | ch);
+            quiet[count++].val = (uint8_t)(0xB0 | ch);
             quiet[count].kind = EV_MPU;
             quiet[count++].val = 123;
             quiet[count++].kind = EV_MPU;
             quiet[count].kind = EV_MPU;
-            quiet[count++].val = (u8)(0xB0 | ch);
+            quiet[count++].val = (uint8_t)(0xB0 | ch);
             quiet[count].kind = EV_MPU;
             quiet[count++].val = 120;
             quiet[count++].kind = EV_MPU;
@@ -941,17 +944,17 @@ static void synth_quiet( int drop )
         for ( bank = 0; bank < banks; bank++ ) {
             for ( ch = 0; ch < 9; ch++ ) {
                 quiet[count].kind = EV_OPL;
-                quiet[count].bank = (u8)bank;
-                quiet[count++].reg = (u8)(0xB0 + ch);
+                quiet[count].bank = (uint8_t)bank;
+                quiet[count++].reg = (uint8_t)(0xB0 + ch);
             }
         }
     }
     drv_call( AUD_SENDNOW, quiet, count * sizeof( AUDEV ), NULL );
 }
 
-static int move_to( u32 ms )
+static int move_to( uint32_t ms )
 {
-    u32 landed = 0;
+    uint32_t landed = 0;
     int was = state;
 
     if ( codec == NULL || !(dinfo.flags & DIF_SEEK) ) {
@@ -988,7 +991,7 @@ void pl_stop( void )
     state = PS_STOPPED;
 }
 
-int pl_seek( u32 ms )
+int pl_seek( uint32_t ms )
 {
     int was = state;
 
@@ -1008,7 +1011,7 @@ int pl_seek( u32 ms )
 }
 
 /* the file again, one step cheaper or as it was, at a position */
-static int open_again( u32 at_ms )
+static int open_again( uint32_t at_ms )
 {
     int was = state, rc;
 
@@ -1035,7 +1038,7 @@ static int open_again( u32 at_ms )
    had got to */
 static void govern( void )
 {
-    u32 now, pos;
+    uint32_t now, pos;
 
     if ( set.quality != PQ_AUTO || auto_step >= MODES - 1 || load_sound_ms < 500 ) {
         return;
@@ -1063,7 +1066,7 @@ static void govern( void )
    1 when everything went */
 static int flush_pending( void )
 {
-    u32 taken;
+    uint32_t taken;
 
     if ( ev_used < ev_have ) {
         if ( card_open ) {
@@ -1098,7 +1101,9 @@ static int flush_pending( void )
 static int decode_piece( void )
 {
     DECBUF buf;
-    u32 made, i, start_out, t0, t1, n;
+    unsigned int made, i;
+    uint32_t start_out, t0, t1;
+    unsigned int n;
     int rc;
 
     mem_set( &buf, 0, sizeof( buf ) );
@@ -1151,9 +1156,9 @@ static int decode_piece( void )
     return 1;
 }
 
-int pl_pump( u32 budget_ms )
+int pl_pump( uint32_t budget_ms )
 {
-    u32 start, played, ahead, want, start_at;
+    uint32_t start, played, ahead, want, start_at;
 
     if ( state != PS_PLAYING || codec == NULL ) {
         return state;
@@ -1203,9 +1208,9 @@ int pl_pump( u32 budget_ms )
     return state;
 }
 
-u32 pl_ahead_ms( void )
+uint32_t pl_ahead_ms( void )
 {
-    u32 played;
+    uint32_t played;
 
     if ( state != PS_PLAYING || out_rate == 0 ) {
         return 0;
@@ -1216,14 +1221,14 @@ u32 pl_ahead_ms( void )
 
 void pl_status( PLSTAT *st )
 {
-    u32 played = state == PS_PLAYING || state == PS_PAUSED ? frames_played() : 0;
+    uint32_t played = state == PS_PLAYING || state == PS_PAUSED ? frames_played() : 0;
 
     mem_set( st, 0, sizeof( PLSTAT ) );
     st->state = state;
     st->len_ms = codec != NULL ? dinfo.length_ms : 0;
     st->out_rate = out_rate;
-    st->out_bits = (u8)out_bits;
-    st->out_ch = (u8)out_ch;
+    st->out_bits = (uint8_t)out_bits;
+    st->out_ch = (uint8_t)out_ch;
     st->load = load_now;
     st->down = dopt.down;
     st->mono = dinfo.channels == 1 && dinfo.file_channels > 1;
@@ -1250,9 +1255,9 @@ void pl_status( PLSTAT *st )
 /* the analyzer                                                        */
 /* ------------------------------------------------------------------ */
 /* the codec's frame that is being heard */
-static u32 heard_frame( void )
+static uint32_t heard_frame( void )
 {
-    u32 played;
+    uint32_t played;
 
     if ( state != PS_PLAYING && state != PS_PAUSED ) {
         return dec_frames;
@@ -1264,12 +1269,13 @@ static u32 heard_frame( void )
     return played > dec_frames ? dec_frames : played;
 }
 
-void pl_levels( u8 *bars, int count )
+void pl_levels( uint8_t *bars, int count )
 {
-    s16 win[FFT_SIZE];
-    u32 at, i, best, k, band;
+    int16_t win[FFT_SIZE];
+    uint32_t at;
+    unsigned int i, best, k, band;
 
-    mem_set( bars, 0, (u32)count );
+    mem_set( bars, 0, (unsigned int)count );
     if ( codec == NULL || hist == NULL || (state != PS_PLAYING && state != PS_PAUSED) ) {
         return;
     }
@@ -1287,8 +1293,8 @@ void pl_levels( u8 *bars, int count )
                 break;
             }
         }
-        for ( i = 0; i < (u32)count; i++ ) {
-            band = i * LEVEL_BANDS / (u32)count;
+        for ( i = 0; i < (unsigned int)count; i++ ) {
+            band = i * LEVEL_BANDS / (unsigned int)count;
             bars[i] = snap_level[best][band];
         }
         return;
@@ -1299,16 +1305,17 @@ void pl_levels( u8 *bars, int count )
     fft_bars( win, in_rate, bars, count );
 }
 
-void pl_wave( s16 *out, int count )
+void pl_wave( int16_t *out, int count )
 {
-    u32 at, i;
+    uint32_t at;
+    unsigned int i;
 
     if ( codec == NULL || hist == NULL || (state != PS_PLAYING && state != PS_PAUSED) ) {
-        mem_set( out, 0, (u32)count * sizeof( s16 ) );
+        mem_set( out, 0, (unsigned int)count * sizeof( int16_t ) );
         return;
     }
     at = heard_frame();
-    for ( i = 0; i < (u32)count; i++ ) {
-        out[i] = at >= (u32)count - i ? hist[(at - ((u32)count - i)) & (HIST - 1)] : 0;
+    for ( i = 0; i < (unsigned int)count; i++ ) {
+        out[i] = at >= (unsigned int)count - i ? hist[(at - ((unsigned int)count - i)) & (HIST - 1)] : 0;
     }
 }

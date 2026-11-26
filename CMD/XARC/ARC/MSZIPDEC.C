@@ -28,50 +28,50 @@
 
 /* A fast-table entry holds the code length above a 9-bit symbol, so that 0
  * can mean "longer than MZ_FAST_BITS" - no real code has length 0. */
-#define MZ_FAST_ENTRY( len, sym )  (UInt16)( ( (len) << 9 ) | (sym) )
+#define MZ_FAST_ENTRY( len, sym )  (uint16_t)( ( (len) << 9 ) | (sym) )
 
 typedef struct {
-    UInt16 count[MZ_MAXBITS + 1];       /* how many codes of each length    */
-    UInt16 symbol[MZ_LITLEN];           /* symbols in canonical order       */
-    UInt16 fast[MZ_FAST_SIZE];
+    uint16_t count[MZ_MAXBITS + 1];     /* how many codes of each length    */
+    uint16_t symbol[MZ_LITLEN];         /* symbols in canonical order       */
+    uint16_t fast[MZ_FAST_SIZE];
 } MzHuff;
 
 struct MszipDec {
-    Byte   window[MZ_WSIZE];            /* the last 32 KB of output          */
-    UInt32 wpos;                        /* next write position in it         */
-    UInt32 history;                     /* bytes output so far, capped at 32K*/
-    MzHuff lit, dist;                   /* the current block's trees         */
-    MzHuff fixedLit, fixedDist;         /* the fixed trees, built once       */
+    uint8_t  window[MZ_WSIZE];          /* the last 32 KB of output          */
+    uint32_t wpos;                      /* next write position in it         */
+    uint32_t history;                   /* bytes output so far, capped at 32K*/
+    MzHuff   lit, dist;                 /* the current block's trees         */
+    MzHuff   fixedLit, fixedDist;       /* the fixed trees, built once       */
 };
 
 /* Bits come out least significant first, as RFC 1951 orders them. */
 typedef struct {
-    const Byte *in;
-    UInt32      inLen;
-    UInt32      inPos;
-    UInt32      bitBuf;                 /* the next bit is bit 0             */
-    int         bitCnt;
-    UInt32      fake;                   /* zero bytes supplied past the end  */
+    const uint8_t *in;
+    uint32_t       inLen;
+    uint32_t       inPos;
+    uint32_t       bitBuf;              /* the next bit is bit 0             */
+    int            bitCnt;
+    uint32_t       fake;                /* zero bytes supplied past the end  */
 } MzBits;
 
-static const UInt16 s_lenBase[29] = {
+static const uint16_t s_lenBase[29] = {
     3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31,
     35, 43, 51, 59, 67, 83, 99, 115, 131, 163, 195, 227, 258
 };
-static const Byte s_lenExtra[29] = {
+static const uint8_t s_lenExtra[29] = {
     0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2,
     3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0
 };
-static const UInt16 s_distBase[30] = {
+static const uint16_t s_distBase[30] = {
     1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193,
     257, 385, 513, 769, 1025, 1537, 2049, 3073, 4097, 6145,
     8193, 12289, 16385, 24577
 };
-static const Byte s_distExtra[30] = {
+static const uint8_t s_distExtra[30] = {
     0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6,
     7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13
 };
-static const Byte s_clOrder[19] = {
+static const uint8_t s_clOrder[19] = {
     16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15
 };
 
@@ -86,7 +86,7 @@ static void MzNeed( MzBits *br, int n )
 {
     while ( br->bitCnt < n )
     {
-        UInt32 byte = 0;
+        uint32_t byte = 0;
 
         if ( br->inPos < br->inLen ) byte = br->in[br->inPos++];
         else                         br->fake++;
@@ -95,9 +95,9 @@ static void MzNeed( MzBits *br, int n )
     }
 }
 
-static UInt32 MzGetBits( MzBits *br, int n )
+static uint32_t MzGetBits( MzBits *br, int n )
 {
-    UInt32 val;
+    uint32_t val;
 
     if ( n == 0 ) return 0;
     MzNeed( br, n );
@@ -109,7 +109,7 @@ static UInt32 MzGetBits( MzBits *br, int n )
 
 static int MzOverran( const MzBits *br )
 {
-    return ( br->inPos + br->fake ) * 8 - (UInt32)br->bitCnt > br->inLen * 8;
+    return ( br->inPos + br->fake ) * 8 - (uint32_t)br->bitCnt > br->inLen * 8;
 }
 
 /*---- Huffman trees ---------------------------------------------------------
@@ -117,12 +117,12 @@ static int MzOverran( const MzBits *br )
  * RFC 1951 itself allows a distance tree with a single code; a bit pattern
  * that is no code at all is caught when it is decoded.
  *--------------------------------------------------------------------------- */
-static int MzBuild( MzHuff *tree, const Byte *lens, int n )
+static int MzBuild( MzHuff *tree, const uint8_t *lens, int n )
 {
-    UInt16 offs[MZ_MAXBITS + 2];
-    UInt32 next[MZ_MAXBITS + 2];
-    UInt32 code;
-    int    len, sym, left;
+    uint16_t offs[MZ_MAXBITS + 2];
+    uint32_t next[MZ_MAXBITS + 2];
+    uint32_t code;
+    int      len, sym, left;
 
     memset( tree->count, 0, sizeof( tree->count ) );
     for ( sym = 0; sym < n; sym++ )
@@ -139,9 +139,9 @@ static int MzBuild( MzHuff *tree, const Byte *lens, int n )
 
     offs[1] = 0;
     for ( len = 1; len < MZ_MAXBITS; len++ )
-        offs[len + 1] = (UInt16)( offs[len] + tree->count[len] );
+        offs[len + 1] = (uint16_t)( offs[len] + tree->count[len] );
     for ( sym = 0; sym < n; sym++ )
-        if ( lens[sym] ) tree->symbol[offs[lens[sym]]++] = (UInt16)sym;
+        if ( lens[sym] ) tree->symbol[offs[lens[sym]]++] = (uint16_t)sym;
 
     /* Codes short enough for the table, filed under their bits as they will
      * arrive - RFC 1951 sends a code's most significant bit first, into a
@@ -155,8 +155,8 @@ static int MzBuild( MzHuff *tree, const Byte *lens, int n )
     }
     for ( sym = 0; sym < n; sym++ )
     {
-        UInt32 rev = 0, val;
-        int    i;
+        uint32_t rev = 0, val;
+        int      i;
 
         len = lens[sym];
         if ( !len || len > MZ_FAST_BITS ) continue;
@@ -174,8 +174,8 @@ static int MzBuild( MzHuff *tree, const Byte *lens, int n )
 
 static int MzDecode( MzBits *br, const MzHuff *tree )
 {
-    UInt16 entry;
-    int    len, code, first, index, count;
+    uint16_t entry;
+    int      len, code, first, index, count;
 
     MzNeed( br, MZ_MAXBITS );
     entry = tree->fast[br->bitBuf & ( MZ_FAST_SIZE - 1 )];
@@ -208,7 +208,7 @@ static int MzDecode( MzBits *br, const MzHuff *tree )
 }
 
 /*---- Output ----------------------------------------------------------------*/
-static void MzPut( MszipDec *dec, Byte *out, UInt32 *outPos, Byte val )
+static void MzPut( MszipDec *dec, uint8_t *out, uint32_t *outPos, uint8_t val )
 {
     out[(*outPos)++] = val;
     dec->window[dec->wpos] = val;
@@ -218,9 +218,9 @@ static void MzPut( MszipDec *dec, Byte *out, UInt32 *outPos, Byte val )
 
 /*---- Block bodies ----------------------------------------------------------*/
 static int MzStored( MszipDec *dec, MzBits *br,
-                     Byte *out, UInt32 outCap, UInt32 *outPos )
+                     uint8_t *out, uint32_t outCap, uint32_t *outPos )
 {
-    UInt32 len, nlen;
+    uint32_t len, nlen;
 
     MzGetBits( br, br->bitCnt & 7 );            /* to a byte boundary */
     len  = MzGetBits( br, 16 );
@@ -228,13 +228,13 @@ static int MzStored( MszipDec *dec, MzBits *br,
     if ( len != ( ~nlen & 0xFFFFUL ) ) return SZ_ERR_DATA;
     if ( len > outCap - *outPos ) return SZ_ERR_DATA;
     while ( len-- )
-        MzPut( dec, out, outPos, (Byte)MzGetBits( br, 8 ) );
+        MzPut( dec, out, outPos, (uint8_t)MzGetBits( br, 8 ) );
     return SZ_OK;
 }
 
 static int MzCodes( MszipDec *dec, MzBits *br,
                     const MzHuff *lit, const MzHuff *dist,
-                    Byte *out, UInt32 outCap, UInt32 *outPos )
+                    uint8_t *out, uint32_t outCap, uint32_t *outPos )
 {
     for ( ;; )
     {
@@ -248,14 +248,14 @@ static int MzCodes( MszipDec *dec, MzBits *br,
         if ( sym < 256 )
         {
             if ( *outPos >= outCap ) return SZ_ERR_DATA;
-            MzPut( dec, out, outPos, (Byte)sym );
+            MzPut( dec, out, outPos, (uint8_t)sym );
         }
         else if ( sym == 256 )
             return SZ_OK;
         else
         {
-            UInt32 len, distance, src;
-            int    di;
+            uint32_t len, distance, src;
+            int      di;
 
             sym -= 257;
             if ( sym >= 29 ) return SZ_ERR_DATA;
@@ -272,7 +272,7 @@ static int MzCodes( MszipDec *dec, MzBits *br,
             src = ( dec->wpos - distance ) & MZ_WMASK;
             while ( len-- )
             {
-                Byte val = dec->window[src];
+                uint8_t val = dec->window[src];
 
                 src = ( src + 1 ) & MZ_WMASK;
                 MzPut( dec, out, outPos, val );
@@ -285,9 +285,9 @@ static int MzCodes( MszipDec *dec, MzBits *br,
  * The code-length tree borrows dec->dist, which is rebuilt straight after. */
 static int MzDynamic( MszipDec *dec, MzBits *br )
 {
-    Byte lens[MZ_LITLEN + MZ_DIST];
-    Byte clLens[19];
-    int  nlit, ndist, ncl, i, idx;
+    uint8_t lens[MZ_LITLEN + MZ_DIST];
+    uint8_t clLens[19];
+    int     nlit, ndist, ncl, i, idx;
 
     nlit  = (int)MzGetBits( br, 5 ) + 257;
     ndist = (int)MzGetBits( br, 5 ) + 1;
@@ -295,20 +295,20 @@ static int MzDynamic( MszipDec *dec, MzBits *br )
 
     memset( clLens, 0, sizeof( clLens ) );
     for ( i = 0; i < ncl; i++ )
-        clLens[s_clOrder[i]] = (Byte)MzGetBits( br, 3 );
+        clLens[s_clOrder[i]] = (uint8_t)MzGetBits( br, 3 );
     if ( MzBuild( &dec->dist, clLens, 19 ) ) return SZ_ERR_DATA;
 
     idx = 0;
     while ( idx < nlit + ndist )
     {
-        int  sym = MzDecode( br, &dec->dist );
-        int  rep;
-        Byte val;
+        int     sym = MzDecode( br, &dec->dist );
+        int     rep;
+        uint8_t val;
 
         if ( sym < 0 || br->fake > 4 ) return SZ_ERR_DATA;
         if ( sym < 16 )
         {
-            lens[idx++] = (Byte)sym;
+            lens[idx++] = (uint8_t)sym;
             continue;
         }
         if ( sym == 16 )
@@ -341,7 +341,7 @@ static int MzDynamic( MszipDec *dec, MzBits *br )
 int MszipCreate( MszipDec **out )
 {
     MszipDec *dec;
-    Byte      lens[MZ_LITLEN];
+    uint8_t   lens[MZ_LITLEN];
     int       i;
 
     *out = NULL;
@@ -365,13 +365,13 @@ void MszipFree( MszipDec *dec )
     if ( dec ) free( dec );
 }
 
-int MszipDecodeBlock( MszipDec *dec, const Byte *in, UInt32 inLen,
-                      Byte *out, UInt32 outCap, UInt32 *outLen,
-                      UInt32 *inUsed )
+int MszipDecodeBlock( MszipDec *dec, const uint8_t *in, uint32_t inLen,
+                      uint8_t *out, uint32_t outCap, uint32_t *outLen,
+                      uint32_t *inUsed )
 {
-    MzBits br;
-    UInt32 pos = 0;
-    int    final, type, rc;
+    MzBits   br;
+    uint32_t pos = 0;
+    int      final, type, rc;
 
     *outLen = 0;
     if ( inUsed ) *inUsed = 0;
@@ -412,14 +412,14 @@ int MszipDecodeBlock( MszipDec *dec, const Byte *in, UInt32 inLen,
     *outLen = pos;
     if ( inUsed )
     {
-        UInt32 bits = ( br.inPos + br.fake ) * 8 - (UInt32)br.bitCnt;
+        uint32_t bits = ( br.inPos + br.fake ) * 8 - (uint32_t)br.bitCnt;
 
         *inUsed = 2 + ( bits + 7 ) / 8;
     }
     return SZ_OK;
 }
 
-UInt32 MszipMemNeeded( void )
+uint32_t MszipMemNeeded( void )
 {
-    return (UInt32)sizeof( MszipDec );
+    return (uint32_t)sizeof( MszipDec );
 }

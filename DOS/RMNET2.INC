@@ -967,8 +967,18 @@ n2_reqzero:
 ; entry is got once, lazily - WIN386 is not up when RMDOS starts, only
 ; when a box first reaches here - and WIN386 answers INT 2Fh 1684h and
 ; 1680h itself, above RMDOS's own INT 2Fh hook, so neither re-enters it.
+;
+; IN REAL MODE THERE IS NO VxD - Windows in standard mode, whose DOSX
+; drops to real mode for every DOS call, or no Windows at all - and
+; real mode is ours to leave: rb_redir (RMBRG.INC) runs the op through
+; the kernel itself.  PE set is a monitor's V86 mode, and the VxD's.
 ;=====================================================================
 n2_pdapi:
+        smsw    ax
+        test    al,1
+        jnz     n2p_v86
+        jmp     rb_redir
+n2p_v86:
         cmp     word ptr [n2_apiseg],0
         jne     n2p_have
         cmp     byte ptr [n2_apitried],0

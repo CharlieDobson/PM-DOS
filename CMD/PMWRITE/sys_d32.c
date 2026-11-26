@@ -35,8 +35,8 @@
 #include "sys.h"
 
 typedef struct {
-    u32 eax, ebx, ecx, edx, esi, edi;
-    u32 flags;                  /* in: bit 0 = CF before the INT */
+    uint32_t eax, ebx, ecx, edx, esi, edi;
+    uint32_t flags;             /* in: bit 0 = CF before the INT */
 } REGS;
 
 void __cdecl int21( REGS *regs );
@@ -48,21 +48,21 @@ void pw_main( void );
 
 #define CF( regs )  ((regs).flags & 1)
 #define AX( regs )  ((regs).eax & 0xFFFF)
-#define F1( al, fn )    (0xF100UL | (al) | ((u32)(fn) << 16))
+#define F1( al, fn )    (0xF100UL | (al) | ((uint32_t)(fn) << 16))
 
 COUNTRY country = { 0, '-', ':', ',', '.', 0, 437 };
 
-static u8   *psp;
-static char  tail[300];
-static int   lfn_ok = 1;
-static u8    find_rec[320];
+static uint8_t *psp;
+static char     tail[300];
+static int      lfn_ok = 1;
+static uint8_t  find_rec[320];
 
 void __cdecl dos_entry( void )
 {
     pw_main();
 }
 
-static void call21( REGS *regs, u32 eax )
+static void call21( REGS *regs, uint32_t eax )
 {
     regs->eax = eax;
     regs->flags = 0;
@@ -89,9 +89,9 @@ static int result( REGS *regs )
 }
 
 /* as much of "src" as "max" bytes hold, with the NUL */
-static void str_fit( char *dst, const char *src, u32 max )
+static void str_fit( char *dst, const char *src, unsigned int max )
 {
-    u32 len = str_len( src );
+    unsigned int len = str_len( src );
 
     if ( max == 0 ) {
         return;
@@ -124,13 +124,13 @@ int sys_init( void )
 {
     REGS regs;
     const char *full;
-    u32 len;
+    unsigned int len;
     int quoted;
     char probe[PATH_LEN];
 
     clear( &regs );
     call21( &regs, 0x6200 );
-    psp = (u8 *)regs.ebx;
+    psp = (uint8_t *)regs.ebx;
     len = psp[0x80];
     if ( len > 126 ) {
         len = 126;
@@ -153,7 +153,7 @@ int sys_init( void )
     }
     /* a drive that will not answer is failed, and whoever asked says so */
     clear( &regs );
-    regs.edx = (u32)crit_handler;
+    regs.edx = (uint32_t)crit_handler;
     call21( &regs, 0x2524 );
 
     sys_get_cwd( sys_get_drive(), probe );     /* are there long names? */
@@ -161,7 +161,7 @@ int sys_init( void )
     /* 38h: how this country writes a number, a date and a time */
     mem_set( probe, 0, 40 );
     clear( &regs );
-    regs.edx = (u32)probe;
+    regs.edx = (uint32_t)probe;
     call21( &regs, 0x3800 );
     if ( !CF( regs ) ) {
         country.date_order = probe[0] <= 2 ? probe[0] : 0;
@@ -197,9 +197,9 @@ const char *sys_cmdline( void )
 const char *sys_getenv( const char *name )
 {
     const char *env;
-    u32 len = str_len( name );
+    unsigned int len = str_len( name );
 
-    env = (const char *)*(u32 *)(psp + 0x2C);
+    env = (const char *)*(uint32_t *)(psp + 0x2C);
     if ( env == NULL ) {
         return NULL;
     }
@@ -222,10 +222,10 @@ const char *sys_program_dir( void )
     static char found[PATH_LEN];
     static const char exe[] = "PMWRITE.EXE";
     char trial[PATH_LEN];
-    const char *env = (const char *)*(u32 *)(psp + 0x2C);
+    const char *env = (const char *)*(uint32_t *)(psp + 0x2C);
     const char *path = sys_getenv( "PATH" );
-    u16 attr;
-    u32 len, end;
+    uint16_t attr;
+    unsigned int len, end;
 
     if ( found[0] ) {
         return found;
@@ -236,7 +236,7 @@ const char *sys_program_dir( void )
         }
         env++;                                  /* the empty string that ends them */
         /* believed only if it reads like a whole path: "C:\..." or "\\..." */
-        if ( *(const u16 *)env == 1 && str_len( env + 2 ) < PATH_LEN
+        if ( *(const uint16_t *)env == 1 && str_len( env + 2 ) < PATH_LEN
              && ((env[2] && env[3] == ':') || (env[2] == '\\' && env[3] == '\\')) ) {
             str_cpy( found, env + 2 );
         }
@@ -279,10 +279,10 @@ void sys_exit( int code )
     REGS regs;
 
     clear( &regs );
-    call21( &regs, 0x4C00 | ((u32)code & 0xFF) );
+    call21( &regs, 0x4C00 | ((uint32_t)code & 0xFF) );
 }
 
-void *sys_mem_alloc( u32 size )
+void *sys_mem_alloc( unsigned int size )
 {
     REGS regs;
 
@@ -294,7 +294,7 @@ void *sys_mem_alloc( u32 size )
 
 /* the largest block 48h could give now: it refuses the impossible and
    says in EBX what would have fitted, as DOS does */
-u32 sys_mem_largest( void )
+unsigned int sys_mem_largest( void )
 {
     REGS regs;
 
@@ -311,26 +311,26 @@ void sys_break_install( void )
     REGS regs;
 
     clear( &regs );
-    regs.edx = (u32)break_handler;
+    regs.edx = (uint32_t)break_handler;
     call21( &regs, 0x2523 );
     clear( &regs );
-    regs.edx = (u32)crit_handler;
+    regs.edx = (uint32_t)crit_handler;
     call21( &regs, 0x2524 );
 }
 
-void sys_stdout( const char *buf, u32 len )
+void sys_stdout( const char *buf, unsigned int len )
 {
     REGS regs;
 
     clear( &regs );
     regs.ebx = 1;
     regs.ecx = len;
-    regs.edx = (u32)buf;
+    regs.edx = (uint32_t)buf;
     call21( &regs, 0x4000 );
 }
 
 /* 4400h: a device, and the console's input or output */
-static int is_console( u32 handle )
+static int is_console( uint32_t handle )
 {
     REGS regs;
 
@@ -353,12 +353,12 @@ int sys_stdin_is_console( void )
 int sys_stdin_byte( void )
 {
     REGS regs;
-    u8 ch;
+    uint8_t ch;
 
     clear( &regs );
     regs.ebx = 0;
     regs.ecx = 1;
-    regs.edx = (u32)&ch;
+    regs.edx = (uint32_t)&ch;
     call21( &regs, 0x3F00 );
     if ( CF( regs ) || regs.eax == 0 ) {
         return -1;
@@ -405,25 +405,25 @@ void sys_screen_size( int *rows, int *cols )
     }
 }
 
-void sys_put_cells( u32 first, const u16 *cells, u32 count )
+void sys_put_cells( unsigned int first, const uint16_t *cells, unsigned int count )
 {
     REGS regs;
 
     clear( &regs );
     regs.ebx = first;
     regs.ecx = count;
-    regs.esi = (u32)cells;
+    regs.esi = (uint32_t)cells;
     call21( &regs, 0xF004 );
 }
 
-void sys_get_cells( u32 first, u16 *cells, u32 count )
+void sys_get_cells( unsigned int first, uint16_t *cells, unsigned int count )
 {
     REGS regs;
 
     clear( &regs );
     regs.ebx = first;
     regs.ecx = count;
-    regs.edi = (u32)cells;
+    regs.edi = (uint32_t)cells;
     call21( &regs, 0xF005 );
 }
 
@@ -432,7 +432,7 @@ void sys_cursor( int row, int col )
     REGS regs;
 
     clear( &regs );
-    regs.edx = (((u32)row & 0xFF) << 8) | ((u32)col & 0xFF);
+    regs.edx = (((uint32_t)row & 0xFF) << 8) | ((uint32_t)col & 0xFF);
     call21( &regs, 0xF002 );
 }
 
@@ -467,7 +467,7 @@ void sys_cursor_shape( int kind )
             first = char_height - 2;
             last = char_height - 1;
         }
-        regs.ecx = ((u32)first << 8) | (u32)last;
+        regs.ecx = ((uint32_t)first << 8) | (uint32_t)last;
     }
     call21( &regs, 0xF006 );
 }
@@ -489,7 +489,7 @@ int sys_set_lines( int lines )
     call21( &regs, 0xF00C );
     if ( CF( regs ) ) {
         clear( &regs );
-        regs.ebx = (u32)lines;
+        regs.ebx = (uint32_t)lines;
         call21( &regs, 0xF00A );
     }
     sys_screen_size( &rows, &cols );
@@ -507,7 +507,7 @@ int sys_key_wait( int shift_seen, int *shift_now, int flags )
     REGS regs;
 
     clear( &regs );
-    regs.edx = ((u32)(flags & 3) << 8) | (u32)(shift_seen & 0xFF);
+    regs.edx = ((uint32_t)(flags & 3) << 8) | (uint32_t)(shift_seen & 0xFF);
     call21( &regs, 0xF008 );
     *shift_now = (int)(regs.ebx & 0xFFFF);
     return (int)(regs.eax & 0xFF);
@@ -533,7 +533,7 @@ int sys_shift( void )
 }
 
 /* 2Ch, as hundredths of a second since midnight */
-u32 sys_hundredths( void )
+uint32_t sys_hundredths( void )
 {
     REGS regs;
 
@@ -555,11 +555,11 @@ u32 sys_hundredths( void )
  * as long as it is asked more often than the counter goes round, and
  * runs slow - never fast - when it is not.
  */
-u32 sys_clock_ms( void )
+uint32_t sys_clock_ms( void )
 {
     static int started, by_twos;
-    static u32 last, halves, millis;
-    u32 now;
+    static uint32_t last, halves, millis;
+    uint32_t now;
 
     if ( !started ) {
         port_out( 0x43, 0xE2 );             /* read back counter 0's status: */
@@ -600,7 +600,7 @@ void sys_now( DATETIME *now )
 /* the mouse                                                           */
 /* ------------------------------------------------------------------ */
 
-static void call33( REGS *regs, u32 eax )
+static void call33( REGS *regs, uint32_t eax )
 {
     regs->eax = eax;
     int33( regs );
@@ -635,7 +635,7 @@ void sys_mouse_state( int *x, int *y, int *buttons )
     *x = (int)(regs.ecx & 0xFFFF);
     *y = (int)(regs.edx & 0xFFFF);
     if ( wheel_there ) {
-        wheel_turned += (int)(s8)((regs.ebx >> 8) & 0xFF);  /* BH: since the last 03h */
+        wheel_turned += (int)(int8_t)((regs.ebx >> 8) & 0xFF); /* BH: since the last 03h */
     }
 }
 
@@ -672,7 +672,7 @@ int sys_mouse_count( int release, int button, int *x, int *y )
     REGS regs;
 
     clear( &regs );
-    regs.ebx = (u32)button;
+    regs.ebx = (uint32_t)button;
     call33( &regs, release ? 0x0006 : 0x0005 );
     *x = (int)(regs.ecx & 0xFFFF);
     *y = (int)(regs.edx & 0xFFFF);
@@ -697,10 +697,10 @@ void sys_mouse_range( int xmax, int ymax )
     REGS regs;
 
     clear( &regs );
-    regs.edx = (u32)xmax;
+    regs.edx = (uint32_t)xmax;
     call33( &regs, 0x0007 );
     clear( &regs );
-    regs.edx = (u32)ymax;
+    regs.edx = (uint32_t)ymax;
     call33( &regs, 0x0008 );
 }
 
@@ -709,8 +709,8 @@ void sys_mouse_move( int x, int y )
     REGS regs;
 
     clear( &regs );
-    regs.ecx = (u32)x;
-    regs.edx = (u32)y;
+    regs.ecx = (uint32_t)x;
+    regs.edx = (uint32_t)y;
     call33( &regs, 0x0004 );
 }
 
@@ -721,7 +721,7 @@ void sys_mouse_inject( int buttons )
     REGS regs;
 
     clear( &regs );
-    regs.ebx = (u32)(buttons & 7);
+    regs.ebx = (uint32_t)(buttons & 7);
     call21( &regs, 0xF00B );
 }
 
@@ -734,7 +734,7 @@ int sys_lfn( void )
     return lfn_ok;
 }
 
-static int open_ext( const char *path, u32 mode, u32 action, u32 *handle )
+static int open_ext( const char *path, uint32_t mode, uint32_t action, uint32_t *handle )
 {
     REGS regs;
 
@@ -742,7 +742,7 @@ static int open_ext( const char *path, u32 mode, u32 action, u32 *handle )
     regs.ebx = mode;
     regs.ecx = 0;
     regs.edx = action;
-    regs.esi = (u32)path;
+    regs.esi = (uint32_t)path;
     call21( &regs, 0x716C );
     if ( lfn_missing( &regs ) ) {
         return -1;
@@ -754,19 +754,19 @@ static int open_ext( const char *path, u32 mode, u32 action, u32 *handle )
     return 0;
 }
 
-static int open_classic( const char *path, u32 func, u32 *handle )
+static int open_classic( const char *path, uint32_t func, uint32_t *handle )
 {
     REGS regs;
 
     clear( &regs );
     regs.ecx = 0;
-    regs.edx = (u32)path;
+    regs.edx = (uint32_t)path;
     call21( &regs, func );
     *handle = AX( regs );
     return result( &regs );
 }
 
-int sys_open_read( const char *path, u32 *handle )
+int sys_open_read( const char *path, uint32_t *handle )
 {
     int rc;
 
@@ -779,12 +779,12 @@ int sys_open_read( const char *path, u32 *handle )
     return open_classic( path, 0x3D00, handle );
 }
 
-int sys_open_write( const char *path, u32 *handle )
+int sys_open_write( const char *path, uint32_t *handle )
 {
     return open_classic( path, 0x3D01, handle );    /* PRN, LPT1, COM1... */
 }
 
-int sys_create( const char *path, u32 *handle )
+int sys_create( const char *path, uint32_t *handle )
 {
     int rc;
 
@@ -797,27 +797,27 @@ int sys_create( const char *path, u32 *handle )
     return open_classic( path, 0x3C00, handle );
 }
 
-int sys_read( u32 handle, void *buf, u32 len, u32 *done )
+int sys_read( uint32_t handle, void *buf, uint32_t len, uint32_t *done )
 {
     REGS regs;
 
     clear( &regs );
     regs.ebx = handle;
     regs.ecx = len;
-    regs.edx = (u32)buf;
+    regs.edx = (uint32_t)buf;
     call21( &regs, 0x3F00 );
     *done = CF( regs ) ? 0 : regs.eax;
     return result( &regs );
 }
 
-int sys_write( u32 handle, const void *buf, u32 len, u32 *done )
+int sys_write( uint32_t handle, const void *buf, uint32_t len, uint32_t *done )
 {
     REGS regs;
 
     clear( &regs );
     regs.ebx = handle;
     regs.ecx = len;
-    regs.edx = (u32)buf;
+    regs.edx = (uint32_t)buf;
     call21( &regs, 0x4000 );
     if ( CF( regs ) ) {
         *done = 0;
@@ -827,7 +827,7 @@ int sys_write( u32 handle, const void *buf, u32 len, u32 *done )
     return regs.eax < len ? ERR_DISKFULL : 0;
 }
 
-int sys_close( u32 handle )
+int sys_close( uint32_t handle )
 {
     REGS regs;
 
@@ -839,7 +839,7 @@ int sys_close( u32 handle )
 
 /* 42h, the native form: the offset in ECX and the new position in EAX,
    32 bits each - NOT DOS's CX:DX and DX:AX. */
-int sys_file_size( u32 handle, u32 *size )
+int sys_file_size( uint32_t handle, uint32_t *size )
 {
     REGS regs;
 
@@ -854,7 +854,7 @@ int sys_file_size( u32 handle, u32 *size )
     return sys_seek( handle, 0 );
 }
 
-int sys_seek( u32 handle, u32 pos )
+int sys_seek( uint32_t handle, uint32_t pos )
 {
     REGS regs;
 
@@ -865,19 +865,19 @@ int sys_seek( u32 handle, u32 pos )
     return result( &regs );
 }
 
-int sys_get_ftime( u32 handle, u16 *time, u16 *date )
+int sys_get_ftime( uint32_t handle, uint16_t *time, uint16_t *date )
 {
     REGS regs;
 
     clear( &regs );
     regs.ebx = handle;
     call21( &regs, 0x5700 );
-    *time = (u16)regs.ecx;
-    *date = (u16)regs.edx;
+    *time = (uint16_t)regs.ecx;
+    *date = (uint16_t)regs.edx;
     return result( &regs );
 }
 
-int sys_set_ftime( u32 handle, u16 time, u16 date )
+int sys_set_ftime( uint32_t handle, uint16_t time, uint16_t date )
 {
     REGS regs;
 
@@ -889,28 +889,28 @@ int sys_set_ftime( u32 handle, u16 time, u16 date )
     return result( &regs );
 }
 
-int sys_get_attr( const char *path, u16 *attr )
+int sys_get_attr( const char *path, uint16_t *attr )
 {
     REGS regs;
 
     if ( lfn_ok ) {
         clear( &regs );
         regs.ebx = 0;
-        regs.edx = (u32)path;
+        regs.edx = (uint32_t)path;
         call21( &regs, 0x7143 );
         if ( !lfn_missing( &regs ) ) {
-            *attr = (u16)regs.ecx;
+            *attr = (uint16_t)regs.ecx;
             return result( &regs );
         }
     }
     clear( &regs );
-    regs.edx = (u32)path;
+    regs.edx = (uint32_t)path;
     call21( &regs, 0x4300 );
-    *attr = (u16)regs.ecx;
+    *attr = (uint16_t)regs.ecx;
     return result( &regs );
 }
 
-int sys_set_attr( const char *path, u16 attr )
+int sys_set_attr( const char *path, uint16_t attr )
 {
     REGS regs;
 
@@ -918,7 +918,7 @@ int sys_set_attr( const char *path, u16 attr )
         clear( &regs );
         regs.ebx = 1;
         regs.ecx = attr;
-        regs.edx = (u32)path;
+        regs.edx = (uint32_t)path;
         call21( &regs, 0x7143 );
         if ( !lfn_missing( &regs ) ) {
             return result( &regs );
@@ -926,26 +926,26 @@ int sys_set_attr( const char *path, u16 attr )
     }
     clear( &regs );
     regs.ecx = attr;
-    regs.edx = (u32)path;
+    regs.edx = (uint32_t)path;
     call21( &regs, 0x4301 );
     return result( &regs );
 }
 
 /* one path in EDX, by its long name and then by the classic call */
-static int path_call( const char *path, u32 lfn_func, u32 func )
+static int path_call( const char *path, uint32_t lfn_func, uint32_t func )
 {
     REGS regs;
 
     if ( lfn_ok ) {
         clear( &regs );
-        regs.edx = (u32)path;
+        regs.edx = (uint32_t)path;
         call21( &regs, lfn_func );
         if ( !lfn_missing( &regs ) ) {
             return result( &regs );
         }
     }
     clear( &regs );
-    regs.edx = (u32)path;
+    regs.edx = (uint32_t)path;
     call21( &regs, func );
     return result( &regs );
 }
@@ -976,16 +976,16 @@ int sys_rename( const char *from, const char *to )
 
     if ( lfn_ok ) {
         clear( &regs );
-        regs.edx = (u32)from;
-        regs.edi = (u32)to;
+        regs.edx = (uint32_t)from;
+        regs.edi = (uint32_t)to;
         call21( &regs, 0x7156 );
         if ( !lfn_missing( &regs ) ) {
             return result( &regs );
         }
     }
     clear( &regs );
-    regs.edx = (u32)from;
-    regs.edi = (u32)to;
+    regs.edx = (uint32_t)from;
+    regs.edi = (uint32_t)to;
     call21( &regs, 0x5600 );
     return result( &regs );
 }
@@ -994,14 +994,14 @@ int sys_rename( const char *from, const char *to )
 /* searching                                                           */
 /* ------------------------------------------------------------------ */
 
-static u8 dta_required;
+static uint8_t dta_required;
 
 static void rec_from_lfn( FINDREC *rec )
 {
     rec->attr = find_rec[0];
-    rec->time = *(u16 *)(find_rec + 0x14);      /* last written, DOS's form */
-    rec->date = *(u16 *)(find_rec + 0x16);
-    rec->size = *(u32 *)(find_rec + 0x20);
+    rec->time = *(uint16_t *)(find_rec + 0x14); /* last written, DOS's form */
+    rec->date = *(uint16_t *)(find_rec + 0x16);
+    rec->size = *(uint32_t *)(find_rec + 0x20);
     str_fit( rec->name, (const char *)find_rec + 0x2C, sizeof( rec->name ) );
     str_fit( rec->alias, (const char *)find_rec + 0x130, sizeof( rec->alias ) );
     if ( rec->alias[0] == 0 ) {
@@ -1012,9 +1012,9 @@ static void rec_from_lfn( FINDREC *rec )
 static void rec_from_dta( FINDREC *rec )
 {
     rec->attr = find_rec[0x15];
-    rec->time = *(u16 *)(find_rec + 0x16);
-    rec->date = *(u16 *)(find_rec + 0x18);
-    rec->size = *(u32 *)(find_rec + 0x1A);
+    rec->time = *(uint16_t *)(find_rec + 0x16);
+    rec->date = *(uint16_t *)(find_rec + 0x18);
+    rec->size = *(uint32_t *)(find_rec + 0x1A);
     str_fit( rec->name, (const char *)find_rec + 0x1E, 13 );
     str_fit( rec->alias, rec->name, sizeof( rec->alias ) );
 }
@@ -1026,15 +1026,15 @@ static int dta_skip( void )
 
 /* "attrs": the attributes a name may have in the low byte, and the
    ones it must have in the high byte.  SI = 1 asks for DOS's dates. */
-int sys_find_first( const char *pattern, u16 attrs, FINDREC *rec, u32 *handle )
+int sys_find_first( const char *pattern, uint16_t attrs, FINDREC *rec, uint32_t *handle )
 {
     REGS regs;
 
     if ( lfn_ok ) {
         clear( &regs );
         regs.ecx = attrs;
-        regs.edx = (u32)pattern;
-        regs.edi = (u32)find_rec;
+        regs.edx = (uint32_t)pattern;
+        regs.edi = (uint32_t)find_rec;
         regs.esi = 1;
         call21( &regs, 0x714E );
         if ( !lfn_missing( &regs ) ) {
@@ -1047,12 +1047,12 @@ int sys_find_first( const char *pattern, u16 attrs, FINDREC *rec, u32 *handle )
         }
     }
     clear( &regs );
-    regs.edx = (u32)find_rec;
+    regs.edx = (uint32_t)find_rec;
     call21( &regs, 0x1A00 );
-    dta_required = (u8)(attrs >> 8);
+    dta_required = (uint8_t)(attrs >> 8);
     clear( &regs );
     regs.ecx = attrs & 0xFF;
-    regs.edx = (u32)pattern;
+    regs.edx = (uint32_t)pattern;
     call21( &regs, 0x4E00 );
     if ( CF( regs ) ) {
         return (int)AX( regs );
@@ -1065,14 +1065,14 @@ int sys_find_first( const char *pattern, u16 attrs, FINDREC *rec, u32 *handle )
     return 0;
 }
 
-int sys_find_next( u32 handle, FINDREC *rec )
+int sys_find_next( uint32_t handle, FINDREC *rec )
 {
     REGS regs;
 
     if ( lfn_ok ) {
         clear( &regs );
         regs.ebx = handle;
-        regs.edi = (u32)find_rec;
+        regs.edi = (uint32_t)find_rec;
         regs.esi = 1;
         call21( &regs, 0x714F );
         if ( CF( regs ) ) {
@@ -1092,7 +1092,7 @@ int sys_find_next( u32 handle, FINDREC *rec )
     return 0;
 }
 
-void sys_find_close( u32 handle )
+void sys_find_close( uint32_t handle )
 {
     REGS regs;
 
@@ -1121,7 +1121,7 @@ void sys_set_drive( int drv )
     REGS regs;
 
     clear( &regs );
-    regs.edx = (u32)drv;
+    regs.edx = (uint32_t)drv;
     call21( &regs, 0x0E00 );
 }
 
@@ -1132,7 +1132,7 @@ int sys_drive_valid( int drv )
     REGS regs;
 
     clear( &regs );
-    regs.ebx = (u32)drv + 1;
+    regs.ebx = (uint32_t)drv + 1;
     call21( &regs, 0x4409 );
     return !(CF( regs ) && AX( regs ) == ERR_BADDRIVE);
 }
@@ -1144,16 +1144,16 @@ int sys_get_cwd( int drv, char *buf )
     buf[0] = 0;
     if ( lfn_ok ) {
         clear( &regs );
-        regs.edx = (u32)drv + 1;
-        regs.esi = (u32)buf;
+        regs.edx = (uint32_t)drv + 1;
+        regs.esi = (uint32_t)buf;
         call21( &regs, 0x7147 );
         if ( !lfn_missing( &regs ) ) {
             return result( &regs );
         }
     }
     clear( &regs );
-    regs.edx = (u32)drv + 1;
-    regs.esi = (u32)buf;
+    regs.edx = (uint32_t)drv + 1;
+    regs.esi = (uint32_t)buf;
     call21( &regs, 0x4700 );
     return result( &regs );
 }
@@ -1165,17 +1165,17 @@ int sys_truename( const char *path, char *out, int form )
     out[0] = 0;
     if ( lfn_ok ) {
         clear( &regs );
-        regs.ecx = (u32)form;
-        regs.esi = (u32)path;
-        regs.edi = (u32)out;
+        regs.ecx = (uint32_t)form;
+        regs.esi = (uint32_t)path;
+        regs.edi = (uint32_t)out;
         call21( &regs, 0x7160 );
         if ( !lfn_missing( &regs ) ) {
             return result( &regs );
         }
     }
     clear( &regs );
-    regs.esi = (u32)path;
-    regs.edi = (u32)out;
+    regs.esi = (uint32_t)path;
+    regs.edi = (uint32_t)out;
     call21( &regs, 0x6000 );
     return result( &regs );
 }
@@ -1187,12 +1187,12 @@ int sys_truename( const char *path, char *out, int form )
 int sys_drive_kind( int drv )
 {
     REGS regs;
-    u8 rec[12];
+    uint8_t rec[12];
 
     mem_set( rec, 0, sizeof( rec ) );
     clear( &regs );
-    regs.edx = (u32)drv;
-    regs.edi = (u32)rec;
+    regs.edx = (uint32_t)drv;
+    regs.edi = (uint32_t)rec;
     call21( &regs, 0xF106 );
     if ( CF( regs ) || !(rec[2] & 0x01) ) {
         return DK_NONE;
@@ -1209,8 +1209,8 @@ int sys_drive_kind( int drv )
     return DK_FIXED;
 }
 
-static void to_kb( u32 cluster_bytes, u32 free_clusters, u32 total_clusters,
-                   u32 *free_kb, u32 *total_kb )
+static void to_kb( uint32_t cluster_bytes, uint32_t free_clusters, uint32_t total_clusters,
+                   uint32_t *free_kb, uint32_t *total_kb )
 {
     if ( cluster_bytes >= 1024 ) {
         *free_kb = free_clusters * (cluster_bytes / 1024);
@@ -1227,31 +1227,31 @@ static void to_kb( u32 cluster_bytes, u32 free_clusters, u32 total_clusters,
    clusters in all, a dword each.  Up to v0.69 the size word was
    missing and everything sat two bytes early; a first word of 0 says
    which (SETUP's way). */
-int sys_disk_space( int drv, u32 *free_kb, u32 *total_kb )
+int sys_disk_space( int drv, uint32_t *free_kb, uint32_t *total_kb )
 {
-    static u8 ext[48];
+    static uint8_t ext[48];
     static char root[4] = "A:\\";
     REGS regs;
-    u32 spc, bps, cluster;
-    const u8 *at;
+    uint32_t spc, bps, cluster;
+    const uint8_t *at;
 
     *free_kb = *total_kb = 0;
     root[0] = (char)('A' + drv);
     mem_set( ext, 0, sizeof( ext ) );
     clear( &regs );
-    regs.edx = (u32)root;
-    regs.edi = (u32)ext;
+    regs.edx = (uint32_t)root;
+    regs.edi = (uint32_t)ext;
     regs.ecx = sizeof( ext );
     call21( &regs, 0x7303 );
-    at = *(u16 *)ext == 0 ? ext + 2 : ext + 4;
-    spc = *(u32 *)at;
-    bps = *(u32 *)(at + 4);
+    at = *(uint16_t *)ext == 0 ? ext + 2 : ext + 4;
+    spc = *(uint32_t *)at;
+    bps = *(uint32_t *)(at + 4);
     if ( !CF( regs ) && spc && spc <= 0x100 && bps >= 128 && bps <= 0x1000 ) {
-        to_kb( spc * bps, *(u32 *)(at + 8), *(u32 *)(at + 12), free_kb, total_kb );
+        to_kb( spc * bps, *(uint32_t *)(at + 8), *(uint32_t *)(at + 12), free_kb, total_kb );
         return 1;
     }
     clear( &regs );
-    regs.edx = (u32)drv + 1;
+    regs.edx = (uint32_t)drv + 1;
     call21( &regs, 0x3600 );
     if ( (regs.eax & 0xFFFF) == 0xFFFF ) {
         return 0;
@@ -1273,22 +1273,22 @@ int sys_disk_space( int drv, u32 *free_kb, u32 *total_kb )
    length, the text, a carriage return.  4Dh has its exit code. */
 int sys_exec( const char *prog, const char *args, int *error )
 {
-    static u8  tail_buf[132];
-    static u32 parm[2];
+    static uint8_t  tail_buf[132];
+    static uint32_t parm[2];
     REGS regs;
-    u32 len = str_len( args );
+    unsigned int len = str_len( args );
 
     if ( len > 126 ) {
         len = 126;
     }
-    tail_buf[0] = (u8)len;
+    tail_buf[0] = (uint8_t)len;
     mem_cpy( tail_buf + 1, args, len );
     tail_buf[1 + len] = 0x0D;
-    parm[0] = *(u32 *)(psp + 0x2C);
-    parm[1] = (u32)tail_buf;
+    parm[0] = *(uint32_t *)(psp + 0x2C);
+    parm[1] = (uint32_t)tail_buf;
     clear( &regs );
-    regs.edx = (u32)prog;
-    regs.ebx = (u32)parm;
+    regs.edx = (uint32_t)prog;
+    regs.ebx = (uint32_t)parm;
     call21( &regs, 0x4B00 );
     if ( CF( regs ) ) {
         *error = (int)AX( regs );
@@ -1302,14 +1302,14 @@ int sys_exec( const char *prog, const char *args, int *error )
 
 /* F1h/03h: the interpreter the kernel started, which is the one that
    reads PATH and runs batch files */
-void sys_shell_path( char *buf, u32 max )
+void sys_shell_path( char *buf, unsigned int max )
 {
     static char name[96];
     REGS regs;
 
     name[0] = 0;
     clear( &regs );
-    regs.edx = (u32)name;
+    regs.edx = (uint32_t)name;
     call21( &regs, 0xF103 );
     if ( CF( regs ) || name[0] == 0 ) {
         str_cpy( name, "CMD.EXE" );
@@ -1333,14 +1333,14 @@ void sys_version( int *major, int *minor )
 /* a graphics screen                                                   */
 /* ------------------------------------------------------------------ */
 
-int sys_peek( u32 addr, void *buf, u32 len )
+int sys_peek( uint32_t addr, void *buf, unsigned int len )
 {
     REGS regs;
 
     clear( &regs );
     regs.ebx = addr;
     regs.ecx = len;
-    regs.edi = (u32)buf;
+    regs.edi = (uint32_t)buf;
     call21( &regs, F1( 0x20, 0 ) );
     if ( CF( regs ) ) {
         mem_set( buf, 0, len );
@@ -1356,30 +1356,30 @@ int sys_bios( int vector, BREGS *bregs )
     bregs->es = bregs->ds = 0;
     bregs->flags = 0;
     clear( &regs );
-    regs.edx = (u32)vector;
-    regs.esi = (u32)bregs;
+    regs.edx = (uint32_t)vector;
+    regs.esi = (uint32_t)bregs;
     call21( &regs, 0xF121 );
     return !CF( regs );
 }
 
 /* VBF_INFO: 4F00h's block, its mode list copied into it and its
    pointer made ours */
-int sys_vbe_version( u16 *modes, int max, int *count )
+int sys_vbe_version( uint16_t *modes, int max, int *count )
 {
-    static u8 block[512];
+    static uint8_t block[512];
     REGS regs;
-    const u16 *list;
+    const uint16_t *list;
     int found = 0;
 
     *count = 0;
     mem_set( block, 0, sizeof( block ) );
     clear( &regs );
-    regs.edi = (u32)block;
+    regs.edi = (uint32_t)block;
     call21( &regs, F1( 0x1F, 0 ) );
     if ( CF( regs ) ) {
         return 0;
     }
-    list = (const u16 *)*(u32 *)(block + 0x0E);
+    list = (const uint16_t *)*(uint32_t *)(block + 0x0E);
     if ( list ) {
         while ( *list != 0xFFFF && found < max ) {
             modes[found++] = *list++;
@@ -1389,19 +1389,19 @@ int sys_vbe_version( u16 *modes, int max, int *count )
     return (int)(regs.eax & 0xFFFF);
 }
 
-int sys_vbe_mode( int mode, u8 *info )
+int sys_vbe_mode( int mode, uint8_t *info )
 {
     REGS regs;
 
     mem_set( info, 0, 256 );
     clear( &regs );
-    regs.ecx = (u32)mode;
-    regs.edi = (u32)info;
+    regs.ecx = (uint32_t)mode;
+    regs.edi = (uint32_t)info;
     call21( &regs, F1( 0x1F, 1 ) );
     return !CF( regs );
 }
 
-int sys_video_set( u32 mode, u32 *selector, u32 *bytes, u32 *pitch )
+int sys_video_set( uint32_t mode, uint32_t *selector, uint32_t *bytes, uint32_t *pitch )
 {
     REGS regs;
 
@@ -1425,15 +1425,15 @@ void sys_video_restore( void )
     call21( &regs, F1( 0x1F, 3 ) );
 }
 
-int sys_video_palette( int first, int count, const u8 *entries )
+int sys_video_palette( int first, int count, const uint8_t *entries )
 {
     REGS regs;
 
     clear( &regs );
     regs.ebx = 0;
-    regs.ecx = (u32)count;
-    regs.edx = (u32)first;
-    regs.edi = (u32)entries;
+    regs.ecx = (uint32_t)count;
+    regs.edx = (uint32_t)first;
+    regs.edi = (uint32_t)entries;
     call21( &regs, F1( 0x1F, 4 ) );
     return !CF( regs );
 }

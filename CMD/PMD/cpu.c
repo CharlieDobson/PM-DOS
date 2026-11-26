@@ -27,7 +27,7 @@
 #include "pmd.h"
 
 typedef struct {
-    u8          family, model;      /* model FFh: any of that family */
+    uint8_t     family, model;      /* model FFh: any of that family */
     const char *name;
 } MODEL;
 
@@ -167,10 +167,10 @@ static const char *model_name( const MODEL *models, int family, int model )
 
 /* what leaf 1's EDX (and the extended leaf's, for 3DNow!) says the
    processor can do: the ones a DOS program might care about */
-static void feature_text( char *out, u32 max, u32 edx, u32 ext_edx )
+static void feature_text( char *out, unsigned int max, uint32_t edx, uint32_t ext_edx )
 {
     static const struct {
-        u8          bit;
+        uint8_t     bit;
         const char *name;
     } bits[] = {
         { 0, "FPU" }, { 4, "TSC" }, { 5, "MSR" }, { 8, "CX8" }, { 15, "CMOV" },
@@ -229,7 +229,7 @@ static const char *cyrix_by_dir0( void )
 
 void cpu_identify( CPUINFO *cpu )
 {
-    u32 regs[4], top, ext_edx = 0, sig, feat;
+    uint32_t regs[4], top, ext_edx = 0, sig, feat;
     const VENDOR *vendor;
     const char *name;
     char *brand;
@@ -291,7 +291,7 @@ void cpu_identify( CPUINFO *cpu )
     }
     if ( top >= 0x80000004UL && top <= 0x800000FFUL ) {
         for ( index = 0; index < 3; index++ ) {
-            cpu_id( 0x80000002UL + (u32)index, regs );
+            cpu_id( 0x80000002UL + (uint32_t)index, regs );
             mem_cpy( cpu->brand + index * 16, regs, 16 );
         }
         cpu->brand[48] = 0;

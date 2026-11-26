@@ -24,7 +24,7 @@ static void define_label( int module_level, TOKEN *tok );
 /* ------------------------------------------------------------------ */
 
 /* the text of a line in one of the program's texts */
-static void get_line( int text, u32 line, const char **src, u32 *len )
+static void get_line( int text, unsigned int line, const char **src, unsigned int *len )
 {
     LINE *ln = doc_line( cc->pt->texts[text], line );
 
@@ -32,7 +32,7 @@ static void get_line( int text, u32 line, const char **src, u32 *len )
     *len = ln ? ln->len : 0;
 }
 
-static void lex_src( const char *src, u32 len )
+static void lex_src( const char *src, unsigned int len )
 {
     int col;
     const char *msg;
@@ -45,7 +45,7 @@ static void lex_src( const char *src, u32 len )
     if ( cc->ntoks < 0 ) {
         cc->ntoks = 1;
         cc->toks[0].kind = TK_EOL;
-        cc->toks[0].col = (u16)col;
+        cc->toks[0].col = (uint16_t)col;
         cc->toks[0].len = 1;
         c_fail_at( 0, msg );
     }
@@ -57,7 +57,7 @@ static void stmt_mark( void )
     TOKEN *tok = c_tok();
 
     if ( cc->nlocs == cc->locs_cap ) {
-        u32 cap = cc->locs_cap ? cc->locs_cap * 2 : 1024;
+        unsigned int cap = cc->locs_cap ? cc->locs_cap * 2 : 1024;
         STMTLOC *grown = (STMTLOC *)try_realloc( cc->locs, cap * sizeof( STMTLOC ) );
         if ( grown == NULL ) {
             c_fail( "Out of memory" );
@@ -69,11 +69,11 @@ static void stmt_mark( void )
     loc = &cc->locs[cc->nlocs++];
     mem_set( loc, 0, sizeof( *loc ) );
     loc->pc = c_here();
-    loc->text = (u16)cc->text;
+    loc->text = (uint16_t)cc->text;
     loc->line = cc->line;
     loc->col = tok->col;
     loc->lineno = cc->lineno;
-    loc->proc = (u16)(cc->cur_proc + 1);
+    loc->proc = (uint16_t)(cc->cur_proc + 1);
     c_op32( OP_STMT, cc->cur_stmt );
 }
 
@@ -86,11 +86,11 @@ static void stmt_unmark( void )
     }
 }
 
-static void stmt_finish( u32 first_loc )
+static void stmt_finish( unsigned int first_loc )
 {
-    u32 i;
+    unsigned int i;
     TOKEN *tok = &cc->toks[cc->tp > 0 ? cc->tp - 1 : 0];
-    u32 end_col = tok->col + tok->len;
+    unsigned int end_col = tok->col + tok->len;
 
     stmt_unmark();
     for ( i = first_loc; i < cc->nlocs; i++ ) {
@@ -98,7 +98,7 @@ static void stmt_finish( u32 first_loc )
         if ( loc->end_pc == 0 ) {
             loc->end_pc = c_here();
             if ( loc->len == 0 ) {
-                loc->len = (u16)(end_col > loc->col ? end_col - loc->col : 1);
+                loc->len = (uint16_t)(end_col > loc->col ? end_col - loc->col : 1);
             }
         }
     }
@@ -107,7 +107,7 @@ static void stmt_finish( u32 first_loc )
 /* one statement, with its OP_STMT */
 static void one_statement( void )
 {
-    u32 first = cc->nlocs;
+    unsigned int first = cc->nlocs;
 
     stmt_mark();
     c_statement();
@@ -151,7 +151,7 @@ void c_statements_until_eol( int stop_at_else )
 static void metacommand( TOKEN *tok )
 {
     const char *text = cc->src + tok->col;
-    u32 len = tok->len, pos;
+    unsigned int len = tok->len, pos;
 
     pos = (tok->flags & TF_APOS) ? 1 : 3;
     while ( pos < len && (text[pos] == ' ' || text[pos] == '\t') ) {
@@ -174,7 +174,7 @@ static void compile_line( void )
 
     cc->neback = 0;                     /* a failed line's are not waiting */
     if ( tok->kind == TK_LINENUM ) {
-        cc->lineno = (s32)tok->num;
+        cc->lineno = (int32_t)tok->num;
         define_label( module_level, tok );
         c_next();
         tok = c_tok();
@@ -195,7 +195,7 @@ static void compile_line_label_only( void )
     TOKEN *tok = c_tok();
 
     if ( tok->kind == TK_LINENUM ) {
-        cc->lineno = (s32)tok->num;
+        cc->lineno = (int32_t)tok->num;
         define_label( 1, tok );
         tok++;
     }
@@ -217,7 +217,7 @@ static void define_label( int module_level, TOKEN *tok )
     int len, i;
 
     if ( tok->kind == TK_LINENUM ) {
-        fmt_dec( (u32)tok->num, 0, upper );
+        fmt_dec( (unsigned int)tok->num, 0, upper );
     } else {
         len = tok->len > NAME_MAX ? NAME_MAX : tok->len;
         for ( i = 0; i < len; i++ ) {
@@ -315,13 +315,13 @@ static BLOCK *block_top( int kind )
 }
 
 /* a code address to be patched with the block's end */
-static void block_add_exit( BLOCK *blk, u32 at )
+static void block_add_exit( BLOCK *blk, unsigned int at )
 {
     if ( blk->nexits == blk->cap_exits ) {
         int cap = blk->cap_exits ? blk->cap_exits * 2 : 8;
-        u32 *grown = (u32 *)c_pool( cap * sizeof( u32 ) );
+        unsigned int *grown = (unsigned int *)c_pool( cap * sizeof( unsigned int ) );
         if ( blk->exits ) {
-            mem_cpy( grown, blk->exits, blk->nexits * sizeof( u32 ) );
+            mem_cpy( grown, blk->exits, blk->nexits * sizeof( unsigned int ) );
         }
         blk->exits = grown;
         blk->cap_exits = cap;
@@ -435,7 +435,7 @@ static void item_store( QTYPE type, int rt_i, int rt_l, int rt_s, int rt_d, int 
     case TY_DOUBLE: c_rt( rt_d ); break;
     case TY_STR:    c_rt( rt_str ); break;
     case TY_FSTR:
-        c_push_l( (s32)TARG( type ) );
+        c_push_l( (int32_t)TARG( type ) );
         c_rt( rt_fs );
         break;
     default:
@@ -487,8 +487,8 @@ static void st_assign( void )
 {
     VREF ref, src;
     QTYPE type;
-    u32 at = c_here(), len = 0, i;
-    u8 *target = NULL;
+    unsigned int at = c_here(), len = 0, i;
+    uint8_t *target = NULL;
 
     if ( !c_var( &ref, 1, 0 ) ) {
         TOKEN *tok = c_tok();
@@ -515,7 +515,7 @@ static void st_assign( void )
            the target's code moves behind the value's.  Expression code
            has no jumps or fixups in it, so it can move. */
         len = c_here() - at;
-        target = (u8 *)c_pool( len );
+        target = (uint8_t *)c_pool( len );
         mem_cpy( target, cc->code + at, len );
         cc->code_len = at;
     }
@@ -605,7 +605,7 @@ static void call_sub( int parens )
     base = cc->neback;
     c_call_args( proc, parens );
     c_op( OP_CALL );
-    c_emit16( (u32)sym->proc );
+    c_emit16( (uint32_t)sym->proc );
     c_call_back( base );
 }
 
@@ -617,7 +617,7 @@ static void st_call( void )
         for ( ;; ) {
             VREF ref;
             int save = cc->tp;
-            u32 at = c_here();
+            unsigned int at = c_here();
             if ( c_is( TK_ID ) && c_var( &ref, 0, 0 ) && (c_is( TK_COMMA ) || c_is( TK_RPAREN )) ) {
                 cc->code_len = at;
             } else {
@@ -769,7 +769,7 @@ static int input_prompt( int line_input )
     }
     tok = c_tok();
     if ( tok->kind == TK_STR ) {
-        u32 len = tok->len - 1;
+        unsigned int len = tok->len - 1;
         if ( !(tok->flags & TF_UNTERM) ) {
             len--;
         }
@@ -796,7 +796,7 @@ static void st_input( void )
 {
     char sig[MAX_TOKENS];
     int count = 0, save_tp;
-    u32 save_code;
+    unsigned int save_code;
     VREF ref;
 
     if ( c_accept( TK_HASH ) ) {
@@ -825,7 +825,7 @@ static void st_input( void )
     } while ( c_accept( TK_COMMA ) );
     cc->code_len = save_code;
     cc->tp = save_tp;
-    c_op32( OP_CSTR, c_const_str( sig, (u32)count ) );
+    c_op32( OP_CSTR, c_const_str( sig, (unsigned int)count ) );
     c_rt( RT_INBEGIN );
     do {
         item_store( store_target( &ref ), RT_INITEMI, RT_INITEML, RT_INITEMS, RT_INITEMD,
@@ -845,7 +845,7 @@ static void st_line_input( void )
         if ( !IS_STRT( type ) ) {
             c_fail_tok( "Type mismatch" );
         }
-        c_push_l( TKIND( type ) == TY_FSTR ? (s32)TARG( type ) : 0 );
+        c_push_l( TKIND( type ) == TY_FSTR ? (int32_t)TARG( type ) : 0 );
         c_rt( RT_LINEINF );
         return;
     }
@@ -854,7 +854,7 @@ static void st_line_input( void )
     if ( !IS_STRT( type ) ) {
         c_fail_tok( "Type mismatch" );
     }
-    c_push_l( TKIND( type ) == TY_FSTR ? (s32)TARG( type ) : 0 );
+    c_push_l( TKIND( type ) == TY_FSTR ? (int32_t)TARG( type ) : 0 );
     c_rt( RT_LINEIN );
 }
 
@@ -889,7 +889,7 @@ static void branch_part( int stop_at_else )
 {
     if ( c_is( TK_NUM ) ) {
         SYM *label;
-        u32 first = cc->nlocs;
+        unsigned int first = cc->nlocs;
         stmt_mark();
         label = c_label_ref( 0 );
         c_op( cc->immediate ? OP_IMMGOTO : OP_JMP );
@@ -907,14 +907,14 @@ static void branch_part( int stop_at_else )
 static void st_if( void )
 {
     BLOCK *blk;
-    u32 to_else, to_end, myloc = cc->cur_stmt;
+    unsigned int to_else, to_end, myloc = cc->cur_stmt;
 
     cond();
     if ( c_accept_kw( KW_GOTO ) ) {
         /* IF x GOTO label [ELSE ...] */
         SYM *label = c_label_ref( 0 );
         if ( cc->immediate ) {
-            u32 skip = c_jump( OP_JZ );         /* the program goes on from the label */
+            unsigned int skip = c_jump( OP_JZ ); /* the program goes on from the label */
             c_op( OP_IMMGOTO );
             c_emit_label( label );
             c_patch32( skip, c_here() );
@@ -1022,14 +1022,14 @@ static int for_op( QTYPE type, int first )
     return first ? OP_FORD : OP_NEXTD;
 }
 
-static void emit_ref( u8 scope, u32 off )
+static void emit_ref( uint8_t scope, unsigned int off )
 {
     c_emit( scope );
     c_emit32( off );
 }
 
 /* a hidden variable of the FOR's type gets the value on the stack */
-static void store_temp( u8 scope, u32 off, QTYPE type, QTYPE from )
+static void store_temp( uint8_t scope, unsigned int off, QTYPE type, QTYPE from )
 {
     VREF tmp;
 
@@ -1113,7 +1113,7 @@ static void st_next( void )
         }
         if ( c_is( TK_ID ) ) {
             VREF ref;
-            u32 at = c_here();
+            unsigned int at = c_here();
             int save = cc->tp;
             c_name_of( c_tok(), upper );
             if ( !c_var( &ref, 1, 0 ) || ref.sym != blk->vsym ) {
@@ -1325,7 +1325,7 @@ static void case_compare( BLOCK *blk, int cc_code )
 static void st_case( void )
 {
     BLOCK *blk = block_top( B_SELECT );
-    u32 body_jumps[64];
+    unsigned int body_jumps[64];
     int nbody = 0, i, cc_code;
 
     if ( blk == NULL ) {
@@ -1386,7 +1386,7 @@ static void st_case( void )
             case_compare( blk, cc_code );
         } else {
             int save = cc->tp;
-            u32 at = c_here();
+            unsigned int at = c_here();
             /* "a TO b" or a value: look for TO at this level */
             case_compare( blk, CC_EQ );
             if ( c_is_kw( KW_TO ) ) {
@@ -1395,7 +1395,7 @@ static void st_case( void )
                 case_compare( blk, CC_GE );
                 c_need_kw( KW_TO );
                 {
-                    u32 skip = c_jump( OP_JZ );
+                    unsigned int skip = c_jump( OP_JZ );
                     case_compare( blk, CC_LE );
                     if ( nbody >= 64 ) {
                         c_fail( "Program too complex" );
@@ -1533,7 +1533,7 @@ static void st_on( void )
         labels[count++] = c_label_ref( 0 );
     } while ( c_accept( TK_COMMA ) );
     c_op( OP_ONGO );
-    c_emit16( (u32)count );
+    c_emit16( (uint32_t)count );
     c_emit( gosub );
     for ( i = 0; i < count; i++ ) {
         c_emit_label( labels[i] );
@@ -1601,7 +1601,7 @@ static int deftype_kw( int kw )
 }
 
 /* DEFINT a-z, c...: into the deftype table given */
-static void st_deftype( int type, u8 *table )
+static void st_deftype( int type, uint8_t *table )
 {
     TOKEN *tok;
     int from, to, i;
@@ -1627,13 +1627,13 @@ static void st_deftype( int type, u8 *table )
             c_fail_tok( "Syntax error" );
         }
         for ( i = from; i <= to; i++ ) {
-            table[i] = (u8)type;
+            table[i] = (uint8_t)type;
         }
     } while ( c_accept( TK_COMMA ) );
 }
 
 /* the bounds of one array: 1 if every one is a constant */
-static int array_bounds( s32 *bounds, int *ndims )
+static int array_bounds( int32_t *bounds, int *ndims )
 {
     CELL val;
     QTYPE type;
@@ -1643,7 +1643,7 @@ static int array_bounds( s32 *bounds, int *ndims )
 
     c_need( TK_LPAREN, "(" );
     for ( ;; ) {
-        s32 lo = cc->option_base, hi;
+        int32_t lo = cc->option_base, hi;
         if ( count >= MAX_DIMS ) {
             c_fail( "Too many dimensions" );
         }
@@ -1652,7 +1652,7 @@ static int array_bounds( s32 *bounds, int *ndims )
             break;
         }
         num = TKIND( type ) == TY_SINGLE ? val.s : TKIND( type ) == TY_DOUBLE ? val.d : val.l;
-        hi = (s32)fp_round( num );
+        hi = (int32_t)fp_round( num );
         if ( c_accept_kw( KW_TO ) ) {
             lo = hi;
             if ( !const_expr( &val, &type, &sval ) || !IS_NUMT( type ) ) {
@@ -1660,7 +1660,7 @@ static int array_bounds( s32 *bounds, int *ndims )
                 break;
             }
             num = TKIND( type ) == TY_SINGLE ? val.s : TKIND( type ) == TY_DOUBLE ? val.d : val.l;
-            hi = (s32)fp_round( num );
+            hi = (int32_t)fp_round( num );
         }
         bounds[count * 2] = lo;
         bounds[count * 2 + 1] = hi;
@@ -1735,7 +1735,7 @@ static void emit_bounds( void )
     c_need( TK_RPAREN, ")" );
 }
 
-static void add_arrinit( SYM *sym, int ndims, s32 *bounds )
+static void add_arrinit( SYM *sym, int ndims, int32_t *bounds )
 {
     ARRINIT *init;
 
@@ -1743,7 +1743,7 @@ static void add_arrinit( SYM *sym, int ndims, s32 *bounds )
         return;
     }
     if ( cc->narrinit == cc->arrinit_cap ) {
-        u32 cap = cc->arrinit_cap ? cc->arrinit_cap * 2 : 32;
+        unsigned int cap = cc->arrinit_cap ? cc->arrinit_cap * 2 : 32;
         ARRINIT *grown = (ARRINIT *)try_realloc( cc->arrinit, cap * sizeof( ARRINIT ) );
         if ( grown == NULL ) {
             c_fail( "Out of memory" );
@@ -1754,14 +1754,14 @@ static void add_arrinit( SYM *sym, int ndims, s32 *bounds )
     init = &cc->arrinit[cc->narrinit++];
     mem_set( init, 0, sizeof( *init ) );
     init->scope = sym->scope;
-    init->proc = (u16)(cc->procscope ? cc->procscope->proc : 0);
+    init->proc = (uint16_t)(cc->procscope ? cc->procscope->proc : 0);
     init->offset = sym->offset;
     init->type = sym->type;
     init->esize = type_size( sym->type );
-    init->ndims = (u8)ndims;
+    init->ndims = (uint8_t)ndims;
     init->flags = AF_STATIC;
-    init->bounds = (s32 *)c_pool( ndims * 2 * sizeof( s32 ) );
-    mem_cpy( init->bounds, bounds, ndims * 2 * sizeof( s32 ) );
+    init->bounds = (int32_t *)c_pool( ndims * 2 * sizeof( int32_t ) );
+    mem_cpy( init->bounds, bounds, ndims * 2 * sizeof( int32_t ) );
 }
 
 /* DIM, REDIM, and the declarations of COMMON, SHARED and STATIC */
@@ -1773,7 +1773,7 @@ static void common_add( SYM *sym, int is_array )
     COMMONVAR *cv;
 
     if ( cc->ncommon == cc->common_cap ) {
-        u32 cap = cc->common_cap ? cc->common_cap * 2 : 16;
+        unsigned int cap = cc->common_cap ? cc->common_cap * 2 : 16;
         COMMONVAR *grown = (COMMONVAR *)try_realloc( cc->common, cap * sizeof( COMMONVAR ) );
         if ( grown == NULL ) {
             c_fail( "Out of memory" );
@@ -1784,7 +1784,7 @@ static void common_add( SYM *sym, int is_array )
     cv = &cc->common[cc->ncommon++];
     cv->offset = sym->offset;
     cv->type = sym->type;
-    cv->is_array = (u8)is_array;
+    cv->is_array = (uint8_t)is_array;
     cv->size = is_array ? 4 : type_size( sym->type );
 }
 
@@ -1793,7 +1793,7 @@ static void st_dim( int how )
     int shared = 0, ndims, is_array, has_as, all_const, sfx, kind, whole, at_bounds, i;
     int named = 0;
     char upper[NAME_MAX + 1];
-    s32 bounds[MAX_DIMS * 2];
+    int32_t bounds[MAX_DIMS * 2];
     QTYPE type, vtype;
     TOKEN *tok;
     SYM *sym;
@@ -1952,7 +1952,7 @@ static void st_dim( int how )
                 if ( !dynamic && (sym->flags & SF_DIMMED) ) {
                     c_fail_at( at_bounds - 1, "Array already dimensioned" );
                 }
-                sym->ndims = (u8)ndims;
+                sym->ndims = (uint8_t)ndims;
                 sym->flags |= SF_DIMMED;
                 if ( !dynamic && sym->scope == SC_GLOBAL ) {
                     for ( i = 0; i < ndims; i++ ) {
@@ -1986,8 +1986,8 @@ static void st_dim( int how )
                         emit_bounds();
                         cc->tp = save;
                     }
-                    c_push_l( (s32)sym->type );
-                    c_push_l( (s32)type_size( sym->type ) );
+                    c_push_l( (int32_t)sym->type );
+                    c_push_l( (int32_t)type_size( sym->type ) );
                     c_push_l( flags );
                     c_push_l( ndims );
                     c_rt( RT_DIM );
@@ -2049,7 +2049,7 @@ static void st_const( int define )
                       || num < -2147483648.0 || num > 2147483647.0 ) {
                         c_fail_tok( "Overflow" );
                     }
-                    val.l = (s32)num;
+                    val.l = (int32_t)num;
                     break;
                 case TY_SINGLE:
                     if ( num > SNG_MAX || num < -SNG_MAX ) {
@@ -2076,7 +2076,7 @@ static void st_const( int define )
 
 /* a parameter list, (a, b$, c() AS INTEGER...), into a procedure; with
    "scope" the parameters become its variables */
-static void param_list( PROC *proc, SCOPE *scope, u8 *deftype, int is_declare )
+static void param_list( PROC *proc, SCOPE *scope, uint8_t *deftype, int is_declare )
 {
     PARAM params[64];
     int count = 0;
@@ -2113,7 +2113,7 @@ static void param_list( PROC *proc, SCOPE *scope, u8 *deftype, int is_declare )
                 type = sfx ? (QTYPE)sfx : (QTYPE)deftype[upper[0] - 'A'];
             }
             params[count].type = type;
-            params[count].array = (u8)is_array;
+            params[count].array = (uint8_t)is_array;
             params[count].ndims = 0;
             if ( scope != NULL ) {
                 /* the parameter is a variable of the procedure: a name AS a
@@ -2131,7 +2131,7 @@ static void param_list( PROC *proc, SCOPE *scope, u8 *deftype, int is_declare )
                 if ( has_as ) {
                     sym->flags |= SF_AS;
                 }
-                sym->offset = (u32)count * 4;
+                sym->offset = (unsigned int)count * 4;
             }
             count++;
             if ( !c_accept( TK_COMMA ) ) {
@@ -2178,7 +2178,7 @@ static int proc_new( const char *upper, int kind )
     }
     proc = &cc->procs[cc->nprocs];
     mem_set( proc, 0, sizeof( *proc ) );
-    proc->kind = (u8)kind;
+    proc->kind = (uint8_t)kind;
     proc->text = -1;
     sym = sym_add( &cc->module, upper, 0, SK_PROC );
     sym->proc = cc->nprocs;
@@ -2187,13 +2187,13 @@ static int proc_new( const char *upper, int kind )
 }
 
 /* the heading of a SUB, FUNCTION or DECLARE: -> the procedure */
-static int proc_heading( int kind, SCOPE *scope, u8 *deftype, int is_declare )
+static int proc_heading( int kind, SCOPE *scope, uint8_t *deftype, int is_declare )
 {
     TOKEN *tok = c_tok();
     char upper[NAME_MAX + 1];
     int index, sfx, i;
     PROC *proc, tmp;
-    u32 len;
+    unsigned int len;
 
     if ( tok->kind != TK_ID ) {
         c_expect_msg( "identifier" );
@@ -2205,7 +2205,7 @@ static int proc_heading( int kind, SCOPE *scope, u8 *deftype, int is_declare )
     }
     c_next();
     mem_set( &tmp, 0, sizeof( tmp ) );
-    tmp.kind = (u8)kind;
+    tmp.kind = (uint8_t)kind;
     tmp.rettype = sfx ? (QTYPE)sfx : (QTYPE)deftype[upper[0] - 'A'];
     param_list( &tmp, scope, deftype, is_declare );
     if ( c_accept_kw( KW_STATIC ) ) {
@@ -2264,7 +2264,7 @@ static int proc_heading( int kind, SCOPE *scope, u8 *deftype, int is_declare )
 /* DEF FN                                                              */
 /* ------------------------------------------------------------------ */
 
-static u32 deffn_over;
+static unsigned int deffn_over;
 
 static void st_def_fn( void )
 {
@@ -2324,7 +2324,7 @@ static void st_def_fn( void )
         PROC tmp;
         param_list( &tmp, scope, cc->module.deftype, 0 );
     }
-    scope->size = (u32)proc->nparams * 4;
+    scope->size = (unsigned int)proc->nparams * 4;
     proc->ret_off = scope_alloc( scope, type_size( proc->rettype ), 0 );
     if ( TKIND( proc->rettype ) == TY_STR ) {
         scope_note_str( scope, proc->ret_off );
@@ -2362,7 +2362,7 @@ static void st_def_fn( void )
     }
     blk = block_open( B_DEFFN );
     blk->patch = deffn_over;
-    blk->top = (u32)index;
+    blk->top = (unsigned int)index;
 }
 
 static void st_end_def( void )
@@ -2534,7 +2534,7 @@ static void st_get_put( int is_put )
             if ( TKIND( type ) == TY_STR ) {
                 c_push_l( 0 );
             } else {
-                c_push_l( (s32)type_size( type ) );
+                c_push_l( (int32_t)type_size( type ) );
             }
             c_push_l( TKIND( type ) );
         } else {
@@ -2977,7 +2977,7 @@ static void st_mid( void )
         c_fail_tok( "Type mismatch" );
     }
     if ( TKIND( type ) == TY_FSTR ) {
-        c_push_l( (s32)TARG( type ) );
+        c_push_l( (int32_t)TARG( type ) );
     }
     c_need( TK_COMMA, "," );
     expr_long();
@@ -3003,17 +3003,17 @@ static void st_lset( int rset )
         if ( rset ) {
             c_fail_tok( "Type mismatch" );
         }
-        c_push_l( (s32)type_size( type ) );
+        c_push_l( (int32_t)type_size( type ) );
         if ( !c_var( &src, 0, 0 ) || TKIND( src.type ) != TY_REC ) {
             c_fail( "Type mismatch" );
         }
         c_addr( &src );
-        c_push_l( (s32)type_size( src.type ) );
+        c_push_l( (int32_t)type_size( src.type ) );
         c_rt( RT_LSETREC );
         return;
     }
     if ( TKIND( type ) == TY_FSTR ) {
-        c_push_l( (s32)TARG( type ) );
+        c_push_l( (int32_t)TARG( type ) );
         expr_str();
         c_rt( rset ? RT_RSETF : RT_LSETF );
     } else if ( TKIND( type ) == TY_STR ) {
@@ -3068,7 +3068,7 @@ static void st_data( void )
 {
     TOKEN *tok = c_tok();
     const char *text;
-    u32 len, pos = 0, start, end;
+    unsigned int len, pos = 0, start, end;
     int quoted;
     DATAITEM *item;
 
@@ -3111,7 +3111,7 @@ static void st_data( void )
             }
         }
         if ( cc->ndata == cc->data_cap ) {
-            u32 cap = cc->data_cap ? cc->data_cap * 2 : 256;
+            unsigned int cap = cc->data_cap ? cc->data_cap * 2 : 256;
             DATAITEM *grown = (DATAITEM *)try_realloc( cc->data, cap * sizeof( DATAITEM ) );
             if ( grown == NULL ) {
                 c_fail( "Out of memory" );
@@ -3121,11 +3121,11 @@ static void st_data( void )
         }
         item = &cc->data[cc->ndata++];
         item->text = c_pool_strn( text + start, end - start );
-        item->len = (u16)(end - start);
-        item->quoted = (u8)quoted;
-        item->in_text = (u16)cc->text;
+        item->len = (uint16_t)(end - start);
+        item->quoted = (uint8_t)quoted;
+        item->in_text = (uint16_t)cc->text;
         item->line = cc->line;
-        item->col = (u16)(tok->col + start);
+        item->col = (uint16_t)(tok->col + start);
         if ( pos >= len ) {
             break;
         }
@@ -3575,10 +3575,10 @@ void c_statement( void )
 /* the passes                                                          */
 /* ------------------------------------------------------------------ */
 
-static void open_line( int text, u32 line )
+static void open_line( int text, unsigned int line )
 {
     const char *src;
-    u32 len;
+    unsigned int len;
 
     cc->text = text;
     cc->line = line;
@@ -3601,7 +3601,7 @@ static void skip_label( void )
 static void pass0( void )
 {
     DOC *doc = cc->pt->texts[0];
-    u32 line;
+    unsigned int line;
     int in_type = 0;
     RECDEF *rec = NULL;
     struct RFIELD fields[256];
@@ -3632,7 +3632,7 @@ static void pass0( void )
             {
                 char upper[NAME_MAX + 1];
                 int i;
-                u32 fsize;
+                unsigned int fsize;
                 c_name_of( tok, upper );
                 for ( i = 0; i < rec->nfields; i++ ) {
                     if ( str_icmp( fields[i].name, upper ) == 0 ) {
@@ -3693,10 +3693,10 @@ static void pass0( void )
                 sym->kind = SK_TYPE;
                 sym->rec = cc->nrecs;
                 {
-                    u32 hash = 0;
+                    uint32_t hash = 0;
                     const char *cur = upper;
                     while ( *cur ) {
-                        hash = hash * 31 + (u8)*cur++;
+                        hash = hash * 31 + (uint8_t)*cur++;
                     }
                     sym->next = cc->types[hash % NBUCKET];
                     cc->types[hash % NBUCKET] = sym;
@@ -3761,9 +3761,9 @@ static void pass0( void )
 static void pass1( void )
 {
     int text, index;
-    u32 line;
+    unsigned int line;
     DOC *doc;
-    u8 deftype[26];
+    uint8_t deftype[26];
     TOKEN *tok;
 
     cc->pass = 1;
@@ -3799,7 +3799,7 @@ static void pass1( void )
 static void pass2( void )
 {
     DOC *doc = cc->pt->texts[0];
-    u32 line;
+    unsigned int line;
     int in_type = 0, i;
 
     cc->pass = 2;
@@ -3851,7 +3851,7 @@ static void pass3_proc( int text )
     DOC *doc = cc->pt->texts[text];
     SCOPE *scope;
     PROC *proc = NULL;
-    u32 line;
+    unsigned int line;
     int index = -1, seen_head = 0, seen_end = 0;
     TOKEN *tok;
 
@@ -3884,7 +3884,7 @@ static void pass3_proc( int text )
                     param_list( &tmp, scope, scope->deftype, 0 );
                 }
                 c_accept_kw( KW_STATIC );
-                scope->size = (u32)proc->nparams * 4;
+                scope->size = (unsigned int)proc->nparams * 4;
                 if ( kind == PK_FUNC ) {
                     proc->ret_off = scope_alloc( scope, type_size( proc->rettype ), 0 );
                     if ( TKIND( proc->rettype ) == TY_STR ) {
@@ -3905,7 +3905,7 @@ static void pass3_proc( int text )
                 stmt_mark();
                 c_op( OP_NOP );                 /* a step into the procedure stops on its heading */
                 cc->locs[cc->nlocs - 1].end_pc = c_here();
-                cc->locs[cc->nlocs - 1].len = (u16)doc_line( doc, line )->len;
+                cc->locs[cc->nlocs - 1].len = (uint16_t)doc_line( doc, line )->len;
                 seen_head = 1;
                 continue;
             }
@@ -3979,7 +3979,7 @@ static void scope_lists_free( SCOPE *scope )
 static void state_free( COMP *state )
 {
     SCOPE *scope;
-    u32 i;
+    unsigned int i;
 
     if ( state == NULL ) {
         return;
@@ -4058,7 +4058,7 @@ PROGRAM *comp_program( PROGTEXT *pt, CERR *err )
     /* room after the code for the Immediate window's lines: without it
        they are refused, not the program */
     if ( state->code_cap < state->code_len + IMM_CODE_SPARE ) {
-        u8 *grown = (u8 *)try_realloc( state->code, state->code_len + IMM_CODE_SPARE );
+        uint8_t *grown = (uint8_t *)try_realloc( state->code, state->code_len + IMM_CODE_SPARE );
         if ( grown != NULL ) {
             state->code = grown;
             state->code_cap = state->code_len + IMM_CODE_SPARE;
@@ -4092,7 +4092,7 @@ PROGRAM *comp_program( PROGTEXT *pt, CERR *err )
     prog->data = state->data;
     prog->ndata = state->ndata;
     prog->main_entry = 0;
-    prog->uses_events = (u8)state->uses_events;
+    prog->uses_events = (uint8_t)state->uses_events;
     prog->option_base = state->option_base;
     prog->syms = (struct COMPSYMS *)state;      /* kept: the names, the pool */
     cc = NULL;
@@ -4119,13 +4119,13 @@ void comp_free( PROGRAM *prog )
    move.  Names the program does not have go in a scope of their own,
    their data in the module's spare room, up to gcap bytes.  A line that
    fails takes back every name it made. */
-s32 comp_immediate( PROGRAM *prog, int proc, const char *src, u32 len, u32 gcap, CERR *err )
+int comp_immediate( PROGRAM *prog, int proc, const char *src, unsigned int len, unsigned int gcap, CERR *err )
 {
     COMP *state = (COMP *)prog->syms;
     SCOPE *scope = NULL;
     SYM *module[NBUCKET], *local[NBUCKET], *mine[NBUCKET];
-    u32 size, nrel_str, nrel_arr, narrinit, nlocs, code_len, nconsts;
-    s32 entry;
+    unsigned int size, nrel_str, nrel_arr, narrinit, nlocs, code_len, nconsts;
+    int entry;
 
     mem_set( err, 0, sizeof( *err ) );
     if ( state == NULL ) {
@@ -4207,7 +4207,7 @@ s32 comp_immediate( PROGRAM *prog, int proc, const char *src, u32 len, u32 gcap,
     state->nblocks = 0;
     state->immediate = 1;
     state->imm_limit = gcap;
-    entry = (s32)state->code_len;
+    entry = (int)state->code_len;
     lex_src( src, len );
     if ( c_is( TK_LINENUM ) || c_is( TK_LABEL ) ) {
         c_fail( IMM_REFUSED );
@@ -4233,14 +4233,14 @@ s32 comp_immediate( PROGRAM *prog, int proc, const char *src, u32 len, u32 gcap,
     prog->common = state->common;
     prog->ncommon = state->ncommon;
     prog->narrinit = state->narrinit;
-    prog->uses_events = (u8)state->uses_events;
+    prog->uses_events = (uint8_t)state->uses_events;
     cc = NULL;
     return entry;
 }
 
 /* the line has run: its code and statements are done with (its names
    and their data stay, for the lines after it) */
-void comp_immediate_done( PROGRAM *prog, u32 code_len, u32 nlocs )
+void comp_immediate_done( PROGRAM *prog, unsigned int code_len, unsigned int nlocs )
 {
     COMP *state = (COMP *)prog->syms;
 
@@ -4254,11 +4254,11 @@ void comp_immediate_done( PROGRAM *prog, u32 code_len, u32 nlocs )
    setting the rest of the program gives it (TYPEs, CONSTs, the DEFtype
    letters above it).  1 = it is good, and "out" is the line as QBasic
    would show it; 0 = "err" says what and where. */
-int comp_check_line( PROGTEXT *pt, int text, u32 line, const char *src, u32 len,
-                     char *out, u32 outmax, CERR *err )
+int comp_check_line( PROGTEXT *pt, int text, unsigned int line, const char *src, unsigned int len,
+                     char *out, unsigned int outmax, CERR *err )
 {
     COMP *state;
-    u32 above;
+    unsigned int above;
     int ok, in_type = 0;
 
     mem_set( err, 0, sizeof( *err ) );

@@ -6,6 +6,9 @@
 ; does, so it lives here and not in INC\NDRV.INC.
 ;=====================================================================
 NDC_REPORT      EQU     1               ; EBX: fill the buffer
+NDC_FAULT       EQU     100h            ; EBX: a #GP in ring 0, on purpose,
+                                        ; for NDRVTEST /F.  Not 2: that is
+                                        ; NDRVTEST's unknown function
 
 NDTR_LINKED     EQU     0               ; dd - the table's address as a
                                         ; dword the linker wrote and the

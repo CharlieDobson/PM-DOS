@@ -56,8 +56,8 @@ static const char *const sam_variants[] = {
 
 /* the letters of <+x> and <-x> */
 static const struct {
-    u16  flag;
-    char code;
+    uint16_t flag;
+    char     code;
 } sam_attr[] = {
     { CF_BOLD, '!' }, { CF_ITALIC, '"' }, { CF_UNDER, '#' }, { CF_WUNDER, '$' },
     { CF_STRIKE, '%' }, { CF_SUPER, '&' }, { CF_SUB, '\'' }, { CF_DUNDER, ')' }
@@ -69,8 +69,8 @@ static const struct {
 /* ------------------------------------------------------------------ */
 
 typedef struct {
-    const u8 *text;
-    u32 len;
+    const uint8_t *text;
+    unsigned int len;
 } SAMVAL;
 
 typedef struct {
@@ -80,32 +80,33 @@ typedef struct {
 } SAMSTYLE;
 
 typedef struct {
-    const u8 *data;
-    u32   len, pos;
-    WDOC *doc;
-    int   codepage;
-    int   nomem;
-    SAMSTYLE *style;
-    u32   nstyle, style_cap;
-    int   body_style;           /* which is "Body Text", or -1 */
-    int   committed;
-    SAMVAL val[SAM_VALS];
-    WTAB  tabs[MAX_TABS];       /* the page's, when they are not evenly set */
-    int   ntabs;
-    WTAB  frame_tabs[MAX_TABS]; /* the header's or footer's frame's */
-    int   nframe_tabs;
-    u8   *buf;                  /* a paragraph's lines, joined */
-    u32   blen;
+    const uint8_t *data;
+    uint32_t     len;
+    unsigned int pos;
+    WDOC        *doc;
+    int          codepage;
+    int          nomem;
+    SAMSTYLE    *style;
+    unsigned int nstyle, style_cap;
+    int          body_style;           /* which is "Body Text", or -1 */
+    int          committed;
+    SAMVAL       val[SAM_VALS];
+    WTAB         tabs[MAX_TABS];       /* the page's, when they are not evenly set */
+    int          ntabs;
+    WTAB         frame_tabs[MAX_TABS]; /* the header's or footer's frame's */
+    int          nframe_tabs;
+    uint8_t     *buf;                  /* a paragraph's lines, joined */
+    unsigned int blen;
 } SAM;
 
-static s32 sam_clamp( s32 value, s32 low, s32 high )
+static int sam_clamp( int value, int low, int high )
 {
     return value < low ? low : value > high ? high : value;
 }
 
-static s32 sam_num( const u8 *text, u32 len )
+static int sam_num( const uint8_t *text, unsigned int len )
 {
-    u32 index = 0, value = 0;
+    unsigned int index = 0, value = 0;
     int minus = 0;
 
     while ( index < len && (text[index] == ' ' || text[index] == '\t') ) {
@@ -117,17 +118,17 @@ static s32 sam_num( const u8 *text, u32 len )
     }
     while ( index < len && text[index] >= '0' && text[index] <= '9' ) {
         if ( value < 100000000UL ) {
-            value = value * 10 + (u32)(text[index] - '0');
+            value = value * 10 + (unsigned int)(text[index] - '0');
         }
         index++;
     }
-    return minus ? -(s32)value : (s32)value;
+    return minus ? -(int)value : (int)value;
 }
 
 /* the next line without its end -> 0 at the end of the file */
-static int sam_line( SAM *sam, const u8 **text, u32 *len )
+static int sam_line( SAM *sam, const uint8_t **text, unsigned int *len )
 {
-    u32 start = sam->pos, end;
+    unsigned int start = sam->pos, end;
 
     if ( start >= sam->len ) {
         return 0;
@@ -149,9 +150,9 @@ static int sam_line( SAM *sam, const u8 **text, u32 *len )
 }
 
 /* a line that names a section -> the name and its length, or NULL */
-static const u8 *sam_section( const u8 *text, u32 len, u32 *name_len )
+static const uint8_t *sam_section( const uint8_t *text, unsigned int len, unsigned int *name_len )
 {
-    u32 start = 0, end;
+    unsigned int start = 0, end;
 
     while ( start < len && text[start] == '\t' ) {
         start++;
@@ -171,7 +172,7 @@ static const u8 *sam_section( const u8 *text, u32 len, u32 *name_len )
     return text + start;
 }
 
-static int sam_is( const u8 *name, u32 len, const char *want )
+static int sam_is( const uint8_t *name, unsigned int len, const char *want )
 {
     return str_len( want ) == len && mem_cmp( name, want, len ) == 0;
 }
@@ -180,8 +181,8 @@ static int sam_is( const u8 *name, u32 len, const char *want )
    first SAM_VALS are in sam->val, without the tabs before them */
 static int sam_values( SAM *sam )
 {
-    const u8 *text;
-    u32 len, mark, skip, name_len;
+    const uint8_t *text;
+    unsigned int len, mark, skip, name_len;
     int count = 0;
 
     for ( ;; ) {
@@ -206,15 +207,15 @@ static int sam_values( SAM *sam )
     return count;
 }
 
-static s32 sam_val( const SAM *sam, int count, int index )
+static int sam_val( const SAM *sam, int count, int index )
 {
     return index < count ? sam_num( sam->val[index].text, sam->val[index].len ) : 0;
 }
 
 /* ASCII of a file, cut to fit and ended */
-static void sam_copy( char *dst, u32 max, const u8 *text, u32 len )
+static void sam_copy( char *dst, unsigned int max, const uint8_t *text, unsigned int len )
 {
-    u32 index;
+    unsigned int index;
 
     for ( index = 0; index + 1 < max && index < len; index++ ) {
         dst[index] = (char)(text[index] >= 0x20 && text[index] < 0x7F ? text[index] : '?');
@@ -222,10 +223,10 @@ static void sam_copy( char *dst, u32 max, const u8 *text, u32 len )
     dst[index] = 0;
 }
 
-static SAMSTYLE *sam_style_new( SAM *sam, const u8 *name, u32 len )
+static SAMSTYLE *sam_style_new( SAM *sam, const uint8_t *name, unsigned int len )
 {
     SAMSTYLE *fresh;
-    u32 cap;
+    unsigned int cap;
 
     if ( sam->nstyle >= SAM_STYLES ) {
         return NULL;
@@ -253,20 +254,20 @@ static SAMSTYLE *sam_style_new( SAM *sam, const u8 *name, u32 len )
 static void sam_fnt( SAM *sam, SAMSTYLE *style, int count )
 {
     char face[FONT_NAME_LEN];
-    static const u8 family[4] = { FAM_ANY, FAM_SWISS, FAM_MODERN, FAM_ROMAN };
-    u32 flags = (u32)sam_val( sam, count, 3 ), color = (u32)sam_val( sam, count, 2 );
-    s32 size = sam_val( sam, count, 1 );
+    static const uint8_t family[4] = { FAM_ANY, FAM_SWISS, FAM_MODERN, FAM_ROMAN };
+    uint32_t flags = (uint32_t)sam_val( sam, count, 3 ), color = (uint32_t)sam_val( sam, count, 2 );
+    int size = sam_val( sam, count, 1 );
 
     if ( count < 4 ) {
         return;
     }
     sam_copy( face, FONT_NAME_LEN, sam->val[0].text, sam->val[0].len );
     if ( face[0] ) {
-        style->chp.font = (u16)wd_font( sam->doc, face, family[(flags >> 14) & 3],
-                                        ((flags >> 14) & 3) == 2 ? 1 : -1 );
+        style->chp.font = (uint16_t)wd_font( sam->doc, face, family[(flags >> 14) & 3],
+                                             ((flags >> 14) & 3) == 2 ? 1 : -1 );
     }
     if ( size >= 20 ) {
-        style->chp.size = (u16)(sam_clamp( size, 20, 16380 ) / 10);
+        style->chp.size = (uint16_t)(sam_clamp( size, 20, 16380 ) / 10);
     }
     style->chp.color = color == 0 ? COLOR_AUTO : RGB( color & 255, (color >> 8) & 255, (color >> 16) & 255 );
     style->chp.flags = 0;
@@ -291,12 +292,12 @@ static void sam_fnt( SAM *sam, SAMSTYLE *style, int count )
    first line, and of the rest */
 static void sam_algn( SAM *sam, SAMSTYLE *style, int count )
 {
-    s32 flags = sam_val( sam, count, 0 );
-    s32 every = sam_clamp( sam_val( sam, count, 2 ), 0, SAM_MAX_TWIPS );
-    s32 first = sam_clamp( sam_val( sam, count, 3 ), 0, SAM_MAX_TWIPS );
-    s32 rest = sam_clamp( sam_val( sam, count, 4 ), 0, SAM_MAX_TWIPS );
+    int32_t flags = sam_val( sam, count, 0 );
+    int every = sam_clamp( sam_val( sam, count, 2 ), 0, SAM_MAX_TWIPS );
+    int first = sam_clamp( sam_val( sam, count, 3 ), 0, SAM_MAX_TWIPS );
+    int rest = sam_clamp( sam_val( sam, count, 4 ), 0, SAM_MAX_TWIPS );
 
-    style->pap.align = (u8)(flags & 8 ? AL_JUSTIFY : flags & 4 ? AL_CENTER : flags & 2 ? AL_RIGHT : AL_LEFT);
+    style->pap.align = (uint8_t)(flags & 8 ? AL_JUSTIFY : flags & 4 ? AL_CENTER : flags & 2 ? AL_RIGHT : AL_LEFT);
     style->pap.left = every + rest;
     style->pap.first = first - rest;
 }
@@ -305,27 +306,27 @@ static void sam_algn( SAM *sam, SAMSTYLE *style, int count )
    height; a 1; the space above; the space below */
 static void sam_spc( SAM *sam, SAMSTYLE *style, int count )
 {
-    s32 flags = sam_val( sam, count, 0 );
+    int32_t flags = sam_val( sam, count, 0 );
 
     style->pap.line_rule = LS_MULTIPLE;
     style->pap.line = 240;
     if ( flags & 8 ) {
         style->pap.line_rule = LS_EXACT;
-        style->pap.line = (u16)sam_clamp( sam_val( sam, count, 1 ), 20, SAM_MAX_TWIPS );
+        style->pap.line = (uint16_t)sam_clamp( sam_val( sam, count, 1 ), 20, SAM_MAX_TWIPS );
     } else if ( flags & 4 ) {
         style->pap.line = 480;
     } else if ( flags & 2 ) {
         style->pap.line = 360;
     }
-    style->pap.before = (u16)sam_clamp( sam_val( sam, count, 3 ), 0, SAM_MAX_TWIPS );
-    style->pap.after = (u16)sam_clamp( sam_val( sam, count, 4 ), 0, SAM_MAX_TWIPS );
+    style->pap.before = (uint16_t)sam_clamp( sam_val( sam, count, 3 ), 0, SAM_MAX_TWIPS );
+    style->pap.after = (uint16_t)sam_clamp( sam_val( sam, count, 4 ), 0, SAM_MAX_TWIPS );
 }
 
 static void sam_brk( SAM *sam, SAMSTYLE *style, int count )
 {
-    s32 flags = sam_val( sam, count, 0 );
+    int32_t flags = sam_val( sam, count, 0 );
 
-    style->pap.flags &= (u16)~(PF_PAGEBEFORE | PF_KEEPNEXT | PF_KEEP);
+    style->pap.flags &= (uint16_t)~(PF_PAGEBEFORE | PF_KEEPNEXT | PF_KEEP);
     if ( flags & 1 ) {
         style->pap.flags |= PF_PAGEBEFORE;
     }
@@ -343,7 +344,7 @@ static void sam_spec( SAM *sam, SAMSTYLE *style, int count )
 {
     style->pap.list = LIST_NONE;
     if ( count > 2 && sam->val[2].len > 0 ) {
-        style->pap.list = (u8)(mem_find( sam->val[2].text, sam->val[2].len, "<*:>" ) >= 0 ? LIST_NUMBER
+        style->pap.list = (uint8_t)(mem_find( sam->val[2].text, sam->val[2].len, "<*:>" ) >= 0 ? LIST_NUMBER
                                                                                          : LIST_BULLET);
     }
 }
@@ -351,8 +352,8 @@ static void sam_spec( SAM *sam, SAMSTYLE *style, int count )
 /* tab stops as "[rght]" and "[frmlay]" list them: a kind and a place */
 static int sam_tabs( const SAM *sam, int count, int at, WTAB *tabs )
 {
-    static const u8 kinds[5] = { TAB_LEFT, TAB_LEFT, TAB_CENTER, TAB_RIGHT, TAB_DECIMAL };
-    s32 want = sam_val( sam, count, at ), kind;
+    static const uint8_t kinds[5] = { TAB_LEFT, TAB_LEFT, TAB_CENTER, TAB_RIGHT, TAB_DECIMAL };
+    int want = sam_val( sam, count, at ), kind;
     int index, have = 0;
 
     for ( index = 0; index < want && have < MAX_TABS && at + 2 + index * 2 < count; index++ ) {
@@ -372,7 +373,7 @@ static int sam_tabs( const SAM *sam, int count, int at, WTAB *tabs )
 static void sam_rght( SAM *sam, int count )
 {
     PAGESETUP *page = &sam->doc->page;
-    s32 columns;
+    int columns;
     int at, index, even = 1;
 
     if ( count < 8 ) {
@@ -384,7 +385,7 @@ static void sam_rght( SAM *sam, int count )
     page->bottom = sam_val( sam, count, 4 );
     page->top = sam_val( sam, count, 6 );
     page->right = sam_val( sam, count, 7 );
-    page->landscape = (u8)(page->width > page->height);
+    page->landscape = (uint8_t)(page->width > page->height);
     columns = sam_clamp( sam_val( sam, count, 14 ), 0, 16 );
     if ( columns > 1 ) {
         sam->doc->lost |= LOST_LAYOUT;
@@ -418,7 +419,7 @@ static void sam_commit( SAM *sam )
     };
     SAMSTYLE *style;
     WSTYLE *into;
-    u32 index, look;
+    unsigned int index, look;
     int kind, number;
 
     if ( sam->committed ) {
@@ -441,7 +442,7 @@ static void sam_commit( SAM *sam )
         if ( kind == STY_NORMAL && sam->body_style < 0 ) {
             sam->body_style = (int)index;
         }
-        style->pap.style = (u8)number;
+        style->pap.style = (uint8_t)number;
         into = &sam->doc->style[number];
         into->chp = style->chp;
         into->pap = style->pap;
@@ -452,8 +453,8 @@ static void sam_commit( SAM *sam )
    text has ended */
 static int sam_join( SAM *sam )
 {
-    const u8 *text;
-    u32 len, mark;
+    const uint8_t *text;
+    unsigned int len, mark;
 
     sam->blen = 0;
     for ( ;; ) {
@@ -483,17 +484,18 @@ static int sam_join( SAM *sam )
     return 1;
 }
 
-static void sam_byte( SAM *sam, WBUILD *wb, u32 byte )
+static void sam_byte( SAM *sam, WBUILD *wb, uint32_t byte )
 {
     wb_char( wb, byte < 0x80 ? byte : cp_to_uni( sam->codepage, (int)(byte & 0xFF) ) );
 }
 
 /* "<:f" size "," a digit and the face "," red "," green "," blue ">",
    any of them left out */
-static void sam_font( SAM *sam, WBUILD *wb, const u8 *text, u32 len, const CHP *base )
+static void sam_font( SAM *sam, WBUILD *wb, const uint8_t *text, unsigned int len, const CHP *base )
 {
     char face[FONT_NAME_LEN];
-    u32 start[5], size[5], index, field = 0, rgb[3];
+    unsigned int start[5], size[5], index, field = 0;
+    uint32_t rgb[3];
 
     if ( len == 0 ) {
         wb->chp.font = base->font;
@@ -515,7 +517,7 @@ static void sam_font( SAM *sam, WBUILD *wb, const u8 *text, u32 len, const CHP *
         size[field] = len - start[field];
     }
     if ( size[0] > 0 && sam_num( text, size[0] ) >= 20 ) {
-        wb->chp.size = (u16)(sam_clamp( sam_num( text, size[0] ), 20, 16380 ) / 10);
+        wb->chp.size = (uint16_t)(sam_clamp( sam_num( text, size[0] ), 20, 16380 ) / 10);
     }
     if ( field >= 1 && size[1] > 0 ) {
         /* what comes before the name is a digit or "!", not part of it */
@@ -525,21 +527,21 @@ static void sam_font( SAM *sam, WBUILD *wb, const u8 *text, u32 len, const CHP *
         }
         sam_copy( face, FONT_NAME_LEN, text + start[1], size[1] );
         if ( face[0] ) {
-            wb->chp.font = (u16)wd_font( sam->doc, face, FAM_ANY, -1 );
+            wb->chp.font = (uint16_t)wd_font( sam->doc, face, FAM_ANY, -1 );
         }
     }
     if ( field >= 4 && size[2] > 0 ) {
         for ( index = 0; index < 3; index++ ) {
-            rgb[index] = (u32)sam_num( text + start[2 + index], size[2 + index] ) & 255;
+            rgb[index] = (uint32_t)sam_num( text + start[2 + index], size[2 + index] ) & 255;
         }
         wb->chp.color = (rgb[0] | rgb[1] | rgb[2]) == 0 ? COLOR_AUTO : RGB( rgb[0], rgb[1], rgb[2] );
     }
 }
 
 /* what is between a "<" and its ">" */
-static void sam_mark( SAM *sam, WBUILD *wb, const u8 *text, u32 len, const CHP *base )
+static void sam_mark( SAM *sam, WBUILD *wb, const uint8_t *text, unsigned int len, const CHP *base )
 {
-    u32 index;
+    unsigned int index;
 
     if ( len == 0 ) {
         return;
@@ -553,26 +555,26 @@ static void sam_mark( SAM *sam, WBUILD *wb, const u8 *text, u32 len, const CHP *
         return;
     }
     if ( len == 2 && text[0] == '\\' ) {
-        sam_byte( sam, wb, (u32)text[1] | 0x80 );
+        sam_byte( sam, wb, (uint32_t)text[1] | 0x80 );
         return;
     }
     if ( len == 2 && text[0] == '/' ) {
-        sam_byte( sam, wb, ((u32)text[1] + 0x40) & 0xFF );
+        sam_byte( sam, wb, ((uint32_t)text[1] + 0x40) & 0xFF );
         return;
     }
     if ( len == 2 && (text[0] == '+' || text[0] == '-') ) {
         for ( index = 0; index < SAM_NATTR; index++ ) {
-            if ( (u8)sam_attr[index].code == text[1] ) {
+            if ( (uint8_t)sam_attr[index].code == text[1] ) {
                 if ( text[0] == '+' ) {
                     wb->chp.flags |= sam_attr[index].flag;
                 } else {
-                    wb->chp.flags &= (u16)~sam_attr[index].flag;
+                    wb->chp.flags &= (uint16_t)~sam_attr[index].flag;
                 }
                 return;
             }
         }
         if ( text[0] == '+' && text[1] >= '@' && text[1] <= 'C' ) {
-            static const u8 sides[4] = { AL_LEFT, AL_RIGHT, AL_CENTER, AL_JUSTIFY };
+            static const uint8_t sides[4] = { AL_LEFT, AL_RIGHT, AL_CENTER, AL_JUSTIFY };
 
             wb->pap.align = sides[text[1] - '@'];
         }
@@ -603,10 +605,10 @@ static void sam_mark( SAM *sam, WBUILD *wb, const u8 *text, u32 len, const CHP *
 /* the paragraph in sam->buf */
 static void sam_para( SAM *sam, WBUILD *wb, const WTAB *tabs, int ntabs )
 {
-    const u8 *buf = sam->buf;
+    const uint8_t *buf = sam->buf;
     const SAMSTYLE *style = sam->body_style >= 0 ? &sam->style[sam->body_style] : NULL;
     CHP base;
-    u32 len = sam->blen, pos = 0, end, depth, index;
+    unsigned int len = sam->blen, pos = 0, end, depth, index;
 
     if ( len >= 2 && buf[0] == '@' && buf[1] != '@' ) {
         end = 1;
@@ -699,9 +701,9 @@ static void sam_text( SAM *sam, STORY *story, const WTAB *tabs, int ntabs )
     wb_done( &wb );
 }
 
-static int sam_detect( const u8 *data, u32 len, const char *ext )
+static int sam_detect( const uint8_t *data, uint32_t len, const char *ext )
 {
-    u32 pos = 0;
+    unsigned int pos = 0;
 
     (void)ext;
     if ( len >= 3 && data[0] == 0xEF && data[1] == 0xBB && data[2] == 0xBF ) {
@@ -719,12 +721,12 @@ static int sam_detect( const u8 *data, u32 len, const char *ext )
     return 0;
 }
 
-static int sam_load( const u8 *data, u32 len, WDOC *doc )
+static int sam_load( const uint8_t *data, uint32_t len, WDOC *doc )
 {
     SAM *sam;
     SAMSTYLE *style = NULL;
-    const u8 *text, *name;
-    u32 tlen, nlen;
+    const uint8_t *text, *name;
+    unsigned int tlen, nlen;
     int count, where, lays = 0, part = 0, code, rc;
 
     if ( sam_detect( data, len, "" ) == 0 ) {
@@ -735,7 +737,7 @@ static int sam_load( const u8 *data, u32 len, WDOC *doc )
         return WE_NOMEM;
     }
     mem_set( sam, 0, sizeof( SAM ) );
-    sam->buf = (u8 *)try_alloc( len + 1 );
+    sam->buf = (uint8_t *)try_alloc( len + 1 );
     if ( sam->buf == NULL ) {
         xfree( sam );
         return WE_NOMEM;
@@ -761,7 +763,7 @@ static int sam_load( const u8 *data, u32 len, WDOC *doc )
             if ( count >= 2 ) {
                 where = mem_find( sam->val[1].text, sam->val[1].len, "CP " );
                 if ( where >= 0 ) {
-                    code = (int)sam_num( sam->val[1].text + where + 3, sam->val[1].len - (u32)where - 3 );
+                    code = (int)sam_num( sam->val[1].text + where + 3, sam->val[1].len - (unsigned int)where - 3 );
                     if ( code != CP_ASCII && cp_known( code ) ) {
                         sam->codepage = code;
                     }
@@ -851,37 +853,37 @@ static int sam_load( const u8 *data, u32 len, WDOC *doc )
 /* a style as it is written: one of the document's, or one made for
    paragraphs that are not as their style says */
 typedef struct {
-    u8   base;                  /* the document's style it is, or came from */
-    u8   list, line_rule, used;
-    u16  flags, before, after, line;
-    s32  left, first;
-    char name[SAM_NAME_OUT + 1];
+    uint8_t  base;              /* the document's style it is, or came from */
+    uint8_t  list, line_rule, used;
+    uint16_t flags, before, after, line;
+    int      left, first;
+    char     name[SAM_NAME_OUT + 1];
 } SAMOUT;
 
 typedef struct {
-    WDOC   *doc;
-    OUT    *out;
-    SAMOUT *sty;
-    u32     nsty;
-    u32     made;               /* how many were made for paragraphs */
-    u32     col;                /* bytes on the line being written */
+    WDOC        *doc;
+    OUT         *out;
+    SAMOUT      *sty;
+    unsigned int nsty;
+    unsigned int made;          /* how many were made for paragraphs */
+    unsigned int col;           /* bytes on the line being written */
 } SAMW;
 
 /* what of a PAP a style of Ami Pro's can hold, as it will be read back */
 static void samw_key( const PAP *pap, int base, SAMOUT *key )
 {
     mem_set( key, 0, sizeof( SAMOUT ) );
-    key->base = (u8)base;
-    key->list = (u8)(pap->list == LIST_NONE ? LIST_NONE : pap->list == LIST_BULLET ? LIST_BULLET : LIST_NUMBER);
-    key->flags = (u16)(pap->flags & (PF_PAGEBEFORE | PF_KEEPNEXT | PF_KEEP));
-    key->before = (u16)sam_clamp( pap->before, 0, SAM_MAX_TWIPS );
-    key->after = (u16)sam_clamp( pap->after, 0, SAM_MAX_TWIPS );
+    key->base = (uint8_t)base;
+    key->list = (uint8_t)(pap->list == LIST_NONE ? LIST_NONE : pap->list == LIST_BULLET ? LIST_BULLET : LIST_NUMBER);
+    key->flags = (uint16_t)(pap->flags & (PF_PAGEBEFORE | PF_KEEPNEXT | PF_KEEP));
+    key->before = (uint16_t)sam_clamp( pap->before, 0, SAM_MAX_TWIPS );
+    key->after = (uint16_t)sam_clamp( pap->after, 0, SAM_MAX_TWIPS );
     if ( pap->line_rule == LS_MULTIPLE ) {
         key->line_rule = LS_MULTIPLE;
-        key->line = (u16)(pap->line < 300 ? 240 : pap->line < 420 ? 360 : 480);
+        key->line = (uint16_t)(pap->line < 300 ? 240 : pap->line < 420 ? 360 : 480);
     } else {
         key->line_rule = LS_EXACT;
-        key->line = (u16)sam_clamp( pap->line, 20, SAM_MAX_TWIPS );
+        key->line = (uint16_t)sam_clamp( pap->line, 20, SAM_MAX_TWIPS );
     }
     key->left = sam_clamp( pap->left, 0, SAM_MAX_TWIPS );
     key->first = sam_clamp( pap->first, -key->left, SAM_MAX_TWIPS );
@@ -895,11 +897,11 @@ static int samw_same( const SAMOUT *lhs, const SAMOUT *rhs )
 }
 
 /* the style a paragraph is written with, made if there is none yet */
-static u32 samw_style( SAMW *sw, const PAP *pap )
+static unsigned int samw_style( SAMW *sw, const PAP *pap )
 {
     SAMOUT key, *fresh;
     char cut[SAM_NAME_OUT + 1];
-    u32 index, base = pap->style < sw->doc->nstyle ? pap->style : 0;
+    unsigned int index, base = pap->style < sw->doc->nstyle ? pap->style : 0;
 
     samw_key( pap, (int)base, &key );
     for ( index = 0; index < sw->nsty; index++ ) {
@@ -923,7 +925,7 @@ static u32 samw_style( SAMW *sw, const PAP *pap )
 }
 
 /* bytes of text that must stay on one line */
-static void samw_tok( SAMW *sw, const char *text, u32 len )
+static void samw_tok( SAMW *sw, const char *text, unsigned int len )
 {
     if ( sw->col > 0 && sw->col + len > SAM_WRAP ) {
         out_str( sw->out, "\r\n" );
@@ -938,7 +940,7 @@ static void samw_str( SAMW *sw, const char *text )
     samw_tok( sw, text, str_len( text ) );
 }
 
-static void samw_byte( SAMW *sw, u32 byte )
+static void samw_byte( SAMW *sw, uint32_t byte )
 {
     char esc[4];
 
@@ -960,7 +962,7 @@ static void samw_byte( SAMW *sw, u32 byte )
     }
 }
 
-static void samw_char( SAMW *sw, u32 code )
+static void samw_char( SAMW *sw, uint32_t code )
 {
     char bytes[8];
     int count, index;
@@ -980,7 +982,7 @@ static void samw_char( SAMW *sw, u32 code )
     } else {
         count = cp_put( CP_1252, code, bytes );
         for ( index = 0; index < count; index++ ) {
-            samw_byte( sw, (u8)bytes[index] );
+            samw_byte( sw, (uint8_t)bytes[index] );
         }
     }
 }
@@ -995,8 +997,9 @@ static void samw_para( SAMW *sw, WPARA *para, int depth, int lead, int trail )
     const SAMOUT *sty = &sw->sty[samw_style( sw, &para->pap )];
     const CHP *base = &sw->doc->style[sty->base].chp, *chp;
     CHP now;
-    u32 pos = 0, run, end, code, index, color;
-    u16 flags;
+    unsigned int pos = 0, run, end;
+    uint32_t code, index, color;
+    uint16_t flags;
     int obj;
 
     sw->col = 0;
@@ -1023,7 +1026,7 @@ static void samw_para( SAMW *sw, WPARA *para, int depth, int lead, int trail )
                         face[index] = ' ';
                     }
                 }
-                sfmt( mark, sizeof( mark ), "<:f%u,2%s,%u,%u,%u>", (u32)chp->size * 10, face,
+                sfmt( mark, sizeof( mark ), "<:f%u,2%s,%u,%u,%u>", (uint32_t)chp->size * 10, face,
                       color == COLOR_AUTO ? 0 : (color >> 16) & 255, color == COLOR_AUTO ? 0 : (color >> 8) & 255,
                       color == COLOR_AUTO ? 0 : color & 255 );
                 samw_str( sw, mark );
@@ -1063,7 +1066,7 @@ static void samw_para( SAMW *sw, WPARA *para, int depth, int lead, int trail )
     if ( depth == 0 ) {
         for ( index = 0; index < para->nanch; index++ ) {
             obj = (int)para->anch[index].obj;
-            if ( (u32)obj < sw->doc->nobj && sw->doc->obj[obj].kind == OBJ_NOTE &&
+            if ( (unsigned int)obj < sw->doc->nobj && sw->doc->obj[obj].kind == OBJ_NOTE &&
                  sw->doc->obj[obj].story != NULL ) {
                 samw_story( sw, sw->doc->obj[obj].story, 1 );
             }
@@ -1073,7 +1076,7 @@ static void samw_para( SAMW *sw, WPARA *para, int depth, int lead, int trail )
 
 static void samw_story( SAMW *sw, STORY *story, int depth )
 {
-    u32 index;
+    unsigned int index;
 
     for ( index = 0; index < story->count; index++ ) {
         samw_para( sw, story->para[index], depth, depth == 1 && index == 0,
@@ -1085,7 +1088,7 @@ static void samw_story( SAMW *sw, STORY *story, int depth )
 static void samw_collect( SAMW *sw, STORY *story, int depth )
 {
     WPARA *para;
-    u32 index, anchor;
+    unsigned int index, anchor;
     int obj;
 
     for ( index = 0; index < story->count; index++ ) {
@@ -1093,7 +1096,7 @@ static void samw_collect( SAMW *sw, STORY *story, int depth )
         samw_style( sw, &para->pap );
         for ( anchor = 0; depth == 0 && anchor < para->nanch; anchor++ ) {
             obj = (int)para->anch[anchor].obj;
-            if ( (u32)obj < sw->doc->nobj && sw->doc->obj[obj].kind == OBJ_NOTE &&
+            if ( (unsigned int)obj < sw->doc->nobj && sw->doc->obj[obj].kind == OBJ_NOTE &&
                  sw->doc->obj[obj].story != NULL ) {
                 samw_collect( sw, sw->doc->obj[obj].story, 1 );
             }
@@ -1108,7 +1111,7 @@ static void samw_vals( OUT *out, int depth, const char *values )
     const char *cur = values;
 
     while ( *cur ) {
-        out_fill( out, '\t', (u32)depth );
+        out_fill( out, '\t', (unsigned int)depth );
         while ( *cur && *cur != ' ' ) {
             out_byte( out, *cur++ );
         }
@@ -1119,14 +1122,14 @@ static void samw_vals( OUT *out, int depth, const char *values )
     }
 }
 
-static void samw_tag( SAMW *sw, const SAMOUT *sty, u32 key )
+static void samw_tag( SAMW *sw, const SAMOUT *sty, unsigned int key )
 {
     OUT *out = sw->out;
     const CHP *chp = &sw->doc->style[sty->base].chp;
     const PAP *pap = &sw->doc->style[sty->base].pap;
     const WFONT *font = &sw->doc->font[chp->font < sw->doc->nfont ? chp->font : 0];
-    u32 flags, color = chp->color == COLOR_AUTO ? 0 : chp->color;
-    s32 hang = sty->first < 0 ? -sty->first : 0;
+    uint32_t flags, color = chp->color == COLOR_AUTO ? 0 : chp->color;
+    int hang = sty->first < 0 ? -sty->first : 0;
 
     flags = font->fixed || font->family == FAM_MODERN ? 0x8000UL : font->family == FAM_SWISS ? 0x4000UL : 0xC000UL;
     if ( chp->flags & CF_BOLD ) {
@@ -1145,15 +1148,15 @@ static void samw_tag( SAMW *sw, const SAMOUT *sty, u32 key )
         flags |= 64;
     }
     out_fmt( out, "[tag]\r\n\t%s\r\n\t%u\r\n", sty->name, key );
-    out_fmt( out, "\t[fnt]\r\n\t\t%s\r\n\t\t%u\r\n\t\t%u\r\n\t\t%u\r\n", font->name, (u32)chp->size * 10,
+    out_fmt( out, "\t[fnt]\r\n\t\t%s\r\n\t\t%u\r\n\t\t%u\r\n\t\t%u\r\n", font->name, (uint32_t)chp->size * 10,
              ((color & 255) << 16) | (color & 0xFF00) | ((color >> 16) & 255), flags );
     out_fmt( out, "\t[algn]\r\n\t\t%u\r\n\t\t1\r\n\t\t%d\r\n\t\t%d\r\n\t\t%d\r\n",
              pap->align == AL_JUSTIFY ? 8 : pap->align == AL_CENTER ? 4 : pap->align == AL_RIGHT ? 2 : 1,
              sty->left - hang, sty->first < 0 ? 0 : sty->first, hang );
     out_fmt( out, "\t[spc]\r\n\t\t%u\r\n\t\t%u\r\n\t\t1\r\n\t\t%u\r\n\t\t%u\r\n\t\t1\r\n\t\t100\r\n",
              32 + (sty->line_rule == LS_EXACT ? 8 : sty->line == 480 ? 4 : sty->line == 360 ? 2 : 1),
-             sty->line_rule == LS_EXACT ? (u32)sty->line : (u32)chp->size * 10 + (u32)chp->size * 10 / 8,
-             (u32)sty->before, (u32)sty->after );
+             sty->line_rule == LS_EXACT ? (uint32_t)sty->line : (uint32_t)chp->size * 10 + (uint32_t)chp->size * 10 / 8,
+             (uint32_t)sty->before, (uint32_t)sty->after );
     out_fmt( out, "\t[brk]\r\n\t\t%u\r\n", (sty->flags & PF_KEEP ? 16 : 4) + (sty->flags & PF_KEEPNEXT ? 64 : 0) +
                                           (sty->flags & PF_PAGEBEFORE ? 1 : 0) );
     out_str( out, "\t[line]\r\n" );
@@ -1179,7 +1182,7 @@ static void samw_tag( SAMW *sw, const SAMOUT *sty, u32 key )
 static const WPARA *samw_tabbed( const STORY *story )
 {
     const WPARA *first;
-    u32 index;
+    unsigned int index;
 
     if ( story->count == 0 || story->para[0]->pap.ntabs == 0 || story->para[0]->pap.tabs == NULL ) {
         return NULL;
@@ -1197,11 +1200,11 @@ static const WPARA *samw_tabbed( const STORY *story )
 /* how many tab stops, and each one's kind and place */
 static void samw_tabs( OUT *out, const WPARA *para )
 {
-    u32 index;
+    unsigned int index;
 
-    out_fmt( out, "\t\t%u\r\n", (u32)para->pap.ntabs );
+    out_fmt( out, "\t\t%u\r\n", (uint32_t)para->pap.ntabs );
     for ( index = 0; index < para->pap.ntabs; index++ ) {
-        out_fmt( out, "\t\t%u\r\n\t\t%d\r\n", (u32)(para->pap.tabs[index].kind & 3) + 1,
+        out_fmt( out, "\t\t%u\r\n\t\t%d\r\n", (uint32_t)(para->pap.tabs[index].kind & 3) + 1,
                  sam_clamp( para->pap.tabs[index].pos, 0, SAM_MAX_TWIPS ) );
     }
 }
@@ -1212,9 +1215,9 @@ static void samw_frame( SAMW *sw, int footer, STORY *story )
 {
     OUT *out = sw->out;
     const PAGESETUP *page = &sw->doc->page;
-    s32 top = footer ? page->height - page->bottom : 0;
-    s32 bottom = footer ? page->height : page->top;
-    s32 width = page->width - page->left - page->right;
+    int top = footer ? page->height - page->bottom : 0;
+    int bottom = footer ? page->height : page->top;
+    int width = page->width - page->left - page->right;
     const WPARA *tabbed = samw_tabbed( story );
 
     out_fmt( out, "\t[%s]\r\n\t[lyfrm]\r\n\t\t1\r\n\t\t%u\r\n\t\t0\r\n\t\t%d\r\n\t\t%d\r\n\t\t%d\r\n",
@@ -1241,8 +1244,8 @@ static int sam_save( WDOC *doc, OUT *out, int variant )
     SAMW sw;
     const PAGESETUP *page = &doc->page;
     char cut[STYLE_NAME_LEN];
-    u32 index, look, where, key = 2;
-    s32 step;
+    unsigned int index, look, where, key = 2;
+    int step;
 
     (void)variant;
     mem_set( &sw, 0, sizeof( sw ) );
@@ -1293,7 +1296,7 @@ static int sam_save( WDOC *doc, OUT *out, int variant )
         out_str( out, "\t\t12\r\n" );
         step = sam_clamp( doc->deftab, 72, 2400 );
         for ( index = 1; index <= 12; index++ ) {
-            out_fmt( out, "\t\t1\r\n\t\t%d\r\n", step * (s32)index );
+            out_fmt( out, "\t\t1\r\n\t\t%d\r\n", step * (int)index );
         }
     }
     samw_frame( &sw, 0, &doc->header );

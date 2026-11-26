@@ -11,13 +11,13 @@
 #include "label.h"
 
 typedef struct {
-    u32 eax, ebx, ecx, edx, esi, edi;
-    u32 flags;
+    uint32_t eax, ebx, ecx, edx, esi, edi;
+    uint32_t flags;
 } REGS;
 
 typedef struct {                /* DPMI real mode call structure */
-    u32 edi, esi, ebp, resv, ebx, edx, ecx, eax;
-    u16 flags, es, ds, fs, gs, ip, cs, sp, ss;
+    uint32_t edi, esi, ebp, resv, ebx, edx, ecx, eax;
+    uint16_t flags, es, ds, fs, gs, ip, cs, sp, ss;
 } RMCS;
 
 void __cdecl int21( REGS *regs );
@@ -28,9 +28,9 @@ void __cdecl int31( REGS *regs );
 #define RCF( rmcs ) ((rmcs).flags & 1)
 #define RAX( rmcs ) ((rmcs).eax & 0xFFFF)
 
-static u16  tb_seg;
-static u8  *tb;
-static char tail[260];
+static uint16_t tb_seg;
+static uint8_t *tb;
+static char     tail[260];
 
 void __cdecl dos_entry( void )
 {
@@ -47,20 +47,20 @@ static void rm_int( int no, RMCS *rmcs, int cf_in )
 {
     REGS regs;
 
-    rmcs->flags = (u16)(0x0202 | (cf_in ? 1 : 0));
+    rmcs->flags = (uint16_t)(0x0202 | (cf_in ? 1 : 0));
     rmcs->sp = rmcs->ss = 0;
     rmcs->fs = rmcs->gs = 0;
     mem_set( &regs, 0, sizeof( regs ) );
     regs.eax = 0x0300;
-    regs.ebx = (u32)no;
-    regs.edi = (u32)rmcs;
+    regs.ebx = (uint32_t)no;
+    regs.edi = (uint32_t)rmcs;
     int31( &regs );
     if ( regs.flags & 1 ) {
         rmcs->flags |= 1;
     }
 }
 
-static void dos( RMCS *rmcs, u32 ax )
+static void dos( RMCS *rmcs, uint32_t ax )
 {
     rmcs->eax = ax;
     rm_int( 0x21, rmcs, 0 );
@@ -70,8 +70,8 @@ int sys_init( void )
 {
     REGS regs;
     RMCS rmcs;
-    u8 *psp;
-    u32 len;
+    uint8_t *psp;
+    unsigned int len;
 
     mem_set( &regs, 0, sizeof( regs ) );
     regs.eax = 0x0100;                  /* allocate DOS memory */
@@ -80,12 +80,12 @@ int sys_init( void )
     if ( regs.flags & 1 ) {
         return -1;
     }
-    tb_seg = (u16)regs.eax;
-    tb = (u8 *)((u32)tb_seg << 4);
+    tb_seg = (uint16_t)regs.eax;
+    tb = (uint8_t *)((uint32_t)tb_seg << 4);
 
     rm_clear( &rmcs );
     dos( &rmcs, 0x6200 );
-    psp = (u8 *)((rmcs.ebx & 0xFFFF) << 4);
+    psp = (uint8_t *)((rmcs.ebx & 0xFFFF) << 4);
     len = psp[0x80];
     if ( len > 126 ) {
         len = 126;
@@ -100,16 +100,16 @@ const char *sys_cmdline( void )
     return tail;
 }
 
-void sys_write( int handle, const char *buf, u32 len )
+void sys_write( int handle, const char *buf, unsigned int len )
 {
     RMCS rmcs;
-    u32 chunk;
+    unsigned int chunk;
 
     while ( len ) {
         chunk = len > 0xF000u ? 0xF000u : len;
         mem_cpy( tb, buf, chunk );
         rm_clear( &rmcs );
-        rmcs.ebx = (u32)handle;
+        rmcs.ebx = (uint32_t)handle;
         rmcs.ecx = chunk;
         rmcs.ds = tb_seg;
         rmcs.edx = 0;
@@ -152,7 +152,7 @@ int sys_read_line( char *buf, int max )
     int len = 0, ch;
 
     if ( stdin_is_device() ) {
-        tb[0] = (u8)(max > 255 ? 255 : max);
+        tb[0] = (uint8_t)(max > 255 ? 255 : max);
         tb[1] = 0;
         rm_clear( &rmcs );
         rmcs.ds = tb_seg;
@@ -162,7 +162,7 @@ int sys_read_line( char *buf, int max )
         if ( len > max - 1 ) {
             len = max - 1;
         }
-        mem_cpy( buf, tb + 2, (u32)len );
+        mem_cpy( buf, tb + 2, (unsigned int)len );
         buf[len] = 0;
         sys_write( H_OUT, "\n", 1 );
         return len;
@@ -171,7 +171,7 @@ int sys_read_line( char *buf, int max )
         ch = read_byte();
         if ( ch < 0 ) {
             buf[len] = 0;
-            sys_write( H_OUT, buf, (u32)len );
+            sys_write( H_OUT, buf, (unsigned int)len );
             sys_write( H_OUT, "\r\n", 2 );
             return len ? len : -1;
         }
@@ -186,7 +186,7 @@ int sys_read_line( char *buf, int max )
         }
     }
     buf[len] = 0;
-    sys_write( H_OUT, buf, (u32)len );
+    sys_write( H_OUT, buf, (unsigned int)len );
     sys_write( H_OUT, "\r\n", 2 );
     return len;
 }
@@ -225,7 +225,7 @@ void sys_exit( int code )
     REGS regs;
 
     mem_set( &regs, 0, sizeof( regs ) );
-    regs.eax = 0x4C00 | ((u32)code & 0xFF);
+    regs.eax = 0x4C00 | ((uint32_t)code & 0xFF);
     int21( &regs );
 }
 
@@ -243,7 +243,7 @@ int sys_drive_type( int drv )
     RMCS rmcs;
 
     rm_clear( &rmcs );
-    rmcs.ebx = (u32)drv + 1;
+    rmcs.ebx = (uint32_t)drv + 1;
     dos( &rmcs, 0x4409 );
     if ( RCF( rmcs ) ) {
         return RAX( rmcs ) == 1 ? DRV_LOCAL : DRV_INVALID;
@@ -261,7 +261,7 @@ int sys_truename_drive( int drv )
 {
     RMCS rmcs;
 
-    tb[0] = (u8)('A' + drv);
+    tb[0] = (uint8_t)('A' + drv);
     tb[1] = ':';
     tb[2] = '\\';
     tb[3] = 0;
@@ -277,14 +277,14 @@ int sys_truename_drive( int drv )
     return ch_upper( tb[0x100] ) - 'A';
 }
 
-int sys_get_bpb( int drv, u8 *sector )
+int sys_get_bpb( int drv, uint8_t *sector )
 {
     RMCS rmcs;
 
     mem_set( tb, 0, 0x40 );
     WR16( tb, 0x3F );
     rm_clear( &rmcs );
-    rmcs.edx = (u32)drv + 1;
+    rmcs.edx = (uint32_t)drv + 1;
     rmcs.ecx = 0x3F;
     rmcs.es = tb_seg;
     rmcs.edi = 0;
@@ -297,12 +297,12 @@ int sys_get_bpb( int drv, u8 *sector )
     return 0;
 }
 
-static int lock_call( int drv, u32 cx )
+static int lock_call( int drv, uint32_t cx )
 {
     RMCS rmcs;
 
     rm_clear( &rmcs );
-    rmcs.ebx = (u32)drv + 1;
+    rmcs.ebx = (uint32_t)drv + 1;
     rmcs.ecx = cx;
     rmcs.edx = 0;
     dos( &rmcs, 0x440D );
@@ -332,17 +332,17 @@ void sys_unlock( int drv, int fat32 )
     }
 }
 
-static int ext_error( u32 ax )
+static int ext_error( uint32_t ax )
 {
     return ax >= DE_FIRST && ax <= DE_LAST ? (int)ax : DE_GENERAL;
 }
 
-static int crit_error( u32 al )
+static int crit_error( uint32_t al )
 {
     return al <= DE_LAST - DE_FIRST ? (int)al + DE_FIRST : DE_GENERAL;
 }
 
-static int disk_io( int drv, u32 lba, u32 count, u32 mode )
+static int disk_io( int drv, uint32_t lba, uint32_t count, uint32_t mode )
 {
     RMCS rmcs;
 
@@ -353,7 +353,7 @@ static int disk_io( int drv, u32 lba, u32 count, u32 mode )
 
     rm_clear( &rmcs );
     rmcs.ecx = 0xFFFF;
-    rmcs.edx = (u32)drv + 1;
+    rmcs.edx = (uint32_t)drv + 1;
     rmcs.esi = mode;
     rmcs.ds = tb_seg;
     rmcs.ebx = 0;
@@ -371,7 +371,7 @@ static int disk_io( int drv, u32 lba, u32 count, u32 mode )
        (DOS 3.31 and later) is always understood; the old form is only
        a second try within the first 64K sectors */
     rm_clear( &rmcs );
-    rmcs.eax = (u32)drv;
+    rmcs.eax = (uint32_t)drv;
     rmcs.ecx = 0xFFFF;
     rmcs.ds = tb_seg;
     rmcs.ebx = 0;
@@ -383,7 +383,7 @@ static int disk_io( int drv, u32 lba, u32 count, u32 mode )
         return crit_error( rmcs.eax & 0xFF );
     }
     rm_clear( &rmcs );
-    rmcs.eax = (u32)drv;
+    rmcs.eax = (uint32_t)drv;
     rmcs.ecx = count;
     rmcs.edx = lba;
     rmcs.ds = tb_seg;
@@ -392,7 +392,7 @@ static int disk_io( int drv, u32 lba, u32 count, u32 mode )
     return RCF( rmcs ) ? crit_error( rmcs.eax & 0xFF ) : 0;
 }
 
-int sys_read_sec( int drv, u32 lba, u32 count, u32 bps, void *buf )
+int sys_read_sec( int drv, uint32_t lba, uint32_t count, uint32_t bps, void *buf )
 {
     int err;
 
@@ -406,14 +406,14 @@ int sys_read_sec( int drv, u32 lba, u32 count, u32 bps, void *buf )
     return err;
 }
 
-int sys_write_sec( int drv, u32 lba, u32 count, u32 bps, const void *buf,
+int sys_write_sec( int drv, uint32_t lba, uint32_t count, uint32_t bps, const void *buf,
                    int kind )
 {
     if ( count * bps > TB_SIZE - TB_DATA - 4096 ) {
         return DE_GENERAL;
     }
     mem_cpy( tb + TB_DATA, buf, count * bps );
-    return disk_io( drv, lba, count, 1u | ((u32)kind << 13) );
+    return disk_io( drv, lba, count, 1u | ((uint32_t)kind << 13) );
 }
 
 void sys_reset_drive( int drv )
@@ -422,13 +422,13 @@ void sys_reset_drive( int drv )
 
     rm_clear( &rmcs );
     rmcs.ecx = 1;
-    rmcs.edx = (u32)drv + 1;
+    rmcs.edx = (uint32_t)drv + 1;
     dos( &rmcs, 0x710D );
     rm_clear( &rmcs );
     dos( &rmcs, 0x0D00 );
 }
 
-void *sys_mem_alloc( u32 size )
+void *sys_mem_alloc( unsigned int size )
 {
     REGS regs;
 
@@ -443,22 +443,22 @@ void *sys_mem_alloc( u32 size )
     return (void *)(((regs.ebx & 0xFFFF) << 16) | (regs.ecx & 0xFFFF));
 }
 
-void sys_get_datetime( u16 *dos_date, u16 *dos_time )
+void sys_get_datetime( uint16_t *dos_date, uint16_t *dos_time )
 {
     RMCS rmcs;
-    u32 year, mon, day;
+    uint32_t year, mon, day;
 
     rm_clear( &rmcs );
     dos( &rmcs, 0x2A00 );
     year = rmcs.ecx & 0xFFFF;
     mon = (rmcs.edx >> 8) & 0xFF;
     day = rmcs.edx & 0xFF;
-    *dos_date = (u16)(((year - 1980) << 9) | (mon << 5) | day);
+    *dos_date = (uint16_t)(((year - 1980) << 9) | (mon << 5) | day);
     rm_clear( &rmcs );
     dos( &rmcs, 0x2C00 );
-    *dos_time = (u16)((((rmcs.ecx >> 8) & 0xFF) << 11) |
-                      ((rmcs.ecx & 0xFF) << 5) |
-                      (((rmcs.edx >> 8) & 0xFF) >> 1));
+    *dos_time = (uint16_t)((((rmcs.ecx >> 8) & 0xFF) << 11) |
+                           ((rmcs.ecx & 0xFF) << 5) |
+                           (((rmcs.edx >> 8) & 0xFF) >> 1));
 }
 
 int sys_upcase( int ch )
@@ -466,7 +466,7 @@ int sys_upcase( int ch )
     RMCS rmcs;
 
     rm_clear( &rmcs );
-    rmcs.edx = (u32)ch & 0xFF;
+    rmcs.edx = (uint32_t)ch & 0xFF;
     dos( &rmcs, 0x6520 );
     return RCF( rmcs ) ? ch : (int)(rmcs.edx & 0xFF);
 }

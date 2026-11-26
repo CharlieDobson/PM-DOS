@@ -31,28 +31,28 @@
 #include "mp3.h"
 
 /* the 17 quantizations: levels, and bits a sample (or three grouped) */
-static const u32 q_levels[17] = {
+static const uint32_t q_levels[17] = {
     3, 5, 7, 9, 15, 31, 63, 127, 255, 511, 1023, 2047, 4095, 8191, 16383, 32767, 65535
 };
-static const u8 q_bits[17] = {
+static const uint8_t q_bits[17] = {
     5, 7, 3, 10, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16
 };
 
 /* what each allocation value from 1 on means, as a quantization */
-static const u8 q_a[15] = { 0, 2, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 };
-static const u8 q_b[15] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 16 };
-static const u8 q_c[7] = { 0, 1, 2, 3, 4, 5, 16 };
-static const u8 q_d[3] = { 0, 1, 16 };
-static const u8 q_e[15] = { 0, 1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15 };
-static const u8 q_f[7] = { 0, 1, 3, 4, 5, 6, 7 };
-static const u8 q_g[15] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14 };
-static const u8 q_h[3] = { 0, 1, 3 };
+static const uint8_t q_a[15] = { 0, 2, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 };
+static const uint8_t q_b[15] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 16 };
+static const uint8_t q_c[7] = { 0, 1, 2, 3, 4, 5, 16 };
+static const uint8_t q_d[3] = { 0, 1, 16 };
+static const uint8_t q_e[15] = { 0, 1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15 };
+static const uint8_t q_f[7] = { 0, 1, 3, 4, 5, 6, 7 };
+static const uint8_t q_g[15] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14 };
+static const uint8_t q_h[3] = { 0, 1, 3 };
 
 /* a run of subbands with the same allocation: from "first" on */
 typedef struct {
-    u8   first;
-    u8   nbal;                          /* bits of the allocation value */
-    const u8 *quant;
+    uint8_t first;
+    uint8_t nbal;                       /* bits of the allocation value */
+    const uint8_t *quant;
 } RANGE;
 
 static const RANGE tab_a[] = {          /* B.2a: 27 subbands */
@@ -75,33 +75,33 @@ static const RANGE tab_lsf[] = {        /* 13818-3 B.1: 30 subbands */
    "quant", with the subband's equalizer gain, halved when two channels
    are mixed into one: the number each sample's odd integer is
    multiplied by (and then shifted by mp3_l12_shift[quant]) */
-static s32 factor( const MP3DEC *dec, int index, int quant, int sb, int half )
+static int32_t factor( const MP3DEC *dec, int index, int quant, int sb, int half )
 {
-    s32 val = fx_mulhi( mp3_l12_sf[index & 63], mp3_l12_inv[quant] );
+    int32_t val = fx_mulhi( mp3_l12_sf[index & 63], mp3_l12_inv[quant] );
 
     if ( dec->eq_on ) {
-        val = mp3_mul16( val, (s32)dec->eq32[sb] );
+        val = mp3_mul16( val, (int32_t)dec->eq32[sb] );
     }
     return half ? val >> 1 : val;
 }
 
-static void clear_sb( MP3DEC *dec, u32 slots )
+static void clear_sb( MP3DEC *dec, unsigned int slots )
 {
-    u32 ch;
+    unsigned int ch;
 
     for ( ch = 0; ch < dec->out_ch; ch++ ) {
-        mem_set( dec->sb[ch], 0, slots * MP3_SB * sizeof( s32 ) );
+        mem_set( dec->sb[ch], 0, slots * MP3_SB * sizeof( int32_t ) );
     }
     dec->slots = slots;
 }
 
 /* the bound of intensity stereo: subbands from here on share samples */
-static u32 stereo_bound( const MP3HDR *hdr, u32 limit )
+static unsigned int stereo_bound( const MP3HDR *hdr, unsigned int limit )
 {
-    u32 bound = limit;
+    unsigned int bound = limit;
 
     if ( hdr->mode == MODE_JOINT ) {
-        bound = 4 + 4 * (u32)hdr->mode_ext;
+        bound = 4 + 4 * (unsigned int)hdr->mode_ext;
     }
     return bound < limit ? bound : limit;
 }
@@ -109,16 +109,17 @@ static u32 stereo_bound( const MP3HDR *hdr, u32 limit )
 /* ------------------------------------------------------------------ */
 /* layer 1                                                             */
 /* ------------------------------------------------------------------ */
-int mp3_layer1( MP3DEC *dec, const u8 *frame, u32 len )
+int mp3_layer1( MP3DEC *dec, const uint8_t *frame, unsigned int len )
 {
     const MP3HDR *hdr = &dec->hdr;
     MP3BITS bits;
-    u8 alloc[2][32], quant[2][32];
-    s32 fac[2][32];
-    u32 head = 4 + (hdr->crc ? 2 : 0), nch = hdr->channels, bound, sb, ch, slot, nb, code;
-    u32 nsb = dec->nsb;
+    uint8_t alloc[2][32], quant[2][32];
+    int32_t fac[2][32];
+    unsigned int head = 4 + (hdr->crc ? 2 : 0), nch = hdr->channels, bound, sb, ch, slot, nb;
+    uint32_t code;
+    unsigned int nsb = dec->nsb;
     int mix = nch == 2 && dec->out_ch == 1;
-    s32 odd, *out0, *out1;
+    int32_t odd, *out0, *out1;
 
     clear_sb( dec, 12 );
     if ( len < head ) {
@@ -129,7 +130,7 @@ int mp3_layer1( MP3DEC *dec, const u8 *frame, u32 len )
     for ( sb = 0; sb < 32; sb++ ) {
         for ( ch = 0; ch < nch; ch++ ) {
             if ( sb < bound || ch == 0 ) {
-                alloc[ch][sb] = (u8)mp3_bits_get( &bits, 4 );
+                alloc[ch][sb] = (uint8_t)mp3_bits_get( &bits, 4 );
                 if ( alloc[ch][sb] == 15 ) {
                     alloc[ch][sb] = 0;          /* not allowed */
                 }
@@ -137,8 +138,8 @@ int mp3_layer1( MP3DEC *dec, const u8 *frame, u32 len )
                 alloc[ch][sb] = alloc[0][sb];
             }
             /* nb bits a sample: 2^nb - 1 levels */
-            nb = (u32)alloc[ch][sb] + 1;
-            quant[ch][sb] = (u8)(nb == 2 ? 0 : (nb == 3 ? 2 : (nb == 4 ? 4 : nb)));
+            nb = (unsigned int)alloc[ch][sb] + 1;
+            quant[ch][sb] = (uint8_t)(nb == 2 ? 0 : (nb == 3 ? 2 : (nb == 4 ? 4 : nb)));
         }
     }
     for ( sb = 0; sb < 32; sb++ ) {
@@ -158,12 +159,12 @@ int mp3_layer1( MP3DEC *dec, const u8 *frame, u32 len )
                 if ( alloc[ch][sb] == 0 || (sb >= bound && ch == 1) ) {
                     continue;
                 }
-                nb = (u32)alloc[ch][sb] + 1;
-                code = mp3_bits_get( &bits, (int)nb );
+                nb = (unsigned int)alloc[ch][sb] + 1;
+                code =mp3_bits_get( &bits, (int)nb );
                 if ( sb >= nsb ) {
                     continue;                   /* read, but not heard at this rate */
                 }
-                odd = (s32)(2 * code + 2) - (s32)(1UL << nb);
+                odd = (int32_t)(2 * code + 2) - (int32_t)(1UL << nb);
                 if ( sb >= bound && nch == 2 ) {
                     /* one sample, both channels' scale factors */
                     if ( mix ) {
@@ -190,7 +191,7 @@ int mp3_layer1( MP3DEC *dec, const u8 *frame, u32 len )
 /* the allocation table of a frame */
 static const RANGE *l2_table( const MP3HDR *hdr )
 {
-    u32 per_ch;
+    uint32_t per_ch;
 
     if ( hdr->version != MV_1 ) {
         return tab_lsf;
@@ -210,10 +211,10 @@ static const RANGE *l2_table( const MP3HDR *hdr )
 }
 
 /* three samples of one quantization into vals[0..2] as 2c + 1 - levels */
-static void l2_samples( MP3BITS *bits, int quant, s32 *vals )
+static void l2_samples( MP3BITS *bits, int quant, int32_t *vals )
 {
-    const s8 *group;
-    u32 code, levels = q_levels[quant];
+    const int8_t *group;
+    uint32_t code, levels = q_levels[quant];
     int k;
 
     if ( quant == 0 || quant == 1 || quant == 3 ) {
@@ -232,20 +233,20 @@ static void l2_samples( MP3BITS *bits, int quant, s32 *vals )
     }
     for ( k = 0; k < 3; k++ ) {
         code = mp3_bits_get( bits, q_bits[quant] );
-        vals[k] = (s32)(2 * code + 1) - (s32)levels;
+        vals[k] = (int32_t)(2 * code + 1) - (int32_t)levels;
     }
 }
 
-int mp3_layer2( MP3DEC *dec, const u8 *frame, u32 len )
+int mp3_layer2( MP3DEC *dec, const uint8_t *frame, unsigned int len )
 {
     const MP3HDR *hdr = &dec->hdr;
     const RANGE *table, *range;
     MP3BITS bits;
-    u8 nbal[32], alloc[2][32], scfsi[2][32], sfi[2][32][3], quant[2][32];
-    const u8 *qlist[32];
-    s32 fac[2][32], vals[2][3], *out0, *out1;
-    u32 head = 4 + (hdr->crc ? 2 : 0), nch = hdr->channels, limit, bound, sb, ch, gr, part, k;
-    u32 nsb = dec->nsb, slot;
+    uint8_t nbal[32], alloc[2][32], scfsi[2][32], sfi[2][32][3], quant[2][32];
+    const uint8_t *qlist[32];
+    int32_t fac[2][32], vals[2][3], *out0, *out1;
+    unsigned int head = 4 + (hdr->crc ? 2 : 0), nch = hdr->channels, limit, bound, sb, ch, gr, part, k;
+    unsigned int nsb = dec->nsb, slot;
     int mix = nch == 2 && dec->out_ch == 1, shift;
 
     clear_sb( dec, 36 );
@@ -272,16 +273,16 @@ int mp3_layer2( MP3DEC *dec, const u8 *frame, u32 len )
     for ( sb = 0; sb < limit; sb++ ) {
         for ( ch = 0; ch < nch; ch++ ) {
             if ( sb < bound || ch == 0 ) {
-                alloc[ch][sb] = (u8)mp3_bits_get( &bits, nbal[sb] );
+                alloc[ch][sb] = (uint8_t)mp3_bits_get( &bits, nbal[sb] );
             } else {
                 alloc[ch][sb] = alloc[0][sb];
             }
-            quant[ch][sb] = (u8)(alloc[ch][sb] ? qlist[sb][alloc[ch][sb] - 1] : 0);
+            quant[ch][sb] = (uint8_t)(alloc[ch][sb] ? qlist[sb][alloc[ch][sb] - 1] : 0);
         }
     }
     for ( sb = 0; sb < limit; sb++ ) {
         for ( ch = 0; ch < nch; ch++ ) {
-            scfsi[ch][sb] = (u8)(alloc[ch][sb] ? mp3_bits_get( &bits, 2 ) : 0);
+            scfsi[ch][sb] = (uint8_t)(alloc[ch][sb] ? mp3_bits_get( &bits, 2 ) : 0);
         }
     }
     for ( sb = 0; sb < limit; sb++ ) {
@@ -289,21 +290,21 @@ int mp3_layer2( MP3DEC *dec, const u8 *frame, u32 len )
             if ( alloc[ch][sb] == 0 ) {
                 continue;
             }
-            sfi[ch][sb][0] = (u8)mp3_bits_get( &bits, 6 );
+            sfi[ch][sb][0] = (uint8_t)mp3_bits_get( &bits, 6 );
             switch ( scfsi[ch][sb] ) {
             case 0:
-                sfi[ch][sb][1] = (u8)mp3_bits_get( &bits, 6 );
-                sfi[ch][sb][2] = (u8)mp3_bits_get( &bits, 6 );
+                sfi[ch][sb][1] = (uint8_t)mp3_bits_get( &bits, 6 );
+                sfi[ch][sb][2] = (uint8_t)mp3_bits_get( &bits, 6 );
                 break;
             case 1:
                 sfi[ch][sb][1] = sfi[ch][sb][0];
-                sfi[ch][sb][2] = (u8)mp3_bits_get( &bits, 6 );
+                sfi[ch][sb][2] = (uint8_t)mp3_bits_get( &bits, 6 );
                 break;
             case 2:
                 sfi[ch][sb][1] = sfi[ch][sb][2] = sfi[ch][sb][0];
                 break;
             default:
-                sfi[ch][sb][1] = (u8)mp3_bits_get( &bits, 6 );
+                sfi[ch][sb][1] = (uint8_t)mp3_bits_get( &bits, 6 );
                 sfi[ch][sb][2] = sfi[ch][sb][1];
                 break;
             }

@@ -43,7 +43,7 @@ void settings_save( void );
 /* the equalizer's presets: name and ten bands, half decibels */
 typedef struct {
     const char *name;
-    s8 band[EQ_BANDS];
+    int8_t band[EQ_BANDS];
 } EQPRESET;
 
 extern const EQPRESET eq_presets[];
@@ -57,10 +57,10 @@ void eq_apply( void );                  /* set.eq to the engine, after any chang
 #define PL_MAX          2000
 
 typedef struct {
-    char *path;                         /* whole: C:\MUSIC\SONG.MP3 */
-    char *title;                        /* from the tags once played, else NULL */
-    u32   length_ms;                    /* 0 until known */
-    u8    failed;                       /* would not play */
+    char    *path;                      /* whole: C:\MUSIC\SONG.MP3 */
+    char    *title;                     /* from the tags once played, else NULL */
+    uint32_t length_ms;                 /* 0 until known */
+    uint8_t  failed;                    /* would not play */
 } PLENTRY;
 
 extern PLENTRY *plist;
@@ -129,7 +129,7 @@ enum {
 
 void  cmd_do( int cmd );
 void  play_index( int index );          /* open entry "index" and play it */
-void  seek_to( u32 ms );
+void  seek_to( uint32_t ms );
 void  set_volume( int volume );
 
 /* what is playing, for the screen */

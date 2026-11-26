@@ -64,11 +64,11 @@
 #define SPIN_RESET  1000000L
 #define SPIN_TX     400000L
 
-static u8  *rxbuf;
-static u8  *txbuf[TXN];
-static u32  cur_rx;
-static int  tx_cur;
-static u8   tx_used[TXN];
+static uint8_t *rxbuf;
+static uint8_t *txbuf[TXN];
+static uint32_t cur_rx;
+static int      tx_cur;
+static unsigned char tx_used[TXN];
 
 static const PCI_ID rtl_ids[] = {
     { 0x10EC, 0x8139 },         /* Realtek */
@@ -80,14 +80,14 @@ static const PCI_ID rtl_ids[] = {
     { 0, 0 }
 };
 
-static u32 align256( u32 p )
+static uint32_t align256( uint32_t p )
 {
     return ( p + 255 ) & ~255L;
 }
 
 static int chip_reset( void )
 {
-    u32 n;
+    unsigned int n;
 
     outb( net_port + R_CR, CR_RST );
     for ( n = 0; n < SPIN_RESET; n++ ) {
@@ -104,12 +104,12 @@ int card_find( void )
     if ( net_opt_port == 0 ) {
         if ( !net_pci_find( rtl_ids, &which ) ) return 1;
         net_pci_enable( net_pciaddr );
-        net_port = (u16)net_pci_bar( net_pciaddr, 0, &isio );
+        net_port = (uint16_t)net_pci_bar( net_pciaddr, 0, &isio );
         if ( net_port == 0 || !isio ) return 1;
-        net_irq = (u8)net_pci_irqline( net_pciaddr );
+        net_irq = (uint8_t)net_pci_irqline( net_pciaddr );
         net_bus = NICB_PCI;
     } else {
-        net_port = (u16)net_opt_port;
+        net_port = (uint16_t)net_opt_port;
         net_bus = NICB_PCI;
     }
     net_flags = NICF_WORD;
@@ -119,9 +119,9 @@ int card_find( void )
     if ( !net_mac_ok( net_mac ) ) return 1;
 
     if ( rxbuf == 0 ) {
-        u8 *pool = net_alloc( RXSZ + TXN * TXSZ + 256 );
+        uint8_t *pool = net_alloc( RXSZ + TXN * TXSZ + 256 );
         if ( pool == 0 ) return 1;
-        rxbuf = (u8 *)align256( (u32)pool );
+        rxbuf = (uint8_t *)align256( (uint32_t)pool );
         for ( i = 0; i < TXN; i++ ) txbuf[i] = rxbuf + RXSZ + i * TXSZ;
     }
     net_strcpy( net_name, "RTL8139 (PCI)" );
@@ -134,7 +134,7 @@ int card_setup( void )
 
     if ( !chip_reset() ) return 1;
     outb( net_port + R_9346CR, 0xC0 );          /* unlock the config */
-    outl( net_port + R_RBSTART, (u32)rxbuf );
+    outl( net_port + R_RBSTART, (uint32_t)rxbuf );
     cur_rx = 0;
     tx_cur = 0;
     for ( i = 0; i < TXN; i++ ) tx_used[i] = 0;
@@ -148,10 +148,10 @@ int card_setup( void )
        threshold, unlimited DMA burst, the 8K ring */
     outl( net_port + R_RCR, 0x0000E78EL );
     outl( net_port + R_TCR, 0x03000700L );      /* standard gap, unlimited DMA */
-    outw( net_port + R_CAPR, (u16)( -16 ) );
+    outw( net_port + R_CAPR, (uint16_t)( -16 ) );
     outb( net_port + R_9346CR, 0x00 );          /* lock it again */
     outw( net_port + R_ISR, 0xFFFF );
-    outw( net_port + R_IMR, (u16)( net_flags & NICF_POLLED ? 0 : IR_WANTED ) );
+    outw( net_port + R_IMR, (uint16_t)( net_flags & NICF_POLLED ? 0 : IR_WANTED ) );
     return 0;
 }
 
@@ -162,11 +162,11 @@ void card_stop( void )
     outw( net_port + R_ISR, 0xFFFF );
 }
 
-int card_send( const u8 *frame, u32 len )
+int card_send( const uint8_t *frame, unsigned int len )
 {
-    static u8 pad[64];
+    static uint8_t pad[64];
     int entry = tx_cur;
-    u32 n;
+    unsigned int n;
 
     if ( tx_used[entry] ) {
         for ( n = 0; n < SPIN_TX; n++ ) {
@@ -181,7 +181,7 @@ int card_send( const u8 *frame, u32 len )
         net_memcpy( txbuf[entry], pad, 60 );
         len = 60;
     }
-    outl( net_port + R_TSAD0 + entry * 4, (u32)txbuf[entry] );
+    outl( net_port + R_TSAD0 + entry * 4, (uint32_t)txbuf[entry] );
     outl( net_port + R_TSD0 + entry * 4, TX_THRESH | len );
     tx_used[entry] = 1;
     tx_cur = ( entry + 1 ) & ( TXN - 1 );
@@ -191,21 +191,22 @@ int card_send( const u8 *frame, u32 len )
 /* the ring, drained into the queue.  Interrupts are off */
 static void rx_drain( void )
 {
-    u32 off, status, size, len, n;
-    u8 *slot;
+    uint32_t status;
+    unsigned int off, size, len, n;
+    uint8_t *slot;
 
     for ( n = 0; n < 64; n++ ) {
         if ( inb( net_port + R_CR ) & CR_BUFE ) break;
         off = cur_rx % RING;
-        status = *(volatile u32 *)( rxbuf + off );
+        status = *(volatile uint32_t *)( rxbuf + off );
         size = status >> 16;                    /* the frame and its 4-byte CRC */
         if ( !( status & RX_STATUS_OK ) || size < 4 + NIC_HDRLEN || size > 4 + NIC_MAXFRAME + 4 ) {
             /* a ring the card and the driver no longer agree about:
                stop, point it at the start, and go again */
             net_stats.rxerrors++;
             outb( net_port + R_CR, CR_TE );
-            outl( net_port + R_RBSTART, (u32)rxbuf );
-            outw( net_port + R_CAPR, (u16)( -16 ) );
+            outl( net_port + R_RBSTART, (uint32_t)rxbuf );
+            outw( net_port + R_CAPR, (uint16_t)( -16 ) );
             outb( net_port + R_CR, CR_TE | CR_RE );
             outl( net_port + R_RCR, 0x0000E78EL );   /* +AM, as card_setup */
             cur_rx = 0;
@@ -216,29 +217,29 @@ static void rx_drain( void )
         net_memcpy( slot, rxbuf + off + 4, len );
         net_rx_commit( len );
         cur_rx = ( cur_rx + size + 4 + 3 ) & ~3L;
-        outw( net_port + R_CAPR, (u16)( cur_rx - 16 ) );
+        outw( net_port + R_CAPR, (uint16_t)( cur_rx - 16 ) );
     }
 }
 
 int card_service( void )
 {
-    u16 isr;
-    u32 n;
+    uint16_t isr;
+    unsigned int n;
     int mine = 0;
 
     for ( n = 0; n < 8; n++ ) {
         isr = inw( net_port + R_ISR );
         if ( !( isr & IR_WANTED ) ) break;
-        outw( net_port + R_ISR, isr );          /* dismiss what was read */
+        outw( net_port + R_ISR, isr );               /* dismiss what was read */
         mine = 1;
         if ( isr & IR_RER ) net_stats.rxerrors++;
         if ( isr & IR_TER ) net_stats.txerrors++;
         if ( isr & ( IR_RXOVW | IR_FOVW ) ) {
-            u16 cbr = inw( net_port + R_CBR );  /* read once: the card moves it */
+            uint16_t cbr = inw( net_port + R_CBR );  /* read once: the card moves it */
 
             net_stats.overflows++;
             cur_rx = cbr;
-            outw( net_port + R_CAPR, (u16)( cbr - 16 ) );
+            outw( net_port + R_CAPR, (uint16_t)( cbr - 16 ) );
         }
         if ( isr & ( IR_ROK | IR_RER ) ) rx_drain();
     }

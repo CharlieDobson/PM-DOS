@@ -40,24 +40,24 @@
 
 struct DiskArchive {
     FILE          *fp;               /* file source (NULL for memory source) */
-    unsigned char *mem;              /* in-memory image (NULL for file src)  */
-    UInt32         memLen;
+    uint8_t       *mem;              /* in-memory image (NULL for file src)  */
+    uint32_t       memLen;
     int            ownMem;           /* free mem in DiskClose?               */
     int            fatType;          /* 12 or 16                             */
-    UInt32         bytesPerSector;
-    UInt32         sectorsPerCluster;
-    UInt32         reservedSectors;
-    UInt32         numFATs;
-    UInt32         rootEntries;
-    UInt32         sectorsPerFAT;
-    UInt32         totalSectors;
-    UInt32         rootDirSectors;
-    UInt32         rootDirStart;      /* first sector of the root directory  */
-    UInt32         firstDataSector;   /* first sector of cluster #2          */
-    UInt32         countOfClusters;
-    UInt32         clusterBytes;
-    unsigned char *fat;               /* first FAT copy, loaded whole        */
-    UInt32         fatBytes;
+    uint32_t       bytesPerSector;
+    uint32_t       sectorsPerCluster;
+    uint32_t       reservedSectors;
+    uint32_t       numFATs;
+    uint32_t       rootEntries;
+    uint32_t       sectorsPerFAT;
+    uint32_t       totalSectors;
+    uint32_t       rootDirSectors;
+    uint32_t       rootDirStart;      /* first sector of the root directory  */
+    uint32_t       firstDataSector;   /* first sector of cluster #2          */
+    uint32_t       countOfClusters;
+    uint32_t       clusterBytes;
+    uint8_t       *fat;               /* first FAT copy, loaded whole        */
+    uint32_t       fatBytes;
     int            numEntries;
     int            entryCap;          /* entries the table can hold          */
     DiskEntry     *entries;           /* grown on demand up to SZ_MAX_FILES  */
@@ -73,10 +73,10 @@ static int DiskGrow( DiskArchive *d )
     DiskEntry *ne;
 
     if ( d->numEntries < d->entryCap ) return 1;
-    if ( (UInt32)d->numEntries >= SZ_MAX_FILES ) return -1;   /* limit, not RAM */
+    if ( (uint32_t)d->numEntries >= SZ_MAX_FILES ) return -1; /* limit, not RAM */
 
     n = d->entryCap ? d->entryCap * 2 : 64;
-    if ( (UInt32)n > SZ_MAX_FILES ) n = (int)SZ_MAX_FILES;
+    if ( (uint32_t)n > SZ_MAX_FILES ) n = (int)SZ_MAX_FILES;
     if ( n <= d->numEntries ) return 0;
 
     ne = (DiskEntry *)realloc( d->entries, (size_t)n * sizeof( DiskEntry ) );
@@ -101,15 +101,15 @@ static void DiskTrim( DiskArchive *d )
 }
 
 /*---- Little-endian field readers ----------------------------------------- */
-static UInt32 GetU16( const unsigned char *p )
+static uint32_t GetU16( const uint8_t *p )
 {
-    return (UInt32)p[0] | ( (UInt32)p[1] << 8 );
+    return (uint32_t)p[0] | ( (uint32_t)p[1] << 8 );
 }
 
-static UInt32 GetU32( const unsigned char *p )
+static uint32_t GetU32( const uint8_t *p )
 {
-    return (UInt32)p[0] | ( (UInt32)p[1] << 8 ) |
-           ( (UInt32)p[2] << 16 ) | ( (UInt32)p[3] << 24 );
+    return (uint32_t)p[0] | ( (uint32_t)p[1] << 8 ) |
+           ( (uint32_t)p[2] << 16 ) | ( (uint32_t)p[3] << 24 );
 }
 
 /*---- Boot-sector / BPB geometry ------------------------------------------ *
@@ -117,11 +117,11 @@ static UInt32 GetU32( const unsigned char *p )
  * it.  Returns SZ_OK if this looks like a FAT12/16 volume, else SZ_ERR_SIG.
  * fileLen is the physical image size (for a light sanity bound).
  *-------------------------------------------------------------------------- */
-static int ParseBoot( const unsigned char *bs, long fileLen, DiskArchive *d )
+static int ParseBoot( const uint8_t *bs, long fileLen, DiskArchive *d )
 {
-    UInt32 bps, spc, resv, nfat, rootEnt, spf;
-    UInt32 tot16, tot32, total, media;
-    UInt32 rootSecs, dataSecs, clusters, firstData;
+    uint32_t bps, spc, resv, nfat, rootEnt, spf;
+    uint32_t tot16, tot32, total, media;
+    uint32_t rootSecs, dataSecs, clusters, firstData;
 
     bps     = GetU16( bs + 0x0B );
     spc     = bs[0x0D];
@@ -185,7 +185,7 @@ static int ParseBoot( const unsigned char *bs, long fileLen, DiskArchive *d )
 int DiskProbe( const char *path )
 {
     FILE         *fp;
-    unsigned char bs[512];
+    uint8_t       bs[512];
     DiskArchive   tmp;
     long          fileLen;
     int           rc;
@@ -209,7 +209,7 @@ int DiskProbe( const char *path )
     return ( rc == SZ_OK ) ? 1 : 0;
 }
 
-int DiskProbeBuf( const unsigned char *buf, UInt32 len )
+int DiskProbeBuf( const uint8_t *buf, uint32_t len )
 {
     DiskArchive tmp;
 
@@ -225,11 +225,11 @@ int DiskProbeBuf( const unsigned char *buf, UInt32 len )
 
 /* Read 'len' bytes at absolute offset 'off' from whichever source backs this
  * archive (a FILE or an in-memory image). */
-static int ReadRaw( DiskArchive *d, long off, UInt32 len, unsigned char *buf )
+static int ReadRaw( DiskArchive *d, long off, uint32_t len, uint8_t *buf )
 {
     if ( d->mem )
     {
-        if ( off < 0 || (UInt32)off > d->memLen || (UInt32)off + len > d->memLen )
+        if ( off < 0 || (uint32_t)off > d->memLen || (uint32_t)off + len > d->memLen )
             return SZ_ERR_READ;
         memcpy( buf, d->mem + off, len );
         return SZ_OK;
@@ -239,17 +239,19 @@ static int ReadRaw( DiskArchive *d, long off, UInt32 len, unsigned char *buf )
     return SZ_OK;
 }
 
-static int ReadSectors( DiskArchive *d, UInt32 sector, UInt32 count,
-                        unsigned char *buf )
+static int ReadSectors( DiskArchive *d, uint32_t sector, uint32_t count,
+                        uint8_t *buf )
 {
+    /* past 2 GB the offset would not fit a long, and would wrap */
+    if ( sector > 0x7FFFFFFFUL / d->bytesPerSector ) return SZ_ERR_READ;
     return ReadRaw( d, (long)sector * (long)d->bytesPerSector,
                     count * d->bytesPerSector, buf );
 }
 
 /* Value of the FAT slot for 'cluster' (raw 12/16-bit entry). */
-static UInt32 FatEntry( DiskArchive *d, UInt32 cluster )
+static uint32_t FatEntry( DiskArchive *d, uint32_t cluster )
 {
-    UInt32 off, val;
+    uint32_t off, val;
 
     if ( d->fatType == 16 )
     {
@@ -268,19 +270,19 @@ static UInt32 FatEntry( DiskArchive *d, UInt32 cluster )
 
 /* True if 'val' marks the end of a cluster chain (or is a bad/free slot we
  * should stop on). */
-static int IsEndCluster( DiskArchive *d, UInt32 val )
+static int IsEndCluster( DiskArchive *d, uint32_t val )
 {
     if ( d->fatType == 16 )
         return ( val >= 0xFFF8 || val == 0 || val == 0xFFF7 );
     return ( val >= 0x0FF8 || val == 0 || val == 0x0FF7 );
 }
 
-static int ClusterValid( DiskArchive *d, UInt32 cluster )
+static int ClusterValid( DiskArchive *d, uint32_t cluster )
 {
     return ( cluster >= 2 && cluster < d->countOfClusters + 2 );
 }
 
-static UInt32 ClusterSector( DiskArchive *d, UInt32 cluster )
+static uint32_t ClusterSector( DiskArchive *d, uint32_t cluster )
 {
     return d->firstDataSector + ( cluster - 2 ) * d->sectorsPerCluster;
 }
@@ -288,18 +290,18 @@ static UInt32 ClusterSector( DiskArchive *d, UInt32 cluster )
 /*---- Name decoding ------------------------------------------------------- */
 
 /* Checksum an 11-byte raw short name the way LFN entries do. */
-static unsigned char ShortSum( const unsigned char *raw11 )
+static uint8_t ShortSum( const uint8_t *raw11 )
 {
-    unsigned char sum = 0;
+    uint8_t sum = 0;
     int i;
     for ( i = 0; i < 11; i++ )
-        sum = (unsigned char)( ( ( sum & 1 ) ? 0x80 : 0 ) + ( sum >> 1 ) + raw11[i] );
+        sum = (uint8_t)( ( ( sum & 1 ) ? 0x80 : 0 ) + ( sum >> 1 ) + raw11[i] );
     return sum;
 }
 
 /* Format a raw 11-byte 8.3 name into "NAME.EXT", honouring the WinNT
  * lower-case flags (byte 0x0C: 0x08 = lower base, 0x10 = lower ext). */
-static void FormatShort( const unsigned char *raw11, unsigned char ntFlags,
+static void FormatShort( const uint8_t *raw11, uint8_t ntFlags,
                          char *out )
 {
     char base[9], ext[4];
@@ -335,12 +337,12 @@ static void FormatShort( const unsigned char *raw11, unsigned char ntFlags,
 /* Pull the 13 UCS-2 code units out of one LFN entry and place them, converted
  * to ANSI, into lfn[] at the slot given by the sequence number.  Untranslatable
  * characters become '_'; 0x0000/0xFFFF are left as the pre-zeroed terminator. */
-static void LfnPart( const unsigned char *rec, char *lfn )
+static void LfnPart( const uint8_t *rec, char *lfn )
 {
     static const int ofs[13] = { 1,3,5,7,9, 14,16,18,20,22,24, 28,30 };
-    int    seq = rec[0] & 0x1F;
-    int    base, k;
-    UInt32 cu;
+    int      seq = rec[0] & 0x1F;
+    int      base, k;
+    uint32_t cu;
 
     if ( seq < 1 || seq > 20 ) return;
     base = ( seq - 1 ) * 13;
@@ -354,18 +356,18 @@ static void LfnPart( const unsigned char *rec, char *lfn )
 }
 
 /*---- Directory walking --------------------------------------------------- */
-static void ParseDir( DiskArchive *d, const unsigned char *buf, UInt32 len,
-                      const char *prefix, int depth, UInt32 dirCluster );
+static void ParseDir( DiskArchive *d, const uint8_t *buf, uint32_t len,
+                      const char *prefix, int depth, uint32_t dirCluster );
 
 /* Read a sub-directory's whole cluster chain into a heap buffer.  Caller frees.
  * *outLen receives the byte length.  Returns NULL on error / empty. */
-static unsigned char *ReadDirChain( DiskArchive *d, UInt32 startCluster,
-                                    UInt32 *outLen )
+static uint8_t *ReadDirChain( DiskArchive *d, uint32_t startCluster,
+                                    uint32_t *outLen )
 {
-    unsigned char *buf = NULL, *nb;
-    UInt32 cap = 0, len = 0;
-    UInt32 cluster = startCluster;
-    UInt32 guard = 0;
+    uint8_t *buf = NULL, *nb;
+    uint32_t cap = 0, len = 0;
+    uint32_t cluster = startCluster;
+    uint32_t guard = 0;
 
     *outLen = 0;
     while ( ClusterValid( d, cluster ) && guard <= d->countOfClusters )
@@ -374,7 +376,7 @@ static unsigned char *ReadDirChain( DiskArchive *d, UInt32 startCluster,
         if ( len + d->clusterBytes > cap )
         {
             cap = len + d->clusterBytes;
-            nb  = (unsigned char *)realloc( buf, cap );
+            nb  = (uint8_t *)realloc( buf, cap );
             if ( !nb ) { free( buf ); return NULL; }
             buf = nb;
         }
@@ -393,11 +395,11 @@ static unsigned char *ReadDirChain( DiskArchive *d, UInt32 startCluster,
 
 /* Append one enumerated file/dir; recurse into sub-directories. */
 static void AddEntry( DiskArchive *d, const char *prefix, const char *name,
-                      const unsigned char *rec, int depth,
-                      UInt32 dirCluster, UInt32 slot )
+                      const uint8_t *rec, int depth,
+                      uint32_t dirCluster, uint32_t slot )
 {
     DiskEntry *e;
-    UInt32     cluster;
+    uint32_t   cluster;
     unsigned   attr = rec[0x0B];
     char       path[SZ_MAX_NAME];
     int        pn, g;
@@ -411,7 +413,7 @@ static void AddEntry( DiskArchive *d, const char *prefix, const char *name,
     if ( g <= 0 )
     {
         d->loadErr = ( g < 0 )
-                   ? ArcCheckEntryCount( (UInt32)d->numEntries + 1 )
+                   ? ArcCheckEntryCount( (uint32_t)d->numEntries + 1 )
                    : SZ_ERR_MEMORY;
         return;
     }
@@ -433,8 +435,8 @@ static void AddEntry( DiskArchive *d, const char *prefix, const char *name,
     e->size         = GetU32( rec + 0x1C );
     e->crc          = 0;
     e->methodCode   = 0;
-    e->modTime      = (UInt16)GetU16( rec + 0x16 );
-    e->modDate      = (UInt16)GetU16( rec + 0x18 );
+    e->modTime      = (uint16_t)GetU16( rec + 0x16 );
+    e->modDate      = (uint16_t)GetU16( rec + 0x18 );
     e->attrib       = attr;
     e->isDir        = ( attr & ATTR_DIRECTORY ) ? 1 : 0;
     e->firstCluster = cluster;
@@ -445,8 +447,8 @@ static void AddEntry( DiskArchive *d, const char *prefix, const char *name,
 
     if ( e->isDir && depth < MAX_DEPTH && ClusterValid( d, cluster ) )
     {
-        UInt32         subLen;
-        unsigned char *sub = ReadDirChain( d, cluster, &subLen );
+        uint32_t       subLen;
+        uint8_t       *sub = ReadDirChain( d, cluster, &subLen );
         if ( sub )
         {
             ParseDir( d, sub, subLen, path, depth + 1, cluster );
@@ -455,19 +457,19 @@ static void AddEntry( DiskArchive *d, const char *prefix, const char *name,
     }
 }
 
-static void ParseDir( DiskArchive *d, const unsigned char *buf, UInt32 len,
-                      const char *prefix, int depth, UInt32 dirCluster )
+static void ParseDir( DiskArchive *d, const uint8_t *buf, uint32_t len,
+                      const char *prefix, int depth, uint32_t dirCluster )
 {
-    UInt32 pos;
-    char   lfn[SZ_MAX_NAME];
-    int    lfnActive = 0;
-    unsigned char lfnSum = 0;
+    unsigned pos;
+    char     lfn[SZ_MAX_NAME];
+    int      lfnActive = 0;
+    uint8_t  lfnSum = 0;
 
     for ( pos = 0; pos + DIRENT_SIZE <= len; pos += DIRENT_SIZE )
     {
-        const unsigned char *rec = buf + pos;
-        unsigned char first = rec[0];
-        unsigned char attr;
+        const uint8_t *rec = buf + pos;
+        uint8_t       first = rec[0];
+        uint8_t       attr;
         char short83[13];
 
         if ( first == 0x00 ) break;              /* no more entries */
@@ -511,8 +513,8 @@ static void ParseDir( DiskArchive *d, const unsigned char *buf, UInt32 len,
  * On failure the DiskArchive is destroyed and *out left NULL. */
 static int DiskLoad( DiskArchive *d, long imgLen, DiskArchive **out )
 {
-    unsigned char  bs[512];
-    unsigned char *rootBuf;
+    uint8_t        bs[512];
+    uint8_t       *rootBuf;
     int            rc;
 
     if ( ReadRaw( d, 0L, 512, bs ) != SZ_OK ) { DiskClose( d ); return SZ_ERR_READ; }
@@ -525,7 +527,7 @@ static int DiskLoad( DiskArchive *d, long imgLen, DiskArchive **out )
     if ( d->fatBytes == 0 || d->fatBytes > MAX_FAT_BYTES )
     { DiskClose( d ); return SZ_ERR_TOOBIG; }
 
-    d->fat = (unsigned char *)malloc( d->fatBytes );
+    d->fat = (uint8_t *)malloc( d->fatBytes );
     if ( !d->fat )                      /* the entry table grows as we walk */
     { DiskClose( d ); return SZ_ERR_MEMORY; }
 
@@ -534,7 +536,7 @@ static int DiskLoad( DiskArchive *d, long imgLen, DiskArchive **out )
     { DiskClose( d ); return SZ_ERR_READ; }
 
     /* Read and parse the fixed-size root directory region. */
-    rootBuf = (unsigned char *)malloc( d->rootDirSectors * d->bytesPerSector );
+    rootBuf = (uint8_t *)malloc( d->rootDirSectors * d->bytesPerSector );
     if ( !rootBuf ) { DiskClose( d ); return SZ_ERR_MEMORY; }
     if ( ReadSectors( d, d->rootDirStart, d->rootDirSectors, rootBuf ) != SZ_OK )
     { free( rootBuf ); DiskClose( d ); return SZ_ERR_READ; }
@@ -569,7 +571,7 @@ int DiskOpen( const char *path, DiskArchive **out )
     return DiskLoad( d, fileLen, out );
 }
 
-int DiskOpenMemory( unsigned char *buf, UInt32 len, int ownBuf,
+int DiskOpenMemory( uint8_t *buf, uint32_t len, int ownBuf,
                     DiskArchive **out )
 {
     DiskArchive *d;
@@ -655,8 +657,8 @@ static int DiskExtractIndex( DiskArchive *d, int idx, const char *destDir )
     DiskEntry     *e = &d->entries[idx];
     char           outPath[SZ_MAX_NAME * 4];
     FILE          *out;
-    unsigned char *clbuf;
-    UInt32         remain, cluster, guard;
+    uint8_t       *clbuf;
+    uint32_t       remain, cluster, guard;
     int            rc;
 
     if ( destDir )
@@ -693,12 +695,12 @@ static int DiskExtractIndex( DiskArchive *d, int idx, const char *destDir )
     remain  = e->size;
     cluster = e->firstCluster;
     guard   = 0;
-    clbuf   = ( remain > 0 ) ? (unsigned char *)malloc( d->clusterBytes ) : NULL;
+    clbuf   = ( remain > 0 ) ? (uint8_t *)malloc( d->clusterBytes ) : NULL;
     if ( remain > 0 && !clbuf ) { if ( out ) fclose( out ); if ( destDir ) remove( outPath ); return SZ_ERR_MEMORY; }
 
     while ( remain > 0 )
     {
-        UInt32 chunk;
+        uint32_t chunk;
 
         if ( !ClusterValid( d, cluster ) ) { rc = SZ_ERR_DATA; break; }
         if ( guard++ > d->countOfClusters + 1 ) { rc = SZ_ERR_DATA; break; }
@@ -803,11 +805,11 @@ void DiskClose( DiskArchive *d )
 
 /* Byte offset in the image of directory slot 'slot', in the directory that
  * starts at dirCluster (0 = the root), or -1 when the slot is not in it. */
-static long SlotOffset( DiskArchive *d, UInt32 dirCluster, UInt32 slot )
+static long SlotOffset( DiskArchive *d, uint32_t dirCluster, uint32_t slot )
 {
-    UInt32 byteOff = slot * DIRENT_SIZE;
-    UInt32 cluster = dirCluster;
-    UInt32 hops;
+    uint32_t byteOff = slot * DIRENT_SIZE;
+    uint32_t cluster = dirCluster, sector;
+    unsigned hops;
 
     if ( dirCluster == 0 )
     {
@@ -822,22 +824,25 @@ static long SlotOffset( DiskArchive *d, UInt32 dirCluster, UInt32 slot )
         if ( IsEndCluster( d, cluster ) || !ClusterValid( d, cluster ) )
             return -1L;
     }
-    return (long)ClusterSector( d, cluster ) * (long)d->bytesPerSector +
+    sector = ClusterSector( d, cluster );
+    if ( sector > ( 0x7FFFFFFFUL - d->clusterBytes ) / d->bytesPerSector )
+        return -1L;                 /* past 2 GB: a long cannot hold it */
+    return (long)sector * (long)d->bytesPerSector +
            (long)( byteOff % d->clusterBytes );
 }
 
 /* Set the FAT slot for 'cluster' in the copy in memory, and note which of
  * its sectors now has to be written. */
-static void FatSet( DiskArchive *d, UInt32 cluster, UInt32 val, Byte *dirty )
+static void FatSet( DiskArchive *d, uint32_t cluster, uint32_t val, uint8_t *dirty )
 {
-    UInt32 off;
+    uint32_t off;
 
     if ( d->fatType == 16 )
     {
         off = cluster * 2;
         if ( off + 1 >= d->fatBytes ) return;
-        d->fat[off]     = (unsigned char)val;
-        d->fat[off + 1] = (unsigned char)( val >> 8 );
+        d->fat[off]     = (uint8_t)val;
+        d->fat[off + 1] = (uint8_t)( val >> 8 );
     }
     else
     {
@@ -845,14 +850,14 @@ static void FatSet( DiskArchive *d, UInt32 cluster, UInt32 val, Byte *dirty )
         if ( off + 1 >= d->fatBytes ) return;
         if ( cluster & 1 )
         {
-            d->fat[off]     = (unsigned char)( ( d->fat[off] & 0x0F ) |
+            d->fat[off]     = (uint8_t)( ( d->fat[off] & 0x0F ) |
                                                ( ( val << 4 ) & 0xF0 ) );
-            d->fat[off + 1] = (unsigned char)( val >> 4 );
+            d->fat[off + 1] = (uint8_t)( val >> 4 );
         }
         else
         {
-            d->fat[off]     = (unsigned char)val;
-            d->fat[off + 1] = (unsigned char)( ( d->fat[off + 1] & 0xF0 ) |
+            d->fat[off]     = (uint8_t)val;
+            d->fat[off + 1] = (uint8_t)( ( d->fat[off + 1] & 0xF0 ) |
                                                ( ( val >> 8 ) & 0x0F ) );
         }
     }
@@ -861,9 +866,9 @@ static void FatSet( DiskArchive *d, UInt32 cluster, UInt32 val, Byte *dirty )
 }
 
 /* Clusters in the chain from 'cluster', stopping at the guard. */
-static UInt32 ChainLength( DiskArchive *d, UInt32 cluster )
+static uint32_t ChainLength( DiskArchive *d, uint32_t cluster )
 {
-    UInt32 n = 0;
+    uint32_t n = 0;
 
     while ( ClusterValid( d, cluster ) && n <= d->countOfClusters )
     {
@@ -879,10 +884,11 @@ static UInt32 ChainLength( DiskArchive *d, UInt32 cluster )
  * longer than MAX_DIR_BYTES - would otherwise be cut loose, its clusters
  * lost, with nothing in the listing to say it had ever been there. */
 static int FolderAllListed( DiskArchive *d, const DiskEntry *dir,
-                            const Byte *del )
+                            const uint8_t *del )
 {
-    unsigned char *buf;
-    UInt32         len, pos, live = 0, listed = 0;
+    uint8_t       *buf;
+    uint32_t       len;
+    unsigned       pos, live = 0, listed = 0;
     int            i;
 
     if ( !ClusterValid( d, dir->firstCluster ) ) return 1;
@@ -893,7 +899,7 @@ static int FolderAllListed( DiskArchive *d, const DiskEntry *dir,
     if ( !buf ) return 0;
     for ( pos = 0; pos + DIRENT_SIZE <= len; pos += DIRENT_SIZE )
     {
-        const unsigned char *rec = buf + pos;
+        const uint8_t *rec = buf + pos;
 
         if ( rec[0] == 0x00 ) break;
         if ( rec[0] == 0xE5 || rec[0x0B] == ATTR_LFN ) continue;
@@ -912,9 +918,10 @@ static int FolderAllListed( DiskArchive *d, const DiskEntry *dir,
 }
 
 /* Write the FAT sectors marked dirty to every copy of the FAT. */
-static int FatFlush( DiskArchive *d, const Byte *dirty )
+static int FatFlush( DiskArchive *d, const uint8_t *dirty )
 {
-    UInt32 copy, sec;
+    uint32_t sec;
+    unsigned copy;
 
     for ( copy = 0; copy < d->numFATs; copy++ )
         for ( sec = 0; sec < d->sectorsPerFAT; sec++ )
@@ -934,7 +941,7 @@ static int FatFlush( DiskArchive *d, const Byte *dirty )
 
 static int MarkDeleted( DiskArchive *d, long off )
 {
-    static const unsigned char gone = 0xE5;
+    static const uint8_t gone = 0xE5;
 
     if ( fseek( d->fp, off, SEEK_SET ) != 0 ) return SZ_ERR_WRITE;
     if ( fwrite( &gone, 1, 1, d->fp ) != 1 ) return SZ_ERR_WRITE;
@@ -942,12 +949,13 @@ static int MarkDeleted( DiskArchive *d, long off )
 }
 
 /* One entry: its records, then its clusters (in memory; FatFlush writes). */
-static int DeleteOne( DiskArchive *d, const DiskEntry *e, Byte *dirty )
+static int DeleteOne( DiskArchive *d, const DiskEntry *e, uint8_t *dirty )
 {
-    unsigned char rec[DIRENT_SIZE], lfn[DIRENT_SIZE];
-    unsigned char sum;
+    uint8_t       rec[DIRENT_SIZE], lfn[DIRENT_SIZE];
+    uint8_t       sum;
     long          off;
-    UInt32        cluster, slot, seq, guard;
+    uint32_t      cluster, slot;
+    unsigned      seq, guard;
     int           rc;
 
     off = SlotOffset( d, e->dirCluster, e->slot );
@@ -974,7 +982,7 @@ static int DeleteOne( DiskArchive *d, const DiskEntry *e, Byte *dirty )
         off = SlotOffset( d, e->dirCluster, slot );
         if ( off < 0 || ReadRaw( d, off, DIRENT_SIZE, lfn ) != SZ_OK ) break;
         if ( lfn[0x0B] != ATTR_LFN || lfn[0] == 0xE5 || lfn[0x0D] != sum ||
-             (UInt32)( lfn[0] & 0x1F ) != seq ) break;
+             (uint32_t)( lfn[0] & 0x1F ) != seq ) break;
         rc = MarkDeleted( d, off );
         if ( rc != SZ_OK ) return rc;
         if ( lfn[0] & 0x40 ) break;
@@ -983,7 +991,7 @@ static int DeleteOne( DiskArchive *d, const DiskEntry *e, Byte *dirty )
     for ( cluster = e->firstCluster, guard = 0;
           ClusterValid( d, cluster ) && guard <= d->countOfClusters; guard++ )
     {
-        UInt32 next = FatEntry( d, cluster );
+        uint32_t next = FatEntry( d, cluster );
 
         FatSet( d, cluster, 0, dirty );
         if ( IsEndCluster( d, next ) ) break;
@@ -992,11 +1000,11 @@ static int DeleteOne( DiskArchive *d, const DiskEntry *e, Byte *dirty )
     return SZ_OK;
 }
 
-int DiskDeleteWrite( DiskArchive *d, const Byte *del, const char *path,
+int DiskDeleteWrite( DiskArchive *d, const uint8_t *del, const char *path,
                      ArcCompProgress prog, void *user, const char **why )
 {
     static char whyBuf[SZ_MAX_NAME + 160];
-    Byte       *dirty;
+    uint8_t    *dirty;
     int         i, nDel = 0, done = 0, rc = SZ_OK, frc;
 
     if ( d->mem )
@@ -1032,14 +1040,14 @@ int DiskDeleteWrite( DiskArchive *d, const Byte *del, const char *path,
         return SZ_ERR_WRITE;
     }
 
-    dirty = (Byte *)calloc( (size_t)d->sectorsPerFAT + 1, 1 );
+    dirty = (uint8_t *)calloc( (size_t)d->sectorsPerFAT + 1, 1 );
     if ( !dirty ) return SZ_ERR_MEMORY;
 
     for ( i = d->numEntries - 1; i >= 0; i-- )
     {
         if ( !del[i] ) continue;
         if ( prog && !prog( user, done, nDel, d->entries[i].name,
-                            (UInt32)done, (UInt32)nDel ) )
+                            (uint32_t)done, (uint32_t)nDel ) )
         {
             rc = SZ_ERR_CANCEL;
             break;
@@ -1055,6 +1063,6 @@ int DiskDeleteWrite( DiskArchive *d, const Byte *del, const char *path,
     free( dirty );
     if ( rc == SZ_OK ) rc = frc;
     if ( rc == SZ_OK && prog )
-        prog( user, done, nDel, "", (UInt32)nDel, (UInt32)nDel );
+        prog( user, done, nDel, "", (uint32_t)nDel, (uint32_t)nDel );
     return rc;
 }

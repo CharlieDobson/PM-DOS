@@ -43,8 +43,8 @@ static int  had_config, had_autoexec;   /* before PM-DOS came */
 
 static int file_copy( const char *from, const char *to )
 {
-    u8 *buf = (u8 *)xalloc( COPYBUF );
-    u16 in, out, got, done;
+    uint8_t *buf = (uint8_t *)xalloc( COPYBUF );
+    uint16_t in, out, got, done;
     int rc = 0;
 
     if ( plat_open( from, 0, &in ) ) {
@@ -79,13 +79,13 @@ static int file_copy( const char *from, const char *to )
 
 static int write_text( const char *path, const char *text )
 {
-    u16 handle, done;
+    uint16_t handle, done;
     int len = str_len( text ), rc;
 
     if ( plat_create( path, &handle ) ) {
         return 1;
     }
-    rc = plat_write( handle, text, (u16)len, &done ) || done != (u16)len;
+    rc = plat_write( handle, text, (uint16_t)len, &done ) || done != (uint16_t)len;
     return plat_close( handle ) || rc;
 }
 
@@ -94,7 +94,7 @@ static int write_text( const char *path, const char *text )
    made and eight more, each no longer than a path and its "del=" */
 static char *dat_text( void )
 {
-    u16 size;
+    uint16_t size;
     char *dat, line[PATHLEN + 8], dest[PATHLEN];
     int i, nlines = inf.nfiles + nmade_dirs + 8;
 
@@ -103,7 +103,7 @@ static char *dat_text( void )
             nlines++;
         }
     }
-    size = (u16)(nlines * (PATHLEN + 8));
+    size = (uint16_t)(nlines * (PATHLEN + 8));
     dat = (char *)xalloc( size );
 
     dat[0] = 0;
@@ -149,8 +149,8 @@ static char *dat_text( void )
 int undo_prepare( void )
 {
     char path[PATHLEN], dir[PATHLEN], *dat;
-    u8 *boot;
-    u16 attr, handle, done;
+    uint8_t *boot;
+    uint16_t attr, handle, done;
     int n, rc;
 
     for ( n = 1; n < 100; n++ ) {
@@ -163,7 +163,7 @@ int undo_prepare( void )
         return 1;
     }
 
-    boot = (u8 *)xalloc( 512 );
+    boot = (uint8_t *)xalloc( 512 );
     if ( plat_vol_read( tgt.drive, 0, 1, boot ) ) {
         return 1;
     }
@@ -221,7 +221,7 @@ int undo_save( const char *dest )
     static const char *exts[] = { "", ".COM", ".EXE", ".BAT" };
     char base[PATHLEN], path[PATHLEN], name[16], into[PATHLEN];
     char *dot, *slash;
-    u16 attr;
+    uint16_t attr;
     int i;
 
     if ( !olddos[0] ) {
@@ -268,7 +268,7 @@ int undo_save( const char *dest )
 /* ------------------------------------------------------------------ */
 
 /* the disk's own BPB under the old DOS's boot code */
-static void old_boot( u8 *boot, const u8 *disk_boot )
+static void old_boot( uint8_t *boot, const uint8_t *disk_boot )
 {
     mem_cpy( boot + 0x0B, disk_boot + 0x0B, 0x3E - 0x0B );
     boot[0x24] = 0;                     /* a diskette */
@@ -307,13 +307,27 @@ void label_page( const char *intro, const char *name, const char *note,
     }
 }
 
+/* The 512 bytes of a saved boot sector.  0 = read */
+static int read_sector_file( const char *path, uint8_t *buf )
+{
+    uint16_t handle, got;
+    int rc;
+
+    if ( plat_open( path, 0, &handle ) ) {
+        return 1;
+    }
+    rc = plat_read( handle, buf, 512, &got ) || got != 512;
+    plat_close( handle );
+    return rc;
+}
+
 /* 0 = made; 1 = the user went on without one */
 int undo_disk( void )
 {
     static const int keys[] = { K_ENTER, 0 };
     char path[PATHLEN], self[PATHLEN], from[PATHLEN], line[60];
     HELD prog;
-    u8 *boot, *disk_boot;
+    uint8_t *boot, *disk_boot;
     DLG dlg;
     int drive = 0, rc, held, i;
     char *dat;
@@ -330,19 +344,26 @@ int undo_disk( void )
     held = self[0] - 'A' == drive;
     if ( held ) {
         ui_working( tx_ud_write );
-        if ( held_read( &prog, self ) ) {
-            return copy_error_box( tx_cperr_read, self );
+        while ( held_read( &prog, self ) ) {
+            rc = copy_retry_box( tx_cperr_read, self );
+            plat_vol_remount( drive );  /* a disk put back is seen */
+            if ( !rc ) {
+                return 1;
+            }
         }
     }
-    boot = (u8 *)xalloc( 512 );
-    disk_boot = (u8 *)xalloc( 512 );
+    boot = (uint8_t *)xalloc( 512 );
+    disk_boot = (uint8_t *)xalloc( 512 );
     path_join( path, olddos, "BOOTSECT.DOS", sizeof( path ) );
-    {
-        u16 handle, got;
-        if ( plat_open( path, 0, &handle ) || plat_read( handle, boot, 512, &got ) || got != 512 ) {
-            return copy_error_box( tx_cperr_read, path );
+    while ( read_sector_file( path, boot ) ) {
+        if ( !copy_retry_box( tx_cperr_read, path ) ) {
+            if ( held ) {
+                held_free( &prog );
+            }
+            xfree( boot );
+            xfree( disk_boot );
+            return 1;
         }
-        plat_close( handle );
     }
 
     for ( ;; ) {
@@ -441,7 +462,7 @@ typedef struct {
 
 static int read_dat( UNDAT *un, const char *path )
 {
-    u16 handle, got;
+    uint16_t handle, got;
     char *text, *line, *end, *val;
 
     mem_set( un, 0, sizeof( *un ) );
@@ -484,7 +505,7 @@ static int read_dat( UNDAT *un, const char *path )
         }
     }
     /* Setup writes the old DOS's directory as one on C: */
-    un->olddos[0] = (char)ch_upper( (u8)un->olddos[0] );
+    un->olddos[0] = (char)ch_upper( (uint8_t)un->olddos[0] );
     return !(un->olddos[0] == 'C' && path_valid( un->olddos ) &&
              str_len( un->olddos ) <= PATHLEN - 1 - 13 &&
              un->dosdir[0] && path_valid( un->dosdir ));
@@ -511,8 +532,8 @@ static const char *put_back( UNDAT *un )
     static char path[PATHLEN], into[PATHLEN];  /* returned when they fail */
     char spec[PATHLEN];
     FINDDATA fd;
-    u8 *boot = (u8 *)xalloc( 512 );
-    u16 handle, got;
+    uint8_t *boot = (uint8_t *)xalloc( 512 );
+    uint16_t handle, got;
     int i, rc;
 
     /* the old boot sector first: read it before anything changes */
@@ -618,7 +639,7 @@ int uninstall_main( void )
     }
     path_join( path, un.olddos, "BOOTSECT.DOS", sizeof( path ) );
     {
-        u16 attr;
+        uint16_t attr;
         if ( plat_get_attr( path, &attr ) ) {
             sfmt( text, sizeof( text ), tx_un_nodata, un.olddos[0], un.olddos );
             ui_notice( tx_cannot_title, text, A_BAR, tx_keys_e );

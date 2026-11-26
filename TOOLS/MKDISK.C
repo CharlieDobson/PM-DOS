@@ -56,46 +56,47 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <stdint.h>
 
 #define SECSIZE     512
 /* The hard-disk geometry: 63 sectors a track and 16 heads unless -geom
    says otherwise (a Zip disk's BIOS calls it 64 heads of 32 sectors) */
 static unsigned SPT = 63;
 static unsigned HEADS = 16;
-#define SECPERCYL   ((unsigned long)SPT * HEADS)
+#define SECPERCYL   ((uint32_t)SPT * HEADS)
 
 /* Stage 2 placement - must match S2_* in INC\PMDOS.INC */
 #define S2_SECTORS  8
 #define S2_START16  1                   /* FAT16: right after the VBR   */
 #define S2_START32  9                   /* FAT32: past FSInfo + backup  */
 
-static unsigned char *image;
+static uint8_t *image;
 static long img_secs;
 static long held_secs;                  /* the front of it, in memory */
 
 /* -spc: sectors per cluster, forced.  Zero means "pick it from the
    volume size", which is what FORMAT does and what every image built
    before v0.32 got by having no choice. */
-static unsigned long opt_spc = 0;
+static uint32_t opt_spc = 0;
 
 /* -label: the volume label, as the root directory entry and the BPB's
    copy of it carry it - eleven characters, space-padded, upper case.
    PM-DOS unless the command line says otherwise; the test floppy says
    otherwise, so that a VOL tells the two disks apart. */
-static unsigned char vol_label[12] = "PM-DOS     ";
+static uint8_t vol_label[12] = "PM-DOS     ";
 
 static void set_label(const char *s)
 {
     int i;
     memset(vol_label, ' ', 11);
     for (i = 0; i < 11 && s[i]; i++)
-        vol_label[i] = (unsigned char)toupper(s[i]);
+        vol_label[i] = (uint8_t)toupper(s[i]);
     if (s[i])
         fprintf(stderr, "-label: \"%s\" cut to eleven characters\n", s);
 }
 
 /* ------------------------------------------------------------------ */
-static unsigned char *sec(long lba)
+static uint8_t *sec(long lba)
 {
     if (lba < 0 || lba >= held_secs) {
         fprintf(stderr, "sector %ld is past the %ld held in memory\n", lba, held_secs);
@@ -110,21 +111,21 @@ static unsigned char *sec(long lba)
    is quietly missing whichever ones came last. */
 #define SUBDIR_ENTS 384UL
 
-static void put16(unsigned char *p, unsigned v)
+static void put16(uint8_t *p, uint16_t v)
 {
-    p[0] = (unsigned char)(v & 0xFF);
-    p[1] = (unsigned char)(v >> 8);
+    p[0] = (uint8_t)(v & 0xFF);
+    p[1] = (uint8_t)(v >> 8);
 }
-static void put32(unsigned char *p, unsigned long v)
+static void put32(uint8_t *p, uint32_t v)
 {
-    p[0] = (unsigned char)(v & 0xFF);
-    p[1] = (unsigned char)((v >> 8) & 0xFF);
-    p[2] = (unsigned char)((v >> 16) & 0xFF);
-    p[3] = (unsigned char)((v >> 24) & 0xFF);
+    p[0] = (uint8_t)(v & 0xFF);
+    p[1] = (uint8_t)((v >> 8) & 0xFF);
+    p[2] = (uint8_t)((v >> 16) & 0xFF);
+    p[3] = (uint8_t)((v >> 24) & 0xFF);
 }
 
 /* ------------------------------------------------------------------ */
-static void name83(const char *path, unsigned char *out)
+static void name83(const char *path, uint8_t *out)
 {
     const char *base = path, *p;
     int i;
@@ -135,13 +136,13 @@ static void name83(const char *path, unsigned char *out)
 
     memset(out, ' ', 11);
     for (i = 0; *base && *base != '.' && i < 8; base++, i++)
-        out[i] = (unsigned char)toupper(*base);
+        out[i] = (uint8_t)toupper(*base);
     while (*base && *base != '.')
         base++;
     if (*base == '.') {
         base++;
         for (i = 8; *base && i < 11; base++, i++)
-            out[i] = (unsigned char)toupper(*base);
+            out[i] = (uint8_t)toupper(*base);
     }
 }
 
@@ -151,16 +152,16 @@ static void name83(const char *path, unsigned char *out)
    list, so it is known by name: de is a directory entry name83 has
    filled in.  RMCD.SYS was marked here too until it became an ordinary
    file, which SYS no longer carries. */
-static int rm_sysfile( const unsigned char *de )
+static int rm_sysfile( const uint8_t *de )
 {
     return memcmp( de, "RMDOS   SYS", 11 ) == 0;
 }
 
-static void stamp(unsigned char *de)
+static void stamp(uint8_t *de)
 {
     de[22] = 0x00; de[23] = 0x60;                   /* 12:00:00       */
-    de[24] = (unsigned char)(6 | ((8 & 7) << 5));   /* 2026-08-06     */
-    de[25] = (unsigned char)(((2026 - 1980) << 1) | (8 >> 3));
+    de[24] = (uint8_t)(6 | ((8 & 7) << 5));         /* 2026-08-06     */
+    de[25] = (uint8_t)(((2026 - 1980) << 1) | (8 >> 3));
 }
 
 /*=====================================================================
@@ -169,39 +170,39 @@ static void stamp(unsigned char *de)
  * This C code is also the reference for the Phase-2 assembly: the
  * checksum, the fragment layout, the FFFF padding, all of it.
  *===================================================================*/
-static unsigned char lfn_cksum(const unsigned char *n)
+static uint8_t lfn_cksum(const uint8_t *n)
 {
-    unsigned char s = 0;
+    uint8_t s = 0;
     int i;
     for (i = 0; i < 11; i++)
-        s = (unsigned char)(((s & 1) << 7) + (s >> 1) + n[i]);
+        s = (uint8_t)(((s & 1) << 7) + (s >> 1) + n[i]);
     return s;
 }
 
 /* write the LFN chain for lname in front of the 8.3 entry to come.
    de = where the chain starts; returns the number of entries used.
    Fragments go last-part-first: sequence N|40h down to 1. */
-static int lfn_chain(unsigned char *de, const char *lname,
-                     const unsigned char *short11)
+static int lfn_chain(uint8_t *de, const char *lname,
+                     const uint8_t *short11)
 {
     static const int ofs[13] = {1,3,5,7,9,14,16,18,20,22,24,28,30};
     int len = (int)strlen(lname), nfrag = (len + 12) / 13, f, i;
-    unsigned char ck = lfn_cksum(short11);
+    uint8_t ck = lfn_cksum(short11);
 
     for (f = 0; f < nfrag; f++) {
         int seq = nfrag - f;
-        unsigned char *e = de + f * 32;
+        uint8_t *e = de + f * 32;
         memset(e, 0, 32);
         for (i = 0; i < 13; i++) {          /* padding first: FFFF */
             e[ofs[i]] = 0xFF; e[ofs[i] + 1] = 0xFF;
         }
-        e[0]  = (unsigned char)(seq | (f == 0 ? 0x40 : 0));
+        e[0]  = (uint8_t)(seq | (f == 0 ? 0x40 : 0));
         e[11] = 0x0F;
         e[13] = ck;
         for (i = 0; i < 13; i++) {
             int pos = (seq - 1) * 13 + i;
             if (pos > len) break;           /* the rest stays FFFF */
-            e[ofs[i]]     = (unsigned char)(pos == len ? 0 : lname[pos]);
+            e[ofs[i]]     = (uint8_t)(pos == len ? 0 : lname[pos]);
             e[ofs[i] + 1] = 0;              /* 0000 terminates */
         }
     }
@@ -209,20 +210,20 @@ static int lfn_chain(unsigned char *de, const char *lname,
 }
 
 /* FAT12 entry write (the floppy planting needs two of its own) */
-static void fat12_set(unsigned char *fat, int c, int v)
+static void fat12_set(uint8_t *fat, int c, int v)
 {
     int off = c + c / 2;
     if (c & 1) {
-        fat[off]     = (unsigned char)((fat[off] & 0x0F) | ((v << 4) & 0xF0));
-        fat[off + 1] = (unsigned char)((v >> 4) & 0xFF);
+        fat[off]     = (uint8_t)((fat[off] & 0x0F) | ((v << 4) & 0xF0));
+        fat[off + 1] = (uint8_t)((v >> 4) & 0xFF);
     } else {
-        fat[off]     = (unsigned char)(v & 0xFF);
-        fat[off + 1] = (unsigned char)((fat[off + 1] & 0xF0) | ((v >> 8) & 0x0F));
+        fat[off]     = (uint8_t)(v & 0xFF);
+        fat[off + 1] = (uint8_t)((fat[off + 1] & 0xF0) | ((v >> 8) & 0x0F));
     }
 }
 
 /* load a signed 512-byte boot sector file */
-static int load_bootsec(const char *path, unsigned char *buf)
+static int load_bootsec(const char *path, uint8_t *buf)
 {
     FILE *f = fopen(path, "rb");
     long  n;
@@ -241,7 +242,7 @@ static int load_bootsec(const char *path, unsigned char *buf)
  *===================================================================*/
 static int build_floppy(int argc, char **argv)
 {
-    static unsigned char fat[9 * SECSIZE];
+    static uint8_t fat[9 * SECSIZE];
     FILE *f;
     long  n;
     int   arg, clus = 2, dirent;
@@ -260,7 +261,7 @@ static int build_floppy(int argc, char **argv)
 
     img_secs = 2880;
     held_secs = img_secs;
-    image = (unsigned char *)calloc(img_secs, SECSIZE);
+    image = (uint8_t *)calloc(img_secs, SECSIZE);
     if (!image) { fprintf(stderr, "out of memory\n"); return 1; }
 
     memset(fat, 0, sizeof fat);
@@ -268,7 +269,7 @@ static int build_floppy(int argc, char **argv)
 
     /* volume label first */
     {
-        unsigned char *de = sec(ROOTLBA);
+        uint8_t *de = sec(ROOTLBA);
         memcpy(de, vol_label, 11);
         de[11] = 0x08;
         stamp(de);
@@ -285,14 +286,14 @@ static int build_floppy(int argc, char **argv)
     }
 
     for (arg = 3; arg < argc; arg++) {
-        unsigned char *de;
+        uint8_t *de;
         long size, left;
         int  first = 0, prev = 0;
 
         if (!strcmp(argv[arg], "-dir")) {
             int need = (int)((SUBDIR_ENTS + 15) / 16);
             int dfirst = clus, i;
-            unsigned char *dd;
+            uint8_t *dd;
 
             if (arg + 1 >= argc) { fprintf(stderr, "-dir needs a name\n"); return 1; }
             if (dirent >= ROOTENT) { fprintf(stderr, "root full\n"); return 1; }
@@ -307,14 +308,14 @@ static int build_floppy(int argc, char **argv)
             name83(argv[arg + 1], de);
             de[11] = 0x10;
             stamp(de);
-            put16(de + 26, (unsigned)dfirst);
+            put16(de + 26, (uint16_t)dfirst);
             put32(de + 28, 0);
             dirent++;
 
             dd = sec(DATALBA + (long)(dfirst - 2));
             memcpy(dd, ".          ", 11);
             dd[11] = 0x10; stamp(dd);
-            put16(dd + 26, (unsigned)dfirst);
+            put16(dd + 26, (uint16_t)dfirst);
             memcpy(dd + 32, "..         ", 11);
             dd[32 + 11] = 0x10; stamp(dd + 32);
             put16(dd + 32 + 26, 0);      /* ".." to the root is zero */
@@ -358,11 +359,11 @@ static int build_floppy(int argc, char **argv)
             if (prev) {                     /* FAT12 link prev -> clus */
                 int off = prev + prev / 2;
                 if (prev & 1) {
-                    fat[off]   = (unsigned char)((fat[off] & 0x0F) | ((clus << 4) & 0xF0));
-                    fat[off+1] = (unsigned char)((clus >> 4) & 0xFF);
+                    fat[off]   = (uint8_t)((fat[off] & 0x0F) | ((clus << 4) & 0xF0));
+                    fat[off+1] = (uint8_t)((clus >> 4) & 0xFF);
                 } else {
-                    fat[off]   = (unsigned char)(clus & 0xFF);
-                    fat[off+1] = (unsigned char)((fat[off+1] & 0xF0) | ((clus >> 8) & 0x0F));
+                    fat[off]   = (uint8_t)(clus & 0xFF);
+                    fat[off+1] = (uint8_t)((fat[off+1] & 0xF0) | ((clus >> 8) & 0x0F));
                 }
             } else
                 first = clus;
@@ -373,11 +374,11 @@ static int build_floppy(int argc, char **argv)
         if (prev) {                         /* terminate the chain */
             int off = prev + prev / 2;
             if (prev & 1) {
-                fat[off]   = (unsigned char)((fat[off] & 0x0F) | 0xF0);
+                fat[off]   = (uint8_t)((fat[off] & 0x0F) | 0xF0);
                 fat[off+1] = 0xFF;
             } else {
                 fat[off]   = 0xFF;
-                fat[off+1] = (unsigned char)(fat[off+1] | 0x0F);
+                fat[off+1] = (uint8_t)(fat[off+1] | 0x0F);
             }
         }
 
@@ -387,11 +388,11 @@ static int build_floppy(int argc, char **argv)
         /* on a boot disk PMIO.SYS and PMDOS.SYS, the first two files
            in the root, are system files, and so is RMDOS.SYS; a disk
            whose files all went into a -dir has none */
-        de[11] = (unsigned char)( !subdir && ( rootfiles < 2 || rm_sysfile( de ) ) ? 0x07 : 0x20 );
+        de[11] = (uint8_t)( !subdir && ( rootfiles < 2 || rm_sysfile( de ) ) ? 0x07 : 0x20 );
         if (!subdir) rootfiles++;
         stamp(de);
-        put16(de + 26, (unsigned)first);
-        put32(de + 28, (unsigned long)size);
+        put16(de + 26, (uint16_t)first);
+        put32(de + 28, (uint32_t)size);
         if (subdir) subent++; else dirent++;
         printf("  %s%-14s %7ld bytes, cluster %d..%d\n",
                subdir ? "  " : "", argv[arg], size, first, clus - 1);
@@ -414,7 +415,7 @@ static int build_floppy(int argc, char **argv)
         int mclus = clus++;
         int nestclus = clus++;
         int dclus = clus++;
-        unsigned char *de, *dd;
+        uint8_t *de, *dd;
 
         memcpy( sec( DATALBA + (long)( cclus - 2 ) ), content, csize );
         memcpy( sec( DATALBA + (long)( mclus - 2 ) ), content, csize );
@@ -428,44 +429,44 @@ static int build_floppy(int argc, char **argv)
            set: LFNTEST.BAT looks for them there. */
         de = sec(ROOTLBA) + dirent * 32;
         dirent += lfn_chain(de, "Long File Name.txt",
-                            (const unsigned char *)"LONGFI~1TXT");
+                            (const uint8_t *)"LONGFI~1TXT");
         de = sec(ROOTLBA) + dirent * 32;
         memcpy(de, "LONGFI~1TXT", 11);
         de[11] = 0x20; stamp(de);
-        put16(de + 26, (unsigned)cclus);
-        put32(de + 28, (unsigned long)csize);
+        put16(de + 26, (uint16_t)cclus);
+        put32(de + 28, (uint32_t)csize);
         dirent++;
 
         de = sec(ROOTLBA) + dirent * 32;
         dirent += lfn_chain(de, "MixedCaseName.txt",
-                            (const unsigned char *)"MIXEDC~1TXT");
+                            (const uint8_t *)"MIXEDC~1TXT");
         de = sec(ROOTLBA) + dirent * 32;
         memcpy(de, "MIXEDC~1TXT", 11);
         de[11] = 0x20; stamp(de);
-        put16(de + 26, (unsigned)mclus);
-        put32(de + 28, (unsigned long)csize);
+        put16(de + 26, (uint16_t)mclus);
+        put32(de + 28, (uint32_t)csize);
         dirent++;
 
         de = sec(ROOTLBA) + dirent * 32;
         dirent += lfn_chain(de, "Long Directory",
-                            (const unsigned char *)"LONGDI~1   ");
+                            (const uint8_t *)"LONGDI~1   ");
         de = sec(ROOTLBA) + dirent * 32;
         memcpy(de, "LONGDI~1   ", 11);
         de[11] = 0x10; stamp(de);
-        put16(de + 26, (unsigned)dclus);
+        put16(de + 26, (uint16_t)dclus);
         dirent++;
 
         dd = sec(DATALBA + (long)(dclus - 2));
         memset(dd, 0, SECSIZE);
         memcpy(dd, ".          ", 11);
         dd[11] = 0x10; stamp(dd);
-        put16(dd + 26, (unsigned)dclus);
+        put16(dd + 26, (uint16_t)dclus);
         memcpy(dd + 32, "..         ", 11);
         dd[32 + 11] = 0x10; stamp(dd + 32);
         memcpy(dd + 64, "NESTED  TXT", 11);
         dd[64 + 11] = 0x20; stamp(dd + 64);
-        put16(dd + 64 + 26, (unsigned)nestclus);
-        put32(dd + 64 + 28, (unsigned long)csize);
+        put16(dd + 64 + 26, (uint16_t)nestclus);
+        put32(dd + 64 + 28, (uint32_t)csize);
 
         printf("  + LFN test set: 2 long-named files, 1 long-named dir\n");
     }
@@ -482,17 +483,18 @@ static int build_hd(int fat32, long mb, int argc, char **argv, int firstfile,
                     const char *mbrfile, const char *vbrfile,
                     const char *s2file, int frag, int active)
 {
-    unsigned long cyls, total, plba, psec;
-    unsigned long spc, rsvd, rootent, rootsecs, spf, nclus, datalba, rootlba;
-    unsigned long clus, dirent = 0, bpbsize;
+    uint32_t cyls, total, plba, psec;
+    uint32_t spc, rsvd, rootent, rootsecs, spf, nclus, datalba, rootlba;
+    uint32_t clus;
+    unsigned long dirent = 0, bpbsize;
     /* Where the next directory entry goes.  "-dir NAME" in the file
        list makes a subdirectory in the root and points subbase at it;
        everything after it lands there.  ONE LEVEL ONLY - a second
        -dir starts another directory in the ROOT rather than nesting,
        because nesting wants a stack and nothing here needs one. */
-    unsigned char *rootbase = NULL, *subbase = NULL;
+    uint8_t       *rootbase = NULL, *subbase = NULL;
     unsigned long  rootmax = 0, subent = 0, submax = 0;
-    unsigned long lastfirst = 0;
+    uint32_t lastfirst = 0;
     long lastsize = 0;
     /* FAT32: clusters of root dir.  8, not 4: at one sector per cluster
        four clusters is 64 entries, and the test image list went past it
@@ -501,8 +503,8 @@ static int build_hd(int fat32, long mb, int argc, char **argv, int firstfile,
        the failure it prevents was at least loud - "root full" and a
        non-zero exit, rather than an image quietly missing files. */
     unsigned long rootclus = 8;
-    unsigned char *vbr, *fatp;
-    unsigned char code[SECSIZE];
+    uint8_t *vbr, *fatp;
+    uint8_t code[SECSIZE];
     FILE *f;
     long  n;
     int   arg, sysfiles = 0;
@@ -513,7 +515,7 @@ static int build_hd(int fat32, long mb, int argc, char **argv, int firstfile,
     }
     bpbsize = fat32 ? 0x5A : 0x3E;
 
-    cyls  = (unsigned long)mb * 2048 / SECPERCYL;
+    cyls  = (uint32_t)mb * 2048 / SECPERCYL;
     total = cyls * SECPERCYL;
     plba  = SPT;                        /* partition starts on track 1 */
     psec  = total - plba;
@@ -603,13 +605,13 @@ static int build_hd(int fat32, long mb, int argc, char **argv, int firstfile,
         held_secs = (long)(datalba + used * spc);
         if (held_secs > img_secs) held_secs = img_secs;
     }
-    image = (unsigned char *)calloc(held_secs, SECSIZE);
+    image = (uint8_t *)calloc(held_secs, SECSIZE);
     if (!image) { fprintf(stderr, "out of memory\n"); return 1; }
 
     /*--- MBR ---------------------------------------------------------*/
     {
-        unsigned char *m = sec(0), *pe = m + 0x1BE;
-        unsigned long endcyl = cyls - 1;
+        uint8_t *m = sec(0), *pe = m + 0x1BE;
+        uint32_t endcyl = cyls - 1;
 
         if (mbrfile) {                              /* real bootstrap  */
             if (load_bootsec(mbrfile, code)) return 1;
@@ -618,12 +620,12 @@ static int build_hd(int fat32, long mb, int argc, char **argv, int firstfile,
         /* -active marks the partition bootable even without boot code:
            the SYS test target - a disk the MBR will chain into once
            SYS has put a real VBR there */
-        pe[0] = (unsigned char)((vbrfile || active) ? 0x80 : 0x00);
+        pe[0] = (uint8_t)((vbrfile || active) ? 0x80 : 0x00);
         pe[1] = 1; pe[2] = 1; pe[3] = 0;            /* CHS start 0/1/1 */
-        pe[4] = (unsigned char)(fat32 ? 0x0B : 0x06);
+        pe[4] = (uint8_t)(fat32 ? 0x0B : 0x06);
         pe[5] = HEADS - 1;                          /* CHS end: head   */
-        pe[6] = (unsigned char)(SPT | ((endcyl >> 2) & 0xC0));
-        pe[7] = (unsigned char)(endcyl & 0xFF);
+        pe[6] = (uint8_t)(SPT | ((endcyl >> 2) & 0xC0));
+        pe[7] = (uint8_t)(endcyl & 0xFF);
         put32(pe + 8,  plba);
         put32(pe + 12, psec);
         m[510] = 0x55; m[511] = 0xAA;
@@ -641,13 +643,13 @@ static int build_hd(int fat32, long mb, int argc, char **argv, int firstfile,
     }
     memcpy(vbr + 3, "PM-DOS  ", 8);
     put16(vbr + 11, SECSIZE);
-    vbr[13] = (unsigned char)spc;
-    put16(vbr + 14, (unsigned)rsvd);
+    vbr[13] = (uint8_t)spc;
+    put16(vbr + 14, (uint16_t)rsvd);
     vbr[16] = 2;                                    /* FAT copies      */
-    put16(vbr + 17, (unsigned)rootent);
+    put16(vbr + 17, (uint16_t)rootent);
     put16(vbr + 19, 0);                             /* 16-bit total: no */
     vbr[21] = 0xF8;                                 /* media           */
-    put16(vbr + 22, fat32 ? 0 : (unsigned)spf);
+    put16(vbr + 22, fat32 ? 0 : (uint16_t)spf);
     put16(vbr + 24, SPT);
     put16(vbr + 26, HEADS);
     put32(vbr + 28, plba);                          /* hidden sectors  */
@@ -668,7 +670,7 @@ static int build_hd(int fat32, long mb, int argc, char **argv, int firstfile,
     vbr[510] = 0x55; vbr[511] = 0xAA;
 
     if (fat32) {
-        unsigned char *fs = sec(plba + 1);          /* FSInfo          */
+        uint8_t *fs = sec(plba + 1);                /* FSInfo          */
         put32(fs + 0,   0x41615252UL);
         put32(fs + 484, 0x61417272UL);
         put32(fs + 488, 0xFFFFFFFFUL);              /* free: unknown   */
@@ -720,7 +722,7 @@ static int build_hd(int fat32, long mb, int argc, char **argv, int firstfile,
     rootbase = fat32 ? sec(datalba) : sec(rootlba);
     rootmax  = fat32 ? rootclus * spc * 16 : rootent;
     {
-        unsigned char *de = rootbase;
+        uint8_t *de = rootbase;
         memcpy(de, vol_label, 11);
         de[11] = 0x08;
         stamp(de);
@@ -730,8 +732,8 @@ static int build_hd(int fat32, long mb, int argc, char **argv, int firstfile,
     clus = fat32 ? 2 + rootclus : 2;                /* past the root   */
     lastfirst = 0; lastsize = 0;
     for (arg = firstfile; arg < argc; arg++) {
-        unsigned char *de;
-        unsigned long first = 0, prev = 0;
+        uint8_t *de;
+        uint32_t first = 0, prev = 0;
         long size, left;
 
         /* "-dir NAME": start a subdirectory and send what follows
@@ -741,8 +743,10 @@ static int build_hd(int fat32, long mb, int argc, char **argv, int firstfile,
            and a directory is not what that test is about. */
         if (!strcmp(argv[arg], "-dir")) {
             unsigned long entper = spc * 16;
-            unsigned long need, dfirst, i;
-            unsigned char *dd, *de;
+            unsigned long need;
+            uint32_t dfirst;
+            unsigned long i;
+            uint8_t *dd, *de;
 
             if (arg + 1 >= argc) { fprintf(stderr, "-dir needs a name\n"); return 1; }
             if (dirent >= rootmax) { fprintf(stderr, "root full\n"); return 1; }
@@ -754,7 +758,7 @@ static int build_hd(int fat32, long mb, int argc, char **argv, int firstfile,
                 memset(sec(datalba + (clus - 2) * spc), 0, (size_t)(spc * SECSIZE));
                 if (i + 1 < need) {
                     if (fat32) put32(fatp + clus * 4, clus + 1);
-                    else       put16(fatp + clus * 2, (unsigned)(clus + 1));
+                    else       put16(fatp + clus * 2, (uint16_t)(clus + 1));
                 } else {
                     if (fat32) put32(fatp + clus * 4, 0x0FFFFFFFUL);
                     else       put16(fatp + clus * 2, 0xFFFF);
@@ -766,8 +770,8 @@ static int build_hd(int fat32, long mb, int argc, char **argv, int firstfile,
             name83(argv[arg + 1], de);
             de[11] = 0x10;
             stamp(de);
-            put16(de + 26, (unsigned)(dfirst & 0xFFFF));
-            put16(de + 20, (unsigned)(dfirst >> 16));
+            put16(de + 26, (uint16_t)(dfirst & 0xFFFF));
+            put16(de + 20, (uint16_t)(dfirst >> 16));
             put32(de + 28, 0);          /* a directory's size field is 0 */
             dirent++;
 
@@ -777,8 +781,8 @@ static int build_hd(int fat32, long mb, int argc, char **argv, int firstfile,
             dd = subbase;
             memcpy(dd, ".          ", 11);
             dd[11] = 0x10; stamp(dd);
-            put16(dd + 26, (unsigned)(dfirst & 0xFFFF));
-            put16(dd + 20, (unsigned)(dfirst >> 16));
+            put16(dd + 26, (uint16_t)(dfirst & 0xFFFF));
+            put16(dd + 20, (uint16_t)(dfirst >> 16));
             memcpy(dd + 32, "..         ", 11);
             dd[32 + 11] = 0x10; stamp(dd + 32);
             /* ".." pointing at the ROOT is cluster ZERO, on FAT32 as
@@ -817,7 +821,7 @@ static int build_hd(int fat32, long mb, int argc, char **argv, int firstfile,
             }
             if (prev) {
                 if (fat32) put32(fatp + prev * 4, clus);
-                else       put16(fatp + prev * 2, (unsigned)clus);
+                else       put16(fatp + prev * 2, (uint16_t)clus);
             } else
                 first = clus;
             prev = clus;
@@ -836,12 +840,12 @@ static int build_hd(int fat32, long mb, int argc, char **argv, int firstfile,
         name83(argv[arg], de);
         /* on a bootable image PMIO.SYS and PMDOS.SYS - the first two
            files in the root - are system files, and so is RMDOS.SYS */
-        de[11] = (unsigned char)( vbrfile && !subbase && ( sysfiles < 2 || rm_sysfile( de ) ) ? 0x07 : 0x20 );
+        de[11] = (uint8_t)( vbrfile && !subbase && ( sysfiles < 2 || rm_sysfile( de ) ) ? 0x07 : 0x20 );
         if (!subbase) sysfiles++;
         stamp(de);
-        put16(de + 26, (unsigned)(first & 0xFFFF));
-        put16(de + 20, (unsigned)(first >> 16));
-        put32(de + 28, (unsigned long)size);
+        put16(de + 26, (uint16_t)(first & 0xFFFF));
+        put16(de + 20, (uint16_t)(first >> 16));
+        put32(de + 28, (uint32_t)size);
         if (subbase) subent++; else dirent++;
         printf("  %s%-14s %7ld bytes, cluster %lu..%lu\n",
                subbase ? "  " : "", argv[arg], size, first, clus - 1);
@@ -862,13 +866,13 @@ static int build_hd(int fat32, long mb, int argc, char **argv, int firstfile,
     if (lastfirst) {
         unsigned long maxent = rootmax;
         if (dirent + 6 <= maxent) {
-            unsigned char *rb = rootbase;
-            unsigned char *de;
-            unsigned long copyfirst[2];
+            uint8_t *rb = rootbase;
+            uint8_t *de;
+            uint32_t copyfirst[2];
             int k;
 
             for ( k = 0; k < 2; k++ ) {
-                unsigned long from = lastfirst, prevcopy = 0, next;
+                uint32_t from = lastfirst, prevcopy = 0, next;
 
                 copyfirst[k] = clus;
                 for ( ;; ) {
@@ -880,12 +884,12 @@ static int build_hd(int fat32, long mb, int argc, char **argv, int firstfile,
                             sec( datalba + ( from - 2 ) * spc ),
                             (size_t)( spc * SECSIZE ) );
                     if ( prevcopy && fat32 ) put32( fatp + prevcopy * 4, clus );
-                    if ( prevcopy && !fat32 ) put16( fatp + prevcopy * 2, (unsigned)clus );
+                    if ( prevcopy && !fat32 ) put16( fatp + prevcopy * 2, (uint16_t)clus );
                     prevcopy = clus++;
                     if ( fat32 ) {
-                        next = ( fatp[from * 4] | ( (unsigned long)fatp[from * 4 + 1] << 8 )
-                               | ( (unsigned long)fatp[from * 4 + 2] << 16 )
-                               | ( (unsigned long)fatp[from * 4 + 3] << 24 ) ) & 0x0FFFFFFFUL;
+                        next = ( fatp[from * 4] | ( (uint32_t)fatp[from * 4 + 1] << 8 )
+                               | ( (uint32_t)fatp[from * 4 + 2] << 16 )
+                               | ( (uint32_t)fatp[from * 4 + 3] << 24 ) ) & 0x0FFFFFFFUL;
                         if ( next >= 0x0FFFFFF8UL ) break;
                     } else {
                         next = fatp[from * 2] | ( (unsigned)fatp[from * 2 + 1] << 8 );
@@ -902,24 +906,24 @@ static int build_hd(int fat32, long mb, int argc, char **argv, int firstfile,
 
             de = rb + dirent * 32;
             dirent += lfn_chain(de, "Long File Name.txt",
-                                (const unsigned char *)"LONGFI~1TXT");
+                                (const uint8_t *)"LONGFI~1TXT");
             de = rb + dirent * 32;
             memcpy(de, "LONGFI~1TXT", 11);
             de[11] = 0x20; stamp(de);
-            put16(de + 26, (unsigned)(copyfirst[0] & 0xFFFF));
-            put16(de + 20, (unsigned)(copyfirst[0] >> 16));
-            put32(de + 28, (unsigned long)lastsize);
+            put16(de + 26, (uint16_t)(copyfirst[0] & 0xFFFF));
+            put16(de + 20, (uint16_t)(copyfirst[0] >> 16));
+            put32(de + 28, (uint32_t)lastsize);
             dirent++;
 
             de = rb + dirent * 32;
             dirent += lfn_chain(de, "MixedCaseName.txt",
-                                (const unsigned char *)"MIXEDC~1TXT");
+                                (const uint8_t *)"MIXEDC~1TXT");
             de = rb + dirent * 32;
             memcpy(de, "MIXEDC~1TXT", 11);
             de[11] = 0x20; stamp(de);
-            put16(de + 26, (unsigned)(copyfirst[1] & 0xFFFF));
-            put16(de + 20, (unsigned)(copyfirst[1] >> 16));
-            put32(de + 28, (unsigned long)lastsize);
+            put16(de + 26, (uint16_t)(copyfirst[1] & 0xFFFF));
+            put16(de + 20, (uint16_t)(copyfirst[1] >> 16));
+            put32(de + 28, (uint32_t)lastsize);
             dirent++;
 
             printf("  + LFN test set: 2 long-named files\n");

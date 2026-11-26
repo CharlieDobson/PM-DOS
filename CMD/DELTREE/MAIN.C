@@ -89,7 +89,7 @@ static const char M_ERROR[]    = "Error %2 deleting %1\r\n";
 
 typedef struct HIT {            /* one match of a path typed */
     struct HIT *next;
-    u8          attr;
+    uint8_t     attr;
     char       *alias;          /* points past name's NUL */
     char        name[1];
 } HIT;
@@ -124,7 +124,7 @@ static void say( const char *msg, const char *one, const char *two )
 
     while ( *msg ) {
         if ( msg[0] == '%' && (msg[1] == '1' || msg[1] == '2') ) {
-            sys_write( H_OUT, run, (u32)(msg - run) );
+            sys_write( H_OUT, run, (unsigned int)(msg - run) );
             out( msg[1] == '1' ? one : two );
             msg += 2;
             run = msg;
@@ -132,7 +132,7 @@ static void say( const char *msg, const char *one, const char *two )
             msg++;
         }
     }
-    sys_write( H_OUT, run, (u32)(msg - run) );
+    sys_write( H_OUT, run, (unsigned int)(msg - run) );
 }
 
 /* Why work[] could not be deleted, by the long form of its name.  A
@@ -162,7 +162,7 @@ static void say_failure( int err )
         say( M_CURDIR, name, NULL );
         break;
     default:
-        say( M_ERROR, name, fmt_dec( (u32)err, 0, num ) );
+        say( M_ERROR, name, fmt_dec( (unsigned int)err, 0, num ) );
         break;
     }
 }
@@ -183,10 +183,10 @@ static int is_dots( const char *name )
 
 /* work[] = work[0..len) + a backslash + name.  The new length, or 0
    when it would not fit; work[] is unchanged then. */
-static u32 path_add( u32 len, const char *name )
+static unsigned int path_add( unsigned int len, const char *name )
 {
-    u32 nlen = str_len( name );
-    u32 sep = (len > 0 && !is_sep( work[len - 1] )) ? 1 : 0;
+    unsigned int nlen = str_len( name );
+    unsigned int sep = (len > 0 && !is_sep( work[len - 1] )) ? 1 : 0;
 
     if ( len + sep + nlen + 1 > PATH_MAX ) {
         return 0;
@@ -205,13 +205,13 @@ static u32 path_add( u32 len, const char *name )
 /* The file whose path is in work[], with attributes attr.  41h will
    not delete a read-only file, so the bit is taken off first - and put
    back if the file stays. */
-static int del_file( u8 attr )
+static int del_file( uint8_t attr )
 {
     int err;
 
     attr &= FIND_ANY;
     if ( attr & ATTR_READONLY ) {
-        err = sys_set_attr( work, (u16)(attr & ~ATTR_READONLY) );
+        err = sys_set_attr( work, (uint16_t)(attr & ~ATTR_READONLY) );
         if ( err ) {
             say_failure( err );
             return err;
@@ -243,9 +243,10 @@ static void say_toolong( const char *name )
 
 /* Empties the directory whose path is work[0..len) and removes it.
    0 when it has gone; otherwise what stayed has been named. */
-static int del_dir( u32 len )
+static int del_dir( unsigned int len )
 {
-    u32 handle, sub;
+    uint32_t handle;
+    unsigned int sub;
     int err, kept = 0, skip = 0, seen;
 
     /* the files, in one pass */
@@ -386,7 +387,8 @@ static void do_path( const char *arg )
 {
     char pattern[PATH_MAX], prefix[PATH_MAX];
     HIT *list = NULL, **tail = &list, *hit;
-    u32 plen = 0, nlen, alen, len, handle, i;
+    unsigned int plen = 0, nlen, alen, len, i;
+    uint32_t handle;
     const char *name;
     int err;
 

@@ -281,22 +281,22 @@ void VolClose( VolFile *v )
 
 /*--- reading --------------------------------------------------------------*/
 
-UInt32 VolRead( void *buf, UInt32 size, UInt32 count, VolFile *v )
+uint32_t VolRead( void *buf, uint32_t size, uint32_t count, VolFile *v )
 {
-    Byte  *p    = (Byte *)buf;
-    UInt32 want;
-    UInt32 got  = 0;
+    uint8_t *p    = (uint8_t *)buf;
+    uint32_t want;
+    uint32_t got  = 0;
 
     if ( !v || size == 0 || count == 0 ) return 0;
     want = size * count;
 
     while ( got < want )
     {
-        int    idx = -1;
-        int    i;
-        long   inVol;
-        UInt32 chunk;
-        UInt32 n;
+        int      idx = -1;
+        int      i;
+        long     inVol;
+        uint32_t chunk;
+        uint32_t n;
 
         if ( v->pos >= v->total ) break;
 
@@ -309,10 +309,10 @@ UInt32 VolRead( void *buf, UInt32 size, UInt32 count, VolFile *v )
         inVol = v->pos - v->start[idx];
         if ( fseek( v->fp, inVol, SEEK_SET ) != 0 ) break;
 
-        chunk = (UInt32)( v->len[idx] - inVol );   /* left in this volume */
+        chunk = (uint32_t)( v->len[idx] - inVol ); /* left in this volume */
         if ( chunk > want - got ) chunk = want - got;
 
-        n = (UInt32)fread( p + got, 1, chunk, v->fp );
+        n = (uint32_t)fread( p + got, 1, chunk, v->fp );
         got    += n;
         v->pos += (long)n;
         if ( n != chunk ) break;                   /* short: stop here */
@@ -323,7 +323,7 @@ UInt32 VolRead( void *buf, UInt32 size, UInt32 count, VolFile *v )
 
 int VolGetc( VolFile *v )
 {
-    Byte b;
+    uint8_t b;
 
     if ( VolRead( &b, 1, 1, v ) != 1 ) return -1;
     return (int)b;

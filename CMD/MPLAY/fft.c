@@ -30,59 +30,59 @@
 
 #define FFT_BITS        9
 
-static s32 *tw_cos, *tw_sin;            /* FFT_SIZE / 2 each, Q30 */
-static s16 *hann;                       /* FFT_SIZE, Q15 */
-static s32 *re, *im;
-static u16 *rev;                        /* bit-reversed indexes */
+static int32_t  *tw_cos, *tw_sin;       /* FFT_SIZE / 2 each, Q30 */
+static int16_t  *hann;                  /* FFT_SIZE, Q15 */
+static int32_t  *re, *im;
+static uint16_t *rev;                   /* bit-reversed indexes */
 static int ready;
 
 /* 20 log10( 1 + i / 16 ) in sixteenths of a decibel, for the four bits
    under the top one; made with [Math] in PowerShell */
-static const u8 db_frac[17] = {
+static const uint8_t db_frac[17] = {
      0,  8, 16, 24, 31, 38, 44, 50, 56, 62, 67, 73, 78, 83, 87, 92, 96
 };
 
 /* log2( 1 + i / 32 ) and 2^( i / 16 ), both in Q16 */
-static const u32 log2_frac[33] = {
+static const uint32_t log2_frac[33] = {
          0,  2909,  5732,  8473, 11136, 13727, 16248, 18704,
      21098, 23433, 25711, 27936, 30109, 32234, 34312, 36346,
      38336, 40286, 42196, 44068, 45904, 47705, 49472, 51207,
      52911, 54584, 56229, 57845, 59434, 60997, 62534, 64047,
      65536
 };
-static const u32 exp2_frac[17] = {
+static const uint32_t exp2_frac[17] = {
      65536,  68438,  71468,  74632,  77936,  81386,  84990,  88752,
      92682,  96785, 101070, 105545, 110218, 115098, 120194, 125515,
     131072
 };
 
 /* log2( x ) in Q16, x > 0 */
-static u32 log2_q16( u32 x )
+static uint32_t log2_q16( uint32_t x )
 {
     int top = fx_topbit( x );
-    u32 mant, index, part;
+    uint32_t mant, index, part;
 
     mant = top < 31 ? x << (31 - top) : x;
     mant <<= 1;
     index = mant >> 27;
     part = (mant >> 11) & 0xFFFF;
-    return ((u32)top << 16) + log2_frac[index]
+    return ((uint32_t)top << 16) + log2_frac[index]
            + (((log2_frac[index + 1] - log2_frac[index]) * part) >> 16);
 }
 
 /* 2^( e / 65536 ) in Q16, e below 10 octaves */
-static u32 exp2_q16( u32 e )
+static uint32_t exp2_q16( uint32_t e )
 {
-    u32 whole = e >> 16, index = (e >> 12) & 15, part = e & 0xFFF, val;
+    uint32_t whole = e >> 16, index = (e >> 12) & 15, part = e & 0xFFF, val;
 
     val = exp2_frac[index] + (((exp2_frac[index + 1] - exp2_frac[index]) * part) >> 12);
     return whole < 10 ? val << whole : val << 10;
 }
 
 /* the edge "n" of "count" bars from 40 Hz to top: 40 * (top / 40)^(n / count) */
-static u32 edge_hz( u32 n, u32 count, u32 top )
+static uint32_t edge_hz( unsigned int n, unsigned int count, uint32_t top )
 {
-    u32 octaves = log2_q16( top ) - log2_q16( 40 );
+    uint32_t octaves = log2_q16( top ) - log2_q16( 40 );
 
     return (40 * exp2_q16( fx_umuldiv( octaves, n, count ) )) >> 16;
 }
@@ -105,15 +105,15 @@ void fft_done( void )
 
 static int make_tables( void )
 {
-    u32 i, j, bits;
-    s32 sinv, cosv, val;
+    unsigned int i, j, bits;
+    int32_t sinv, cosv, val;
 
-    tw_cos = (s32 *)try_alloc( FFT_SIZE / 2 * sizeof( s32 ) );
-    tw_sin = (s32 *)try_alloc( FFT_SIZE / 2 * sizeof( s32 ) );
-    hann = (s16 *)try_alloc( FFT_SIZE * sizeof( s16 ) );
-    re = (s32 *)try_alloc( FFT_SIZE * sizeof( s32 ) );
-    im = (s32 *)try_alloc( FFT_SIZE * sizeof( s32 ) );
-    rev = (u16 *)try_alloc( FFT_SIZE * sizeof( u16 ) );
+    tw_cos = (int32_t *)try_alloc( FFT_SIZE / 2 * sizeof( int32_t ) );
+    tw_sin = (int32_t *)try_alloc( FFT_SIZE / 2 * sizeof( int32_t ) );
+    hann = (int16_t *)try_alloc( FFT_SIZE * sizeof( int16_t ) );
+    re = (int32_t *)try_alloc( FFT_SIZE * sizeof( int32_t ) );
+    im = (int32_t *)try_alloc( FFT_SIZE * sizeof( int32_t ) );
+    rev = (uint16_t *)try_alloc( FFT_SIZE * sizeof( uint16_t ) );
     if ( tw_cos == NULL || tw_sin == NULL || hann == NULL || re == NULL || im == NULL || rev == NULL ) {
         fft_done();
         return 0;
@@ -129,12 +129,12 @@ static int make_tables( void )
         /* halved first: CORDIC's cos( 0 ) may come out a little over
            1.0, and 1.0 - (-1.0) would not fit; the top is 32767 */
         val = (0x20000000L - (cosv >> 1)) >> 15;
-        hann[i] = (s16)(val > 32767 ? 32767 : val < 0 ? 0 : val);
+        hann[i] = (int16_t)(val > 32767 ? 32767 : val < 0 ? 0 : val);
         j = 0;
         for ( bits = 0; bits < FFT_BITS; bits++ ) {
             j |= ((i >> bits) & 1) << (FFT_BITS - 1 - bits);
         }
-        rev[i] = (u16)j;
+        rev[i] = (uint16_t)j;
     }
     ready = 1;
     return 1;
@@ -142,11 +142,11 @@ static int make_tables( void )
 
 /* the level of a length, 0..255 over sixty decibels below a full-scale
    sine's bin (whose length is about 32767 * N / 4) */
-static u8 level_of( u32 len )
+static uint8_t level_of( uint32_t len )
 {
     int top, step;
-    u32 frac;
-    s32 db16;
+    uint32_t frac;
+    int32_t db16;
 
     if ( len < 2 ) {
         return 0;
@@ -154,27 +154,29 @@ static u8 level_of( u32 len )
     top = fx_topbit( len );
     frac = top >= 4 ? (len >> (top - 4)) & 15 : (len << (4 - top)) & 15;
     /* 20 log10( 2^top ) = 6.02 dB a bit, in sixteenths: 96.3 a bit */
-    db16 = (s32)top * 963 / 10 + db_frac[frac];
+    db16 = (int32_t)top * 963 / 10 + db_frac[frac];
     /* full scale: log2( 32767 * 512 / 4 ) = 22, so 22 bits is the top */
     db16 -= 22 * 963 / 10;
     step = (int)((db16 + 60 * 16) * 255 / (60 * 16));
-    return (u8)(step < 0 ? 0 : step > 255 ? 255 : step);
+    return (uint8_t)(step < 0 ? 0 : step > 255 ? 255 : step);
 }
 
-int fft_bars( const s16 *samples, u32 rate, u8 *bars, int count )
+int fft_bars( const int16_t *samples, uint32_t rate, uint8_t *bars, int count )
 {
-    u32 i, j, k, half, span, step, top_hz, lo_bin, hi_bin, bin;
-    s32 tr, ti, wr, wi, ar, ai;
-    u32 mag, best, big, small;
-    u32 lo_hz, hi_hz;
+    unsigned int i, j, k, half, span, step;
+    uint32_t top_hz;
+    unsigned int lo_bin, hi_bin, bin;
+    int32_t tr, ti, wr, wi, ar, ai;
+    uint32_t mag, best, big, small;
+    uint32_t lo_hz, hi_hz;
     int bar;
 
     if ( !ready && !make_tables() ) {
-        mem_set( bars, 0, (u32)count );
+        mem_set( bars, 0, (unsigned int)count );
         return 0;
     }
     for ( i = 0; i < FFT_SIZE; i++ ) {
-        re[rev[i]] = ((s32)samples[i] * hann[i]) >> 15;
+        re[rev[i]] = ((int32_t)samples[i] * hann[i]) >> 15;
         im[rev[i]] = 0;
     }
     for ( span = 1; span < FFT_SIZE; span <<= 1 ) {
@@ -199,25 +201,25 @@ int fft_bars( const s16 *samples, u32 rate, u8 *bars, int count )
     half = FFT_SIZE / 2;
     top_hz = rate / 2 < 16000 ? rate / 2 : 16000;
     if ( top_hz <= 40 || count <= 0 ) {
-        mem_set( bars, 0, (u32)(count > 0 ? count : 0) );
+        mem_set( bars, 0, (unsigned int)(count > 0 ? count : 0) );
         return 1;
     }
     /* the length of every bin, once (re[] takes them: it is not needed
        again) */
     for ( bin = 0; bin < half; bin++ ) {
-        big = (u32)(re[bin] < 0 ? -re[bin] : re[bin]);
-        small = (u32)(im[bin] < 0 ? -im[bin] : im[bin]);
+        big = (uint32_t)(re[bin] < 0 ? -re[bin] : re[bin]);
+        small = (uint32_t)(im[bin] < 0 ? -im[bin] : im[bin]);
         if ( small > big ) {
             mag = big;
             big = small;
             small = mag;
         }
-        re[bin] = (s32)(big + (small >> 2) + (small >> 3));
+        re[bin] = (int32_t)(big + (small >> 2) + (small >> 3));
     }
     for ( bar = 0; bar < count; bar++ ) {
         /* the bar's edges, a fixed ratio apart */
-        lo_hz = edge_hz( (u32)bar, (u32)count, top_hz );
-        hi_hz = edge_hz( (u32)bar + 1, (u32)count, top_hz );
+        lo_hz = edge_hz( (unsigned int)bar, (unsigned int)count, top_hz );
+        hi_hz = edge_hz( (unsigned int)bar + 1, (unsigned int)count, top_hz );
         lo_bin = fx_umuldiv( lo_hz, FFT_SIZE, rate );
         hi_bin = fx_umuldiv( hi_hz, FFT_SIZE, rate );
         if ( hi_bin >= half ) {
@@ -227,8 +229,8 @@ int fft_bars( const s16 *samples, u32 rate, u8 *bars, int count )
             /* a bar wider than a bin: its loudest bin */
             best = 0;
             for ( bin = lo_bin; bin <= hi_bin; bin++ ) {
-                if ( (u32)re[bin] > best ) {
-                    best = (u32)re[bin];
+                if ( (uint32_t)re[bin] > best ) {
+                    best = (uint32_t)re[bin];
                 }
             }
         } else {
@@ -245,7 +247,7 @@ int fft_bars( const s16 *samples, u32 rate, u8 *bars, int count )
                 bin = half - 2;
             }
             mag &= 255;
-            best = (u32)(((u32)re[bin] >> 8) * (256 - mag) + ((u32)re[bin + 1] >> 8) * mag);
+            best = (uint32_t)(((uint32_t)re[bin] >> 8) * (256 - mag) + ((uint32_t)re[bin + 1] >> 8) * mag);
         }
         bars[bar] = level_of( best );
     }

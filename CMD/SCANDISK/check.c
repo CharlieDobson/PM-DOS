@@ -32,27 +32,27 @@
 #define MAX_DEPTH   128
 
 typedef struct {
-    u32 count;                  /* clusters claimed                        */
-    u32 last;                   /* the last of them                        */
-    int cross;                  /* ran into a cluster claimed earlier      */
-    u32 cross_clus;
-    int badlink;                /* the link out of "last" goes nowhere     */
-    u32 badval;
+    uint32_t count;             /* clusters claimed                        */
+    uint32_t last;              /* the last of them                        */
+    int      cross;             /* ran into a cluster claimed earlier      */
+    uint32_t cross_clus;
+    int      badlink;           /* the link out of "last" goes nowhere     */
+    uint32_t badval;
 } CHAIN;
 
-CROSSREC *cross_list;
-u32       cross_count;
+CROSSREC    *cross_list;
+unsigned int cross_count;
 
-static u32  cross_cap;
-static int  depth;
-static u32  claimed;            /* clusters claimed so far: the progress */
-static char rootpath[4];
+static unsigned int cross_cap;
+static int          depth;
+static uint32_t     claimed;    /* clusters claimed so far: the progress */
+static char         rootpath[4];
 
-static void walk_dir( DIRBUF *dir, u32 self, u32 parent, const char *path, int is_root );
+static void walk_dir( DIRBUF *dir, uint32_t self, uint32_t parent, const char *path, int is_root );
 
 void check_reset( void )
 {
-    u32 index;
+    unsigned int index;
 
     for ( index = 0; index < cross_count; index++ ) {
         xfree( cross_list[index].path );
@@ -69,13 +69,13 @@ void check_reset( void )
 /* the media descriptor                                                */
 /* ------------------------------------------------------------------ */
 
-static int media_valid( u8 id )
+static int media_valid( uint8_t id )
 {
     return id == 0xF0 || id >= 0xF8;
 }
 
 /* entry 0 of a FAT: the descriptor, and every other bit set */
-static int entry0_ok( const u8 *sec )
+static int entry0_ok( const uint8_t *sec )
 {
     switch ( vol.fattype ) {
     case 12: return (sec[1] & 0x0F) == 0x0F;
@@ -84,7 +84,7 @@ static int entry0_ok( const u8 *sec )
     return sec[1] == 0xFF && sec[2] == 0xFF && (sec[3] & 0x0F) == 0x0F;
 }
 
-static void entry0_set( u8 *sec, u8 id )
+static void entry0_set( uint8_t *sec, uint8_t id )
 {
     sec[0] = id;
     switch ( vol.fattype ) {
@@ -103,9 +103,10 @@ static void entry0_set( u8 *sec, u8 id )
 
 void check_media( void )
 {
-    u8 *sec = (u8 *)xalloc( vol.bps );
-    u32 copy, lba;
-    u8 id = 0, want;
+    uint8_t *sec = (uint8_t *)xalloc( vol.bps );
+    unsigned int copy;
+    uint32_t     lba;
+    uint8_t id = 0, want;
     int have = 0, bad = 0;
 
     fe_progress( 0, 1 );
@@ -173,8 +174,10 @@ void check_media( void )
 void check_fats( void )
 {
     FATSTAT *stat = (FATSTAT *)xzalloc( vol.nfats * sizeof( FATSTAT ) );
-    u32 differing = 0, copy, best = NONE, primary = NONE, kept = 0, readable = 0, clus, val;
-    u32 unread = NONE;
+    uint32_t     differing = 0;
+    unsigned int copy, best = NONE, primary = NONE, kept = 0, readable = 0;
+    uint32_t     clus, val;
+    unsigned int unread = NONE;
     int act;
 
     fat_compare( stat, &differing );
@@ -246,7 +249,7 @@ void check_fats( void )
     xfree( stat );
 
     /* the map, and what the FAT itself says is in use */
-    vol.map = (u8 *)try_alloc( vol.maxclus + 1 );
+    vol.map = (uint8_t *)try_alloc( vol.maxclus + 1 );
     if ( vol.map == NULL ) {
         out_of_memory();
     }
@@ -270,9 +273,9 @@ void check_fats( void )
 /* ------------------------------------------------------------------ */
 
 /* a cluster a chain can hold: in range, and neither free nor bad */
-static int clus_live( u32 clus )
+static int clus_live( uint32_t clus )
 {
-    u32 val;
+    uint32_t val;
 
     if ( !CLUS_OK( clus ) ) {
         return 0;
@@ -287,9 +290,9 @@ static int clus_live( u32 clus )
  * free or a bad cluster, or back into this same chain - or at a cluster
  * some earlier chain owns, which is marked crossed.
  */
-static void claim_chain( u32 first, U32LIST *list, CHAIN *ch )
+static void claim_chain( uint32_t first, U32LIST *list, CHAIN *ch )
 {
-    u32 clus = first, next, index;
+    uint32_t clus = first, next, index;
 
     mem_set( ch, 0, sizeof( *ch ) );
     for ( ;; ) {
@@ -329,9 +332,9 @@ static void claim_chain( u32 first, U32LIST *list, CHAIN *ch )
 }
 
 /* give back what claim_chain took: the entry is going, its clusters stay */
-static void unclaim_chain( u32 first, u32 count )
+static void unclaim_chain( uint32_t first, uint32_t count )
 {
-    u32 clus = first, index;
+    uint32_t clus = first, index;
 
     for ( index = 0; index < count && CLUS_OK( clus ); index++ ) {
         vol.map[clus] &= ~MF_USED;
@@ -340,7 +343,7 @@ static void unclaim_chain( u32 first, u32 count )
     claimed -= index;
 }
 
-static void cross_add( u32 dir_first, u32 idx, const CHAIN *ch, int is_dir, const char *path )
+static void cross_add( uint32_t dir_first, unsigned int idx, const CHAIN *ch, int is_dir, const char *path )
 {
     CROSSREC *grown;
 
@@ -367,9 +370,9 @@ static void cross_add( u32 dir_first, u32 idx, const CHAIN *ch, int is_dir, cons
 /* ------------------------------------------------------------------ */
 
 /* the sectors holding entries from..to-1, each once; 0 = all written */
-static int write_entries( DIRBUF *dir, u32 from, u32 to )
+static int write_entries( DIRBUF *dir, unsigned int from, unsigned int to )
 {
-    u32 idx, sec, last = NONE;
+    unsigned int idx, sec, last = NONE;
     int bad = 0;
 
     for ( idx = from; idx < to; idx++ ) {
@@ -394,9 +397,9 @@ static void outcome( int rc )
 }
 
 /* an entry and the long name in front of it, marked deleted */
-static int delete_entry( DIRBUF *dir, u32 lfn_first, u32 idx )
+static int delete_entry( DIRBUF *dir, unsigned int lfn_first, unsigned int idx )
 {
-    u32 cur;
+    unsigned int cur;
 
     for ( cur = lfn_first; cur <= idx; cur++ ) {
         dir->data[cur * DE_LEN] = DEL_MARK;
@@ -408,7 +411,7 @@ static int delete_entry( DIRBUF *dir, u32 lfn_first, u32 idx )
 /* names and attributes                                                */
 /* ------------------------------------------------------------------ */
 
-static int char_bad( u8 ch )
+static int char_bad( uint8_t ch )
 {
     static const char never[] = "\"*+,./:;<=>?[\\]|";
 
@@ -416,10 +419,10 @@ static int char_bad( u8 ch )
 }
 
 /* an 8.3 name as the directory holds it: 0 = nothing wrong with it */
-static int name_bad( const u8 *ent )
+static int name_bad( const uint8_t *ent )
 {
     int pos;
-    u8 ch;
+    uint8_t ch;
 
     if ( ent[0] == ' ' ) {
         return 1;
@@ -437,10 +440,10 @@ static int name_bad( const u8 *ent )
 }
 
 /* some other entry of the directory already has those eleven bytes */
-static int name_taken( DIRBUF *dir, u32 self, const u8 *name )
+static int name_taken( DIRBUF *dir, unsigned int self, const uint8_t *name )
 {
-    const u8 *ent;
-    u32 idx;
+    const uint8_t *ent;
+    unsigned int idx;
 
     for ( idx = 0; idx < dir->nent; idx++ ) {
         ent = dir->data + idx * DE_LEN;
@@ -460,13 +463,13 @@ static int name_taken( DIRBUF *dir, u32 self, const u8 *name )
    character of the name varied until no other entry has the result.
    The long name in front of it keeps the entry, so its checksum
    follows. */
-static int name_repair( DIRBUF *dir, u32 lfn_first, u32 idx )
+static int name_repair( DIRBUF *dir, unsigned int lfn_first, unsigned int idx )
 {
     static const char vary[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-    u8 *ent = dir->data + idx * DE_LEN, name[11];
+    uint8_t *ent = dir->data + idx * DE_LEN, name[11];
     int pos, tries;
-    u32 cur;
-    u8 sum;
+    unsigned int cur;
+    uint8_t sum;
 
     mem_cpy( name, ent, 11 );
     for ( pos = 0; pos < 11; pos++ ) {
@@ -483,7 +486,7 @@ static int name_repair( DIRBUF *dir, u32 lfn_first, u32 idx )
         if ( tries == sizeof( vary ) - 1 ) {
             return -1;
         }
-        name[7] = (u8)vary[tries];
+        name[7] = (uint8_t)vary[tries];
     }
     mem_cpy( ent, name, 11 );
     sum = lfn_checksum( ent );
@@ -498,11 +501,11 @@ static int name_repair( DIRBUF *dir, u32 lfn_first, u32 idx )
 /* ------------------------------------------------------------------ */
 
 /* the size a chain of "count" clusters bears out, when "size" is not it */
-static int size_wrong( u32 size, u32 count, u32 *right )
+static int size_wrong( uint32_t size, uint32_t count, uint32_t *right )
 {
-    u64 alloc = mul32( count, vol.bpc );
+    uint64_t alloc = mul32( count, vol.bpc );
 
-    if ( (u64)size > alloc || alloc - size >= (u64)vol.bpc ) {
+    if ( (uint64_t)size > alloc || alloc - size >= (uint64_t)vol.bpc ) {
         *right = hi32( alloc ) ? 0xFFFFFFFFul : lo32( alloc );
         return *right != size;
     }
@@ -513,7 +516,7 @@ static int size_wrong( u32 size, u32 count, u32 *right )
 /* . and ..                                                            */
 /* ------------------------------------------------------------------ */
 
-static void make_dot( u8 *ent, int which, u32 clus )
+static void make_dot( uint8_t *ent, int which, uint32_t clus )
 {
     if ( sfn_is_dot( ent ) != which ) {
         mem_set( ent, 0, DE_LEN );
@@ -524,14 +527,14 @@ static void make_dot( u8 *ent, int which, u32 clus )
         }
         entry_stamp( ent );
     }
-    ent[DE_ATTR] = (u8)((ent[DE_ATTR] & 0x3F & ~A_VOLID) | A_DIR);
+    ent[DE_ATTR] = (uint8_t)((ent[DE_ATTR] & 0x3F & ~A_VOLID) | A_DIR);
     entry_set_first( ent, clus );
     WR32( ent + DE_SIZE, 0 );
 }
 
-static int dot_wrong( const u8 *ent, int which, u32 expect )
+static int dot_wrong( const uint8_t *ent, int which, uint32_t expect )
 {
-    u32 clus = entry_first( ent );
+    uint32_t clus = entry_first( ent );
 
     if ( sfn_is_dot( ent ) != which || !(ent[DE_ATTR] & A_DIR) || RD32( ent + DE_SIZE ) != 0 ) {
         return 1;
@@ -547,9 +550,9 @@ static int dot_wrong( const u8 *ent, int which, u32 expect )
 
 /* 0 = it is a directory (put right if it had to be, and was allowed
    to be); 1 = its first two entries are something else altogether */
-static int check_dots( DIRBUF *dir, u32 self, u32 parent, const char *path )
+static int check_dots( DIRBUF *dir, uint32_t self, uint32_t parent, const char *path )
 {
-    u8 *e0 = dir->data, *e1 = dir->nent > 1 ? dir->data + DE_LEN : NULL;
+    uint8_t *e0 = dir->data, *e1 = dir->nent > 1 ? dir->data + DE_LEN : NULL;
     int ended;
 
     if ( e1 == NULL ) {
@@ -585,10 +588,10 @@ static int check_dots( DIRBUF *dir, u32 self, u32 parent, const char *path )
 /* ------------------------------------------------------------------ */
 
 /* a run of long name entries that no file follows */
-static void lfn_orphan( DIRBUF *dir, LFNRUN *run, u32 end, const char *path )
+static void lfn_orphan( DIRBUF *dir, LFNRUN *run, unsigned int end, const char *path )
 {
-    u32 idx, count = 0;
-    u8 *ent;
+    unsigned int idx, count = 0;
+    uint8_t *ent;
 
     if ( !run->active || !opt.lfncheck ) {
         return;
@@ -615,9 +618,9 @@ static void lfn_orphan( DIRBUF *dir, LFNRUN *run, u32 end, const char *path )
     }
 }
 
-static void do_label( DIRBUF *dir, u32 idx, int is_root )
+static void do_label( DIRBUF *dir, unsigned int idx, int is_root )
 {
-    u8 *ent = dir->data + idx * DE_LEN;
+    uint8_t *ent = dir->data + idx * DE_LEN;
     char name[13];
     int pos, bad = 0;
 
@@ -635,7 +638,7 @@ static void do_label( DIRBUF *dir, u32 idx, int is_root )
     mem_cpy( name, ent, 11 );
     name[11] = 0;
     for ( pos = 0; pos < 11; pos++ ) {
-        if ( (u8)name[pos] < 0x20 ) {
+        if ( (uint8_t)name[pos] < 0x20 ) {
             name[pos] = '?';
         }
     }
@@ -653,10 +656,10 @@ static void do_label( DIRBUF *dir, u32 idx, int is_root )
     }
 }
 
-static void do_file( DIRBUF *dir, u32 self, u32 idx, const char *path )
+static void do_file( DIRBUF *dir, uint32_t self, unsigned int idx, const char *path )
 {
-    u8 *ent = dir->data + idx * DE_LEN;
-    u32 first = entry_first( ent ), size = RD32( ent + DE_SIZE ), right;
+    uint8_t *ent = dir->data + idx * DE_LEN;
+    uint32_t first = entry_first( ent ), size = RD32( ent + DE_SIZE ), right;
     CHAIN ch;
 
     mem_set( &ch, 0, sizeof( ch ) );
@@ -709,10 +712,10 @@ static void do_file( DIRBUF *dir, u32 self, u32 idx, const char *path )
     }
 }
 
-static void do_subdir( DIRBUF *pd, u32 pself, u32 lfn_first, u32 idx, const char *path )
+static void do_subdir( DIRBUF *pd, uint32_t pself, unsigned int lfn_first, unsigned int idx, const char *path )
 {
-    u8 *ent = pd->data + idx * DE_LEN;
-    u32 first = entry_first( ent );
+    uint8_t *ent = pd->data + idx * DE_LEN;
+    uint32_t first = entry_first( ent );
     DIRBUF dir;
     U32LIST list;
     CHAIN ch;
@@ -799,12 +802,12 @@ typedef struct {
  * Go through one directory held in dir.  self is its first cluster (0
  * for the root), parent the cluster its ".." holds.
  */
-static void walk_dir( DIRBUF *dir, u32 self, u32 parent, const char *path, int is_root )
+static void walk_dir( DIRBUF *dir, uint32_t self, uint32_t parent, const char *path, int is_root )
 {
     WALKBUF *walk = (WALKBUF *)xalloc( sizeof( WALKBUF ) );
-    u32 idx, lfn_first;
+    unsigned int idx, lfn_first;
     char *child;
-    u8 *ent;
+    uint8_t *ent;
 
     (void)parent;
     lfn_begin( &walk->run );
@@ -937,28 +940,29 @@ void check_dirs( void )
 /* who has a cluster                                                   */
 /* ------------------------------------------------------------------ */
 
-int dir_load_first( DIRBUF *dir, u32 first )
+int dir_load_first( DIRBUF *dir, uint32_t first )
 {
     mem_set( dir, 0, sizeof( *dir ) );
     return first == 0 ? dir_load_root( dir ) : dir_load_chain( dir, first );
 }
 
-static u8  *seen;               /* a bit for each directory gone into */
-static u32  want_clus;
+static uint8_t *seen;           /* a bit for each directory gone into */
+static uint32_t want_clus;
 
-static int seen_take( u32 clus )
+static int seen_take( uint32_t clus )
 {
     if ( seen[clus >> 3] & (1 << (clus & 7)) ) {
         return 1;
     }
-    seen[clus >> 3] |= (u8)(1 << (clus & 7));
+    seen[clus >> 3] |= (uint8_t)(1 << (clus & 7));
     return 0;
 }
 
 /* is want_clus in the chain from first?  *prev = the one before it */
-static int chain_has( u32 first, u32 *prev )
+static int chain_has( uint32_t first, uint32_t *prev )
 {
-    u32 clus = first, next, steps = 0;
+    uint32_t     clus = first, next;
+    unsigned int steps = 0;
 
     *prev = 0;
     while ( CLUS_OK( clus ) && steps++ <= vol.nclus ) {
@@ -975,14 +979,15 @@ static int chain_has( u32 first, u32 *prev )
     return 0;
 }
 
-static int own_walk( u32 dir_first, const char *path, OWNER *own, int level )
+static int own_walk( uint32_t dir_first, const char *path, OWNER *own, int level )
 {
     WALKBUF *walk;
     DIRBUF dir;
-    u32 idx, first, prev;
+    unsigned int idx;
+    uint32_t     first, prev;
     char *child;
     int found = 0;
-    u8 *ent;
+    uint8_t *ent;
 
     if ( level > MAX_DEPTH ) {
         return 0;
@@ -1048,9 +1053,9 @@ static int own_walk( u32 dir_first, const char *path, OWNER *own, int level )
 /* The first file or directory, in the order the tree is walked, whose
    chain holds the cluster.  A whole walk for one cluster: bad clusters
    and cross-links are few. */
-void owner_find( u32 clus, OWNER *own )
+void owner_find( uint32_t clus, OWNER *own )
 {
-    u32 prev;
+    uint32_t prev;
 
     mem_set( own, 0, sizeof( *own ) );
     want_clus = clus;
@@ -1062,25 +1067,26 @@ void owner_find( u32 clus, OWNER *own )
         own->path = str_dup( rootpath );
         return;
     }
-    seen = (u8 *)xzalloc( (vol.maxclus >> 3) + 1 );
+    seen = (uint8_t *)xzalloc( (vol.maxclus >> 3) + 1 );
     own_walk( 0, rootpath, own, 0 );
     xfree( seen );
     seen = NULL;
 }
 
 /* the ".." of every directory in the directory at "first" names "to" */
-static int children_repoint( u32 first, u32 to )
+static int children_repoint( uint32_t first, uint32_t to )
 {
     DIRBUF dir;
-    u8 *sec, *ent;
-    u32 idx, child;
+    uint8_t *sec, *ent;
+    unsigned int idx;
+    uint32_t     child;
     int bad = 0;
 
     if ( dir_load_first( &dir, first ) != 0 ) {
         dir_free( &dir );
         return -1;
     }
-    sec = (u8 *)xalloc( vol.bps );
+    sec = (uint8_t *)xalloc( vol.bps );
     for ( idx = 0; idx < dir.nent; idx++ ) {
         ent = dir.data + idx * DE_LEN;
         if ( ent[0] == 0 ) {
@@ -1112,10 +1118,10 @@ static int children_repoint( u32 first, u32 to )
  * The caller has already written to's data and linked to onward, and
  * commits the FAT afterwards.
  */
-int owner_repoint( const OWNER *own, u32 from, u32 to )
+int owner_repoint( const OWNER *own, uint32_t from, uint32_t to )
 {
     DIRBUF dir;
-    u8 *sec;
+    uint8_t *sec;
     int rc = 0;
 
     (void)from;
@@ -1125,7 +1131,7 @@ int owner_repoint( const OWNER *own, u32 from, u32 to )
     }
     if ( own->is_root ) {
         /* the FAT32 root starts where the boot sector says */
-        sec = (u8 *)xalloc( vol.bps );
+        sec = (uint8_t *)xalloc( vol.bps );
         if ( read_secs( 0, 1, sec ) != 0 ) {
             xfree( sec );
             return -1;
@@ -1153,7 +1159,7 @@ int owner_repoint( const OWNER *own, u32 from, u32 to )
     dir_free( &dir );
     if ( rc == 0 && own->is_dir ) {
         /* a directory's first cluster holds its own "." */
-        sec = (u8 *)xalloc( vol.bps );
+        sec = (uint8_t *)xalloc( vol.bps );
         if ( read_secs( clus_lba( to ), 1, sec ) == 0 && sfn_is_dot( sec ) == 1 ) {
             entry_set_first( sec, to );
             if ( write_secs( clus_lba( to ), 1, sec, WR_DIR | WR_NOUNDO ) != 0 ) {

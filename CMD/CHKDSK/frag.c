@@ -10,17 +10,17 @@
 #include "chkdsk.h"
 
 typedef struct {
-    DIRBUF *dir;
-    u32     idx;
-    LFNRUN  run;
-    char    lname[LFN_MAX + 1];         /* long name, or "" */
-    char    sname[13];                  /* 8.3 name */
+    DIRBUF      *dir;
+    unsigned int idx;
+    LFNRUN       run;
+    char         lname[LFN_MAX + 1];    /* long name, or "" */
+    char         sname[13];             /* 8.3 name */
 } DITER;
 
 /* next 8.3 entry of a directory, with its long name if it has one */
-static u8 *dir_next( DITER *it )
+static uint8_t *dir_next( DITER *it )
 {
-    u8 *ent;
+    uint8_t *ent;
 
     while ( it->idx < it->dir->nent ) {
         ent = it->dir->data + it->idx * DE_LEN;
@@ -59,7 +59,7 @@ static void iter_init( DITER *it, DIRBUF *dir )
     lfn_begin( &it->run );
 }
 
-static int load_dir( DIRBUF *dir, u32 first )
+static int load_dir( DIRBUF *dir, uint32_t first )
 {
     mem_set( dir, 0, sizeof( *dir ) );
     if ( first == 0 ) {
@@ -72,12 +72,12 @@ static int load_dir( DIRBUF *dir, u32 first )
  * Step from directory *cur into component name.  *path grows by the
  * name as stored on disk.  Returns 0 on success.
  */
-static int step( u32 *cur, char **path, const char *name, DITER *it )
+static int step( uint32_t *cur, char **path, const char *name, DITER *it )
 {
     DIRBUF dir;
-    u8 *ent;
+    uint8_t *ent;
     char *np;
-    u32 clus;
+    uint32_t clus;
     int found = 0;
 
     if ( str_icmp( name, "." ) == 0 ) {
@@ -128,7 +128,7 @@ static int step( u32 *cur, char **path, const char *name, DITER *it )
 }
 
 /* walk a "\"-separated list of components; 0 = all found */
-static int walk( u32 *cur, char **path, const char *src, DITER *it )
+static int walk( uint32_t *cur, char **path, const char *src, DITER *it )
 {
     char comp[LFN_MAX + 1];
     int len;
@@ -149,9 +149,10 @@ static int walk( u32 *cur, char **path, const char *src, DITER *it )
     return 0;
 }
 
-static u32 blocks( u32 clus )
+static unsigned int blocks( uint32_t clus )
 {
-    u32 count = 1, steps = 0, next;
+    unsigned int count = 1, steps = 0;
+    uint32_t     next;
 
     if ( !CLUS_OK( clus ) ) {
         return 0;
@@ -176,17 +177,18 @@ void frag_check( void )
     const char *slash = NULL, *pat;
     char *dirpart, *path, *full;
     char cwd[LFN_MAX + 1], num[40];
-    u32 cur = 0, len, frag;
+    uint32_t cur = 0;
+    unsigned int len, frag;
     int found = 0, fragmented = 0;
     DIRBUF dir;
-    u8 *ent;
+    uint8_t *ent;
 
     for ( pat = spec; *pat; pat++ ) {
         if ( *pat == '\\' ) {
             slash = pat;
         }
     }
-    len = slash ? (u32)(slash - spec) + 1 : 0;
+    len = slash ? (unsigned int)(slash - spec) + 1 : 0;
     dirpart = (char *)xalloc( len + 1 );
     mem_cpy( dirpart, spec, len );
     dirpart[len] = 0;

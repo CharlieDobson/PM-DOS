@@ -20,11 +20,11 @@
 #include "text.h"
 
 typedef struct {
-    u8  type;                           /* FDT_*                         */
-    u16 total;
-    u8  spt, heads, cyls, spc;
-    u16 rootents;
-    u8  spf, media;
+    uint8_t  type;                      /* FDT_*                         */
+    uint16_t total;
+    uint8_t  spt, heads, cyls, spc;
+    uint16_t rootents;
+    uint8_t  spf, media;
 } FLGEO;
 
 static const FLGEO geos[] = {
@@ -48,7 +48,7 @@ static const FLGEO *geo_of( int drive )
 
 /* sectors of a diskette being made: by drive on PM-DOS (it has no
    letter that works until it is finished), by letter on MS-DOS */
-static int fd_write( int drive, u32 lba, u16 count, const void *buf )
+static int fd_write( int drive, uint32_t lba, uint16_t count, const void *buf )
 {
     if ( plat_caps & PC_32BIT ) {
         return plat_disk_write( drive, lba, count, buf );
@@ -56,7 +56,7 @@ static int fd_write( int drive, u32 lba, u16 count, const void *buf )
     return plat_vol_write( drive, lba, count, buf );
 }
 
-static int fd_read( int drive, u32 lba, u16 count, void *buf )
+static int fd_read( int drive, uint32_t lba, uint16_t count, void *buf )
 {
     if ( plat_caps & PC_32BIT ) {
         return plat_disk_read( drive, lba, count, buf );
@@ -66,23 +66,23 @@ static int fd_read( int drive, u32 lba, u16 count, void *buf )
 
 /* 0 = done; 2 = write-protected; 1 = the disk can't be used */
 int floppy_format( int drive, const char *label,
-                   void (*progress)( u32 done, u32 total ) )
+                   void (*progress)( uint32_t done, uint32_t total ) )
 {
     const FLGEO *geo = geo_of( drive );
-    u8 *sec, *zeros;
+    uint8_t *sec, *zeros;
     int track, tracks, rc, i, f, len;
-    u32 lba, done = 0, total;
-    u16 rootsecs;
+    uint32_t lba, done = 0, total;
+    uint16_t rootsecs;
 
     if ( geo == NULL ) {
         return 1;
     }
-    sec = (u8 *)xalloc( 512 );
-    zeros = (u8 *)xalloc( 18 * 512 );
+    sec = (uint8_t *)xalloc( 512 );
+    zeros = (uint8_t *)xalloc( 18 * 512 );
     mem_set( zeros, 0, 18 * 512 );
     tracks = geo->cyls * geo->heads;
-    rootsecs = (u16)(geo->rootents * 32 / 512);
-    total = (u32)tracks + geo->spf * 2 + rootsecs;
+    rootsecs = (uint16_t)(geo->rootents * 32 / 512);
+    total = (uint32_t)tracks + geo->spf * 2 + rootsecs;
 
     /* the format that is there, if it is this one */
     plat_vol_remount( drive );
@@ -133,11 +133,11 @@ int floppy_format( int drive, const char *label,
         int y, m, d, h, mi;
         plat_get_date( &y, &m, &d );
         plat_get_time( &h, &mi );
-        WR32( sec + 0x27, ((u32)(m * 256 + d) << 16) + (u32)(h * 256 + mi) + (u32)y );
+        WR32( sec + 0x27, ((uint32_t)(m * 256 + d) << 16) + (uint32_t)(h * 256 + mi) + (uint32_t)y );
     }
     mem_set( sec + 0x2B, ' ', 11 );
     len = str_len( label );
-    mem_cpy( sec + 0x2B, label, (u16)(len < 11 ? len : 11) );
+    mem_cpy( sec + 0x2B, label, (uint16_t)(len < 11 ? len : 11) );
     mem_cpy( sec + 0x36, "FAT12   ", 8 );
     WR16( sec + 510, 0xAA55 );
     if ( fd_write( drive, 0, 1, sec ) ) {
@@ -165,7 +165,7 @@ int floppy_format( int drive, const char *label,
     }
     /* the root */
     for ( i = 0; i < rootsecs; i += 7 ) {
-        u16 step = (u16)(rootsecs - i < 7 ? rootsecs - i : 7);
+        uint16_t step = (uint16_t)(rootsecs - i < 7 ? rootsecs - i : 7);
         if ( fd_write( drive, lba + i, step, zeros ) ) {
             xfree( sec );
             xfree( zeros );
@@ -185,7 +185,7 @@ int floppy_format( int drive, const char *label,
 int floppy_has_tag( int drive, const char *tag )
 {
     char path[20];
-    u16 attr;
+    uint16_t attr;
     int disk;
 
     for ( disk = 1; disk <= inf.ndisks; disk++ ) {
@@ -206,7 +206,7 @@ int floppy_has_tag( int drive, const char *tag )
 
 static int target = 0;                  /* the drive the disk is made in */
 
-static void format_box( u32 done, u32 total )
+static void format_box( uint32_t done, uint32_t total )
 {
     (void)done;
     (void)total;
@@ -264,9 +264,10 @@ static void copy_page( void )
 int floppy_install( void )
 {
     HELD *held;
-    int *which, nheld, next = 0, i, rc, formatted = 0, same;
+    int *which, nheld, next = 0, i, rc, formatted = 0, same, again;
     char path[20];
     INFFILE *file;
+    uint16_t attr;
 
     label_page( tx_fl_label_1, tx_fl_label_name, NULL, tx_h_flconfirm,
                 tx_h_flconfirm_text );
@@ -290,18 +291,33 @@ int floppy_install( void )
             if ( !(file->flags & FF_FLOPPY) || file->where == WH_SETUP ) {
                 continue;
             }
-            if ( disk_wanted( file->disk ) ) {
-                copy_error_box( tx_cperr_read, inf.disktag[file->disk] );
-                return 1;
+            while ( disk_wanted( file->disk ) ) {
+                if ( !copy_retry_box( tx_cperr_read, inf.disktag[file->disk] ) ) {
+                    for ( i = 0; i < nheld; i++ ) {
+                        held_free( &held[i] );
+                    }
+                    xfree( held );
+                    xfree( which );
+                    return 1;
+                }
             }
             copy_page();
-            rc = held_copy( &held[nheld], file );
+            for ( ;; ) {
+                rc = held_copy( &held[nheld], file );
+                if ( rc == 0 || (rc == 3 && nheld) ) {
+                    break;
+                }
+                again = copy_retry_box( tx_cperr_read, file->src );
+                source_again();
+                if ( !again ) {
+                    break;
+                }
+            }
             if ( rc == 3 && nheld ) {
                 break;                  /* memory is full: write these */
             }
             if ( rc ) {
-                copy_error_box( tx_cperr_read, file->src );
-                continue;
+                continue;               /* the user went on without it */
             }
             which[nheld++] = next;
         }
@@ -326,9 +342,11 @@ int floppy_install( void )
         for ( i = 0; i < nheld; i++ ) {
             file = &inf.file[which[i]];
             sfmt( path, sizeof( path ), "%c:\\%s", 'A' + target, file->dst );
-            if ( held_write( &held[i], path,
-                             (file->flags & FF_SYSTEM) ? FA_RDONLY | FA_HIDDEN | FA_SYSTEM : 0 ) ) {
-                copy_error_box( tx_cperr_write, path );
+            attr = (file->flags & FF_SYSTEM) ? FA_RDONLY | FA_HIDDEN | FA_SYSTEM : 0;
+            while ( held_write( &held[i], path, attr ) ) {
+                if ( !copy_retry_box( tx_cperr_write, path ) ) {
+                    break;
+                }
             }
             held_free( &held[i] );
         }
@@ -352,7 +370,7 @@ int floppy_install( void )
 int floppy_is_startup( int drive )
 {
     char path[20];
-    u16 attr;
+    uint16_t attr;
 
     plat_vol_remount( drive );
     sfmt( path, sizeof( path ), "%c:\\PMIO.SYS", 'A' + drive );

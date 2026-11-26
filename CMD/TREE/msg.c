@@ -34,15 +34,15 @@ const char M_TOODEEP[]   = "Some directories are not shown: their path would be 
    return - and a saved tree is the same file on either system */
 const char M_NOSUBS[]    = "No sub-directories exist\r\n\n";
 
-void out_raw( int handle, const char *buf, u32 len )
+void out_raw( int handle, const char *buf, unsigned int len )
 {
     sys_write( handle, buf, len );
 }
 
 /* "\n" as CR LF, in runs, so a line is one or two writes */
-static void put_run( int handle, const char *str, u32 len )
+static void put_run( int handle, const char *str, unsigned int len )
 {
-    u32 start = 0, pos;
+    unsigned int start = 0, pos;
 
     for ( pos = 0; pos < len; pos++ ) {
         if ( str[pos] == '\n' ) {
@@ -70,7 +70,7 @@ void out_msg( int handle, const char *tmpl, const char *a1, const char *a2 )
 
     for ( ; *tmpl; tmpl++ ) {
         if ( tmpl[0] == '%' && (tmpl[1] == '1' || tmpl[1] == '2') ) {
-            put_run( handle, run, (u32)(tmpl - run) );
+            put_run( handle, run, (unsigned int)(tmpl - run) );
             arg = tmpl[1] == '1' ? a1 : a2;
             if ( arg ) {
                 out_raw( handle, arg, str_len( arg ) );     /* names are shown as they are */
@@ -79,6 +79,6 @@ void out_msg( int handle, const char *tmpl, const char *a1, const char *a2 )
             run = tmpl + 1;
         }
     }
-    put_run( handle, run, (u32)(tmpl - run) );
+    put_run( handle, run, (unsigned int)(tmpl - run) );
     out_raw( handle, "\r\n", 2 );
 }

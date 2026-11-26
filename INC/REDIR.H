@@ -19,7 +19,7 @@
  * ERR_* itself only when the call could not be made (no session).
  *
  * Every number here is INC\REDIR.INC's; a change there is a change
- * here.  Needs INC\NDRV.H before it for u8/u16/u32.
+ * here.  Needs INC\NDRV.H before it for uint8_t/uint16_t/uint32_t.
  */
 #ifndef REDIR_H
 #define REDIR_H
@@ -92,30 +92,30 @@
                                   no password for that domain or server */
 
 /* THE REQUEST BLOCK - fixed layout, shared with INC\REDIR.INC.  All the
-   u32 fields first so the offsets are easy to fill from assembly. */
+   uint32_t fields first so the offsets are easy to fill from assembly. */
 typedef struct {
-    u32  op;             /* REDIR_* (also in EBX) */
-    u32  drive;          /* the net drive, 0 = A */
-    u32  handle;         /* in/out: the driver's open-file handle */
-    u32  status;         /* out: 0, or a DOS error (PMDOS.INC ERR_*) */
-    u32  pos_lo, pos_hi; /* in: the byte offset for read/write */
-    u32  count;          /* in: bytes for read/write; FINDNEXT: the index */
-    u32  result;         /* out: bytes moved / new handle / listing id */
-    u32  size_lo, size_hi;/* out: file size (OPEN) or entry size (FIND) */
-    u32  attr;           /* out: the entry's DOS attribute byte */
-    u32  time_date;      /* out: (date << 16) | time, DOS format */
-    u32  bufptr;         /* in: flat data buffer for READ/WRITE */
-    u32  gen;            /* in: the listing id for FINDNEXT */
-    u32  freeclus;       /* out: free "clusters" for INFO */
-    u32  spare;
-    char path[260];      /* in: share-relative path (dir, for FIND; old name for RENAME) */
-    char pattern[16];    /* in: the DOS wildcard pattern, for FINDFIRST */
-    char name[16];       /* out: the entry's 8.3 name, ASCIIZ (FIND) */
-    char server[64];     /* in, for MOUNT */
-    char share[80];      /* in, for MOUNT; also RENAME's new name (a DOS path fits) */
-    char user[64];
-    char pass[64];
-    char domain[64];
+    uint32_t op;             /* REDIR_* (also in EBX) */
+    uint32_t drive;          /* the net drive, 0 = A */
+    uint32_t handle;         /* in/out: the driver's open-file handle */
+    uint32_t status;         /* out: 0, or a DOS error (PMDOS.INC ERR_*) */
+    uint32_t pos_lo, pos_hi; /* in: the byte offset for read/write */
+    uint32_t count;          /* in: bytes for read/write; FINDNEXT: the index */
+    uint32_t result;         /* out: bytes moved / new handle / listing id */
+    uint32_t size_lo, size_hi; /* out: file size (OPEN) or entry size (FIND) */
+    uint32_t attr;           /* out: the entry's DOS attribute byte */
+    uint32_t time_date;      /* out: (date << 16) | time, DOS format */
+    uint32_t bufptr;         /* in: flat data buffer for READ/WRITE */
+    uint32_t gen;            /* in: the listing id for FINDNEXT */
+    uint32_t freeclus;       /* out: free "clusters" for INFO */
+    uint32_t spare;
+    char     path[260];      /* in: share-relative path (dir, for FIND; old name for RENAME) */
+    char     pattern[16];    /* in: the DOS wildcard pattern, for FINDFIRST */
+    char     name[16];       /* out: the entry's 8.3 name, ASCIIZ (FIND) */
+    char     server[64];     /* in, for MOUNT */
+    char     share[80];      /* in, for MOUNT; also RENAME's new name (a DOS path fits) */
+    char     user[64];
+    char     pass[64];
+    char     domain[64];
 } redir_req;
 
 /* 21h/F1h AL=27h - NET USE, for a native NET.EXE.  EAX bits 16-23 =
@@ -136,16 +136,16 @@ typedef struct {
                                 the domain or, with none, the server */
 
 typedef struct {
-    u32  drive;          /* 0 = A */
-    u32  status;         /* out: 0, or a DOS error (ERR_*) */
-    u32  flags;          /* out: NUF_* for QUERY */
-    char server[64];
-    char share[80];
-    char user[64];
-    char pass[64];
-    char domain[64];
-    u32  step;           /* out, MAP failed: the MNT_* step */
-    u32  srvstatus;      /* out, MAP failed: the server's status, or 0 */
+    uint32_t drive;      /* 0 = A */
+    uint32_t status;     /* out: 0, or a DOS error (ERR_*) */
+    uint32_t flags;      /* out: NUF_* for QUERY */
+    char     server[64];
+    char     share[80];
+    char     user[64];
+    char     pass[64];
+    char     domain[64];
+    uint32_t step;       /* out, MAP failed: the MNT_* step */
+    uint32_t srvstatus;  /* out, MAP failed: the server's status, or 0 */
 } netuse_req;
 
 /* THE PASSWORD LIST (NET LOGON).  A user's saved passwords and remembered
@@ -191,27 +191,27 @@ typedef struct {
 #define PWLE_ARGS      9       /* a field the call needs is empty or too long */
 
 typedef struct {
-    u32  op;             /* PWL_* */
-    u32  status;         /* out: PWLE_* */
-    u32  index;          /* in: GETCRED/GETMAP; out STATUS: passwords saved */
-    u32  drive;          /* ADDMAP/DELMAP/GETMAP: the letter, 0 = A;
-                            out STATUS: connections remembered */
-    u32  flags;          /* ADDMAP/GETMAP: NUF_SMB1; out STATUS: 1 unlocked */
-    u32  len;            /* in: bytes of the file in data; out: of the new one */
-    u32  spare[2];
-    u8   seed[64];       /* in: noise for the driver's random numbers - when
-                            the keys were pressed, read off a running count */
-    char owner[32];      /* the list's user name */
-    char pass[64];       /* the list's password (CREATE, UNLOCK; CHANGE's old) */
-    char newpass[64];    /* CHANGE: the new password */
-    char target[64];     /* a saved password's domain - or server, when the
-                            connection names no domain */
-    char user[64];
-    char secret[64];     /* ADDCRED: the password to save.  Never filled in */
-    char server[64];     /* a remembered connection */
-    char share[80];
-    char domain[64];
-    u8   data[PWL_FILE_MAX];     /* the file, in and out */
+    uint32_t op;           /* PWL_* */
+    uint32_t status;       /* out: PWLE_* */
+    uint32_t index;        /* in: GETCRED/GETMAP; out STATUS: passwords saved */
+    uint32_t drive;        /* ADDMAP/DELMAP/GETMAP: the letter, 0 = A;
+                              out STATUS: connections remembered */
+    uint32_t flags;        /* ADDMAP/GETMAP: NUF_SMB1; out STATUS: 1 unlocked */
+    uint32_t len;          /* in: bytes of the file in data; out: of the new one */
+    uint32_t spare[2];
+    uint8_t  seed[64];     /* in: noise for the driver's random numbers - when
+                              the keys were pressed, read off a running count */
+    char     owner[32];    /* the list's user name */
+    char     pass[64];     /* the list's password (CREATE, UNLOCK; CHANGE's old) */
+    char     newpass[64];  /* CHANGE: the new password */
+    char     target[64];   /* a saved password's domain - or server, when the
+                              connection names no domain */
+    char     user[64];
+    char     secret[64];   /* ADDCRED: the password to save.  Never filled in */
+    char     server[64];   /* a remembered connection */
+    char     share[80];
+    char     domain[64];
+    uint8_t  data[PWL_FILE_MAX]; /* the file, in and out */
 } pwl_req;
 
 #endif /* REDIR_H */

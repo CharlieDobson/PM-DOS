@@ -33,73 +33,73 @@
 #define MADE_MAX        24
 
 typedef struct {
-    u32 start, len;
-    s32 x, y, width;
-    s32 extra;                  /* added to each stretchable space */
-    u16 height, base;
-    u8  flags;                  /* LL_* */
-    u8  tabs;                   /* it has a tab in it */
-    u16 spare;
+    unsigned int start, len;
+    int          x, y, width;
+    int          extra;         /* added to each stretchable space */
+    uint16_t     height, base;
+    uint8_t      flags;         /* LL_* */
+    uint8_t      tabs;          /* it has a tab in it */
+    uint16_t     spare;
 } LLINE;
 
 typedef struct {
-    u32    owner;               /* the LAY, and the measuring, it is from */
-    LLINE *line;
-    u32    nlines;
-    s32    col_x, col_w;
-    s32    height;              /* with the space above and below */
-    s32    top;
-    s32    block_top, block_h;
-    u32    number;              /* in a numbered list */
-    u32    row_first, row_last; /* the row it is in */
-    u8     in_row;
-    u8     spare[3];
+    unsigned int owner;               /* the LAY, and the measuring, it is from */
+    LLINE       *line;
+    unsigned int nlines;
+    int          col_x, col_w;
+    int          height;              /* with the space above and below */
+    int          top;
+    int          block_top, block_h;
+    unsigned int number;              /* in a numbered list */
+    unsigned int row_first, row_last; /* the row it is in */
+    uint8_t      in_row;
+    uint8_t      spare[3];
 } LPARA;
 
 struct LAY {
-    WDOC  *doc;
-    STORY *story;
-    int    grid;
-    int    hidden;
-    s32    width_set, width;
-    u32    owner;
-    u32    serial;
-    u32    epoch;               /* lay_epoch when it was last brought up to date */
-    int    fresh;               /* nothing has changed since lay_update */
-    s32    height;
-    LPAGE *page;
-    u32    npages, page_cap;
-    u32    page_no, page_count;
-    u32   *note_no;             /* what number each note is shown as */
-    u32    note_cap;
-    u16    made[MADE_MAX];
+    WDOC         *doc;
+    STORY        *story;
+    int           grid;
+    int           hidden;
+    int           width_set, width;
+    unsigned int  owner;
+    unsigned int  serial;
+    unsigned int  epoch;        /* lay_epoch when it was last brought up to date */
+    int           fresh;        /* nothing has changed since lay_update */
+    int           height;
+    LPAGE        *page;
+    unsigned int  npages, page_cap;
+    unsigned int  page_no, page_count;
+    unsigned int *note_no;      /* what number each note is shown as */
+    unsigned int  note_cap;
+    uint16_t      made[MADE_MAX];
 };
 
 /* what a run of characters with one look measures as */
 typedef struct {
-    TFACE *face;
-    s32    size;                /* twips */
-    s32    rise;
-    s32    asc, desc;
-    u8     upper, small, hidden, spare;
+    TFACE  *face;
+    int     size;               /* twips */
+    int     rise;
+    int     asc, desc;
+    uint8_t upper, small, hidden, spare;
 } RUNM;
 
 enum { U_CHAR, U_TAB, U_OBJECT, U_MADE, U_SKIP };
 
 typedef struct {
-    u32  off, units;
-    s32  x, w;
-    int  kind;                  /* U_* */
-    u16  attr;
-    u8   lead;
-    u8   upper;
-    s32  size, rise;
-    int  obj;
-    s32  obj_h;
-    u32  made;                  /* U_MADE: units in lay->made */
+    unsigned int off, units;
+    int          x, w;
+    int          kind;          /* U_* */
+    uint16_t     attr;
+    uint8_t      lead;
+    uint8_t      upper;
+    int          size, rise;
+    int          obj;
+    int          obj_h;
+    unsigned int made;          /* U_MADE: units in lay->made */
 } LUNIT;
 
-static u32 next_owner;
+static unsigned int next_owner;
 
 /*
  * A paragraph keeps one set of lines, and two LAYs of the same story -
@@ -108,13 +108,13 @@ static u32 next_owner;
  * to date at another count is not: so the screen's lines are made again
  * after a PDF has been written, without anyone having to say so.
  */
-static u32 lay_epoch;
+static unsigned int lay_epoch;
 
 /* ------------------------------------------------------------------ */
 /* small things                                                        */
 /* ------------------------------------------------------------------ */
 
-static s32 grid_x( const LAY *lay, s32 val )
+static int grid_x( const LAY *lay, int val )
 {
     if ( !lay->grid ) {
         return val;
@@ -125,12 +125,12 @@ static s32 grid_x( const LAY *lay, s32 val )
     return (val + GRID_W / 2) / GRID_W * GRID_W;
 }
 
-static s32 grid_y( const LAY *lay, s32 val )
+static int grid_y( const LAY *lay, int val )
 {
     return lay->grid ? (val + GRID_H / 2) / GRID_H * GRID_H : val;
 }
 
-static LPARA *lp_of( const LAY *lay, u32 pi )
+static LPARA *lp_of( const LAY *lay, unsigned int pi )
 {
     LPARA *lp;
 
@@ -152,7 +152,7 @@ static void lay_drop( WPARA *para )
     }
 }
 
-static u32 to_upper( u32 code )
+static uint32_t to_upper( uint32_t code )
 {
     if ( (code >= 'a' && code <= 'z') || (code >= 0xE0 && code <= 0xFE && code != 0xF7) ||
          (code >= 0x3B1 && code <= 0x3C9 && code != 0x3C2) || (code >= 0x430 && code <= 0x44F) ) {
@@ -161,7 +161,7 @@ static u32 to_upper( u32 code )
     return code;
 }
 
-static int is_lower( u32 code )
+static int is_lower( uint32_t code )
 {
     return to_upper( code ) != code;
 }
@@ -171,25 +171,25 @@ static void run_metrics( LAY *lay, const CHP *chp, RUNM *rm )
     int asc, desc, gap;
 
     mem_set( rm, 0, sizeof( RUNM ) );
-    rm->hidden = (u8)((chp->flags & CF_HIDDEN) && !lay->hidden);
+    rm->hidden = (uint8_t)((chp->flags & CF_HIDDEN) && !lay->hidden);
     if ( lay->grid ) {
         rm->size = GRID_H;
         rm->asc = GRID_H * 4 / 5;
         rm->desc = GRID_H / 5;
-        rm->upper = (u8)((chp->flags & (CF_ALLCAPS | CF_SMALLCAPS)) != 0);
+        rm->upper = (uint8_t)((chp->flags & (CF_ALLCAPS | CF_SMALLCAPS)) != 0);
         return;
     }
     rm->face = tf_face( &lay->doc->font[chp->font < lay->doc->nfont ? chp->font : 0], chp->flags );
-    rm->size = (s32)chp->size * 10;
+    rm->size = (int)chp->size * 10;
     if ( chp->flags & (CF_SUPER | CF_SUB) ) {
         rm->rise = (chp->flags & CF_SUPER) ? rm->size / 3 : -(rm->size / 6);
         rm->size = rm->size * 2 / 3;
     }
-    rm->upper = (u8)((chp->flags & CF_ALLCAPS) != 0);
-    rm->small = (u8)((chp->flags & CF_SMALLCAPS) != 0);
+    rm->upper = (uint8_t)((chp->flags & CF_ALLCAPS) != 0);
+    rm->small = (uint8_t)((chp->flags & CF_SMALLCAPS) != 0);
     tf_metrics( rm->face, &asc, &desc, &gap );
-    rm->asc = (s32)asc * rm->size / 1000;
-    rm->desc = (s32)(desc + gap) * rm->size / 1000;
+    rm->asc = (int)asc * rm->size / 1000;
+    rm->desc = (int)(desc + gap) * rm->size / 1000;
     if ( rm->rise > 0 ) {
         rm->asc += rm->rise;
     } else {
@@ -198,7 +198,7 @@ static void run_metrics( LAY *lay, const CHP *chp, RUNM *rm )
 }
 
 /* how wide one character is in a run, and how it is to be drawn */
-static s32 char_adv( LAY *lay, const RUNM *rm, u32 code, s32 *size, int *upper )
+static int char_adv( LAY *lay, const RUNM *rm, uint32_t code, int *size, int *upper )
 {
     *size = rm->size;
     *upper = rm->upper;
@@ -217,13 +217,13 @@ static s32 char_adv( LAY *lay, const RUNM *rm, u32 code, s32 *size, int *upper )
     } else if ( code == WCH_NBHYPHEN ) {
         code = '-';
     }
-    return (s32)((tf_advance( rm->face, code ) * (u32)*size + 500) / 1000);
+    return (int)((tf_advance( rm->face, code ) * (uint32_t)*size + 500) / 1000);
 }
 
-static s32 made_width( LAY *lay, const RUNM *rm, u32 count )
+static int made_width( LAY *lay, const RUNM *rm, unsigned int count )
 {
-    s32 total = 0, size;
-    u32 index;
+    int total = 0, size;
+    unsigned int index;
     int upper;
 
     for ( index = 0; index < count; index++ ) {
@@ -232,15 +232,15 @@ static s32 made_width( LAY *lay, const RUNM *rm, u32 count )
     return total;
 }
 
-static u32 made_put( LAY *lay, u32 used, const char *text )
+static unsigned int made_put( LAY *lay, unsigned int used, const char *text )
 {
     while ( *text && used < MADE_MAX ) {
-        lay->made[used++] = (u16)(u8)*text++;
+        lay->made[used++] = (uint16_t)(uint8_t)*text++;
     }
     return used;
 }
 
-static u32 made_number( LAY *lay, u32 used, u32 value )
+static unsigned int made_number( LAY *lay, unsigned int used, unsigned int value )
 {
     char digits[12];
 
@@ -249,7 +249,7 @@ static u32 made_number( LAY *lay, u32 used, u32 value )
 }
 
 /* a field's value into lay->made -> how many units */
-static u32 field_text( LAY *lay, u32 code )
+static unsigned int field_text( LAY *lay, uint32_t code )
 {
     switch ( code ) {
     case WCH_PAGENUM:
@@ -267,17 +267,17 @@ static u32 field_text( LAY *lay, u32 code )
 }
 
 /* a list's bullet or number into lay->made -> how many units */
-static u32 label_text( LAY *lay, const PAP *pap, u32 number )
+static unsigned int label_text( LAY *lay, const PAP *pap, unsigned int number )
 {
     static const char *const roman[] = { "m", "cm", "d", "cd", "c", "xc", "l", "xl", "x", "ix", "v", "iv", "i" };
-    static const u16 worth[] = { 1000, 900, 500, 400, 100, 90, 50, 40, 10, 9, 5, 4, 1 };
+    static const uint16_t worth[] = { 1000, 900, 500, 400, 100, 90, 50, 40, 10, 9, 5, 4, 1 };
     char text[MADE_MAX];
-    u32 used = 0, index, value;
+    unsigned int used = 0, index, value;
     int capital = pap->list == LIST_UPPER || pap->list == LIST_ROMAN_UPPER;
 
     switch ( pap->list ) {
     case LIST_BULLET:
-        lay->made[0] = (u16)(lay->grid ? 0x00B7 : 0x2022);
+        lay->made[0] = (uint16_t)(lay->grid ? 0x00B7 : 0x2022);
         return 1;
     case LIST_NUMBER:
         used = made_number( lay, 0, number );
@@ -287,7 +287,7 @@ static u32 label_text( LAY *lay, const PAP *pap, u32 number )
         /* a to z, then aa to zz, as Word numbers them */
         value = number ? number - 1 : 0;
         for ( index = 0; index <= value / 26 && used < 8; index++ ) {
-            lay->made[used++] = (u16)('a' + value % 26);
+            lay->made[used++] = (uint16_t)('a' + value % 26);
         }
         break;
     case LIST_ROMAN_LOWER:
@@ -307,7 +307,7 @@ static u32 label_text( LAY *lay, const PAP *pap, u32 number )
     }
     if ( capital ) {
         for ( index = 0; index < used; index++ ) {
-            lay->made[index] = (u16)to_upper( lay->made[index] );
+            lay->made[index] = (uint16_t)to_upper( lay->made[index] );
         }
     }
     if ( used < MADE_MAX ) {
@@ -318,7 +318,7 @@ static u32 label_text( LAY *lay, const PAP *pap, u32 number )
 
 /* the look a paragraph's own furniture has: its first character's, or
    its style's when it has no text */
-static u16 para_chp( LAY *lay, const WPARA *para )
+static uint16_t para_chp( LAY *lay, const WPARA *para )
 {
     if ( para->len ) {
         return para->attr[0];
@@ -335,12 +335,12 @@ static u16 para_chp( LAY *lay, const WPARA *para )
  * of text it takes, and its width.  "room" is the widest a picture may
  * be.  A note's number or a field's value is left in lay->made.
  */
-static s32 unit_width( LAY *lay, const WPARA *para, u32 off, const RUNM *rm, s32 room, LUNIT *unit )
+static int unit_width( LAY *lay, const WPARA *para, unsigned int off, const RUNM *rm, int room, LUNIT *unit )
 {
-    u32 code = para->text[off];
+    uint32_t code = para->text[off];
     const WOBJ *obj;
     RUNM note;
-    s32 width, size;
+    int width, size;
     int which, upper;
 
     unit->off = off;
@@ -360,7 +360,7 @@ static s32 unit_width( LAY *lay, const WPARA *para, u32 off, const RUNM *rm, s32
     }
     if ( code == WCH_OBJ ) {
         which = wd_obj_at( para, off );
-        if ( which < 0 || (u32)which >= lay->doc->nobj ) {
+        if ( which < 0 || (unsigned int)which >= lay->doc->nobj ) {
             unit->kind = U_SKIP;
             return 0;
         }
@@ -369,9 +369,9 @@ static s32 unit_width( LAY *lay, const WPARA *para, u32 off, const RUNM *rm, s32
         if ( obj->kind == OBJ_NOTE ) {
             /* its number, raised and small */
             unit->kind = U_MADE;
-            unit->made = made_number( lay, 0, (u32)which < lay->note_cap ? lay->note_no[which] : 0 );
+            unit->made = made_number( lay, 0, (unsigned int)which < lay->note_cap ? lay->note_no[which] : 0 );
             if ( lay->grid ) {
-                return (s32)unit->made * GRID_W;
+                return (int)unit->made * GRID_W;
             }
             note = *rm;
             note.size = rm->size * 2 / 3;
@@ -400,7 +400,7 @@ static s32 unit_width( LAY *lay, const WPARA *para, u32 off, const RUNM *rm, s32
         }
         if ( width > room ) {
             /* as wide as there is room for, and in proportion */
-            unit->obj_h = (s32)((u32)unit->obj_h / 4 * (u32)room / ((u32)width / 4 + 1));
+            unit->obj_h = (int)((uint32_t)unit->obj_h / 4 * (uint32_t)room / ((uint32_t)width / 4 + 1));
             width = room;
         }
         if ( unit->obj_h > 30000 ) {
@@ -423,21 +423,21 @@ static s32 unit_width( LAY *lay, const WPARA *para, u32 off, const RUNM *rm, s32
     }
     width = char_adv( lay, rm, code, &size, &upper );
     unit->size = size;
-    unit->upper = (u8)upper;
+    unit->upper = (uint8_t)upper;
     return width;
 }
 
 /* where the pen is after a tab met at "x" */
-static s32 tab_target( LAY *lay, const WPARA *para, u32 off, s32 x, u8 *lead_out )
+static int tab_target( LAY *lay, const WPARA *para, unsigned int off, int x, uint8_t *lead_out )
 {
     const PAP *pap = &para->pap;
     RUNM rm;
     LUNIT unit;
-    s32 stop = -1, deftab, piece = 0, before = -1, width, target;
+    int stop = -1, deftab, piece = 0, before = -1, width, target;
     int kind = TAB_LEFT, index;
-    u16 attr = 0;
-    u32 scan;
-    u8 lead = LEAD_NONE;
+    uint16_t attr = 0;
+    unsigned int scan;
+    uint8_t lead = LEAD_NONE;
 
     for ( index = 0; index < pap->ntabs && pap->tabs != NULL; index++ ) {
         if ( grid_x( lay, pap->tabs[index].pos ) > x ) {
@@ -498,24 +498,25 @@ static s32 tab_target( LAY *lay, const WPARA *para, u32 off, s32 x, u8 *lead_out
 /* ------------------------------------------------------------------ */
 
 typedef struct {
-    u32 end;                    /* the first unit that is not on the line */
-    s32 width;                  /* the pen after the last thing that shows */
-    s32 asc, desc;
-    u32 gaps;                   /* spaces between words, after the last tab */
-    int hard;                   /* it ended at a line or page break */
-    int page;                   /* ...a page break */
-    int tabs;
-    int hyphen;                 /* it ends at a soft hyphen, which shows */
+    unsigned int end;           /* the first unit that is not on the line */
+    int          width;         /* the pen after the last thing that shows */
+    int          asc, desc;
+    unsigned int gaps;          /* spaces between words, after the last tab */
+    int          hard;          /* it ended at a line or page break */
+    int          page;          /* ...a page break */
+    int          tabs;
+    int          hyphen;        /* it ends at a soft hyphen, which shows */
 } SCAN;
 
-static void scan_line( LAY *lay, const WPARA *para, u32 start, s32 x0, s32 right, SCAN *out )
+static void scan_line( LAY *lay, const WPARA *para, unsigned int start, int x0, int right, SCAN *out )
 {
     RUNM rm;
     LUNIT unit;
     SCAN at_break;
-    s32 x = x0, width, hyphen;
-    u32 off = start, brk = 0, pending = 0, code;
-    u16 attr = 0;
+    int x = x0, width, hyphen;
+    unsigned int off = start, brk = 0, pending = 0;
+    uint32_t code;
+    uint16_t attr = 0;
     int have_rm = 0, space;
 
     mem_set( out, 0, sizeof( SCAN ) );
@@ -599,7 +600,7 @@ static void scan_line( LAY *lay, const WPARA *para, u32 start, s32 x0, s32 right
             at_break = *out;
         } else if ( code == WCH_SHY && !rm.hidden ) {
             /* broken here, it shows as a hyphen - so only if that fits */
-            hyphen = lay->grid ? GRID_W : (s32)((tf_advance( rm.face, '-' ) * (u32)rm.size + 500) / 1000);
+            hyphen = lay->grid ? GRID_W : (int)((tf_advance( rm.face, '-' ) * (uint32_t)rm.size + 500) / 1000);
             if ( out->width + hyphen <= right ) {
                 brk = off;
                 at_break = *out;
@@ -612,11 +613,11 @@ static void scan_line( LAY *lay, const WPARA *para, u32 start, s32 x0, s32 right
 }
 
 /* where a paragraph's lines start and how far right they may go */
-static void para_bounds( LAY *lay, const WPARA *para, const LPARA *lp, int first, s32 label_w, s32 *x0,
-                         s32 *right )
+static void para_bounds( LAY *lay, const WPARA *para, const LPARA *lp, int first, int label_w, int *x0,
+                         int *right )
 {
     const PAP *pap = &para->pap;
-    s32 left = grid_x( lay, pap->left ), start;
+    int left = grid_x( lay, pap->left ), start;
 
     if ( left < 0 ) {
         left = 0;
@@ -650,10 +651,10 @@ static void para_bounds( LAY *lay, const WPARA *para, const LPARA *lp, int first
     *x0 = start;
 }
 
-static s32 label_width( LAY *lay, const WPARA *para, const LPARA *lp )
+static int label_width( LAY *lay, const WPARA *para, const LPARA *lp )
 {
     RUNM rm;
-    u32 count;
+    unsigned int count;
 
     if ( para->pap.list == LIST_NONE ) {
         return 0;
@@ -674,8 +675,8 @@ static int para_break( LAY *lay, WPARA *para, LPARA *lp )
     LLINE *line, *grown;
     RUNM rm;
     SCAN scan;
-    s32 x0, right, slack, natural, pitch, y, label_w;
-    u32 start = 0, count = 0, cap = 0, mult;
+    int x0, right, slack, natural, pitch, y, label_w;
+    unsigned int start = 0, count = 0, cap = 0, mult;
     int more = 1;
 
     xfree( lp->line );
@@ -713,7 +714,7 @@ static int para_break( LAY *lay, WPARA *para, LPARA *lp )
         line->start = start;
         line->len = scan.end - start;
         line->width = scan.width - x0;
-        line->tabs = (u8)scan.tabs;
+        line->tabs = (uint8_t)scan.tabs;
         line->x = x0;
         more = scan.end < para->len || (scan.hard && scan.end == para->len && !scan.page);
         if ( scan.page ) {
@@ -732,22 +733,22 @@ static int para_break( LAY *lay, WPARA *para, LPARA *lp )
             }
         }
         if ( slack > 0 && pap->align == AL_JUSTIFY && !lay->grid && more && !scan.hard && scan.gaps ) {
-            line->extra = slack / (s32)scan.gaps;
+            line->extra = slack / (int)scan.gaps;
         }
         /* how far apart the lines are */
         natural = scan.asc + scan.desc;
         if ( lay->grid ) {
-            mult = ((u32)pap->line + GRID_H / 2) / GRID_H;
-            pitch = GRID_H * (s32)(mult ? mult : 1);
-            line->base = (u16)(pitch - GRID_H / 5);
+            mult = ((unsigned int)pap->line + GRID_H / 2) / GRID_H;
+            pitch = GRID_H * (int)(mult ? mult : 1);
+            line->base = (uint16_t)(pitch - GRID_H / 5);
         } else if ( pap->line_rule == LS_EXACT && pap->line >= 20 ) {
             pitch = pap->line;
-            line->base = (u16)(pitch * 4 / 5);
+            line->base = (uint16_t)(pitch * 4 / 5);
         } else {
             if ( pap->line_rule == LS_ATLEAST ) {
-                pitch = natural > (s32)pap->line ? natural : (s32)pap->line;
+                pitch = natural > (int)pap->line ? natural : (int)pap->line;
             } else {
-                pitch = (s32)((u32)natural * (pap->line ? pap->line : 240) / 240);
+                pitch = (int)((uint32_t)natural * (pap->line ? pap->line : 240) / 240);
             }
             if ( pitch < 20 ) {
                 pitch = 20;
@@ -755,12 +756,12 @@ static int para_break( LAY *lay, WPARA *para, LPARA *lp )
             if ( pitch > 60000 ) {
                 pitch = 60000;          /* before the baseline is worked out from it */
             }
-            line->base = (u16)(pitch - scan.desc > 0 ? pitch - scan.desc : pitch);
+            line->base = (uint16_t)(pitch - scan.desc > 0 ? pitch - scan.desc : pitch);
         }
         if ( pitch > 60000 ) {
             pitch = 60000;
         }
-        line->height = (u16)pitch;
+        line->height = (uint16_t)pitch;
         line->y = y;
         y += pitch;
         start = scan.end;
@@ -780,14 +781,14 @@ static int para_break( LAY *lay, WPARA *para, LPARA *lp )
 
 typedef int (*UNITFN)( void *ctx, const LUNIT *unit );     /* 0 = that will do */
 
-static void line_walk( LAY *lay, const WPARA *para, const LPARA *lp, u32 li, UNITFN fn, void *ctx )
+static void line_walk( LAY *lay, const WPARA *para, const LPARA *lp, unsigned int li, UNITFN fn, void *ctx )
 {
     const LLINE *line = &lp->line[li];
     RUNM rm;
     LUNIT unit;
-    s32 x = line->x, right, x0, width;
-    u32 off = line->start, end = line->start + line->len, last_tab = 0, last_ink = 0, scan;
-    u16 attr = 0;
+    int x = line->x, right, x0, width;
+    unsigned int off = line->start, end = line->start + line->len, last_tab = 0, last_ink = 0, scan;
+    uint16_t attr = 0;
     int have_rm = 0, has_tab = 0;
 
     if ( end > para->len ) {
@@ -873,7 +874,7 @@ LAY *lay_new( WDOC *doc, STORY *story, int grid )
 
 void lay_free( LAY *lay )
 {
-    u32 pi;
+    unsigned int pi;
 
     if ( lay == NULL ) {
         return;
@@ -894,7 +895,7 @@ void lay_stale( LAY *lay )
     lay->fresh = 0;
 }
 
-void lay_set_width( LAY *lay, s32 width )
+void lay_set_width( LAY *lay, int width )
 {
     if ( width != lay->width_set ) {
         lay->width_set = width;
@@ -910,7 +911,7 @@ void lay_show_hidden( LAY *lay, int show )
     }
 }
 
-void lay_set_page( LAY *lay, u32 page, u32 pages )
+void lay_set_page( LAY *lay, unsigned int page, unsigned int pages )
 {
     if ( page != lay->page_no || pages != lay->page_count ) {
         lay->page_no = page;
@@ -919,20 +920,20 @@ void lay_set_page( LAY *lay, u32 page, u32 pages )
     }
 }
 
-s32 lay_width( LAY *lay )
+int lay_width( LAY *lay )
 {
     return lay->width;
 }
 
-s32 lay_height( LAY *lay )
+int lay_height( LAY *lay )
 {
     return lay->height;
 }
 
-s32 lay_page_height( LAY *lay )
+int lay_page_height( LAY *lay )
 {
     const PAGESETUP *page = &lay->doc->page;
-    s32 height = page->height - page->top - page->bottom;
+    int height = page->height - page->top - page->bottom;
 
     if ( height < 1440 ) {
         height = 1440;
@@ -940,10 +941,10 @@ s32 lay_page_height( LAY *lay )
     return lay->grid ? height / GRID_H * GRID_H : height;
 }
 
-static int page_start( LAY *lay, u32 para, u32 line, s32 y )
+static int page_start( LAY *lay, unsigned int para, unsigned int line, int y )
 {
     LPAGE *grown;
-    u32 cap;
+    unsigned int cap;
 
     if ( lay->npages == lay->page_cap ) {
         cap = lay->page_cap ? lay->page_cap * 2 : 16;
@@ -962,7 +963,7 @@ static int page_start( LAY *lay, u32 para, u32 line, s32 y )
 }
 
 /* the paragraph's lines brought up to date for a column */
-static LPARA *para_measure( LAY *lay, u32 pi, s32 col_x, s32 col_w, u32 number )
+static LPARA *para_measure( LAY *lay, unsigned int pi, int col_x, int col_w, unsigned int number )
 {
     WPARA *para = lay->story->para[pi];
     LPARA *lp = (LPARA *)para->lay;
@@ -1000,15 +1001,15 @@ static void number_notes( LAY *lay )
 {
     WDOC *doc = lay->doc;
     WPARA *para;
-    u32 *grown;
-    u32 pi, index, next = 1, obj;
+    unsigned int *grown;
+    unsigned int pi, index, next = 1, obj;
 
     if ( doc->nobj > lay->note_cap ) {
-        grown = (u32 *)try_realloc( lay->note_no, doc->nobj * sizeof( u32 ) );
+        grown = (unsigned int *)try_realloc( lay->note_no, doc->nobj * sizeof( unsigned int ) );
         if ( grown == NULL ) {
             return;
         }
-        mem_set( grown + lay->note_cap, 0, (doc->nobj - lay->note_cap) * sizeof( u32 ) );
+        mem_set( grown + lay->note_cap, 0, (doc->nobj - lay->note_cap) * sizeof( unsigned int ) );
         lay->note_no = grown;
         lay->note_cap = doc->nobj;
     }
@@ -1031,10 +1032,10 @@ static void number_notes( LAY *lay )
  * stayed where the file put them, and the text of a narrow column was
  * laid over the column beside it.
  */
-static int row_edges( const LAY *lay, const TROW *row, s32 *rule )
+static int row_edges( const LAY *lay, const TROW *row, int *rule )
 {
     int count = row->ncells > MAX_CELLS ? MAX_CELLS : row->ncells, index;
-    s32 edge;
+    int edge;
 
     rule[0] = grid_x( lay, row->left );
     for ( index = 0; index < count; index++ ) {
@@ -1049,9 +1050,9 @@ static int row_edges( const LAY *lay, const TROW *row, s32 *rule )
 
 /* the last paragraph of the table row that starts at "pi", when the
    row is whole and says where its cells are: else "pi" itself */
-static u32 row_end( const STORY *story, u32 pi )
+static unsigned int row_end( const STORY *story, unsigned int pi )
 {
-    u32 scan;
+    unsigned int scan;
 
     for ( scan = pi; scan < story->count && (story->para[scan]->pap.flags & PF_INTABLE); scan++ ) {
         if ( story->para[scan]->pap.flags & PF_ROWEND ) {
@@ -1075,10 +1076,10 @@ int lay_update( LAY *lay )
     LPARA *lp;
     const TROW *row;
     LLINE *line;
-    u32 counters[9];
-    s32 rule[MAX_CELLS + 1];
-    s32 width, y = 0, used = 0, page_h, cell_y, row_h, left, edge, bottom, block;
-    u32 pi = 0, last, scan, li, number, level, cell, index, cells = 1;
+    unsigned int counters[9];
+    int rule[MAX_CELLS + 1];
+    int width, y = 0, used = 0, page_h, cell_y, row_h, left, edge, bottom, block;
+    unsigned int pi = 0, last, scan, li, number, level, cell, index, cells = 1;
     int ok = 1, forced = 0, is_row;
 
     width = lay->width_set ? lay->width_set : doc->page.width - doc->page.left - doc->page.right;
@@ -1128,7 +1129,7 @@ int lay_update( LAY *lay )
             }
             if ( row != NULL ) {
                 if ( scan == pi ) {
-                    cells = (u32)row_edges( lay, row, rule );
+                    cells = (unsigned int)row_edges( lay, row, rule );
                 }
                 index = cell < cells ? cell : cells - 1;
                 left = rule[index];
@@ -1143,7 +1144,7 @@ int lay_update( LAY *lay )
                 continue;
             }
             lp->top = y + cell_y;
-            lp->in_row = (u8)(row != NULL);
+            lp->in_row = (uint8_t)(row != NULL);
             lp->row_first = pi;
             lp->row_last = last;
             cell_y += lp->height;
@@ -1216,14 +1217,14 @@ int lay_update( LAY *lay )
 /* asking                                                              */
 /* ------------------------------------------------------------------ */
 
-u32 lay_lines( LAY *lay, u32 para )
+unsigned int lay_lines( LAY *lay, unsigned int para )
 {
     LPARA *lp = lp_of( lay, para );
 
     return lp == NULL ? 0 : lp->nlines;
 }
 
-int lay_line( LAY *lay, u32 para, u32 line, LINFO *out )
+int lay_line( LAY *lay, unsigned int para, unsigned int line, LINFO *out )
 {
     LPARA *lp = lp_of( lay, para );
     const LLINE *from;
@@ -1243,7 +1244,7 @@ int lay_line( LAY *lay, u32 para, u32 line, LINFO *out )
     return 1;
 }
 
-void lay_para_box( LAY *lay, u32 para, s32 *top, s32 *height, s32 *block_top, s32 *block_height )
+void lay_para_box( LAY *lay, unsigned int para, int *top, int *height, int *block_top, int *block_height )
 {
     LPARA *lp = lp_of( lay, para );
 
@@ -1253,7 +1254,7 @@ void lay_para_box( LAY *lay, u32 para, s32 *top, s32 *height, s32 *block_top, s3
     *block_height = lp == NULL ? 0 : lp->block_h;
 }
 
-void lay_para_col( LAY *lay, u32 para, s32 *col_x, s32 *col_width )
+void lay_para_col( LAY *lay, unsigned int para, int *col_x, int *col_width )
 {
     LPARA *lp = lp_of( lay, para );
 
@@ -1261,10 +1262,10 @@ void lay_para_col( LAY *lay, u32 para, s32 *col_x, s32 *col_width )
     *col_width = lp == NULL ? lay->width : lp->col_w;
 }
 
-u32 lay_para_at( LAY *lay, s32 y )
+unsigned int lay_para_at( LAY *lay, int y )
 {
     LPARA *lp;
-    u32 pi;
+    unsigned int pi;
 
     for ( pi = 0; pi < lay->story->count; pi++ ) {
         lp = lp_of( lay, pi );
@@ -1275,10 +1276,10 @@ u32 lay_para_at( LAY *lay, s32 y )
     return lay->story->count;
 }
 
-u32 lay_line_of( LAY *lay, WPOS pos )
+unsigned int lay_line_of( LAY *lay, WPOS pos )
 {
     LPARA *lp = lp_of( lay, pos.para );
-    u32 li;
+    unsigned int li;
 
     if ( lp == NULL || lp->nlines == 0 ) {
         return 0;
@@ -1292,8 +1293,8 @@ u32 lay_line_of( LAY *lay, WPOS pos )
 }
 
 typedef struct {
-    u32 off;
-    s32 x;
+    unsigned int off;
+    int x;
     int found;
 } CARETCTX;
 
@@ -1310,11 +1311,11 @@ static int caret_unit( void *ctx, const LUNIT *unit )
     return 1;
 }
 
-void lay_caret( LAY *lay, WPOS pos, s32 *x, s32 *y, s32 *height )
+void lay_caret( LAY *lay, WPOS pos, int *x, int *y, int *height )
 {
     LPARA *lp = lp_of( lay, pos.para );
     CARETCTX caret;
-    u32 li;
+    unsigned int li;
 
     *x = *y = 0;
     *height = lay->grid ? GRID_H : 240;
@@ -1332,8 +1333,8 @@ void lay_caret( LAY *lay, WPOS pos, s32 *x, s32 *y, s32 *height )
 }
 
 typedef struct {
-    s32 x;
-    u32 off;
+    int x;
+    unsigned int off;
 } HITCTX;
 
 static int hit_unit( void *ctx, const LUNIT *unit )
@@ -1351,14 +1352,14 @@ static int hit_unit( void *ctx, const LUNIT *unit )
     return 1;
 }
 
-WPOS lay_hit_line( LAY *lay, u32 para, u32 line, s32 x )
+WPOS lay_hit_line( LAY *lay, unsigned int para, unsigned int line, int x )
 {
     LPARA *lp = lp_of( lay, para );
     const WPARA *text;
     const LLINE *ln;
     HITCTX hit;
     WPOS pos;
-    u32 end;
+    unsigned int end;
 
     pos.para = para;
     pos.off = 0;
@@ -1392,12 +1393,12 @@ WPOS lay_hit_line( LAY *lay, u32 para, u32 line, s32 x )
     return pos;
 }
 
-WPOS lay_hit( LAY *lay, s32 x, s32 y )
+WPOS lay_hit( LAY *lay, int x, int y )
 {
     LPARA *lp, *best_lp = NULL;
     WPOS pos;
-    u32 pi, scan, best = 0, li;
-    s32 gap, best_gap = 0x7FFFFFFFL;
+    unsigned int pi, scan, best = 0, li;
+    int gap, best_gap = 0x7FFFFFFFL;
 
     pi = lay_para_at( lay, y );
     if ( pi >= lay->story->count ) {
@@ -1445,12 +1446,12 @@ WPOS lay_hit( LAY *lay, s32 x, s32 y )
     return lay_hit_line( lay, best, li, x );
 }
 
-u32 lay_pages( LAY *lay )
+unsigned int lay_pages( LAY *lay )
 {
     return lay->npages ? lay->npages : 1;
 }
 
-const LPAGE *lay_page( LAY *lay, u32 index )
+const LPAGE *lay_page( LAY *lay, unsigned int index )
 {
     static const LPAGE none = { 0, 0, 0 };
 
@@ -1460,9 +1461,9 @@ const LPAGE *lay_page( LAY *lay, u32 index )
     return &lay->page[index];
 }
 
-u32 lay_page_of( LAY *lay, WPOS pos )
+unsigned int lay_page_of( LAY *lay, WPOS pos )
 {
-    u32 line = lay_line_of( lay, pos ), index;
+    unsigned int line = lay_line_of( lay, pos ), index;
 
     for ( index = lay->npages; index > 1; index-- ) {
         if ( lay->page[index - 1].para < pos.para ||
@@ -1484,7 +1485,7 @@ typedef struct {
     void       *ctx;
     LSEG        seg;
     int         open;           /* a SEG_TEXT is being gathered */
-    s32         col_x;          /* the column's left: a line's own x counts from there */
+    int         col_x;          /* the column's left: a line's own x counts from there */
 } SEGCTX;
 
 static void seg_flush( SEGCTX *sc )
@@ -1553,15 +1554,15 @@ static int seg_unit( void *ctx, const LUNIT *unit )
     return 1;
 }
 
-void lay_segs( LAY *lay, u32 para, u32 line, LAYSEG fn, void *ctx )
+void lay_segs( LAY *lay, unsigned int para, unsigned int line, LAYSEG fn, void *ctx )
 {
     LPARA *lp = lp_of( lay, para );
     const WPARA *text;
     SEGCTX sc;
     RUNM rm;
     LSEG label;
-    s32 x0, right;
-    u32 count;
+    int x0, right;
+    unsigned int count;
 
     if ( lp == NULL || line >= lp->nlines ) {
         return;
@@ -1599,7 +1600,7 @@ void lay_segs( LAY *lay, u32 para, u32 line, LAYSEG fn, void *ctx )
     seg_flush( &sc );
 }
 
-int lay_row_rules( LAY *lay, u32 para, s32 *top, s32 *height, s32 *edges, int *count )
+int lay_row_rules( LAY *lay, unsigned int para, int *top, int *height, int *edges, int *count )
 {
     LPARA *lp = lp_of( lay, para );
     const TROW *row;

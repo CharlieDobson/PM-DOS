@@ -50,9 +50,9 @@
 /* ------------------------------------------------------------------ */
 /* the DCT: out[m] = sum of in[k] cos(m (2k + 1) pi / 2N)               */
 /* ------------------------------------------------------------------ */
-static void dct4( const s32 *in, s32 *out )
+static void dct4( const int32_t *in, int32_t *out )
 {
-    s32 e0, e1, o0, o1, odd;
+    int32_t e0, e1, o0, o1, odd;
 
     e0 = in[0] + in[3];
     e1 = in[1] + in[2];
@@ -65,9 +65,9 @@ static void dct4( const s32 *in, s32 *out )
     out[3] = odd;
 }
 
-static void dct8( const s32 *in, s32 *out )
+static void dct8( const int32_t *in, int32_t *out )
 {
-    s32 even[4], odd[4], lo[4], hi[4];
+    int32_t even[4], odd[4], lo[4], hi[4];
     int k;
 
     for ( k = 0; k < 4; k++ ) {
@@ -85,9 +85,9 @@ static void dct8( const s32 *in, s32 *out )
     out[7] = hi[3];
 }
 
-static void dct16( const s32 *in, s32 *out )
+static void dct16( const int32_t *in, int32_t *out )
 {
-    s32 even[8], odd[8], lo[8], hi[8];
+    int32_t even[8], odd[8], lo[8], hi[8];
     int k;
 
     for ( k = 0; k < 8; k++ ) {
@@ -104,9 +104,9 @@ static void dct16( const s32 *in, s32 *out )
     out[15] = hi[7];
 }
 
-static void dct32( const s32 *in, s32 *out )
+static void dct32( const int32_t *in, int32_t *out )
 {
-    s32 even[16], odd[16], lo[16], hi[16];
+    int32_t even[16], odd[16], lo[16], hi[16];
     int k;
 
     for ( k = 0; k < 16; k++ ) {
@@ -128,7 +128,7 @@ static void dct32( const s32 *in, s32 *out )
 /* ------------------------------------------------------------------ */
 int mp3_syn_open( MP3SYN *syn )
 {
-    syn->hist = (s32 *)try_alloc( 2 * HIST_SIZE * sizeof( s32 ) );
+    syn->hist = (int32_t *)try_alloc( 2 * HIST_SIZE * sizeof( int32_t ) );
     if ( syn->hist == NULL ) {
         return DE_NOMEM;
     }
@@ -147,7 +147,7 @@ void mp3_syn_close( MP3SYN *syn )
 void mp3_syn_reset( MP3SYN *syn )
 {
     if ( syn->hist != NULL ) {
-        mem_set( syn->hist, 0, 2 * HIST_SIZE * sizeof( s32 ) );
+        mem_set( syn->hist, 0, 2 * HIST_SIZE * sizeof( int32_t ) );
     }
     syn->pos = 0;
     syn->phase = 0;
@@ -156,15 +156,15 @@ void mp3_syn_reset( MP3SYN *syn )
 /* ------------------------------------------------------------------ */
 /* one slot                                                            */
 /* ------------------------------------------------------------------ */
-#define CLIP16( val )   ((s16)((val) > 32767 ? 32767 : ((val) < -32768 ? -32768 : (val))))
+#define CLIP16( val )   ((int16_t)((val) > 32767 ? 32767 : ((val) < -32768 ? -32768 : (val))))
 
-void mp3_synth( MP3SYN *syn, const s32 *sb, int nsb, s16 *out, int stride, int taps )
+void mp3_synth( MP3SYN *syn, const int32_t *sb, int nsb, int16_t *out, int stride, int taps )
 {
-    s32 mat[32], pair[2];
-    s32 *hf, *hg;
-    const s32 *hv, *win;
-    s16 *lo, *hi;
-    s32 val;
+    int32_t mat[32], pair[2];
+    int32_t *hf, *hg;
+    const int32_t *hv, *win;
+    int16_t *lo, *hi;
+    int32_t val;
     int half, pos, j;
 
     if ( nsb == 32 ) {

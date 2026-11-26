@@ -7,7 +7,7 @@
  *              the screen and keys, 21h/F1h for disks and the restart
  *
  * Errors are DOS error codes, 0 is success.  Drives are 0-based
- * (0 = A:).  A length is u16: nothing moves more than COPYBUF at once,
+ * (0 = A:).  A length is uint16_t: nothing moves more than COPYBUF at once,
  * so the 16-bit half needs no huge pointers.
  */
 #ifndef PLAT_H
@@ -36,11 +36,11 @@ extern unsigned plat_caps;
 #define E_EXISTS        80
 
 typedef struct {
-    u8   attr;
-    u16  time, date;
-    u32  size;
-    char name[13];
-    u8   reserved[48];          /* the platform's own search state       */
+    uint8_t  attr;
+    uint16_t time, date;
+    uint32_t size;
+    char     name[13];
+    uint8_t  reserved[48];      /* the platform's own search state       */
 } FINDDATA;
 
 /* a drive letter (plat_drive) */
@@ -53,18 +53,18 @@ typedef struct {
 
 typedef struct {
     unsigned flags;             /* DI_*                                  */
-    int  bios;                  /* its BIOS drive, -1 = unknown          */
-    u8   ptype;                 /* the partition type byte, 0 = unknown  */
-    u32  start, secs;           /* the partition, when it is one         */
+    int      bios;              /* its BIOS drive, -1 = unknown          */
+    uint8_t  ptype;             /* the partition type byte, 0 = unknown  */
+    uint32_t start, secs;       /* the partition, when it is one         */
 } DRIVEINFO;
 
 /* a physical disk (plat_disk) */
 typedef struct {
-    int  present;
-    int  removable;             /* a USB disk                            */
-    u16  spt, heads;
-    u32  total;                 /* its size in sectors                   */
-    u32  chs;                   /* as far as CHS reaches, 0 = unknown    */
+    int      present;
+    int      removable;         /* a USB disk                            */
+    uint16_t spt, heads;
+    uint32_t total;             /* its size in sectors                   */
+    uint32_t chs;               /* as far as CHS reaches, 0 = unknown    */
 } DISKINFO;
 
 /* the program */
@@ -74,7 +74,7 @@ const char *plat_self( void );          /* SETUP.EXE's own path, "" when
                                            the system does not say       */
 const char *plat_getenv( const char *name );
 void  plat_exit( int code );
-void *plat_alloc( u32 size );           /* NULL = no memory              */
+void *plat_alloc( uint32_t size );      /* NULL = no memory              */
 void  plat_free( void *ptr );
 void  plat_line( const char *text );    /* to standard output            */
 int   plat_stdin_byte( void );          /* the test mode's keys; -1 = end */
@@ -95,8 +95,8 @@ int   plat_set_time( int hour, int minute );
 
 /* the screen: cells are character | attribute << 8 */
 void  plat_screen_open( void );
-void  plat_screen_put( int pos, const u16 *cells, int count );
-void  plat_screen_get( int pos, u16 *cells, int count );
+void  plat_screen_put( int pos, const uint16_t *cells, int count );
+void  plat_screen_get( int pos, uint16_t *cells, int count );
 void  plat_cursor( int row, int col, int shown );
 void  plat_screen_close( void );
 
@@ -107,23 +107,23 @@ int   plat_key_read( void );
 void  plat_idle( void );                /* nothing to do just now        */
 
 /* files */
-int   plat_open( const char *path, int write, u16 *handle );
-int   plat_create( const char *path, u16 *handle );
-int   plat_read( u16 handle, void *buf, u16 len, u16 *done );
-int   plat_write( u16 handle, const void *buf, u16 len, u16 *done );
-int   plat_close( u16 handle );
-int   plat_seek( u16 handle, u32 pos );
-int   plat_size( u16 handle, u32 *size );
-int   plat_get_ftime( u16 handle, u16 *date, u16 *time );
-int   plat_set_ftime( u16 handle, u16 date, u16 time );
+int   plat_open( const char *path, int write, uint16_t *handle );
+int   plat_create( const char *path, uint16_t *handle );
+int   plat_read( uint16_t handle, void *buf, uint16_t len, uint16_t *done );
+int   plat_write( uint16_t handle, const void *buf, uint16_t len, uint16_t *done );
+int   plat_close( uint16_t handle );
+int   plat_seek( uint16_t handle, uint32_t pos );
+int   plat_size( uint16_t handle, uint32_t *size );
+int   plat_get_ftime( uint16_t handle, uint16_t *date, uint16_t *time );
+int   plat_set_ftime( uint16_t handle, uint16_t date, uint16_t time );
 int   plat_delete( const char *path );
 int   plat_rename( const char *from, const char *to );
-int   plat_get_attr( const char *path, u16 *attr );
-int   plat_set_attr( const char *path, u16 attr );
+int   plat_get_attr( const char *path, uint16_t *attr );
+int   plat_set_attr( const char *path, uint16_t attr );
 int   plat_mkdir( const char *path );
-int   plat_find_first( const char *spec, u16 attr, FINDDATA *fd );
+int   plat_find_first( const char *spec, uint16_t attr, FINDDATA *fd );
 int   plat_find_next( FINDDATA *fd );
-int   plat_disk_free( int drive, u32 *free_kb, u32 *cluster_bytes );  /* KB: no 4GB ceiling */
+int   plat_disk_free( int drive, uint32_t *free_kb, uint32_t *cluster_bytes ); /* KB: no 4GB ceiling */
 int   plat_current_dir( char *buf, int max );   /* "C:\SUB\", 0 = ok   */
 int   plat_rmdir( const char *path );
 void  plat_flush( void );               /* everything onto the disks     */
@@ -131,10 +131,10 @@ void  plat_flush( void );               /* everything onto the disks     */
 /* drives and disks */
 int   plat_drive( int drive, DRIVEINFO *di );   /* 0 = there is one      */
 int   plat_disk( int bios, DISKINFO *dk );      /* 0 = there is one      */
-int   plat_disk_read( int bios, u32 lba, u16 count, void *buf );
-int   plat_disk_write( int bios, u32 lba, u16 count, const void *buf );
-int   plat_vol_read( int drive, u32 sector, u16 count, void *buf );
-int   plat_vol_write( int drive, u32 sector, u16 count, const void *buf );
+int   plat_disk_read( int bios, uint32_t lba, uint16_t count, void *buf );
+int   plat_disk_write( int bios, uint32_t lba, uint16_t count, const void *buf );
+int   plat_vol_read( int drive, uint32_t sector, uint16_t count, void *buf );
+int   plat_vol_write( int drive, uint32_t sector, uint16_t count, const void *buf );
 int   plat_vol_remount( int drive );    /* what is on it was rewritten   */
 int   plat_lock( int drive );           /* DOS 7's lock; 0 = held or none */
 void  plat_unlock( int drive );
@@ -143,9 +143,9 @@ void  plat_unlock( int drive );
 int   plat_fd_type( int drive );        /* FDT_ as CMOS calls it, 0 none */
 /* begin, a track, end: 0 = done, 3 = write-protected, else failed.  The
    end tells the system what the disk now is (and must follow a begin) */
-int   plat_fd_begin( int drive, int spt, int cyls, int heads, u16 total );
+int   plat_fd_begin( int drive, int spt, int cyls, int heads, uint16_t total );
 int   plat_fd_track( int drive, int cyl, int head, int spt );
-void  plat_fd_end( int drive, int spt, int heads, u16 total );
+void  plat_fd_end( int drive, int spt, int heads, uint16_t total );
 #define FDT_NONE        0
 #define FDT_360         1
 #define FDT_1200        2

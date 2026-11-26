@@ -38,12 +38,12 @@
 #include "fix.h"
 #include "vb.h"
 
-void vb_sincos( u32 phase, s32 *cosv, s32 *sinv )
+void vb_sincos( uint32_t phase, int32_t *cosv, int32_t *sinv )
 {
-    u32 coarse = phase >> 24, fine = (phase >> 16) & 255, rest = phase & 0xFFFF;
-    s32 cos_a = vb_cos_coarse[coarse], sin_a = vb_cos_coarse[(coarse + 192) & 255];
-    s32 cos_b = vb_cos_fine[fine], sin_b = vb_sin_fine[fine];
-    s32 cos_x, sin_x, delta, half;
+    uint32_t coarse = phase >> 24, fine = (phase >> 16) & 255, rest = phase & 0xFFFF;
+    int32_t cos_a = vb_cos_coarse[coarse], sin_a = vb_cos_coarse[(coarse + 192) & 255];
+    int32_t cos_b = vb_cos_fine[fine], sin_b = vb_sin_fine[fine];
+    int32_t cos_x, sin_x, delta, half;
 
     cos_x = vb_mul30r( cos_a, cos_b ) - vb_mul30r( sin_a, sin_b );
     sin_x = vb_mul30r( sin_a, cos_b ) + vb_mul30r( cos_a, sin_b );
@@ -53,17 +53,17 @@ void vb_sincos( u32 phase, s32 *cosv, s32 *sinv )
         return;
     }
     /* the remainder is under 1/65536 turn: two terms of its series do */
-    delta = vb_mul30r( (s32)rest, 1686629713L );        /* rest * 2 pi / 2^32, Q30 */
+    delta = vb_mul30r( (int32_t)rest, 1686629713L );    /* rest * 2 pi / 2^32, Q30 */
     half = vb_mul30r( delta, delta ) >> 1;
     *cosv = cos_x - vb_mul30r( sin_x, delta ) - vb_mul30r( cos_x, half );
     *sinv = sin_x + vb_mul30r( cos_x, delta ) - vb_mul30r( sin_x, half );
 }
 
-static s16 to_q14( s32 q30 )
+static int16_t to_q14( int32_t q30 )
 {
-    s32 val = (q30 + 32768L) >> 16;
+    int32_t val = (q30 + 32768L) >> 16;
 
-    return (s16)(val > 32767 ? 32767 : val);
+    return (int16_t)(val > 32767 ? 32767 : val);
 }
 
 void vb_mdct_free( VBMDCT *md )
@@ -79,18 +79,18 @@ void vb_mdct_free( VBMDCT *md )
 
 int vb_mdct_init( VBMDCT *md, int log2n )
 {
-    u32 n = 1UL << log2n, quarter = n >> 2, half = n >> 1, m, rev, bit;
-    s32 cos_v, sin_v, sq, win;
+    unsigned int n = 1UL << log2n, quarter = n >> 2, half = n >> 1, m, rev, bit;
+    int32_t cos_v, sin_v, sq, win;
     int bits = log2n - 2, k;
 
     mem_set( md, 0, sizeof( VBMDCT ) );
     md->log2n = log2n;
     md->n = n;
-    md->tw = (s32 *)try_alloc( quarter * 2 * sizeof( s32 ) );
-    md->tw16 = (s16 *)try_alloc( quarter * 2 * sizeof( s16 ) );
-    md->rev = (u16 *)try_alloc( quarter * sizeof( u16 ) );
-    md->win = (s32 *)try_alloc( half * sizeof( s32 ) );
-    md->win16 = (s16 *)try_alloc( half * sizeof( s16 ) );
+    md->tw = (int32_t *)try_alloc( quarter * 2 * sizeof( int32_t ) );
+    md->tw16 = (int16_t *)try_alloc( quarter * 2 * sizeof( int16_t ) );
+    md->rev = (uint16_t *)try_alloc( quarter * sizeof( uint16_t ) );
+    md->win = (int32_t *)try_alloc( half * sizeof( int32_t ) );
+    md->win16 = (int16_t *)try_alloc( half * sizeof( int16_t ) );
     if ( md->tw == NULL || md->tw16 == NULL || md->rev == NULL || md->win == NULL
          || md->win16 == NULL ) {
         vb_mdct_free( md );
@@ -106,17 +106,17 @@ int vb_mdct_init( VBMDCT *md, int log2n )
         for ( k = 0, bit = m; k < bits; k++, bit >>= 1 ) {
             rev = (rev << 1) | (bit & 1);
         }
-        md->rev[m] = (u16)rev;
+        md->rev[m] = (uint16_t)rev;
     }
     /* sin( pi/2 * sin^2( (j + 1/2) / half * pi/2 ) ) */
     for ( m = 0; m < half; m++ ) {
         vb_sincos( (2 * m + 1) << (30 - log2n), &cos_v, &sin_v );
         sq = vb_mul30r( sin_v, sin_v );
-        vb_sincos( (u32)sq, &cos_v, &sin_v );
+        vb_sincos( (uint32_t)sq, &cos_v, &sin_v );
         win = sin_v >= 0x40000000L ? 0x7FFFFFFFL : sin_v * 2;
         md->win[m] = win;
-        rev = ((u32)win + 32768UL) >> 16;
-        md->win16[m] = (s16)(rev > 32767 ? 32767 : rev);
+        rev = ((uint32_t)win + 32768UL) >> 16;
+        md->win16[m] = (int16_t)(rev > 32767 ? 32767 : rev);
     }
     return 0;
 }
@@ -130,13 +130,13 @@ void vb_fft_free( VBFFT *fft )
 
 int vb_fft_init( VBFFT *fft, int log2k )
 {
-    u32 count = (3UL << log2k) / 4, t;
-    s32 cos_v, sin_v;
+    unsigned int count = (3UL << log2k) / 4, t;
+    int32_t cos_v, sin_v;
 
     mem_set( fft, 0, sizeof( VBFFT ) );
     fft->log2k = log2k;
-    fft->tw = (s32 *)try_alloc( count * 2 * sizeof( s32 ) );
-    fft->tw16 = (s16 *)try_alloc( count * 2 * sizeof( s16 ) );
+    fft->tw = (int32_t *)try_alloc( count * 2 * sizeof( int32_t ) );
+    fft->tw16 = (int16_t *)try_alloc( count * 2 * sizeof( int16_t ) );
     if ( fft->tw == NULL || fft->tw16 == NULL ) {
         vb_fft_free( fft );
         return -1;
@@ -151,13 +151,13 @@ int vb_fft_init( VBFFT *fft, int log2k )
     return 0;
 }
 
-int vb_mdct_eq( VBMDCT *md, const u32 *gain )
+int vb_mdct_eq( VBMDCT *md, const uint32_t *gain )
 {
-    u32 quarter = md->n >> 2, half = md->n >> 1, m;
-    s32 *eq, c, s, gain_a, gain_b;
+    unsigned int quarter = md->n >> 2, half = md->n >> 1, m;
+    int32_t *eq, c, s, gain_a, gain_b;
 
     if ( md->eqtw == NULL ) {
-        md->eqtw = (s32 *)try_alloc( quarter * 4 * sizeof( s32 ) );
+        md->eqtw = (int32_t *)try_alloc( quarter * 4 * sizeof( int32_t ) );
         if ( md->eqtw == NULL ) {
             return -1;
         }
@@ -166,8 +166,8 @@ int vb_mdct_eq( VBMDCT *md, const u32 *gain )
     for ( m = 0; m < quarter; m++ ) {
         c = md->tw[2 * m];
         s = md->tw[2 * m + 1];
-        gain_a = (s32)gain[2 * m];
-        gain_b = (s32)gain[half - 1 - 2 * m];
+        gain_a = (int32_t)gain[2 * m];
+        gain_b = (int32_t)gain[half - 1 - 2 * m];
         eq[0] = fx_mulsh( c, gain_a, 18 );
         eq[1] = fx_mulsh( s, gain_b, 18 );
         eq[2] = fx_mulsh( s, gain_a, 18 );
@@ -178,12 +178,12 @@ int vb_mdct_eq( VBMDCT *md, const u32 *gain )
 }
 
 /* the first twiddle with the equalizer's gains in it: four multiplies */
-static void pre_eq( const VBMDCT *md, const s32 *spec, s32 *work )
+static void pre_eq( const VBMDCT *md, const int32_t *spec, int32_t *work )
 {
-    u32 count = md->n >> 2, m;
-    const s32 *eq = md->eqtw;
-    const s32 *top = spec + (md->n >> 1) - 1;
-    s32 a, b;
+    unsigned int count = md->n >> 2, m;
+    const int32_t *eq = md->eqtw;
+    const int32_t *top = spec + (md->n >> 1) - 1;
+    int32_t a, b;
 
     for ( m = 0; m < count; m++ ) {
         a = spec[0];
@@ -199,7 +199,7 @@ static void pre_eq( const VBMDCT *md, const s32 *spec, s32 *work )
 
 /* full precision: Q30 twiddles, the sample as the multiplier (it
    usually has fewer significant bits than the twiddle) */
-#define TW_TYPE         s32
+#define TW_TYPE         int32_t
 #define TW_FIELD        tw
 #define TW_MUL( tw, x ) vb_mul30r( (tw), (x) )
 #define PRE_NAME        pre_full
@@ -214,7 +214,7 @@ static void pre_eq( const VBMDCT *md, const s32 *spec, s32 *work )
 #undef POST_NAME
 
 /* the fast path: Q14 twiddles as the multiplier */
-#define TW_TYPE         s16
+#define TW_TYPE         int16_t
 #define TW_FIELD        tw16
 #define TW_MUL( tw, x ) vb_mul14r( (x), (tw) )
 #define PRE_NAME        pre_fast
@@ -228,7 +228,7 @@ static void pre_eq( const VBMDCT *md, const s32 *spec, s32 *work )
 #undef FFT_NAME
 #undef POST_NAME
 
-void vb_imdct( const VBMDCT *md, const VBFFT *fft, const s32 *spec, s32 *work, s32 *u,
+void vb_imdct( const VBMDCT *md, const VBFFT *fft, const int32_t *spec, int32_t *work, int32_t *u,
                int fast, int use_eq )
 {
     if ( use_eq && md->eqtw != NULL ) {
@@ -250,20 +250,20 @@ void vb_imdct( const VBMDCT *md, const VBFFT *fft, const s32 *spec, s32 *work, s
 /* a Q24 sample as 16 bits */
 #define OUT24( val )    FX_SAT16( ((val) + 256) >> 9 )
 
-u32 vb_lap( s16 *pcm, int stride, const s32 *prev, u32 pn, const s32 *cur, u32 n,
-            const VBMDCT *small, int fast )
+unsigned int vb_lap( int16_t *pcm, int stride, const int32_t *prev, unsigned int pn, const int32_t *cur,
+                     unsigned int n, const VBMDCT *small, int fast )
 {
-    u32 pm = pn >> 1, m = n >> 1, w = (pn < n ? pn : n) >> 1, hw = w >> 1;
-    u32 count_a = (pm >> 1) - hw, j, pos;
-    s16 *out = pcm, *lo, *hi;
-    const s32 *win = small->win;
-    const s16 *win16 = small->win16;
-    s32 val, pv, cv, wl, wr, t;
+    unsigned int pm = pn >> 1, m = n >> 1, w = (pn < n ? pn : n) >> 1, hw = w >> 1;
+    unsigned int count_a = (pm >> 1) - hw, j, pos;
+    int16_t *out = pcm, *lo, *hi;
+    const int32_t *win = small->win;
+    const int16_t *win16 = small->win16;
+    int32_t val, pv, cv, wl, wr, t;
 
     /* the previous block alone, where its window is 1 */
     for ( j = 0; j < count_a; j++ ) {
         val = -prev[(pm >> 1) - 1 - j];
-        *out = (s16)OUT24( val );
+        *out = (int16_t)OUT24( val );
         out += stride;
     }
     /* The overlap: frames j and w - 1 - j from one value of each block,
@@ -280,9 +280,9 @@ u32 vb_lap( s16 *pcm, int stride, const s32 *prev, u32 pn, const s32 *cur, u32 n
             wr = win16[w - 1 - j];
             t = fx_mulsh( pv - cv, wr, 15 );
             val = t + fx_mulsh( cv, wr + wl, 15 );
-            *lo = (s16)OUT24( val );
+            *lo = (int16_t)OUT24( val );
             val = t + fx_mulsh( pv, wl - wr, 15 );
-            *hi = (s16)OUT24( val );
+            *hi = (int16_t)OUT24( val );
             lo += stride;
             hi -= stride;
         }
@@ -295,9 +295,9 @@ u32 vb_lap( s16 *pcm, int stride, const s32 *prev, u32 pn, const s32 *cur, u32 n
             wr = win[w - 1 - j] >> 1;
             t = fx_mulhi( wr, pv - cv );
             val = t + fx_mulhi( wr + wl, cv );
-            *lo = (s16)FX_SAT16( (val + 64) >> 7 );
+            *lo = (int16_t)FX_SAT16( (val + 64) >> 7 );
             val = t + fx_mulhi( wl - wr, pv );
-            *hi = (s16)FX_SAT16( (val + 64) >> 7 );
+            *hi = (int16_t)FX_SAT16( (val + 64) >> 7 );
             lo += stride;
             hi -= stride;
         }
@@ -306,7 +306,7 @@ u32 vb_lap( s16 *pcm, int stride, const s32 *prev, u32 pn, const s32 *cur, u32 n
     /* this block alone, where its window is 1 */
     for ( pos = (m >> 1) + hw; pos < m; pos++ ) {
         val = -cur[3 * (m >> 1) - 1 - pos];
-        *out = (s16)OUT24( val );
+        *out = (int16_t)OUT24( val );
         out += stride;
     }
     return count_a + w + (m >> 1) - hw;

@@ -13,7 +13,7 @@
    frequency from 40 Hz to 16 kHz (or half the rate, if that is less).
    The first call makes the tables; it returns 0 only if there was no
    memory for them, and the bars are then all 0. */
-int  fft_bars( const s16 *samples, u32 rate, u8 *bars, int count );
+int  fft_bars( const int16_t *samples, uint32_t rate, uint8_t *bars, int count );
 void fft_done( void );                  /* the tables freed (made again when needed) */
 
 #endif

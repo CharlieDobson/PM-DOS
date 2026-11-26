@@ -25,13 +25,13 @@
 
 #define SLOW_READ   200         /* hundredths of a second */
 
-static u8  *run_buf;
-static u32  moved_clusters;
+static uint8_t *run_buf;
+static uint32_t moved_clusters;
 
 /* 0 = read, and in good time */
-static int timed_read( u32 lba, u32 count )
+static int timed_read( uint32_t lba, uint32_t count )
 {
-    u32 start, took;
+    uint32_t start, took;
     int rc;
 
     if ( !opt.timeout ) {
@@ -48,9 +48,9 @@ static int timed_read( u32 lba, u32 count )
 }
 
 /* a cluster on its own: bad when it fails twice running */
-static int cluster_bad( u32 clus )
+static int cluster_bad( uint32_t clus )
 {
-    u32 pass;
+    unsigned int pass;
 
     for ( pass = 0; pass < opt.passes; pass++ ) {
         if ( timed_read( clus_lba( clus ), vol.spc ) != 0 &&
@@ -65,7 +65,7 @@ static int cluster_bad( u32 clus )
 /* the system area                                                     */
 /* ------------------------------------------------------------------ */
 
-static const char *area_name( u32 lba, char *buf, u32 max )
+static const char *area_name( uint32_t lba, char *buf, unsigned int max )
 {
     if ( lba < vol.rsvd ) {
         return lba == 0 ? "the boot sector" : "the reserved sectors";
@@ -79,7 +79,7 @@ static const char *area_name( u32 lba, char *buf, u32 max )
 
 static void system_area( void )
 {
-    u32 per = SYS_MAX_XFER / vol.bps, lba, count, sec, bad = 0, first_bad = 0;
+    uint32_t per = SYS_MAX_XFER / vol.bps, lba, count, sec, bad = 0, first_bad = 0;
     char where[60];
 
     for ( lba = 0; lba < vol.data_sec; lba += count ) {
@@ -109,10 +109,11 @@ static void system_area( void )
 
 /* what can be read of "clus" into a free cluster, which takes its
    place; NULL, or why it could not be done */
-static const char *relocate( u32 clus, const OWNER *own, u32 *lost_secs )
+static const char *relocate( uint32_t clus, const OWNER *own, uint32_t *lost_secs )
 {
-    u8 *buf = (u8 *)try_alloc( vol.bpc );
-    u32 sec, fresh = clus, tries, next = fat_get( clus ), scan;
+    uint8_t *buf = (uint8_t *)try_alloc( vol.bpc );
+    uint32_t sec, fresh = clus, next = fat_get( clus ), scan;
+    unsigned int tries;
     const char *why = NULL;
 
     if ( buf == NULL ) {
@@ -154,7 +155,7 @@ static const char *relocate( u32 clus, const OWNER *own, u32 *lost_secs )
 
     fat_set( fresh, next );
     fat_set( clus, vol.bad_val );
-    vol.map[fresh] = (u8)(vol.map[clus] & ~MF_BAD);
+    vol.map[fresh] = (uint8_t)(vol.map[clus] & ~MF_BAD);
     vol.map[clus] = MF_BAD;
     st.bad_clus++;
     if ( own->found ) {
@@ -177,9 +178,9 @@ static const char *relocate( u32 clus, const OWNER *own, u32 *lost_secs )
     return why;
 }
 
-static void bad_cluster( u32 clus )
+static void bad_cluster( uint32_t clus )
 {
-    u32 val = fat_get( clus ), lost_secs;
+    uint32_t val = fat_get( clus ), lost_secs;
     const char *why;
     OWNER own;
 
@@ -229,13 +230,14 @@ static void bad_cluster( u32 clus )
 
 void surface_scan( void )
 {
-    u32 per = SYS_MAX_XFER / vol.bpc, clus, count, pass, index;
+    uint32_t per = SYS_MAX_XFER / vol.bpc, clus, count, index;
+    unsigned int pass;
     int failed;
 
     if ( per == 0 ) {
         per = 1;
     }
-    run_buf = (u8 *)try_alloc( per * vol.bpc > SYS_MAX_XFER ? per * vol.bpc : SYS_MAX_XFER );
+    run_buf = (uint8_t *)try_alloc( per * vol.bpc > SYS_MAX_XFER ? per * vol.bpc : SYS_MAX_XFER );
     if ( run_buf == NULL ) {
         out_of_memory();
     }

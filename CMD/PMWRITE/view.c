@@ -28,34 +28,34 @@
 #define IMG_SLOTS       6
 #define IMG_BYTES       (1536UL * 1024)
 
-static s32  scale;              /* pixels to a twip, 16.16 */
-static u8  *cover;              /* a line's worth of coverage */
-static u32  cover_cap;
-static int  page_x, page_y, page_w, page_h;     /* the pane, in pixels */
+static int32_t      scale;      /* pixels to a twip, 16.16 */
+static uint8_t     *cover;      /* a line's worth of coverage */
+static unsigned int cover_cap;
+static int          page_x, page_y, page_w, page_h; /* the pane, in pixels */
 
 /* what was on the screen when it was last drawn: what has changed
    since says what must be painted again */
 static struct {
-    int    doc;
-    EDITOR *ed;
-    STORY *story;
-    u32    serial;
-    s32    scroll_x, scroll_y, height;
-    WPOS   caret, anchor;
-    int    zoom, marks;
-    s32    block_top, block_bottom;     /* the caret's paragraph */
-    int    x, y, w, h;
-    const u8 *pix;                      /* a PDF: the page's pixels */
+    int          doc;
+    EDITOR      *ed;
+    STORY       *story;
+    unsigned int serial;
+    int          scroll_x, scroll_y, height;
+    WPOS         caret, anchor;
+    int          zoom, marks;
+    int          block_top, block_bottom;  /* the caret's paragraph */
+    int          x, y, w, h;
+    const uint8_t *pix;                    /* a PDF: the page's pixels */
 } seen;
 
 /* pictures made ready for the screen: pixel numbers at the size shown */
 static struct {
-    WDOC *doc;
-    int   obj, w, h;
-    u8   *pix;
-    u32   used;
+    WDOC        *doc;
+    int          obj, w, h;
+    uint8_t     *pix;
+    unsigned int used;
 } images[IMG_SLOTS];
-static u32 image_clock;
+static unsigned int image_clock;
 
 static int pdf_open_doc = -1;   /* the document whose file PDFVIEW has open */
 static int pdf_wanted;          /* the page showing is still to be drawn */
@@ -71,7 +71,7 @@ void view_reset( void )
     seen.doc = -1;
 }
 
-int view_px( s32 twips )
+int view_px( int twips )
 {
     /* further than any screen reaches is as far as the sum can go in
        32 bits at the largest zoom: a place that far off is off the
@@ -84,7 +84,7 @@ int view_px( s32 twips )
     return (int)((twips * scale) >> 16);
 }
 
-static s32 px_twips( int pixels )
+static int px_twips( int pixels )
 {
     if ( scale <= 0 ) {
         return 0;
@@ -92,9 +92,9 @@ static s32 px_twips( int pixels )
     /* left of the text, or above it, is a length the other way: not the
        huge one that a negative number read as unsigned would be */
     if ( pixels < 0 ) {
-        return -(s32)(((u32)(-pixels) << 16) / (u32)scale);
+        return -(int32_t)(((uint32_t)(-pixels) << 16) / (uint32_t)scale);
     }
-    return (s32)(((u32)pixels << 16) / (u32)scale);
+    return (int32_t)(((uint32_t)pixels << 16) / (uint32_t)scale);
 }
 
 int view_reclaim( void )
@@ -124,16 +124,16 @@ int view_reclaim( void )
 
 /* the colours a look has on a text screen: Word for DOS's way of
    showing what a character cell cannot */
-static u8 look_attr( const CHP *chp )
+static uint8_t look_attr( const CHP *chp )
 {
-    u8 back = (u8)(pal.text & 0xF0);
-    u8 fore = (u8)(pal.text & 0x0F);
-    static const u8 near16[8] = { 0, 1, 2, 3, 4, 5, 6, 7 };
-    u32 color = chp->color;
+    uint8_t back = (uint8_t)(pal.text & 0xF0);
+    uint8_t fore = (uint8_t)(pal.text & 0x0F);
+    static const uint8_t near16[8] = { 0, 1, 2, 3, 4, 5, 6, 7 };
+    uint32_t color = chp->color;
     int bits;
 
     if ( chp->flags & CF_HIDDEN ) {
-        return (u8)(back | 0x08);
+        return (uint8_t)(back | 0x08);
     }
     if ( color != COLOR_AUTO ) {
         bits = ((color & 0x800000UL) ? 4 : 0) | ((color & 0x008000UL) ? 2 : 0) | ((color & 0x000080UL) ? 1 : 0);
@@ -150,19 +150,19 @@ static u8 look_attr( const CHP *chp )
     }
     if ( color == COLOR_AUTO ) {
         if ( chp->flags & CF_ITALIC ) {
-            fore = (u8)((fore & 8) | ((back >> 4) == 2 ? 3 : 2));
+            fore = (uint8_t)((fore & 8) | ((back >> 4) == 2 ? 3 : 2));
         }
         if ( chp->flags & (CF_UNDER | CF_DUNDER | CF_WUNDER) ) {
-            fore = (u8)((fore & 8) | ((back >> 4) == 3 ? 6 : 3));
+            fore = (uint8_t)((fore & 8) | ((back >> 4) == 3 ? 6 : 3));
         }
         if ( chp->flags & (CF_SUPER | CF_SUB | CF_STRIKE) ) {
-            fore = (u8)((fore & 8) | ((back >> 4) == 5 ? 6 : 5));
+            fore = (uint8_t)((fore & 8) | ((back >> 4) == 5 ? 6 : 5));
         }
     }
-    return (u8)(back | fore);
+    return (uint8_t)(back | fore);
 }
 
-static int screen_char( u32 code )
+static int screen_char( uint32_t code )
 {
     char near_buf[8];
 
@@ -173,18 +173,18 @@ static int screen_char( u32 code )
         return code < 0x20 ? ' ' : (int)code;
     }
     cp_put( country.codepage ? country.codepage : CP_437, code, near_buf );
-    return (u8)near_buf[0];
+    return (uint8_t)near_buf[0];
 }
 
 typedef struct {
-    EDITOR *ed;
-    int     row;
-    u32     para;
-    int     sel;
-    WPOS    from, to;
+    EDITOR      *ed;
+    int          row;
+    unsigned int para;
+    int          sel;
+    WPOS         from, to;
 } CELLCTX;
 
-static int cell_selected( const CELLCTX *cc, u32 off )
+static int cell_selected( const CELLCTX *cc, unsigned int off )
 {
     WPOS pos;
 
@@ -196,7 +196,7 @@ static int cell_selected( const CELLCTX *cc, u32 off )
     return wpos_cmp( pos, cc->from ) >= 0 && wpos_cmp( pos, cc->to ) < 0;
 }
 
-static void cell_put( const CELLCTX *cc, s32 x, int ch, u8 attr, int selected )
+static void cell_put( const CELLCTX *cc, int x, int ch, uint8_t attr, int selected )
 {
     int col = (int)((x - cc->ed->scroll_x) / GRID_W) + SEL_BAR;
 
@@ -209,8 +209,8 @@ static void cell_seg( void *ctx, const LSEG *seg )
 {
     CELLCTX *cc = (CELLCTX *)ctx;
     const CHP *chp = wd_chp_get( cc->ed->doc, seg->chp );
-    u8 attr = look_attr( chp );
-    u32 index;
+    uint8_t attr = look_attr( chp );
+    unsigned int index;
     int cells, code;
 
     switch ( seg->kind ) {
@@ -220,20 +220,20 @@ static void cell_seg( void *ctx, const LSEG *seg )
             if ( seg->upper && code >= 'a' && code <= 'z' ) {
                 code -= 0x20;
             }
-            cell_put( cc, seg->x + (s32)index * GRID_W, screen_char( (u32)code ), attr,
+            cell_put( cc, seg->x + (int)index * GRID_W, screen_char( (uint32_t)code ), attr,
                       cell_selected( cc, seg->off + index ) );
         }
         break;
     case SEG_MADE:
         for ( index = 0; index < seg->count; index++ ) {
-            cell_put( cc, seg->x + (s32)index * GRID_W, screen_char( seg->text[index] ), attr,
+            cell_put( cc, seg->x + (int)index * GRID_W, screen_char( seg->text[index] ), attr,
                       cell_selected( cc, seg->off ) );
         }
         break;
     case SEG_TAB:
         cells = (int)(seg->width / GRID_W);
         for ( index = 0; (int)index < cells; index++ ) {
-            cell_put( cc, seg->x + (s32)index * GRID_W, seg->lead == LEAD_DOTS ? '.' : seg->lead ? '_' :
+            cell_put( cc, seg->x + (int)index * GRID_W, seg->lead == LEAD_DOTS ? '.' : seg->lead ? '_' :
                       set.show_marks && index == 0 ? 0x1A : ' ', attr, cell_selected( cc, seg->off ) );
         }
         break;
@@ -248,8 +248,8 @@ static void text_draw( EDITOR *ed )
     CELLCTX cc;
     LINFO info;
     WPOS end;
-    u32 pi, li, lines, page = 0, pages = lay_pages( ed->lay );
-    s32 top, height, block_top, block_h, x, y, bottom = ed->scroll_y + ed->view_h;
+    unsigned int pi, li, lines, page = 0, pages = lay_pages( ed->lay );
+    int top, height, block_top, block_h, x, y, bottom = ed->scroll_y + ed->view_h;
     int row, col;
 
     for ( row = 0; row < plan.doc_rows; row++ ) {
@@ -280,7 +280,7 @@ static void text_draw( EDITOR *ed )
                     (lay_page( ed->lay, page + 1 )->para == pi && lay_page( ed->lay, page + 1 )->line <= li)) ) {
                 page++;
                 if ( lay_page( ed->lay, page )->para == pi && lay_page( ed->lay, page )->line == li ) {
-                    scr_ch( cc.row, 0, 0xAF, (u8)((pal.text & 0xF0) | 0x0E) );
+                    scr_ch( cc.row, 0, 0xAF, (uint8_t)((pal.text & 0xF0) | 0x0E) );
                 }
             }
             lay_segs( ed->lay, pi, li, cell_seg, &cc );
@@ -290,7 +290,7 @@ static void text_draw( EDITOR *ed )
                 end.off = ed->story->para[pi]->len;
                 if ( (cc.sel && wpos_cmp( end, cc.from ) >= 0 && wpos_cmp( end, cc.to ) < 0) || set.show_marks ) {
                     lay_caret( ed->lay, end, &x, &y, &height );
-                    cell_put( &cc, x, set.show_marks ? 0x14 : ' ', (u8)((pal.text & 0xF0) | 0x08),
+                    cell_put( &cc, x, set.show_marks ? 0x14 : ' ', (uint8_t)((pal.text & 0xF0) | 0x08),
                               cc.sel && wpos_cmp( end, cc.from ) >= 0 && wpos_cmp( end, cc.to ) < 0 );
                 }
             }
@@ -310,7 +310,7 @@ static void text_draw( EDITOR *ed )
 /* pictures                                                            */
 /* ------------------------------------------------------------------ */
 
-static const u8 bayer[4][4] = { { 0, 8, 2, 10 }, { 12, 4, 14, 6 }, { 3, 11, 1, 9 }, { 15, 7, 13, 5 } };
+static const uint8_t bayer[4][4] = { { 0, 8, 2, 10 }, { 12, 4, 14, 6 }, { 3, 11, 1, 9 }, { 15, 7, 13, 5 } };
 
 /* a colour's part nudged up or down by where the pixel is, so that the
    few colours a screen has mix into the ones between: "spread" is how
@@ -325,7 +325,7 @@ static int dither( int value, int xpos, int ypos, int spread )
 }
 
 /* rows of blue, green, red made pixel numbers for this screen */
-static void bgr_to_pixels( const u8 *bgr, u8 *pix, int count, int xpos, int ypos )
+static void bgr_to_pixels( const uint8_t *bgr, uint8_t *pix, int count, int xpos, int ypos )
 {
     int index, spread;
 
@@ -333,17 +333,18 @@ static void bgr_to_pixels( const u8 *bgr, u8 *pix, int count, int xpos, int ypos
         /* 256 colours have greys ten apart and colours fifty-one apart;
            sixteen have four greys and little else */
         spread = gfx_colors != 256 ? 96 : bgr[0] == bgr[1] && bgr[1] == bgr[2] ? 10 : 51;
-        pix[index] = (u8)gfx_rgb( ((u32)dither( bgr[2], xpos + index, ypos, spread ) << 16) |
-                                  ((u32)dither( bgr[1], xpos + index, ypos, spread ) << 8) |
-                                  (u32)dither( bgr[0], xpos + index, ypos, spread ) );
+        pix[index] = (uint8_t)gfx_rgb( ((uint32_t)dither( bgr[2], xpos + index, ypos, spread ) << 16) |
+                                       ((uint32_t)dither( bgr[1], xpos + index, ypos, spread ) << 8) |
+                                       (uint32_t)dither( bgr[0], xpos + index, ypos, spread ) );
     }
 }
 
-static u8 *image_pixels( WDOC *doc, int obj, int w, int h )
+static uint8_t *image_pixels( WDOC *doc, int obj, int w, int h )
 {
     const WOBJ *from = &doc->obj[obj];
-    u8 *bgr, *pix, *line;
-    u32 pic_w, pic_h, total = 0;
+    uint8_t *bgr, *pix, *line;
+    uint32_t pic_w, pic_h;
+    unsigned int total = 0;
     int index, slot = 0, xpos, ypos;
 
     for ( index = 0; index < IMG_SLOTS; index++ ) {
@@ -362,12 +363,12 @@ static u8 *image_pixels( WDOC *doc, int obj, int w, int h )
             slot = index;
             break;
         }
-        total += (u32)images[index].w * (u32)images[index].h;
+        total += (unsigned int)images[index].w * (unsigned int)images[index].h;
         if ( images[index].used < images[slot].used ) {
             slot = index;
         }
     }
-    if ( total + (u32)w * (u32)h > IMG_BYTES ) {
+    if ( total + (unsigned int)w * (unsigned int)h > IMG_BYTES ) {
         view_reclaim();
         slot = 0;
     }
@@ -377,16 +378,16 @@ static u8 *image_pixels( WDOC *doc, int obj, int w, int h )
     if ( bgr == NULL ) {
         return NULL;
     }
-    pix = (u8 *)try_alloc( (u32)w * (u32)h );
-    line = (u8 *)try_alloc( (u32)w * 3 );
+    pix = (uint8_t *)try_alloc( (unsigned int)w * (unsigned int)h );
+    line = (uint8_t *)try_alloc( (unsigned int)w * 3 );
     if ( pix != NULL && line != NULL ) {
         for ( ypos = 0; ypos < h; ypos++ ) {
-            const u8 *src = bgr + (u32)ypos * pic_h / (u32)h * pic_w * 3;
+            const uint8_t *src = bgr + (unsigned int)ypos * pic_h / (unsigned int)h * pic_w * 3;
 
             for ( xpos = 0; xpos < w; xpos++ ) {
-                mem_cpy( line + xpos * 3, src + (u32)xpos * pic_w / (u32)w * 3, 3 );
+                mem_cpy( line + xpos * 3, src + (unsigned int)xpos * pic_w / (unsigned int)w * 3, 3 );
             }
-            bgr_to_pixels( line, pix + (u32)ypos * (u32)w, w, 0, ypos );
+            bgr_to_pixels( line, pix + (unsigned int)ypos * (unsigned int)w, w, 0, ypos );
         }
     } else {
         xfree( pix );
@@ -412,14 +413,14 @@ typedef struct {
     int     top, height, base;  /* the line, in screen pixels */
 } PIXCTX;
 
-static int cover_room( u32 bytes )
+static int cover_room( unsigned int bytes )
 {
-    u8 *grown;
+    uint8_t *grown;
 
     if ( bytes <= cover_cap ) {
         return 1;
     }
-    grown = (u8 *)try_realloc( cover, bytes + 1024 );
+    grown = (uint8_t *)try_realloc( cover, bytes + 1024 );
     if ( grown == NULL ) {
         return 0;
     }
@@ -432,23 +433,23 @@ static void pix_text( const PIXCTX *pc, const LSEG *seg, const CHP *chp, int fg,
 {
     COVER block;
     TFACE *face = tf_face( &pc->ed->doc->font[chp->font < pc->ed->doc->nfont ? chp->font : 0], chp->flags );
-    u16 piece[96];
-    s32 pen, em = seg->size * scale, start;
-    u32 done = 0, part, index;
+    uint16_t piece[96];
+    int32_t pen, em = seg->size * scale, start;
+    unsigned int done = 0, part, index;
     int xpix, width;
 
-    start = (seg->x - pc->ed->scroll_x) * scale + ((s32)(page_x + PAD_X) << 16);
+    start = (seg->x - pc->ed->scroll_x) * scale + ((int32_t)(page_x + PAD_X) << 16);
     xpix = (int)(start >> 16);
     width = (int)(((seg->width * scale) + (start & 0xFFFF)) >> 16) + 2;
     if ( xpix + width <= page_x || xpix >= page_x + page_w || width <= 0 || pc->height <= 0 ||
-         !cover_room( (u32)width * (u32)pc->height ) ) {
+         !cover_room( (unsigned int)width * (unsigned int)pc->height ) ) {
         return;
     }
-    mem_set( cover, 0, (u32)width * (u32)pc->height );
+    mem_set( cover, 0, (unsigned int)width * (unsigned int)pc->height );
     block.pix = cover;
     block.width = width;
     block.height = pc->height;
-    block.stride = (u32)width;
+    block.stride = (unsigned int)width;
     pen = start & 0xFFFF;
     while ( done < seg->count ) {
         part = seg->count - done > 96 ? 96 : seg->count - done;
@@ -468,7 +469,7 @@ static void pix_text( const PIXCTX *pc, const LSEG *seg, const CHP *chp, int fg,
                 piece[index] = '-';
             }
         }
-        pen = tf_draw( face, em, pen, ((s32)(pc->base - pc->top) << 16) - seg->rise * scale, piece, part, &block );
+        pen = tf_draw( face, em, pen, ((int32_t)(pc->base - pc->top) << 16) - seg->rise * scale, piece, part, &block );
         done += part;
     }
     gfx_cover( xpix, pc->top, width - 2, pc->height, cover, width, fg, bg );
@@ -479,7 +480,7 @@ static void pix_seg( void *ctx, const LSEG *seg )
     PIXCTX *pc = (PIXCTX *)ctx;
     EDITOR *ed = pc->ed;
     const CHP *chp = wd_chp_get( ed->doc, seg->chp );
-    u8 *pix;
+    uint8_t *pix;
     int xpix = page_x + PAD_X + view_px( seg->x - ed->scroll_x ), wide = view_px( seg->width );
     int fg = chp->color == COLOR_AUTO ? pal.px_ink : gfx_rgb( chp->color );
     int bg = pal.px_page, em = view_px( seg->size ), thick, base, high, step;
@@ -531,10 +532,10 @@ static void pix_seg( void *ctx, const LSEG *seg )
 }
 
 /* the part of a line that is selected, turned to its opposite colours */
-static void pix_selection( EDITOR *ed, u32 pi, u32 li, const LINFO *info, const PIXCTX *pc )
+static void pix_selection( EDITOR *ed, unsigned int pi, unsigned int li, const LINFO *info, const PIXCTX *pc )
 {
     WPOS from, to, start, end;
-    s32 x0, x1, y, height;
+    int x0, x1, y, height;
 
     ed_sel( ed, &from, &to );
     start.para = end.para = pi;
@@ -569,12 +570,12 @@ static void pix_selection( EDITOR *ed, u32 pi, u32 li, const LINFO *info, const 
 
 /* the lines a paragraph has above, below and beside it: from its first
    line's top to its last line's foot, between its indents */
-static void para_borders( EDITOR *ed, u32 pi )
+static void para_borders( EDITOR *ed, unsigned int pi )
 {
     const PAP *pap = &ed->story->para[pi]->pap;
     LINFO first, last;
-    s32 col_x, col_w;
-    u32 lines = lay_lines( ed->lay, pi );
+    int col_x, col_w;
+    unsigned int lines = lay_lines( ed->lay, pi );
     int left, right, top, bottom;
 
     if ( !(pap->flags & (PF_BORDER_TOP | PF_BORDER_BOT | PF_BORDER_LEFT | PF_BORDER_RIGHT)) || lines == 0 ||
@@ -608,8 +609,8 @@ static void page_paint( int pane, int x0, int y0, int x1, int y1 )
     EDITOR *ed;
     PIXCTX pc;
     LINFO info;
-    s32 edges[MAX_CELLS + 1], top, height, block_top, block_h, clip_top, clip_bottom, rule_top = -1;
-    u32 pi, li, lines, page = 0, pages;
+    int edges[MAX_CELLS + 1], top, height, block_top, block_h, clip_top, clip_bottom, rule_top = -1;
+    unsigned int pi, li, lines, page = 0, pages;
     int count, index, xpix, ypix, selected;
 
     (void)pane;
@@ -677,7 +678,7 @@ static void page_paint( int pane, int x0, int y0, int x1, int y1 )
 /* what must be painted again, from what has changed since last time */
 static void page_damage( EDITOR *ed )
 {
-    s32 top, height, block_top, block_h, y0, y1, x, y, high;
+    int top, height, block_top, block_h, y0, y1, x, y, high;
     int whole = 0;
 
     lay_para_box( ed->lay, ed->caret.para, &top, &height, &block_top, &block_h );
@@ -775,14 +776,14 @@ static int pdf_ready( void )
 
 static int pdf_zoom_now( PDFDOCVIEW *pdf )
 {
-    s32 width, height;
+    int32_t width, height;
     int zoom = pdf->zoom;
 
     if ( zoom == 0 ) {
         /* as wide as the window */
         zoom = 100;
         if ( pdfview_page_size( pdf->page, &width, &height ) == PV_OK && width > 0x10000 ) {
-            zoom = (int)((u32)(page_w - 20) * 75 / (u32)(width >> 16));
+            zoom = (int)((uint32_t)(page_w - 20) * 75 / (uint32_t)(width >> 16));
         }
     }
     return zoom < 10 ? 10 : zoom > 400 ? 400 : zoom;
@@ -793,7 +794,7 @@ static int pdf_zoom_now( PDFDOCVIEW *pdf )
 static int pdf_render( PDFDOCVIEW *pdf )
 {
     PVBLOCK block;
-    u8 *strip;
+    uint8_t *strip;
     int zoom = pdf_zoom_now( pdf ), width, height, rows, top, line, rc = PV_OK;
 
     if ( pdf->pix != NULL && pdf->pix_page == pdf->page && pdf->pix_zoom == zoom ) {
@@ -811,10 +812,10 @@ static int pdf_render( PDFDOCVIEW *pdf )
         return 0;
     }
     mouse_shape( MP_WAIT );
-    pdf->pix = (u8 *)try_alloc( (u32)width * (u32)height );
+    pdf->pix = (uint8_t *)try_alloc( (unsigned int)width * (unsigned int)height );
     strip = NULL;
     for ( rows = height; rows >= 16 && pdf->pix != NULL; rows /= 2 ) {
-        strip = (u8 *)try_alloc( (u32)width * (u32)rows * 3 );
+        strip = (uint8_t *)try_alloc( (unsigned int)width * (unsigned int)rows * 3 );
         if ( strip != NULL ) {
             break;
         }
@@ -831,12 +832,12 @@ static int pdf_render( PDFDOCVIEW *pdf )
         block.width = width;
         block.height = top + rows > height ? height - top : rows;
         block.bpp = 3;
-        block.stride = (u32)width * 3;
+        block.stride = (unsigned int)width * 3;
         block.org_x = 0;
         block.org_y = top;
         rc = pdfview_render( pdf->page, PV_ZOOM( 96, zoom ), 0, &block );
         for ( line = 0; line < block.height; line++ ) {
-            bgr_to_pixels( strip + (u32)line * block.stride, pdf->pix + (u32)(top + line) * (u32)width, width, 0,
+            bgr_to_pixels( strip + (unsigned int)line * block.stride, pdf->pix + (unsigned int)(top + line) * (unsigned int)width, width, 0,
                            top + line );
         }
     }
@@ -923,7 +924,7 @@ static void pdf_draw( void )
             }
         }
         if ( seen.doc != cur_doc || seen.scroll_x != pdf->scroll_x || seen.scroll_y != pdf->scroll_y ||
-             seen.zoom != pdf->pix_zoom || seen.serial != (u32)pdf->pix_page || seen.w != page_w ||
+             seen.zoom != pdf->pix_zoom || seen.serial != (unsigned int)pdf->pix_page || seen.w != page_w ||
              seen.h != page_h || seen.pix != pdf->pix ) {
             pane_damage_all( PANE_PAGE );
         }
@@ -933,7 +934,7 @@ static void pdf_draw( void )
         seen.scroll_x = pdf->scroll_x;
         seen.scroll_y = pdf->scroll_y;
         seen.zoom = pdf->pix_zoom;
-        seen.serial = (u32)pdf->pix_page;
+        seen.serial = (unsigned int)pdf->pix_page;
         seen.w = page_w;
         seen.h = page_h;
         sbar_draw( plan.doc_top, plan.doc_top + plan.doc_rows - 1, plan.doc_cols, (int)pdf->scroll_y / CELL_H,
@@ -1050,7 +1051,7 @@ void view_pdf_key( int key )
 void view_draw( void )
 {
     EDITOR *ed;
-    s32 x, y, height, unit;
+    int x, y, height, unit;
     int cx, cy;
     static int defined;
 
@@ -1068,13 +1069,13 @@ void view_draw( void )
     ed = ED;
     ed_set_device( ed, !gfx_on );
     if ( !gfx_on ) {
-        ed_set_view( ed, (s32)(plan.doc_cols - SEL_BAR) * GRID_W, (s32)plan.doc_rows * GRID_H );
+        ed_set_view( ed, (int)(plan.doc_cols - SEL_BAR) * GRID_W, (int)plan.doc_rows * GRID_H );
         lay_show_hidden( ed->lay, set.show_marks );
         ed_update( ed );
         text_draw( ed );
         unit = GRID_H;
     } else {
-        scale = (s32)((u32)(set.zoom < 25 ? 25 : set.zoom > 400 ? 400 : set.zoom) * 65536UL / 1500UL);
+        scale = (int32_t)((uint32_t)(set.zoom < 25 ? 25 : set.zoom > 400 ? 400 : set.zoom) * 65536UL / 1500UL);
         pane_place( PANE_PAGE, plan.doc_top, 0, plan.doc_rows, plan.doc_cols );
         pane_rect( PANE_PAGE, &page_x, &page_y, &page_w, &page_h );
         pane_pointer( PANE_PAGE, MP_IBEAM );
@@ -1131,14 +1132,14 @@ int view_after_draw( void )
 /* ------------------------------------------------------------------ */
 
 /* the mouse's place as a point of the story */
-static void mouse_point( EDITOR *ed, s32 *x, s32 *y )
+static void mouse_point( EDITOR *ed, int *x, int *y )
 {
     if ( gfx_on ) {
         *x = ed->scroll_x + px_twips( mouse.x - page_x - PAD_X );
         *y = ed->scroll_y + px_twips( mouse.y - page_y );
     } else {
-        *x = ed->scroll_x + (s32)(mouse.col - SEL_BAR) * GRID_W + GRID_W / 2;
-        *y = ed->scroll_y + (s32)(mouse.row - plan.doc_top) * GRID_H + GRID_H / 2;
+        *x = ed->scroll_x + (int)(mouse.col - SEL_BAR) * GRID_W + GRID_W / 2;
+        *y = ed->scroll_y + (int)(mouse.row - plan.doc_top) * GRID_H + GRID_H / 2;
     }
     if ( *x < 0 ) {
         *x = 0;
@@ -1161,7 +1162,7 @@ static void bar_mouse( void )
     EDITOR *ed = ED;
     PDFDOCVIEW *pdf = PDFV;
     int top = plan.doc_top, bottom = plan.doc_top + plan.doc_rows - 1, part, first, shown, total, key, wait = 40;
-    s32 unit = gfx_on ? 240 : GRID_H;
+    int unit = gfx_on ? 240 : GRID_H;
 
     for ( ;; ) {
         if ( ed != NULL ) {
@@ -1189,9 +1190,9 @@ static void bar_mouse( void )
             first = 0;
         }
         if ( ed != NULL ) {
-            ed_scroll_to( ed, (s32)first * unit );
+            ed_scroll_to( ed, (int)first * unit );
         } else if ( gfx_on ) {
-            pdf->scroll_y = (s32)first * CELL_H;
+            pdf->scroll_y = (int)first * CELL_H;
         } else {
             pdf->top = first;
         }
@@ -1234,7 +1235,7 @@ void view_mouse( void )
         { "&Font...", "", CMD_FONT, "" }, { "P&aragraph...", "", CMD_PARAGRAPH, "" }
     };
     EDITOR *ed = ED;
-    s32 x, y;
+    int x, y;
     int key, cmd;
 
     if ( mouse.kind == ME_WHEEL ) {

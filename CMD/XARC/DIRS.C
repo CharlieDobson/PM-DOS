@@ -37,22 +37,22 @@
 
 static void find_fill( FIND *fd )
 {
-    u32 stamp;
+    uint32_t stamp;
 
     if ( fd->lfn ) {
         strncpy( fd->name, (const char *)fd->rec + 0x2C, sizeof( fd->name ) - 1 );
-        fd->attr = (u8)RD32( fd->rec );
+        fd->attr = (uint8_t)RD32( fd->rec );
         stamp = RD32( fd->rec + 0x14 );
         fd->size = RD32( fd->rec + 0x20 );
     } else {
         strncpy( fd->name, (const char *)fd->rec + 0x1E, 13 );
         fd->attr = fd->rec[0x15];
-        stamp = ((u32)RD16( fd->rec + 0x18 ) << 16) | RD16( fd->rec + 0x16 );
+        stamp = ((uint32_t)RD16( fd->rec + 0x18 ) << 16) | RD16( fd->rec + 0x16 );
         fd->size = RD32( fd->rec + 0x1A );
     }
     fd->name[sizeof( fd->name ) - 1] = 0;
-    fd->date = (u16)(stamp >> 16);
-    fd->time = (u16)(stamp & 0xFFFF);
+    fd->date = (uint16_t)(stamp >> 16);
+    fd->time = (uint16_t)(stamp & 0xFFFF);
 }
 
 static int classic_find( FIND *fd, const char *pattern, int attrs )
@@ -60,12 +60,12 @@ static int classic_find( FIND *fd, const char *pattern, int attrs )
     REGS regs;
 
     xa_clear( &regs );
-    regs.edx = (u32)fd->rec;
+    regs.edx = (uint32_t)fd->rec;
     xa_dos( &regs, 0x1A00 );
     xa_clear( &regs );
     if ( pattern ) {
-        regs.edx = (u32)pattern;
-        regs.ecx = (u32)attrs;
+        regs.edx = (uint32_t)pattern;
+        regs.ecx = (uint32_t)attrs;
         return xa_dos( &regs, 0x4E00 );
     }
     return xa_dos( &regs, 0x4F00 );
@@ -86,16 +86,16 @@ void find_close( FIND *fd )
 int find_first( const char *pattern, int attrs, FIND *fd )
 {
     REGS regs;
-    u32 before = crit_hits;
+    uint32_t before = crit_hits;
     int rc = -1;
 
     fd->lfn = 0;
     fd->handle = 0xFFFFFFFFUL;
     if ( xa_lfn ) {
         xa_clear( &regs );
-        regs.edx = (u32)pattern;
-        regs.edi = (u32)fd->rec;
-        regs.ecx = (u32)attrs;
+        regs.edx = (uint32_t)pattern;
+        regs.edi = (uint32_t)fd->rec;
+        regs.ecx = (uint32_t)attrs;
         regs.esi = 1;
         regs.flags = 1;
         rc = xa_dos( &regs, 0x714E );
@@ -124,13 +124,13 @@ int find_first( const char *pattern, int attrs, FIND *fd )
 int find_next( FIND *fd )
 {
     REGS regs;
-    u32 before = crit_hits;
+    uint32_t before = crit_hits;
     int rc;
 
     if ( fd->lfn ) {
         xa_clear( &regs );
         regs.ebx = fd->handle;
-        regs.edi = (u32)fd->rec;
+        regs.edi = (uint32_t)fd->rec;
         regs.esi = 1;
         rc = xa_dos( &regs, 0x714F );
     } else {
@@ -151,7 +151,7 @@ int drive_exists( int drive )
     int rc;
 
     xa_clear( &regs );
-    regs.ebx = (u32)drive;
+    regs.ebx = (uint32_t)drive;
     rc = xa_dos( &regs, 0x4408 );
     return rc != 0x0F;
 }
@@ -193,7 +193,7 @@ void dirscan_free( DIRSCAN *ds )
 /* room for one more row and its name; 0 when there is none */
 static DSENT *add_entry( DIRSCAN *ds, const char *name, int kind )
 {
-    u32 len = (u32)strlen( name ) + 1;
+    unsigned len = (unsigned)strlen( name ) + 1;
     DSENT *ent;
 
     if ( ds->count >= DS_MAX_ENTRIES ) {
@@ -210,7 +210,7 @@ static DSENT *add_entry( DIRSCAN *ds, const char *name, int kind )
         ds->cap = cap;
     }
     if ( ds->pool_used + len > ds->pool_cap ) {
-        u32 cap = ds->pool_cap ? ds->pool_cap * 2 : 8192;
+        unsigned cap = ds->pool_cap ? ds->pool_cap * 2 : 8192;
         char *grown;
 
         while ( cap < ds->pool_used + len ) {
@@ -258,7 +258,7 @@ static int glob_match( const char *pat, const char *name )
         if ( !*name ) {
             return 0;
         }
-        if ( *pat != '?' && toupper( (u8)*pat ) != toupper( (u8)*name ) ) {
+        if ( *pat != '?' && toupper( (unsigned char)*pat ) != toupper( (unsigned char)*name ) ) {
             return 0;
         }
         pat++;
@@ -450,7 +450,7 @@ void dirscan_disp( const DIRSCAN *ds, int row, char *buf, int buflen )
     }
 }
 
-u32 dirscan_size( const DIRSCAN *ds, int row )
+uint32_t dirscan_size( const DIRSCAN *ds, int row )
 {
     return row >= 0 && row < ds->count ? ds->ents[row].size : 0;
 }
@@ -470,7 +470,7 @@ int dirscan_is_up( const DIRSCAN *ds, int row )
 /* "YYYY-MM-DD HH:MM", as ArcEntryDate writes it; files only */
 void dirscan_date( const DIRSCAN *ds, int row, char *buf, int buflen )
 {
-    unsigned date, clock;
+    uint16_t date, clock;
 
     if ( buflen <= 0 ) {
         return;
@@ -491,7 +491,7 @@ void dirscan_date( const DIRSCAN *ds, int row, char *buf, int buflen )
 void dirscan_attr( const DIRSCAN *ds, int row, char *buf, int buflen )
 {
     int used = 0;
-    u8 attr;
+    uint8_t attr;
 
     if ( buflen <= 0 ) {
         return;
@@ -568,7 +568,7 @@ int dirscan_enter( DIRSCAN *ds, int row )
         break;
     case DS_DRIVE:
         was_drive = _getdrive();
-        _chdrive( toupper( (u8)name[0] ) - 'A' + 1 );
+        _chdrive( toupper( (unsigned char)name[0] ) - 'A' + 1 );
         if ( !getcwd( probe, sizeof( probe ) ) ) {
             _chdrive( was_drive );
             break;
@@ -772,7 +772,7 @@ static int dirtree_scan( DIRTREE *dt, int row )
             }
             strncpy( kid[kids].name, fd.name, sizeof( kid[kids].name ) - 1 );
             kid[kids].name[sizeof( kid[kids].name ) - 1] = 0;
-            kid[kids].depth = (u8)(dt->nodes[row].depth + 1);
+            kid[kids].depth = (uint8_t)(dt->nodes[row].depth + 1);
             kid[kids].flags = 0;
             kids++;
         } while ( find_next( &fd ) == 0 );
@@ -819,7 +819,7 @@ int dirtree_open( DIRTREE *dt, int row )
     if ( got > 0 ) {
         dt->nodes[row].flags |= DT_OPEN;
     } else if ( got == 0 && !(dt->nodes[row].flags & DT_DRIVE) ) {
-        dt->nodes[row].flags &= (u8)~DT_KIDS;
+        dt->nodes[row].flags &= (uint8_t)~DT_KIDS;
     }
     return dt->count;
 }
@@ -839,7 +839,7 @@ int dirtree_close( DIRTREE *dt, int row )
         memmove( dt->nodes + row + 1, dt->nodes + end, (size_t)(dt->count - end) * sizeof( DTNODE ) );
     }
     dt->count -= gone;
-    dt->nodes[row].flags &= (u8)~DT_OPEN;
+    dt->nodes[row].flags &= (uint8_t)~DT_OPEN;
     return dt->count;
 }
 
@@ -877,7 +877,7 @@ int dirtree_reveal( DIRTREE *dt, const char *path )
     }
     for ( i = 0; i < dt->count; i++ ) {
         if ( (dt->nodes[i].flags & DT_DRIVE)
-             && toupper( (u8)dt->nodes[i].name[0] ) == toupper( (u8)full[0] ) ) {
+             && toupper( (unsigned char)dt->nodes[i].name[0] ) == toupper( (unsigned char)full[0] ) ) {
             row = i;
             break;
         }

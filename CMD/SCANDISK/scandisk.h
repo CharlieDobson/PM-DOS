@@ -94,24 +94,24 @@ enum {
 };
 
 typedef struct {
-    int  mode;                  /* MODE_* */
-    int  nosave;                /* /NOSAVE */
-    int  surface;               /* /SURFACE */
-    int  nosummary;             /* /NOSUMMARY */
-    int  graphics;              /* /G: the screens in a graphics mode */
+    int          mode;               /* MODE_* */
+    int          nosave;             /* /NOSAVE */
+    int          surface;            /* /SURFACE */
+    int          nosummary;          /* /NOSUMMARY */
+    int          graphics;           /* /G: the screens in a graphics mode */
     /* [ENVIRONMENT] */
-    int  mouse;
-    int  timeout;               /* ScanTimeOut */
-    u32  passes;                /* NumPasses */
-    int  labelcheck;
-    int  lfncheck;
+    int          mouse;
+    int          timeout;            /* ScanTimeOut */
+    unsigned int passes;             /* NumPasses */
+    int          labelcheck;
+    int          lfncheck;
     /* [CUSTOM] */
-    int  drive_summary;         /* TRI_* */
-    int  all_summary;
-    int  cust_surface;          /* SURF_* */
-    int  save_log;              /* LOG_* */
-    int  undo_prompt;
-    int  action[CAT_COUNT];     /* IA_* */
+    int          drive_summary;      /* TRI_* */
+    int          all_summary;
+    int          cust_surface;       /* SURF_* */
+    int          save_log;           /* LOG_* */
+    int          undo_prompt;
+    int          action[CAT_COUNT];  /* IA_* */
 } OPTIONS;
 
 extern OPTIONS opt;
@@ -123,37 +123,37 @@ int   ini_load( void );         /* 1 = a SCANDISK.INI was read */
 /* a volume                                                            */
 /* ------------------------------------------------------------------ */
 typedef struct {
-    int  drive;                 /* 0 = A:                                  */
-    int  fattype;               /* 12, 16 or 32                            */
-    u32  bps;                   /* bytes per sector                        */
-    u32  spc;                   /* sectors per cluster                     */
-    u32  bpc;                   /* bytes per cluster                       */
-    u32  rsvd;                  /* reserved sectors                        */
-    u32  nfats;
-    u32  fatsz;                 /* sectors per FAT                         */
-    u32  root_ents;             /* FAT12/16 root directory entries         */
-    u32  root_sec;              /* FAT12/16 first root directory sector    */
-    u32  root_secs;             /* FAT12/16 root directory sectors         */
-    u32  root_clus;             /* FAT32 first root directory cluster      */
-    u32  data_sec;              /* first sector of cluster 2               */
-    u32  tot_sec;
-    u32  nclus;                 /* number of data clusters                 */
-    u32  maxclus;               /* highest valid cluster number (nclus+1)  */
-    u32  eoc_min;               /* entries >= this end a chain             */
-    u32  bad_val;               /* bad cluster marker                      */
-    u32  eoc_val;               /* value written to end a chain            */
-    int  mirror;                /* FAT32: all FATs kept in step            */
-    u32  active_fat;            /* FAT32: the FAT used when they are not   */
-    u32  fsinfo_sec;            /* FAT32: FSInfo sector, 0 = none          */
-    u32  backup_sec;            /* FAT32: the backup boot sector, 0 = none */
-    int  has_serial;
-    u32  serial;
-    u8   media;                 /* the BPB's media descriptor              */
-    int  boot_ok;               /* the boot sector itself gave the BPB     */
-    char label[12];             /* the BPB's label, or ""                  */
-    u8  *fat;                   /* the FAT, whole (FAT12/16; NULL on FAT32) */
-    u32  fatbytes;              /* the part of a FAT that describes clusters */
-    u8  *map;                   /* one flag byte per cluster               */
+    int      drive;             /* 0 = A:                                  */
+    int      fattype;           /* 12, 16 or 32                            */
+    uint32_t bps;               /* bytes per sector                        */
+    uint32_t spc;               /* sectors per cluster                     */
+    uint32_t bpc;               /* bytes per cluster                       */
+    uint32_t rsvd;              /* reserved sectors                        */
+    uint32_t nfats;
+    uint32_t fatsz;             /* sectors per FAT                         */
+    uint32_t root_ents;         /* FAT12/16 root directory entries         */
+    uint32_t root_sec;          /* FAT12/16 first root directory sector    */
+    uint32_t root_secs;         /* FAT12/16 root directory sectors         */
+    uint32_t root_clus;         /* FAT32 first root directory cluster      */
+    uint32_t data_sec;          /* first sector of cluster 2               */
+    uint32_t tot_sec;
+    uint32_t nclus;             /* number of data clusters                 */
+    uint32_t maxclus;           /* highest valid cluster number (nclus+1)  */
+    uint32_t eoc_min;           /* entries >= this end a chain             */
+    uint32_t bad_val;           /* bad cluster marker                      */
+    uint32_t eoc_val;           /* value written to end a chain            */
+    int      mirror;            /* FAT32: all FATs kept in step            */
+    uint32_t active_fat;        /* FAT32: the FAT used when they are not   */
+    uint32_t fsinfo_sec;        /* FAT32: FSInfo sector, 0 = none          */
+    uint32_t backup_sec;        /* FAT32: the backup boot sector, 0 = none */
+    int      has_serial;
+    uint32_t serial;
+    uint8_t  media;             /* the BPB's media descriptor              */
+    int      boot_ok;           /* the boot sector itself gave the BPB     */
+    char     label[12];         /* the BPB's label, or ""                  */
+    uint8_t *fat;               /* the FAT, whole (FAT12/16; NULL on FAT32) */
+    uint32_t fatbytes;          /* the part of a FAT that describes clusters */
+    uint8_t *map;               /* one flag byte per cluster               */
 } VOLUME;
 
 extern VOLUME vol;
@@ -165,69 +165,69 @@ extern VOLUME vol;
    what was there */
 #define WR_NOUNDO       0x100
 
-int   vol_open( int drive );            /* 0 = a FAT volume is there */
-void  vol_close( void );
-void  bpb_from_dpb( const u8 *dpb, u8 *sector );    /* for SYS_D32.C */
-u32   clus_lba( u32 clus );
-int   read_secs( u32 lba, u32 count, void *buf );   /* 0 = read */
-int   write_secs( u32 lba, u32 count, const void *buf, int kind );
-int   fat_load( u32 copy );             /* the working FAT, from that copy */
-u32   fat_get( u32 clus );
-void  fat_set( u32 clus, u32 val );
-int   fat_commit( void );               /* what changed, to every copy kept */
-int   fat_rewrite( void );              /* the whole FAT, to every copy kept */
-void  fat_forget( void );               /* changes not yet written are dropped */
-u32   fat_free_after( u32 clus );       /* a cluster nothing uses, 0 = none */
-u32   fat_count_free( void );
-void  fsinfo_update( u32 free_clusters );
+int      vol_open( int drive );            /* 0 = a FAT volume is there */
+void     vol_close( void );
+void     bpb_from_dpb( const uint8_t *dpb, uint8_t *sector );   /* for SYS_D32.C */
+uint32_t clus_lba( uint32_t clus );
+int      read_secs( uint32_t lba, uint32_t count, void *buf );  /* 0 = read */
+int      write_secs( uint32_t lba, uint32_t count, const void *buf, int kind );
+int      fat_load( uint32_t copy );        /* the working FAT, from that copy */
+uint32_t fat_get( uint32_t clus );
+void     fat_set( uint32_t clus, uint32_t val );
+int      fat_commit( void );               /* what changed, to every copy kept */
+int      fat_rewrite( void );              /* the whole FAT, to every copy kept */
+void     fat_forget( void );               /* changes not yet written are dropped */
+uint32_t fat_free_after( uint32_t clus );  /* a cluster nothing uses, 0 = none */
+uint32_t fat_count_free( void );
+void     fsinfo_update( uint32_t free_clusters );
 
 /* a FAT copy looked at on its own, a piece at a time */
 typedef struct {
-    int  unreadable;            /* a sector of it would not read */
-    u32  invalid;               /* entries that point nowhere */
+    int          unreadable;    /* a sector of it would not read */
+    unsigned int invalid;       /* entries that point nowhere */
 } FATSTAT;
-int   fat_compare( FATSTAT stat[], u32 *differing );    /* 0 = it was done */
+int   fat_compare( FATSTAT stat[], uint32_t *differing ); /* 0 = it was done */
 
 /* A directory read whole into memory.  A FAT12/16 root has fixed_root
    set; everything else is a list of clusters. */
 typedef struct {
-    int  fixed_root;
-    U32LIST clus;
-    u32  nent;                  /* 32-byte entries in data */
-    u8  *data;
+    int          fixed_root;
+    U32LIST      clus;
+    unsigned int nent;          /* 32-byte entries in data */
+    uint8_t     *data;
 } DIRBUF;
 
-int   dir_load_root( DIRBUF *dir );
-int   dir_load_list( DIRBUF *dir, const U32LIST *clus );
-int   dir_load_chain( DIRBUF *dir, u32 first );
-int   dir_extend( DIRBUF *dir );                /* FAT32: one more cluster */
-void  dir_free( DIRBUF *dir );
-int   dir_write_entry( DIRBUF *dir, u32 idx );  /* the sector it is in */
-u32   entry_first( const u8 *ent );
-void  entry_set_first( u8 *ent, u32 clus );
-void  entry_stamp( u8 *ent );
+int      dir_load_root( DIRBUF *dir );
+int      dir_load_list( DIRBUF *dir, const U32LIST *clus );
+int      dir_load_chain( DIRBUF *dir, uint32_t first );
+int      dir_extend( DIRBUF *dir );                         /* FAT32: one more cluster */
+void     dir_free( DIRBUF *dir );
+int      dir_write_entry( DIRBUF *dir, unsigned int idx );  /* the sector it is in */
+uint32_t entry_first( const uint8_t *ent );
+void     entry_set_first( uint8_t *ent, uint32_t clus );
+void     entry_stamp( uint8_t *ent );
 
 /* LFN.C */
 #define LFN_MAX 255
 typedef struct {
-    int  active;                /* collecting a run of LFN entries    */
-    int  ok;                    /* run is consistent so far           */
-    u32  start;                 /* index of the first entry of run    */
-    int  expect;                /* next sequence number expected      */
-    u8   sum;                   /* checksum every entry must carry    */
-    u16  name[LFN_MAX + 14];
-    int  len;                   /* characters (from first entry)      */
+    int          active;        /* collecting a run of LFN entries    */
+    int          ok;            /* run is consistent so far           */
+    unsigned int start;         /* index of the first entry of run    */
+    int          expect;        /* next sequence number expected      */
+    uint8_t      sum;           /* checksum every entry must carry    */
+    uint16_t     name[LFN_MAX + 14];
+    int          len;           /* characters (from first entry)      */
 } LFNRUN;
 
-u8    lfn_checksum( const u8 *sfn );
-void  lfn_begin( LFNRUN *run );
-int   lfn_add( LFNRUN *run, const u8 *ent, u32 idx ); /* 0 = previous run broken */
-int   lfn_match( LFNRUN *run, const u8 *sfn );        /* complete & valid for sfn */
-void  lfn_oem( const LFNRUN *run, char *out );        /* LFN_MAX+1 bytes */
-void  sfn_name( const u8 *ent, char *out );           /* "NAME.EXT", 13 bytes */
-int   sfn_is_dot( const u8 *ent );                    /* 1 = ".", 2 = ".." */
-int   wild_match( const char *pat, const char *name );
-int   fcb_match( const char *pat, const u8 *sfn );
+uint8_t lfn_checksum( const uint8_t *sfn );
+void    lfn_begin( LFNRUN *run );
+int     lfn_add( LFNRUN *run, const uint8_t *ent, unsigned int idx ); /* 0 = previous run broken */
+int     lfn_match( LFNRUN *run, const uint8_t *sfn );                 /* complete & valid for sfn */
+void    lfn_oem( const LFNRUN *run, char *out );                      /* LFN_MAX+1 bytes */
+void    sfn_name( const uint8_t *ent, char *out );                    /* "NAME.EXT", 13 bytes */
+int     sfn_is_dot( const uint8_t *ent );                             /* 1 = ".", 2 = ".." */
+int     wild_match( const char *pat, const char *name );
+int     fcb_match( const char *pat, const uint8_t *sfn );
 
 /* ------------------------------------------------------------------ */
 /* the checks                                                          */
@@ -235,37 +235,41 @@ int   fcb_match( const char *pat, const u8 *sfn );
 enum { PH_MEDIA, PH_FAT, PH_DIRS, PH_FILESYS, PH_SURFACE, PH_COUNT };
 
 typedef struct {
-    u32 hid_cnt, hid_clus;
-    u32 dir_cnt, dir_clus;
-    u32 fil_cnt, fil_clus;
-    u32 root_clus;              /* FAT32 root directory clusters      */
-    u32 bad_clus;               /* marked bad in the FAT              */
-    u32 used_clus;              /* the FAT's own count of what is in use */
-    u32 orph_cnt, orph_clus;    /* lost chains made into files         */
-    u32 lost_kept;              /* lost clusters left as they were     */
-    u32 found, fixed;           /* problems, and the ones put right    */
-    int ftrunc;                 /* part of the tree could not be read  */
-    int logical_done;           /* the four checks ran to their end    */
-    int surface;                /* 0 not run, 1 finished, 2 left early */
-    u32 surf_examined, surf_bad;
+    unsigned int hid_cnt;
+    uint32_t     hid_clus;
+    unsigned int dir_cnt;
+    uint32_t     dir_clus;
+    unsigned int fil_cnt;
+    uint32_t     fil_clus;
+    uint32_t     root_clus;        /* FAT32 root directory clusters   */
+    uint32_t     bad_clus;         /* marked bad in the FAT           */
+    uint32_t     used_clus;        /* the FAT's own count of what is in use */
+    unsigned int orph_cnt;         /* lost chains made into files      */
+    uint32_t     orph_clus;
+    uint32_t     lost_kept;        /* lost clusters left as they were  */
+    unsigned int found, fixed;     /* problems, and the ones put right */
+    int          ftrunc;           /* part of the tree could not be read */
+    int          logical_done;     /* the four checks ran to their end */
+    int          surface;          /* 0 not run, 1 finished, 2 left early */
+    uint32_t     surf_examined, surf_bad;
 } STATS;
 
 extern STATS st;
 
 /* a file or directory whose chain runs into another's */
 typedef struct {
-    u32   dir_first;            /* the directory the entry is in: its first
+    uint32_t     dir_first;     /* the directory the entry is in: its first
                                    cluster, 0 for the root */
-    u32   idx;                  /* the entry */
-    u32   clus;                 /* the first cluster shared */
-    u32   prev;                 /* the one before it in this chain, 0 = the
+    unsigned int idx;           /* the entry */
+    uint32_t     clus;          /* the first cluster shared */
+    uint32_t     prev;          /* the one before it in this chain, 0 = the
                                    entry itself points at it */
-    int   is_dir;
-    char *path;
+    int          is_dir;
+    char        *path;
 } CROSSREC;
 
-extern CROSSREC *cross_list;
-extern u32       cross_count;
+extern CROSSREC    *cross_list;
+extern unsigned int cross_count;
 
 void  check_media( void );
 void  check_fats( void );
@@ -275,20 +279,20 @@ void  check_reset( void );              /* between one drive and the next */
 
 /* who has a cluster: found by walking the tree again */
 typedef struct {
-    int   found;
-    u32   dir_first;            /* as CROSSREC's */
-    u32   idx;
-    u32   prev;                 /* 0 = the first cluster of the chain */
-    int   is_dir;
-    int   is_root;              /* the cluster is the FAT32 root's own */
-    char *path;                 /* xfree it */
+    int          found;
+    uint32_t     dir_first;     /* as CROSSREC's */
+    unsigned int idx;
+    uint32_t     prev;          /* 0 = the first cluster of the chain */
+    int          is_dir;
+    int          is_root;       /* the cluster is the FAT32 root's own */
+    char        *path;          /* xfree it */
 } OWNER;
 
-void  owner_find( u32 clus, OWNER *own );
-int   dir_load_first( DIRBUF *dir, u32 first );     /* 0 = the root */
+void  owner_find( uint32_t clus, OWNER *own );
+int   dir_load_first( DIRBUF *dir, uint32_t first ); /* 0 = the root */
 /* the entry's first cluster, the ".." of its children when it is a
    directory: everything that named "from" names "to" */
-int   owner_repoint( const OWNER *own, u32 from, u32 to );
+int   owner_repoint( const OWNER *own, uint32_t from, uint32_t to );
 
 void  surface_scan( void );
 
@@ -353,7 +357,7 @@ int   log_save( int append, char *where );      /* 0 = saved; where it went */
 int   undo_create( int drive );         /* SCANDISK.UND in its root; 0 = made */
 int   undo_active( void );
 /* "count" sectors at "lba" are about to become "after" */
-int   undo_note( u32 lba, u32 count, const void *after );
+int   undo_note( uint32_t lba, uint32_t count, const void *after );
 void  undo_close( void );
 int   undo_restore( int drive );        /* /UNDO: an exit code */
 void  undo_want( void );                /* before the first repair of a drive:
@@ -374,7 +378,7 @@ void  fe_drive_begin( void );
 void  fe_phase( int phase );            /* PH_COUNT: the checks are over */
 /* how far a check has got - and the place a check is left from: total
    0 is "nothing new, but is anyone asking to stop?" */
-void  fe_progress( u32 done, u32 total );
+void  fe_progress( unsigned int done, unsigned int total );
 int   fe_problem( int kind, const char *text );     /* ACT_*; Exit does not return */
 /* news of a problem nobody is being asked about: -1 = it was found,
    0 = it is being left, 1 = it was repaired, 2 = the repair failed */
@@ -386,15 +390,15 @@ int   fe_confirm( const char *title, const char *text );    /* 1 = yes */
 void  fe_busy( const char *text );      /* a job that is not a check: what it
                                            is, and fe_progress() says how far */
 void  fe_surface_begin( void );
-void  fe_surface_at( u32 clus, u32 count, int bad );
+void  fe_surface_at( uint32_t clus, uint32_t count, int bad );
 void  fe_drive_end( int more );         /* the summary; more = work follows */
-void  fe_all_end( int drives, u32 found, u32 fixed );
+void  fe_all_end( int drives, unsigned int found, unsigned int fixed );
 
 /* the summary of a drive, as lines: the log's, and the screen's */
 void  summary_text( TEXT *text );
 const char *drive_verdict( void );
-char  *fmt_date( u16 dos_date, char *buf );
-char  *fmt_time( u16 dos_time, char *buf );
+char  *fmt_date( uint16_t dos_date, char *buf );
+char  *fmt_time( uint16_t dos_time, char *buf );
 
 extern COUNTRY country;
 extern const char help_text[];

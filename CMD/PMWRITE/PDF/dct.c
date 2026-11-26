@@ -18,40 +18,40 @@
 #define FAST_BITS   9
 
 typedef struct {
-    u8  fast[1 << FAST_BITS];
-    u16 code[256];
-    u8  values[256];
-    u8  size[257];
-    u32 maxcode[18];
-    s32 delta[17];
+    uint8_t  fast[1 << FAST_BITS];
+    uint16_t code[256];
+    uint8_t  values[256];
+    uint8_t  size[257];
+    uint32_t maxcode[18];
+    int32_t  delta[17];
 } JHUFF;
 
 typedef struct {
-    int  id, hs, vs, tq, td, ta;
-    int  pred;
-    int  plane_w;
-    int  hshift, vshift;            /* how much coarser than the finest */
-    u8  *plane;
+    int      id, hs, vs, tq, td, ta;
+    int      pred;
+    int      plane_w;
+    int      hshift, vshift;        /* how much coarser than the finest */
+    uint8_t *plane;
 } JCOMP;
 
 typedef struct {
-    JHUFF dc[4], ac[4];
-    u16   quant[4][64];
-    JCOMP comp[4];
-    int   ncomp, width, height, hmax, vmax;
-    int   mcu_w, mcu_h, mcus_x, mcus_y;
-    int   restart, todo;
-    u32   code_buf;
-    int   code_bits, marker, nomore;
-    int   mcu_row, line, lines_have, out_y;
-    int   transform;                /* -1: by the number of components */
-    int   adobe;                    /* an Adobe marker was there, and its transform */
-    u8   *row;
+    JHUFF    dc[4], ac[4];
+    uint16_t quant[4][64];
+    JCOMP    comp[4];
+    int      ncomp, width, height, hmax, vmax;
+    int      mcu_w, mcu_h, mcus_x, mcus_y;
+    int      restart, todo;
+    uint32_t code_buf;
+    int      code_bits, marker, nomore;
+    int      mcu_row, line, lines_have, out_y;
+    int      transform;             /* -1: by the number of components */
+    int      adobe;                 /* an Adobe marker was there, and its transform */
+    uint8_t *row;
 } JPEG;
 
 int dct_width, dct_height, dct_comps;
 
-static const u8 dezigzag[64 + 15] = {
+static const uint8_t dezigzag[64 + 15] = {
     0, 1, 8, 16, 9, 2, 3, 10, 17, 24, 32, 25, 18, 11, 4, 5, 12, 19, 26, 33, 40, 48, 41, 34, 27,
     20, 13, 6, 7, 14, 21, 28, 35, 42, 49, 56, 57, 50, 43, 36, 29, 22, 15, 23, 30, 37, 44, 51,
     58, 59, 52, 45, 38, 31, 39, 46, 53, 60, 61, 54, 47, 55, 62, 63,
@@ -77,7 +77,7 @@ static int get16( IN *src )
 
 static int huff_build( JHUFF *huff, const int *counts )
 {
-    u32 code = 0;
+    uint32_t code = 0;
     int index, len, total = 0, size, span;
 
     for ( index = 0; index < 16; index++ ) {
@@ -85,16 +85,16 @@ static int huff_build( JHUFF *huff, const int *counts )
             if ( total >= 256 ) {
                 return 0;
             }
-            huff->size[total++] = (u8)(index + 1);
+            huff->size[total++] = (uint8_t)(index + 1);
         }
     }
     huff->size[total] = 0;
     index = 0;
     for ( len = 1; len <= 16; len++ ) {
-        huff->delta[len] = (s32)index - (s32)code;
+        huff->delta[len] = (int32_t)index - (int32_t)code;
         if ( huff->size[index] == len ) {
             while ( huff->size[index] == len ) {
-                huff->code[index++] = (u16)code++;
+                huff->code[index++] = (uint16_t)code++;
             }
             if ( code - 1 >= (1UL << len) ) {
                 return 0;
@@ -109,7 +109,7 @@ static int huff_build( JHUFF *huff, const int *counts )
         size = huff->size[index];
         if ( size <= FAST_BITS ) {
             span = 1 << (FAST_BITS - size);
-            mem_set( huff->fast + ((u32)huff->code[index] << (FAST_BITS - size)), index, (u32)span );
+            mem_set( huff->fast + ((uint32_t)huff->code[index] << (FAST_BITS - size)), index, (uint32_t)span );
         }
     }
     return 1;
@@ -135,14 +135,14 @@ static void grow( JPEG *jp, IN *src )
         if ( src->at_eof ) {
             jp->nomore = 1;
         }
-        jp->code_buf |= (u32)byte << (24 - jp->code_bits);
+        jp->code_buf |= (uint32_t)byte << (24 - jp->code_bits);
         jp->code_bits += 8;
     } while ( jp->code_bits <= 24 );
 }
 
 static int huff_decode( JPEG *jp, IN *src, const JHUFF *huff )
 {
-    u32 top;
+    uint32_t top;
     int look, len;
 
     if ( jp->code_bits < 16 ) {
@@ -165,7 +165,7 @@ static int huff_decode( JPEG *jp, IN *src, const JHUFF *huff )
         jp->code_bits = 0;
         return -1;
     }
-    look = (int)((jp->code_buf >> (32 - len)) + (u32)huff->delta[len]) & 255;
+    look = (int)((jp->code_buf >> (32 - len)) + (uint32_t)huff->delta[len]) & 255;
     jp->code_buf <<= len;
     jp->code_bits -= len;
     return huff->values[look];
@@ -192,7 +192,7 @@ static int receive( JPEG *jp, IN *src, int count )
 /* a block                                                             */
 /* ------------------------------------------------------------------ */
 
-static int clamp8( s32 val )
+static int clamp8( int32_t val )
 {
     return val < 0 ? 0 : (val > 255 ? 255 : (int)val);
 }
@@ -234,17 +234,17 @@ static int clamp8( s32 val )
     t0 += p1 + p3;
 
 /* 64 coefficients into 64 samples at "out", "stride" bytes a row */
-static void idct_block( u8 *out, int stride, const s16 *data )
+static void idct_block( uint8_t *out, int stride, const int16_t *data )
 {
-    s32 work[64], *col = work;
-    s32 t0, t1, t2, t3, p1, p2, p3, p4, p5, x0, x1, x2, x3, flat;
-    const s16 *in = data;
+    int32_t work[64], *col = work;
+    int32_t t0, t1, t2, t3, p1, p2, p3, p4, p5, x0, x1, x2, x3, flat;
+    const int16_t *in = data;
     int index;
 
     for ( index = 0; index < 8; index++, in++, col++ ) {
         if ( in[8] == 0 && in[16] == 0 && in[24] == 0 && in[32] == 0 && in[40] == 0 && in[48] == 0 &&
              in[56] == 0 ) {
-            flat = (s32)in[0] * 4;
+            flat = (int32_t)in[0] * 4;
             col[0] = col[8] = col[16] = col[24] = col[32] = col[40] = col[48] = col[56] = flat;
             continue;
         }
@@ -268,30 +268,30 @@ static void idct_block( u8 *out, int stride, const s16 *data )
         x1 += 65536L + (128L << 17);
         x2 += 65536L + (128L << 17);
         x3 += 65536L + (128L << 17);
-        out[0] = (u8)clamp8( (x0 + t3) >> 17 );
-        out[7] = (u8)clamp8( (x0 - t3) >> 17 );
-        out[1] = (u8)clamp8( (x1 + t2) >> 17 );
-        out[6] = (u8)clamp8( (x1 - t2) >> 17 );
-        out[2] = (u8)clamp8( (x2 + t1) >> 17 );
-        out[5] = (u8)clamp8( (x2 - t1) >> 17 );
-        out[3] = (u8)clamp8( (x3 + t0) >> 17 );
-        out[4] = (u8)clamp8( (x3 - t0) >> 17 );
+        out[0] = (uint8_t)clamp8( (x0 + t3) >> 17 );
+        out[7] = (uint8_t)clamp8( (x0 - t3) >> 17 );
+        out[1] = (uint8_t)clamp8( (x1 + t2) >> 17 );
+        out[6] = (uint8_t)clamp8( (x1 - t2) >> 17 );
+        out[2] = (uint8_t)clamp8( (x2 + t1) >> 17 );
+        out[5] = (uint8_t)clamp8( (x2 - t1) >> 17 );
+        out[3] = (uint8_t)clamp8( (x3 + t0) >> 17 );
+        out[4] = (uint8_t)clamp8( (x3 - t0) >> 17 );
     }
 }
 
-static int decode_block( JPEG *jp, IN *src, JCOMP *comp, s16 *data )
+static int decode_block( JPEG *jp, IN *src, JCOMP *comp, int16_t *data )
 {
     const JHUFF *ac = &jp->ac[comp->ta];
-    const u16 *quant = jp->quant[comp->tq];
+    const uint16_t *quant = jp->quant[comp->tq];
     int sym, run, size, at = 1;
 
-    mem_set( data, 0, 64 * sizeof( s16 ) );
+    mem_set( data, 0, 64 * sizeof( int16_t ) );
     sym = huff_decode( jp, src, &jp->dc[comp->td] );
     if ( sym < 0 || sym > 15 ) {
         return 0;
     }
     comp->pred += sym ? receive( jp, src, sym ) : 0;
-    data[0] = (s16)(comp->pred * quant[0]);
+    data[0] = (int16_t)(comp->pred * quant[0]);
     do {
         sym = huff_decode( jp, src, ac );
         if ( sym < 0 ) {
@@ -306,7 +306,7 @@ static int decode_block( JPEG *jp, IN *src, JCOMP *comp, s16 *data )
             at += 16;
         } else {
             at += run;
-            data[dezigzag[at]] = (s16)(receive( jp, src, size ) * quant[dezigzag[at]]);
+            data[dezigzag[at]] = (int16_t)(receive( jp, src, size ) * quant[dezigzag[at]]);
             at++;
         }
     } while ( at < 64 );
@@ -316,7 +316,7 @@ static int decode_block( JPEG *jp, IN *src, JCOMP *comp, s16 *data )
 /* one row of the image's blocks, into the components' planes */
 static void decode_band( JPEG *jp, IN *src )
 {
-    s16 data[64];
+    int16_t data[64];
     JCOMP *comp;
     int mcu, index, across, down, good = 1;
 
@@ -352,8 +352,8 @@ static void decode_band( JPEG *jp, IN *src )
                     if ( !good ) {
                         mem_set( data, 0, sizeof( data ) );
                     }
-                    idct_block( comp->plane + (u32)(down * 8) * (u32)comp->plane_w +
-                                (u32)((mcu * comp->hs + across) * 8), comp->plane_w, data );
+                    idct_block( comp->plane + (uint32_t)(down * 8) * (uint32_t)comp->plane_w +
+                                (uint32_t)((mcu * comp->hs + across) * 8), comp->plane_w, data );
                 }
             }
         }
@@ -368,9 +368,9 @@ static int dct_fill( IN *in )
 {
     JPEG *jp = IN_STATE( in, JPEG );
     JCOMP *comp;
-    u8 *out = jp->row;
-    const u8 *line;
-    s32 luma, cb, cr;
+    uint8_t *out = jp->row;
+    const uint8_t *line;
+    int32_t luma, cb, cr;
     int col, index;
 
     if ( jp->out_y >= jp->height ) {
@@ -383,7 +383,7 @@ static int dct_fill( IN *in )
     }
     for ( index = 0; index < jp->ncomp; index++ ) {
         comp = &jp->comp[index];
-        line = comp->plane + (u32)(jp->line >> comp->vshift) * (u32)comp->plane_w;
+        line = comp->plane + (uint32_t)(jp->line >> comp->vshift) * (uint32_t)comp->plane_w;
         out = jp->row + index;
         if ( comp->hshift == 0 ) {
             for ( col = 0; col < jp->width; col++, out += jp->ncomp ) {
@@ -398,18 +398,18 @@ static int dct_fill( IN *in )
     if ( jp->transform && jp->ncomp >= 3 ) {
         out = jp->row;
         for ( col = 0; col < jp->width; col++, out += jp->ncomp ) {
-            luma = (s32)out[0] << 16;
-            cb = (s32)out[1] - 128;
-            cr = (s32)out[2] - 128;
-            out[0] = (u8)clamp8( (luma + 91881L * cr + 32768L) >> 16 );
-            out[1] = (u8)clamp8( (luma - 22554L * cb - 46802L * cr + 32768L) >> 16 );
-            out[2] = (u8)clamp8( (luma + 116130L * cb + 32768L) >> 16 );
+            luma = (int32_t)out[0] << 16;
+            cb = (int32_t)out[1] - 128;
+            cr = (int32_t)out[2] - 128;
+            out[0] = (uint8_t)clamp8( (luma + 91881L * cr + 32768L) >> 16 );
+            out[1] = (uint8_t)clamp8( (luma - 22554L * cb - 46802L * cr + 32768L) >> 16 );
+            out[2] = (uint8_t)clamp8( (luma + 116130L * cb + 32768L) >> 16 );
         }
     }
     jp->line++;
     jp->out_y++;
     in->cur = jp->row;
-    in->end = jp->row + (u32)jp->width * (u32)jp->ncomp;
+    in->end = jp->row + (uint32_t)jp->width * (uint32_t)jp->ncomp;
     return 1;
 }
 
@@ -460,7 +460,7 @@ static int read_header( JPEG *jp, IN *src )
                 prec = which >> 4;
                 which &= 3;
                 for ( index = 0; index < 64; index++ ) {
-                    jp->quant[which][dezigzag[index]] = (u16)(prec ? get16( src ) : get8( src ));
+                    jp->quant[which][dezigzag[index]] = (uint16_t)(prec ? get16( src ) : get8( src ));
                 }
                 len -= prec ? 129 : 65;
             }
@@ -481,7 +481,7 @@ static int read_header( JPEG *jp, IN *src )
                     return 0;
                 }
                 for ( index = 0; index < total; index++ ) {
-                    huff->values[index] = (u8)get8( src );
+                    huff->values[index] = (uint8_t)get8( src );
                 }
                 len -= 17 + total;
             }
@@ -509,22 +509,22 @@ static int read_header( JPEG *jp, IN *src )
                 }
             }
             len -= 6 + jp->ncomp * 3;
-            in_skip( src, (u32)(len > 0 ? len : 0) );
+            in_skip( src, (uint32_t)(len > 0 ? len : 0) );
             break;
         case 0xC2: case 0xC3: case 0xC5: case 0xC6: case 0xC7:
         case 0xC9: case 0xCA: case 0xCB: case 0xCD: case 0xCE: case 0xCF:
             return 0;                               /* progressive, lossless, arithmetic */
         case 0xDD:
             jp->restart = get16( src );
-            in_skip( src, (u32)(len > 2 ? len - 2 : 0) );
+            in_skip( src, (uint32_t)(len > 2 ? len - 2 : 0) );
             break;
         case 0xEE:                                  /* Adobe's: which colour transform */
             if ( len >= 12 ) {
                 in_skip( src, 11 );
                 jp->adobe = get8( src ) + 1;
-                in_skip( src, (u32)(len - 12) );
+                in_skip( src, (uint32_t)(len - 12) );
             } else {
-                in_skip( src, (u32)len );
+                in_skip( src, (uint32_t)len );
             }
             break;
         case 0xDA:                                  /* the scan */
@@ -573,7 +573,7 @@ static int read_header( JPEG *jp, IN *src )
             jp->todo = jp->restart;
             return 1;
         default:
-            in_skip( src, (u32)len );
+            in_skip( src, (uint32_t)len );
             break;
         }
     }
@@ -591,10 +591,10 @@ IN *flt_dct( IN *src, DICT *parms )
         return NULL;
     }
     for ( index = 0; index < jp->ncomp; index++ ) {
-        jp->comp[index].plane = (u8 *)pool_big( doc.page_pool,
-                                                (u32)jp->comp[index].plane_w * (u32)jp->comp[index].vs * 8 );
+        jp->comp[index].plane = (uint8_t *)pool_big( doc.page_pool,
+                                                     (uint32_t)jp->comp[index].plane_w * (uint32_t)jp->comp[index].vs * 8 );
     }
-    jp->row = (u8 *)pool_big( doc.page_pool, (u32)jp->width * (u32)jp->ncomp + 8 );
+    jp->row = (uint8_t *)pool_big( doc.page_pool, (uint32_t)jp->width * (uint32_t)jp->ncomp + 8 );
     /* Y, Cb, Cr unless something says the samples are already colours */
     jp->transform = (int)dict_int( parms, "ColorTransform", -1 );
     if ( jp->transform < 0 ) {

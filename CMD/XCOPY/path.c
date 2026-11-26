@@ -48,7 +48,7 @@ const char *name_part( const char *path )
 /* a directory's full path as a prefix: "C:\" stays, "C:\A" gets one */
 void end_slash( char *path )
 {
-    u32 len = str_len( path );
+    unsigned int len = str_len( path );
 
     if ( len && path[len - 1] != '\\' && len + 1 < PATH_MAX ) {
         path[len] = '\\';
@@ -63,7 +63,7 @@ int make_full( const char *in, char *out )
     char abs[PATH_MAX * 2];
     char canon[PATH_MAX];
     char *comp[MAX_COMPS];
-    u32 len;
+    unsigned int len;
     int drv, count = 0, keep, rc, i;
     const char *rest;
     char *cur;
@@ -177,10 +177,10 @@ int make_full( const char *in, char *out )
  * dot maps against the whole name, so "*" is every name unchanged.  A
  * template with no wildcards is simply the new name.
  */
-static void map_half( const char *src, u32 slen, const char *tmpl, u32 tlen,
-                      char *out, u32 *pos )
+static void map_half( const char *src, unsigned int slen, const char *tmpl, unsigned int tlen,
+                      char *out, unsigned int *pos )
 {
-    u32 tpos, spos = 0;
+    unsigned int tpos, spos = 0;
 
     for ( tpos = 0; tpos < tlen; tpos++ ) {
         if ( tmpl[tpos] == '*' ) {
@@ -207,8 +207,8 @@ void map_name( const char *src, const char *tmpl, char *out )
 {
     const char *sdot = str_rchr( src, '.' );
     const char *tdot = str_rchr( tmpl, '.' );
-    u32 slen = str_len( src ), tlen = str_len( tmpl );
-    u32 sbase, pos = 0;
+    unsigned int slen = str_len( src ), tlen = str_len( tmpl );
+    unsigned int sbase, pos = 0;
 
     if ( !has_wild( tmpl ) ) {
         str_cpyn( out, tmpl, PATH_MAX );
@@ -219,16 +219,16 @@ void map_name( const char *src, const char *tmpl, char *out )
         out[pos] = 0;
         return;
     }
-    sbase = sdot ? (u32)(sdot - src) : slen;
-    map_half( src, sbase, tmpl, (u32)(tdot - tmpl), out, &pos );
+    sbase = sdot ? (unsigned int)(sdot - src) : slen;
+    map_half( src, sbase, tmpl, (unsigned int)(tdot - tmpl), out, &pos );
     if ( pos < PATH_MAX - 1 ) {
         out[pos++] = '.';
     }
     if ( sdot ) {
         map_half( sdot + 1, slen - sbase - 1, tdot + 1,
-                  tlen - (u32)(tdot - tmpl) - 1, out, &pos );
+                  tlen - (unsigned int)(tdot - tmpl) - 1, out, &pos );
     } else {
-        map_half( "", 0, tdot + 1, tlen - (u32)(tdot - tmpl) - 1, out, &pos );
+        map_half( "", 0, tdot + 1, tlen - (unsigned int)(tdot - tmpl) - 1, out, &pos );
     }
     while ( pos && out[pos - 1] == '.' ) {  /* "README" through "*.*" */
         pos--;

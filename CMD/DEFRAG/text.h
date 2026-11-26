@@ -79,6 +79,9 @@ extern const char tx_scandisk_failed[]; /* "%s could not be started (error %u)."
 extern const char tx_bad_drive[];       /* "%c:" in each */
 extern const char tx_not_local[];
 extern const char tx_exfat[];
+extern const char tx_solid[];
+extern const char tx_usb[];
+extern const char tx_ramdisk[];
 extern const char tx_cannot_read[];
 extern const char tx_in_use[];
 extern const char tx_redirected[];

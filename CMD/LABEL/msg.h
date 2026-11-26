@@ -35,6 +35,6 @@ void  out_line( int handle, const char *str );
 void  out_msg( int handle, const char *tmpl, const char *a1, const char *a2 );
 void  out_flush( void );
 
-char *fmt_hex4( u32 val, char *buf );       /* 0000-FFFF */
+char *fmt_hex4( uint32_t val, char *buf );  /* 0000-FFFF */
 
 #endif

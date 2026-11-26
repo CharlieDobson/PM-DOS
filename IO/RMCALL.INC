@@ -40,6 +40,13 @@ rm_int:
         pushfd
         cli
 
+        ; A CALL IN PROGRESS, for a fault taken on the way down or back
+        ; up: the state below is half changed then, and the DOS side's
+        ; recovery must not make a BIOS call of its own on top of it
+        ; (exc_report, EXR_ASK).  Cleared as the last thing on the way
+        ; out, so a fault anywhere between finds it set.
+        mov     byte ptr ds:[rm_busy],1
+
         ; THE NULL GUARD COMES OFF FOR THE EXCURSION.  Debug registers
         ; are not affected by the mode switch, so a BIOS routine that
         ; writes one of the first four interrupt vectors - which is
@@ -81,9 +88,13 @@ rmc_back:
         pop     eax
         call    vd_rmup
         call    rq_up                   ; and what interrupted the call
+        mov     byte ptr ds:[rm_busy],0
         popfd
         popad
         ret
+
+rm_busy         db      0               ; 1 from rm_int's first instruction
+                db      0, 0, 0         ; to its last: see exc_report
 
 ;=====================================================================
 ; rq_down / rq_up - either side of a BIOS call.  Interrupts off.
@@ -297,6 +308,9 @@ rm_park:
         ; way the BIOS left it - its errors on interrupt line 13, where
         ; every DOS extender and Windows itself look for them.
         call    fpu_park
+        call    v86_cr4off              ; ...and VME off: WIN386 and an
+                                        ; extender run boxes of their own,
+                                        ; with no idea of the bit
 
         db      0EAh                    ; JMP FAR SEL_CODE16:RMT_PARK
         dd      RMT_PARK
@@ -329,6 +343,8 @@ rmp_back:
         ltr     ax
         lldt    word ptr ds:[park_ldtr]
         call    fpu_unpark
+        call    v86_cr4back             ; after fpu_unpark, which loads CR4
+                                        ; whole on a processor with FXSR
         push    eax
         mov     al,1
         call    nt_arm

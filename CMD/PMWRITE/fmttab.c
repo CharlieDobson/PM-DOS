@@ -47,7 +47,7 @@ int fmt_by_tag( const char *tag )
 int fmt_variant( const FORMAT *fmt, const char *text )
 {
     int index;
-    u32 len = str_len( text );
+    unsigned int len = str_len( text );
 
     if ( fmt->variants == NULL || len == 0 ) {
         return -1;
@@ -59,7 +59,7 @@ int fmt_variant( const FORMAT *fmt, const char *text )
     }
     /* or anywhere in the name: "5.1" finds "WordPerfect 5.1" */
     for ( index = 0; fmt->variants[index] != NULL; index++ ) {
-        if ( mem_ifind( (const u8 *)fmt->variants[index], str_len( fmt->variants[index] ), text ) >= 0 ) {
+        if ( mem_ifind( (const uint8_t *)fmt->variants[index], str_len( fmt->variants[index] ), text ) >= 0 ) {
             return index;
         }
     }
@@ -86,7 +86,7 @@ void fmt_ext_of( const char *name, char *ext )
     ext[len] = 0;
 }
 
-int fmt_detect( const u8 *data, u32 len, const char *name )
+int fmt_detect( const uint8_t *data, uint32_t len, const char *name )
 {
     char ext[8];
     int id, sure, best = FMT_NONE, best_sure = 0;

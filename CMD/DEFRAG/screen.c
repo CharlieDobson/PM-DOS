@@ -39,17 +39,18 @@
 #define LEG_RIGHT       78
 #define BAR_CELLS       34
 
-static int  map_rows = 16;
-static int  have_drive;
-static int  running;
-static int  reading;            /* the box that says a drive is being read */
-static char reading_name[16];
-static int  act;                /* ACT_*: what the drive is doing */
-static u32  act_clus, act_count;
-static u32  shown_clus = 2;
-static u32  prog_done, prog_total;
-static u32  run_began, run_secs;
-static const char *run_hint;
+static int          map_rows = 16;
+static int          have_drive;
+static int          running;
+static int          reading;    /* the box that says a drive is being read */
+static char         reading_name[16];
+static int          act;        /* ACT_*: what the drive is doing */
+static uint32_t     act_clus, act_count;
+static uint32_t     shown_clus = 2;
+static uint32_t     prog_done, prog_total;
+static uint32_t     run_began;
+static unsigned int run_secs;
+static const char  *run_hint;
 
 static const BTN btn_ok[] = { { tx_btn_ok, 1 } };
 static const BTN btn_ok_cancel[] = { { tx_btn_ok, 1 }, { tx_btn_cancel, 2 } };
@@ -60,20 +61,20 @@ static const BTN btn_ok_cancel[] = { { tx_btn_ok, 1 }, { tx_btn_cancel, 2 } };
 
 static void draw_block( int row, int col, int kind )
 {
-    static const u8 as_text[] = { 0xB1, 0x08, 0x08, 'X', 'B', 'r', 'W' };
-    u8 attr = kind == BK_DONE ? pal.done : pal.desk;
+    static const uint8_t as_text[] = { 0xB1, 0x08, 0x08, 'X', 'B', 'r', 'W' };
+    uint8_t attr = kind == BK_DONE ? pal.done : pal.desk;
 
     if ( gfx_on && kind <= BK_DONE ) {
         /* free space is a quiet pattern, not a white one */
-        scr_pic( row, col, PIC_BLOCK, kind, kind == BK_UNUSED ? (u8)((pal.desk & 0xF0) | 0x07) : attr );
+        scr_pic( row, col, PIC_BLOCK, kind, kind == BK_UNUSED ? (uint8_t)((pal.desk & 0xF0) | 0x07) : attr );
     } else {
         scr_ch( row, col, as_text[kind], attr );
     }
 }
 
-static int block_kind( u32 blk )
+static int block_kind( unsigned int blk )
 {
-    u32 first = 2 + blk * per_block, size = vol.maxclus + 1 - first;
+    uint32_t first = 2 + blk * per_block, size = vol.maxclus + 1 - first;
     const BLOCK *info = &blocks[blk];
 
     if ( size > per_block ) {
@@ -101,7 +102,7 @@ static int block_kind( u32 blk )
 
 static void paint_map( void )
 {
-    u32 blk, cells = (u32)MAP_COLS * (u32)map_rows;
+    unsigned int blk, cells = (unsigned int)MAP_COLS * (unsigned int)map_rows;
 
     if ( !have_drive || blocks == NULL ) {
         return;
@@ -125,7 +126,7 @@ static void desk_box( int top, int left, int right, const char *title )
 static void paint_status( int top )
 {
     char line[48];
-    u32 eighths = 0, percent = 0;
+    unsigned int eighths = 0, percent = 0;
     int cell, len, fill;
 
     desk_box( top, STAT_LEFT, STAT_RIGHT, tx_status );
@@ -285,7 +286,7 @@ void fe_drive( int loaded )
     prog_done = prog_total = 0;
     shown_clus = 2;
     if ( loaded ) {
-        map_build( (u32)MAP_COLS * (u32)map_rows );
+        map_build( (unsigned int)MAP_COLS * (unsigned int)map_rows );
     }
     show();
 }
@@ -299,7 +300,7 @@ void fe_reading( const char *what )
 
 static void clock_now( void )
 {
-    u32 now = sys_hundredths();
+    uint32_t now = sys_hundredths();
 
     if ( now < run_began ) {
         now += 8640000ul;               /* through midnight */
@@ -322,7 +323,7 @@ void fe_run( int on )
     show();
 }
 
-void fe_activity( int what, u32 clus, u32 count )
+void fe_activity( int what, uint32_t clus, uint32_t count )
 {
     act = what;
     act_clus = clus;
@@ -340,7 +341,7 @@ void fe_activity( int what, u32 clus, u32 count )
     show();
 }
 
-void fe_progress( u32 done, u32 total )
+void fe_progress( uint32_t done, uint32_t total )
 {
     prog_done = done;
     prog_total = total;
@@ -428,7 +429,7 @@ int fe_pick_drive( int now )
     int wide = 42, high = 11, top = (scr_rows - high) / 2, left = (79 - wide) / 2;
     int drive, index, row, key, letter, answer = 0;
     char name[4];
-    u8 attr;
+    uint8_t attr;
 
     reading = 0;
     for ( drive = 0; drive < 26; drive++ ) {
@@ -778,7 +779,7 @@ int fe_recommend( int percent, int method )
     while ( answer == 0 ) {
         ui_paint_under();
         ui_frame( top, left, top + high - 1, left + wide - 1, tx_recommend_title, 0 );
-        sfmt( line, sizeof( line ), tx_recommend_1, (u32)percent, 'A' + vol.drive );
+        sfmt( line, sizeof( line ), tx_recommend_1, (unsigned int)percent, 'A' + vol.drive );
         scr_center( top + 2, left + 1, wide - 2, line, pal.dlg );
         scr_center( top + 4, left + 1, wide - 2, tx_recommend_2, pal.dlg );
         /* half a cell to the right of the middle, where MS-DOS has it */

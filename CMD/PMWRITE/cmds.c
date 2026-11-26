@@ -147,7 +147,7 @@ void cmds_init( void )
         count++;
     }
     for ( index = 0; index < ndocs; index++ ) {
-        sfmt( window_text[index], sizeof( window_text[index] ), "&%u %s", (u32)index + 1, docs[index].name );
+        sfmt( window_text[index], sizeof( window_text[index] ), "&%u %s", (uint32_t)index + 1, docs[index].name );
         window_items[count].text = window_text[index];
         window_items[count].keys = "";
         window_items[count].cmd = CMD_WINDOW + index;
@@ -284,7 +284,7 @@ int cmd_of_key( int key )
         { K_C( 'P' ) | K_SHIFT, CMD_PICKSIZE }, { K_F6 | K_CTRL, CMD_NEXTWIN },
         { K_F1, CMD_KEYS }
     };
-    u32 index;
+    unsigned int index;
 
     for ( index = 0; index < sizeof( keys ) / sizeof( keys[0] ); index++ ) {
         if ( keys[index].key == key ) {
@@ -385,7 +385,7 @@ static void set_align( int align )
     PAP pap;
 
     pap_init( &pap );
-    pap.align = (u8)align;
+    pap.align = (uint8_t)align;
     ed_set_pap( ED, PM_ALIGN, &pap, 0 );
 }
 
@@ -394,7 +394,7 @@ static void set_spacing( int line )
     PAP pap;
 
     pap_init( &pap );
-    pap.line = (u16)line;
+    pap.line = (uint16_t)line;
     pap.line_rule = LS_MULTIPLE;
     ed_set_pap( ED, PM_LINE, &pap, 0 );
 }
@@ -409,7 +409,7 @@ static void set_list( int list )
         ed_set_pap( ED, PM_LIST | PM_LEFT | PM_FIRST, &pap, 0 );
         return;
     }
-    pap.list = (u8)list;
+    pap.list = (uint8_t)list;
     pap.left = 360;
     pap.first = -360;
     ed_set_pap( ED, PM_LIST | PM_LEFT | PM_FIRST, &pap, 0 );
@@ -441,7 +441,7 @@ static void pick_style( void )
     static const int kinds[] = { STY_HEADING1, STY_HEADING2, STY_HEADING3, STY_TITLE };
     const char *names[MAX_STYLES];
     EDITOR *ed = ED;
-    u32 index;
+    unsigned int index;
     int chosen;
 
     /* the styles every document may use are there to be chosen */
@@ -463,7 +463,7 @@ static void pick_font( void )
     const char *names[64];
     EDITOR *ed = ED;
     CHP chp;
-    u32 index;
+    unsigned int index;
     int chosen, count;
 
     for ( index = 0; index < 4; index++ ) {
@@ -475,13 +475,13 @@ static void pick_font( void )
         wd_font( ed->doc, tf_family( index ), FAM_ANY, -1 );
     }
     count = ed->doc->nfont > 64 ? 64 : (int)ed->doc->nfont;
-    for ( index = 0; index < (u32)count; index++ ) {
+    for ( index = 0; index < (unsigned int)count; index++ ) {
         names[index] = ed->doc->font[index].name;
     }
     ed_cur_chp( ed, &chp );
-    chosen = dlg_pick( "Font", names, count, chp.font < (u32)count ? chp.font : 0 );
+    chosen = dlg_pick( "Font", names, count, chp.font < (unsigned int)count ? chp.font : 0 );
     if ( chosen >= 0 ) {
-        chp.font = (u16)chosen;
+        chp.font = (uint16_t)chosen;
         ed_set_chp( ed, CM_FONT, &chp, 0 );
     }
 }
@@ -490,7 +490,7 @@ static void pick_size( void )
 {
     static const char *const sizes[] = { "8", "9", "10", "11", "12", "14", "16", "18", "20", "22", "24", "26",
                                          "28", "36", "48", "72" };
-    static const u8 points[] = { 8, 9, 10, 11, 12, 14, 16, 18, 20, 22, 24, 26, 28, 36, 48, 72 };
+    static const uint8_t points[] = { 8, 9, 10, 11, 12, 14, 16, 18, 20, 22, 24, 26, 28, 36, 48, 72 };
     EDITOR *ed = ED;
     CHP chp;
     int chosen, start = 4, index;
@@ -503,7 +503,7 @@ static void pick_size( void )
     }
     chosen = dlg_pick( "Size", sizes, 16, start );
     if ( chosen >= 0 ) {
-        chp.size = (u16)(points[chosen] * 2);
+        chp.size = (uint16_t)(points[chosen] * 2);
         ed_set_chp( ed, CM_SIZE, &chp, 0 );
     }
 }

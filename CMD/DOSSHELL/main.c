@@ -183,9 +183,9 @@ static void kept_add( const char *path )
         }
     }
     if ( nkept == kept_cap ) {
-        bigger = (char **)xalloc( (u32)(kept_cap + 64) * sizeof( char * ) );
+        bigger = (char **)xalloc( (unsigned int)(kept_cap + 64) * sizeof( char * ) );
         if ( nkept ) {
-            mem_cpy( bigger, kept, (u32)nkept * sizeof( char * ) );
+            mem_cpy( bigger, kept, (unsigned int)nkept * sizeof( char * ) );
         }
         xfree( kept );
         kept = bigger;
@@ -634,7 +634,7 @@ void app_set_view( int view )
 static void pane_head( int row, int left, int right, const char *title, int focused )
 {
     int width = right - left + 1, len = (int)str_len( title );
-    u8 attr = focused ? pal.pane_focus : pal.pane_title;
+    uint8_t attr = focused ? pal.pane_focus : pal.pane_title;
 
     scr_fill( row, left, width, ' ', attr );
     if ( len > width - 2 ) {
@@ -647,7 +647,7 @@ static void pane_head( int row, int left, int right, const char *title, int focu
     scr_flag( row, right, 1, CF_RIGHT );
 }
 
-static void put_clip( int row, int col, int ch, u8 attr, int limit )
+static void put_clip( int row, int col, int ch, uint8_t attr, int limit )
 {
     if ( col <= limit ) {
         scr_ch( row, col, ch, attr );
@@ -658,7 +658,7 @@ static void draw_drives( FWIN *win, int focused, int windex )
 {
     int width = drive_width(), index, col = 1, drive, row = win->row_drives;
     char text[8];
-    u8 attr;
+    uint8_t attr;
 
     scr_fill( row, 0, scr_cols, ' ', pal.desk );
     for ( index = 0; index < ndrives; index++, col += width ) {
@@ -697,7 +697,7 @@ static void draw_tree_line( FWIN *win, int row, int node, int focused, int winde
     int depth = nd->depth, level, above = node, box, col, len;
     const char *text;
     char root[4];
-    u8 attr;
+    uint8_t attr;
 
     for ( level = depth; level >= 1; level-- ) {
         col = base + 1 + (level - 1) * 3;
@@ -796,7 +796,7 @@ static void draw_file_line( FWIN *win, int row, int index, int focused )
     int left = win->file_left + 1, right = win->file_right - 1, width = right - left + 1;
     int date_col = right - 8, size_col, len, room;
     char size[20], date[12];
-    u8 attr = ent->sel ? (focused ? pal.select : pal.select_off) : pal.pane;
+    uint8_t attr = ent->sel ? (focused ? pal.select : pal.select_off) : pal.pane;
 
     scr_fill( row, left, width, ' ', attr );
     if ( gfx_on ) {
@@ -886,7 +886,7 @@ static void draw_progs( void )
     int rows = prog_last - prog_first + 1, line, row, item, total = prog_count();
     int focused = focus_area == AREA_PROGS, right = scr_cols - 1, col;
     char text[TITLE_MAX + 4];
-    u8 attr;
+    uint8_t attr;
 
     pane_head( prog_head, 0, right, items[prog_group].title, focused );
     for ( line = 0; line < rows; line++ ) {
@@ -946,7 +946,7 @@ static void draw_status( void )
         scr_put( row, 40, "ADD", pal.status_hot );
     }
     sys_now( &now );
-    fmt_time( (u16)((now.hour << 11) | (now.minute << 5)), clock );
+    fmt_time( (uint16_t)((now.hour << 11) | (now.minute << 5)), clock );
     scr_put( row, scr_cols - 1 - (int)str_len( clock ), clock, pal.status );
 }
 
@@ -1736,7 +1736,7 @@ static int parse_args( const char *args )
         for ( len = 0; args[len] && args[len] != ' ' && args[len] != '\t'
               && (len == 0 || args[len] != '/'); len++ ) {
         }
-        str_fit( word, args, (u32)(len < 23 ? len + 1 : 24) );
+        str_fit( word, args, (unsigned int)(len < 23 ? len + 1 : 24) );
         str_upper( word );
         args += len;
         tag = NULL;

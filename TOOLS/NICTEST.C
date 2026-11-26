@@ -64,32 +64,32 @@ void __cdecl int21( REGS *regs );
 #define WAIT_PING    200
 #define PINGS        3
 
-static u8   out_buf[OUT_BUF];
-static u32  out_len;
-static u32  failures;
-static int  column;
+static uint8_t  out_buf[OUT_BUF];
+static unsigned int out_len;
+static unsigned int failures;
+static int      column;
 
-static u8   nic_row;
-static u8  *rx, *tx;
+static unsigned char nic_row;
+static uint8_t *rx, *tx;
 static NIC_INFOBLOCK info;
 
-static u8   my_mac[6];
-static u8   my_ip[4];
-static u8   gw_ip[4], gw_mac[6];
-static u8   server_ip[4], mask_ip[4], dns_ip[4];
-static u32  lease;
-static u8   offered[4];
-static int  have_ip;
-static u8   ping_ttl;
+static uint8_t  my_mac[6];
+static uint8_t  my_ip[4];
+static uint8_t  gw_ip[4], gw_mac[6];
+static uint8_t  server_ip[4], mask_ip[4], dns_ip[4];
+static uint32_t lease;
+static uint8_t  offered[4];
+static int      have_ip;
+static uint8_t  ping_ttl;
 
-static const u8 bcast_mac[6] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
-static const u8 bcast_ip[4]  = { 255, 255, 255, 255 };
-static const u8 zero_ip[4]   = { 0, 0, 0, 0 };
+static const uint8_t bcast_mac[6] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
+static const uint8_t bcast_ip[4]  = { 255, 255, 255, 255 };
+static const uint8_t zero_ip[4]   = { 0, 0, 0, 0 };
 static const char ping_text[PING_DATA + 1] = "PM-DOS NICTEST: an echo, please.";
 
-static void mem_copy( void *to, const void *from, u32 len );
-static void mem_zero( void *to, u32 len );
-static int  mem_same( const void *a, const void *b, u32 len );
+static void mem_copy( void *to, const void *from, unsigned int len );
+static void mem_zero( void *to, unsigned int len );
+static int  mem_same( const void *a, const void *b, unsigned int len );
 
 /* ---------------------------------------------------------------- */
 /* output                                                            */
@@ -109,7 +109,7 @@ static void out_flush( void )
         regs.eax = 0x4000;
         regs.ebx = 1;
         regs.ecx = out_len;
-        regs.edx = (u32)out_buf;
+        regs.edx = (uint32_t)out_buf;
         int21( &regs );
         out_len = 0;
     }
@@ -128,7 +128,7 @@ static void test_exit( int code )
 static void out_ch( char ch )
 {
     if ( out_len == OUT_BUF ) out_flush();
-    out_buf[out_len++] = (u8)ch;
+    out_buf[out_len++] = (uint8_t)ch;
     column = ( ch == '\n' ) ? 0 : column + 1;
 }
 
@@ -142,7 +142,7 @@ static void out_nl( void )
     out_str( "\r\n" );
 }
 
-static void out_dec( u32 value )
+static void out_dec( unsigned int value )
 {
     char digits[12];
     int  n = 0;
@@ -154,7 +154,7 @@ static void out_dec( u32 value )
     while ( n ) out_ch( digits[--n] );
 }
 
-static void out_hex( u32 value, int digits )
+static void out_hex( uint32_t value, int digits )
 {
     int shift;
 
@@ -163,7 +163,7 @@ static void out_hex( u32 value, int digits )
     }
 }
 
-static void out_ip( const u8 *ip )
+static void out_ip( const uint8_t *ip )
 {
     int i;
 
@@ -173,7 +173,7 @@ static void out_ip( const u8 *ip )
     }
 }
 
-static void out_mac( const u8 *mac )
+static void out_mac( const uint8_t *mac )
 {
     int i;
 
@@ -210,10 +210,10 @@ static void fail( void )
 /* the clock, in hundredths of a second (2Ch counts ticks)           */
 /* ---------------------------------------------------------------- */
 
-static u32 now_cs( void )
+static unsigned int now_cs( void )
 {
-    REGS regs;
-    u32  h, m, s, cs;
+    REGS     regs;
+    unsigned int h, m, s, cs;
 
     clear( &regs );
     regs.eax = 0x2C00;
@@ -225,9 +225,9 @@ static u32 now_cs( void )
     return ( ( h * 60 + m ) * 60 + s ) * 100 + cs;
 }
 
-static u32 since( u32 start )
+static unsigned int since( unsigned int start )
 {
-    u32 now = now_cs();
+    unsigned int now = now_cs();
 
     if ( now < start ) now += 8640000L;     /* midnight went by */
     return now - start;
@@ -237,7 +237,7 @@ static u32 since( u32 start )
 /* the kernel and the driver                                         */
 /* ---------------------------------------------------------------- */
 
-static void *mem_alloc( u32 size )
+static void *mem_alloc( unsigned int size )
 {
     REGS regs;
 
@@ -248,40 +248,40 @@ static void *mem_alloc( u32 size )
     return CF( regs ) ? NULL : (void *)regs.eax;
 }
 
-static u32 nd_count( u32 *max )
+static unsigned int nd_count( unsigned int *max )
 {
     REGS regs;
 
     clear( &regs );
-    regs.eax = ( (u32)NDF_COUNT << 16 ) | 0xF125;
+    regs.eax = ( (uint32_t)NDF_COUNT << 16 ) | 0xF125;
     int21( &regs );
     if ( CF( regs ) ) return 0;
     *max = regs.eax;
     return regs.ecx;
 }
 
-static int nd_info( u8 row, ND_ROW *out )
+static int nd_info( unsigned char row, ND_ROW *out )
 {
     REGS regs;
 
     clear( &regs );
-    regs.eax = ( (u32)NDF_INFO << 16 ) | 0xF125;
+    regs.eax = ( (uint32_t)NDF_INFO << 16 ) | 0xF125;
     regs.edx = row;
-    regs.edi = (u32)out;
+    regs.edi = (uint32_t)out;
     int21( &regs );
     return !CF( regs );
 }
 
 /* the driver's CALL entry: 0 and *answer, or the error it gave */
-static u32 nd_call( u32 fn, void *buf, u32 len, u32 *answer )
+static unsigned int nd_call( unsigned int fn, void *buf, unsigned int len, uint32_t *answer )
 {
     REGS regs;
 
     clear( &regs );
-    regs.eax = ( (u32)NDF_CALL << 16 ) | 0xF125;
+    regs.eax = ( (uint32_t)NDF_CALL << 16 ) | 0xF125;
     regs.edx = nic_row;
     regs.ebx = fn;
-    regs.edi = (u32)buf;
+    regs.edi = (uint32_t)buf;
     regs.ecx = len;
     int21( &regs );
     if ( CF( regs ) ) return regs.eax & 0xFFFF;
@@ -289,16 +289,16 @@ static u32 nd_call( u32 fn, void *buf, u32 len, u32 *answer )
     return 0;
 }
 
-static u32 nic_send( const u8 *frame, u32 len )
+static unsigned int nic_send( const uint8_t *frame, unsigned int len )
 {
-    u32 answer;
+    uint32_t answer;
 
     return nd_call( NIC_SEND, (void *)frame, len, &answer );
 }
 
-static u32 nic_recv( u8 *buf )
+static unsigned int nic_recv( uint8_t *buf )
 {
-    u32 answer = 0;
+    uint32_t answer = 0;
 
     if ( nd_call( NIC_RECV, buf, FRAME_BUF, &answer ) ) return 0;
     return answer;
@@ -308,46 +308,46 @@ static u32 nic_recv( u8 *buf )
 /* frames, field by field                                            */
 /* ---------------------------------------------------------------- */
 
-static void put16( u8 *p, u32 value )
+static void put16( uint8_t *p, uint32_t value )
 {
-    p[0] = (u8)( value >> 8 );
-    p[1] = (u8)value;
+    p[0] = (uint8_t)( value >> 8 );
+    p[1] = (uint8_t)value;
 }
 
-static void put32( u8 *p, u32 value )
+static void put32( uint8_t *p, uint32_t value )
 {
-    p[0] = (u8)( value >> 24 );
-    p[1] = (u8)( value >> 16 );
-    p[2] = (u8)( value >> 8 );
-    p[3] = (u8)value;
+    p[0] = (uint8_t)( value >> 24 );
+    p[1] = (uint8_t)( value >> 16 );
+    p[2] = (uint8_t)( value >> 8 );
+    p[3] = (uint8_t)value;
 }
 
-static u32 get16( const u8 *p )
+static uint32_t get16( const uint8_t *p )
 {
-    return ( (u32)p[0] << 8 ) | p[1];
+    return ( (uint32_t)p[0] << 8 ) | p[1];
 }
 
-static u32 get32( const u8 *p )
+static uint32_t get32( const uint8_t *p )
 {
-    return ( (u32)p[0] << 24 ) | ( (u32)p[1] << 16 ) | ( (u32)p[2] << 8 ) | p[3];
+    return ( (uint32_t)p[0] << 24 ) | ( (uint32_t)p[1] << 16 ) | ( (uint32_t)p[2] << 8 ) | p[3];
 }
 
 /* the Internet checksum: one's complement of the one's complement sum */
-static u32 checksum( const u8 *data, u32 len )
+static uint32_t checksum( const uint8_t *data, unsigned int len )
 {
-    u32 sum = 0;
+    uint32_t sum = 0;
 
     while ( len > 1 ) {
         sum += get16( data );
         data += 2;
         len -= 2;
     }
-    if ( len ) sum += (u32)data[0] << 8;
+    if ( len ) sum += (uint32_t)data[0] << 8;
     while ( sum >> 16 ) sum = ( sum & 0xFFFF ) + ( sum >> 16 );
     return ( ~sum ) & 0xFFFF;
 }
 
-static u8 *eth_head( u8 *f, const u8 *dst, u32 type )
+static uint8_t *eth_head( uint8_t *f, const uint8_t *dst, uint32_t type )
 {
     mem_copy( f, dst, 6 );
     mem_copy( f + 6, my_mac, 6 );
@@ -357,7 +357,7 @@ static u8 *eth_head( u8 *f, const u8 *dst, u32 type )
 
 /* an IP header of 20 bytes, its checksum filled in when the whole
    datagram's length is known */
-static u8 *ip_head( u8 *p, const u8 *src, const u8 *dst, u32 proto, u32 total, u32 id )
+static uint8_t *ip_head( uint8_t *p, const uint8_t *src, const uint8_t *dst, uint32_t proto, uint32_t total, uint32_t id )
 {
     p[0] = 0x45;
     p[1] = 0;
@@ -365,7 +365,7 @@ static u8 *ip_head( u8 *p, const u8 *src, const u8 *dst, u32 proto, u32 total, u
     put16( p + 4, id );
     put16( p + 6, 0 );
     p[8] = 64;
-    p[9] = (u8)proto;
+    p[9] = (uint8_t)proto;
     put16( p + 10, 0 );
     mem_copy( p + 12, src, 4 );
     mem_copy( p + 16, dst, 4 );
@@ -375,10 +375,10 @@ static u8 *ip_head( u8 *p, const u8 *src, const u8 *dst, u32 proto, u32 total, u
 
 /* a DHCP message, as a frame: DISCOVER, or REQUEST for what was
    offered.  The whole frame's length comes back */
-static u32 build_dhcp( u8 *f, int kind )
+static unsigned int build_dhcp( uint8_t *f, int kind )
 {
-    u8 *ip, *udp, *bp, *opt;
-    u32 bootp_len, udp_len;
+    uint8_t *ip, *udp, *bp, *opt;
+    unsigned int bootp_len, udp_len;
 
     ip  = eth_head( f, bcast_mac, ETH_IP );
     udp = ip + 20;
@@ -398,7 +398,7 @@ static u32 build_dhcp( u8 *f, int kind )
     opt = bp + 240;
     *opt++ = 53;                        /* message type */
     *opt++ = 1;
-    *opt++ = (u8)kind;
+    *opt++ = (uint8_t)kind;
     if ( kind == DHCP_REQUEST ) {
         *opt++ = 50;                    /* the address offered */
         *opt++ = 4;
@@ -416,7 +416,7 @@ static u32 build_dhcp( u8 *f, int kind )
     *opt++ = 6;                         /* the name server */
     *opt++ = 51;                        /* the lease */
     *opt++ = 255;
-    bootp_len = (u32)( opt - bp );
+    bootp_len = (unsigned int)( opt - bp );
     if ( bootp_len < BOOTP_LEN ) bootp_len = BOOTP_LEN;
     udp_len = 8 + bootp_len;
     put16( udp, 68 );
@@ -428,9 +428,9 @@ static u32 build_dhcp( u8 *f, int kind )
 }
 
 /* ARP: who has ip?  And the answer to one who asks for ours */
-static u32 build_arp( u8 *f, int reply, const u8 *to_mac, const u8 *to_ip )
+static unsigned int build_arp( uint8_t *f, int reply, const uint8_t *to_mac, const uint8_t *to_ip )
 {
-    u8 *p;
+    uint8_t *p;
 
     p = eth_head( f, reply ? to_mac : bcast_mac, ETH_ARP );
     put16( p, 1 );                      /* Ethernet */
@@ -440,15 +440,15 @@ static u32 build_arp( u8 *f, int reply, const u8 *to_mac, const u8 *to_ip )
     put16( p + 6, reply ? 2 : 1 );
     mem_copy( p + 8, my_mac, 6 );
     mem_copy( p + 14, my_ip, 4 );
-    mem_copy( p + 18, reply ? to_mac : (const u8 *)"\0\0\0\0\0\0", 6 );
+    mem_copy( p + 18, reply ? to_mac : (const uint8_t *)"\0\0\0\0\0\0", 6 );
     mem_copy( p + 24, to_ip, 4 );
     return NIC_HDRLEN + 28;
 }
 
 /* an echo request to the gateway, PING_DATA bytes of text in it */
-static u32 build_ping( u8 *f, u32 seq )
+static unsigned int build_ping( uint8_t *f, uint32_t seq )
 {
-    u8 *ip, *icmp;
+    uint8_t *ip, *icmp;
 
     ip = eth_head( f, gw_mac, ETH_IP );
     icmp = ip + 20;
@@ -469,10 +469,10 @@ static u32 build_ping( u8 *f, u32 seq )
 
 /* the IP datagram inside a frame of ours, if it is one and whole:
    its header, with the payload length and protocol out */
-static const u8 *ip_in( const u8 *f, u32 len, u32 *payload, u32 proto )
+static const uint8_t *ip_in( const uint8_t *f, unsigned int len, unsigned int *payload, uint32_t proto )
 {
-    const u8 *ip;
-    u32 hlen, total;
+    const uint8_t *ip;
+    unsigned int hlen, total;
 
     if ( len < NIC_HDRLEN + 20 || get16( f + 12 ) != ETH_IP ) return NULL;
     ip = f + NIC_HDRLEN;
@@ -488,10 +488,12 @@ static const u8 *ip_in( const u8 *f, u32 len, u32 *payload, u32 proto )
 
 /* a DHCP answer of the kind wanted, to our transaction: what it says
    is kept.  1 if it was one */
-static int take_dhcp( const u8 *f, u32 len, int kind )
+static int take_dhcp( const uint8_t *f, unsigned int len, int kind )
 {
-    const u8 *ip, *udp, *bp, *opt, *end;
-    u32 payload, code, olen;
+    const uint8_t *ip, *udp, *bp, *opt, *end;
+    unsigned int payload;
+    uint32_t code;
+    unsigned int olen;
     int type = 0;
 
     ip = ip_in( f, len, &payload, IP_UDP );
@@ -526,9 +528,9 @@ static int take_dhcp( const u8 *f, u32 len, int kind )
 }
 
 /* an ARP reply from the gateway: its station address is kept */
-static int take_arp_reply( const u8 *f, u32 len )
+static int take_arp_reply( const uint8_t *f, unsigned int len )
 {
-    const u8 *p = f + NIC_HDRLEN;
+    const uint8_t *p = f + NIC_HDRLEN;
 
     if ( len < NIC_HDRLEN + 28 || get16( f + 12 ) != ETH_ARP ) return FALSE;
     if ( get16( p ) != 1 || get16( p + 2 ) != ETH_IP || p[4] != 6 || p[5] != 4 ) return FALSE;
@@ -539,10 +541,10 @@ static int take_arp_reply( const u8 *f, u32 len )
 
 /* an ARP request for our address, answered - whoever the frame was
    meant for, this is what a station on the wire owes the others */
-static void answer_arp( const u8 *f, u32 len )
+static void answer_arp( const uint8_t *f, unsigned int len )
 {
-    const u8 *p = f + NIC_HDRLEN;
-    u32 n;
+    const uint8_t *p = f + NIC_HDRLEN;
+    unsigned int n;
 
     if ( !have_ip || len < NIC_HDRLEN + 28 || get16( f + 12 ) != ETH_ARP ) return;
     if ( get16( p ) != 1 || get16( p + 2 ) != ETH_IP || p[4] != 6 || p[5] != 4 ) return;
@@ -553,10 +555,11 @@ static void answer_arp( const u8 *f, u32 len )
 
 /* an echo reply from the gateway with our id, the text intact: its
    sequence number (1..PINGS), or 0 if the frame is not one */
-static u32 take_ping_any( const u8 *f, u32 len )
+static uint32_t take_ping_any( const uint8_t *f, unsigned int len )
 {
-    const u8 *ip, *icmp;
-    u32 payload, seq;
+    const uint8_t *ip, *icmp;
+    unsigned int payload;
+    uint32_t seq;
 
     ip = ip_in( f, len, &payload, IP_ICMP );
     if ( ip == NULL || payload < 8 + PING_DATA ) return 0;
@@ -575,10 +578,10 @@ static u32 take_ping_any( const u8 *f, u32 len )
 #define WANT_DHCP    1
 #define WANT_ARP     2
 
-static int wait_for( int what, u32 arg, u32 timeout )
+static int wait_for( int what, unsigned int arg, unsigned int timeout )
 {
-    u32 start = now_cs();
-    u32 len;
+    unsigned int start = now_cs();
+    unsigned int len;
 
     for ( ;; ) {
         len = nic_recv( rx );
@@ -601,15 +604,15 @@ static int wait_for( int what, u32 arg, u32 timeout )
 static int find_driver( void )
 {
     ND_ROW row;
-    u32 count, max, i;
+    unsigned int count, max, i;
     int j;
 
     check( "a card driver among the 32-bit drivers" );
     count = nd_count( &max );
     for ( i = 0; i < count; i++ ) {
-        if ( !nd_info( (u8)i, &row ) ) continue;
+        if ( !nd_info( (unsigned char)i, &row ) ) continue;
         if ( !( row.flags & NDTF_NIC ) ) continue;
-        nic_row = (u8)i;
+        nic_row = (unsigned char)i;
         out_str( "row " );
         out_dec( i );
         out_str( ", " );
@@ -629,7 +632,8 @@ static int find_driver( void )
 
 static int ask_info( void )
 {
-    u32 answer, err;
+    uint32_t answer;
+    unsigned int err;
     int i;
 
     check( "NIC_INFO: the card, its ports and line, its address" );
@@ -664,7 +668,7 @@ static int ask_info( void )
 
 static void bad_lengths( void )
 {
-    u32 e1, e2;
+    unsigned int e1, e2;
 
     check( "NIC_SEND: a frame too short and one too long, refused" );
     e1 = nic_send( tx, NIC_MINFRAME - 1 );
@@ -683,7 +687,7 @@ static void drain( void )
 
 static int dhcp( void )
 {
-    u32 n;
+    unsigned int n;
     int tries, got = FALSE;
 
     check( "DHCP: a DISCOVER to everybody, an OFFER back" );
@@ -736,7 +740,7 @@ static int dhcp( void )
 
 static int arp( void )
 {
-    u32 n;
+    unsigned int n;
     int tries, got = FALSE;
 
     check( "ARP: who has the gateway" );
@@ -759,7 +763,9 @@ static int arp( void )
 
 static void ping( void )
 {
-    u32 n, len, start, seq, replies = 0;
+    unsigned int n, len, start;
+    uint32_t seq;
+    unsigned int replies = 0;
     int seen[PINGS + 1];
     int i;
 
@@ -789,7 +795,8 @@ static void ping( void )
 static void stats( void )
 {
     NIC_STATBLOCK st;
-    u32 answer, err;
+    uint32_t answer;
+    unsigned int err;
 
     /* FRAMES DROPPED FOR A FULL QUEUE ARE COUNTED, NOT FAILED.  This
        test reads only the frames it waits for, and a real network sends
@@ -857,25 +864,25 @@ void __cdecl dos_entry( void )
 /* what a library would have supplied                                */
 /* ---------------------------------------------------------------- */
 
-static void mem_copy( void *to, const void *from, u32 len )
+static void mem_copy( void *to, const void *from, unsigned int len )
 {
-    u8 *t = (u8 *)to;
-    const u8 *f = (const u8 *)from;
+    uint8_t *t = (uint8_t *)to;
+    const uint8_t *f = (const uint8_t *)from;
 
     while ( len-- ) *t++ = *f++;
 }
 
-static void mem_zero( void *to, u32 len )
+static void mem_zero( void *to, unsigned int len )
 {
-    u8 *t = (u8 *)to;
+    uint8_t *t = (uint8_t *)to;
 
     while ( len-- ) *t++ = 0;
 }
 
-static int mem_same( const void *a, const void *b, u32 len )
+static int mem_same( const void *a, const void *b, unsigned int len )
 {
-    const u8 *p = (const u8 *)a;
-    const u8 *q = (const u8 *)b;
+    const uint8_t *p = (const uint8_t *)a;
+    const uint8_t *q = (const uint8_t *)b;
 
     while ( len-- ) {
         if ( *p++ != *q++ ) return FALSE;

@@ -27,11 +27,11 @@
 
 /* Sink for streamed output: receives each run of decoded bytes in order.
  * Return 0 to abort the decode (the decoder then returns SZ_ERR_CANCEL). */
-typedef int (*LzmaEmit)( void *user, const Byte *data, UInt32 len );
+typedef int (*LzmaEmit)( void *user, const uint8_t *data, uint32_t len );
 
 /* Source for streamed input: fill buf with up to len compressed bytes and
  * return how many were read; 0 means end of data (treated as truncation). */
-typedef UInt32 (*LzmaRead)( void *user, Byte *buf, UInt32 len );
+typedef uint32_t (*LzmaRead)( void *user, uint8_t *buf, uint32_t len );
 
 /*
  * LzmaDecode - decompress one LZMA1 stream into a buffer.
@@ -46,9 +46,9 @@ typedef UInt32 (*LzmaRead)( void *user, Byte *buf, UInt32 len );
  *
  * Returns SZ_OK, or SZ_ERR_UNSUPPORTED / SZ_ERR_MEMORY / SZ_ERR_DATA.
  */
-int LzmaDecode( const Byte *props, UInt32 propsSize,
-                const Byte *src, UInt32 srcLen,
-                Byte *dst, UInt32 dstLen );
+int LzmaDecode( const uint8_t *props, uint32_t propsSize,
+                const uint8_t *src, uint32_t srcLen,
+                uint8_t *dst, uint32_t dstLen );
 
 /*
  * Lzma2Decode - decompress one LZMA2 stream into a buffer.
@@ -63,9 +63,9 @@ int LzmaDecode( const Byte *props, UInt32 propsSize,
  *
  * Returns SZ_OK, or SZ_ERR_UNSUPPORTED / SZ_ERR_MEMORY / SZ_ERR_DATA.
  */
-int Lzma2Decode( Byte dictProp,
-                 const Byte *src, UInt32 srcLen,
-                 Byte *dst, UInt32 dstLen );
+int Lzma2Decode( uint8_t dictProp,
+                 const uint8_t *src, uint32_t srcLen,
+                 uint8_t *dst, uint32_t dstLen );
 
 /*
  * LzmaDecodeStream / Lzma2DecodeStream - the same two codecs, reading through
@@ -80,14 +80,14 @@ int Lzma2Decode( Byte dictProp,
  * Returns SZ_OK, or SZ_ERR_UNSUPPORTED / SZ_ERR_MEMORY / SZ_ERR_DATA /
  * SZ_ERR_CANCEL (the emit callback asked to stop).
  */
-int LzmaDecodeStream( const Byte *props, UInt32 propsSize,
-                      LzmaRead read, void *readUser, UInt32 packSize,
-                      UInt32 unpackSize, UInt32 dictSize,
+int LzmaDecodeStream( const uint8_t *props, uint32_t propsSize,
+                      LzmaRead read, void *readUser, uint32_t packSize,
+                      uint32_t unpackSize, uint32_t dictSize,
                       LzmaEmit emit, void *emitUser );
 
-int Lzma2DecodeStream( Byte dictProp,
-                       LzmaRead read, void *readUser, UInt32 packSize,
-                       UInt32 unpackSize, UInt32 dictSize,
+int Lzma2DecodeStream( uint8_t dictProp,
+                       LzmaRead read, void *readUser, uint32_t packSize,
+                       uint32_t unpackSize, uint32_t dictSize,
                        LzmaEmit emit, void *emitUser );
 
 #endif /* LZMADEC_H */

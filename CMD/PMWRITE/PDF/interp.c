@@ -44,22 +44,22 @@ typedef struct {
 } GSTATE;
 
 int  (*render_poll)( void );
-void (*text_sink)( u16 uni, fx xpos, fx ypos, fx advance, fx size );
+void (*text_sink)( uint16_t uni, fx xpos, fx ypos, fx advance, fx size );
 void (*text_sink2)( const TEXTCH *ch );
 int  text_images;                   /* the images a page being read went past */
 
-static CANVAS *canvas;
-static GSTATE *states;              /* GS_MAX of them, from the heap */
-static GSTATE *gs;
-static int     gs_depth;
-static PATH    path;
-static int     pending_clip;        /* 1: W, 2: W* - at the next painting operator */
-static DICT   *resources;
-static RMAT    pattern_base;        /* the space a pattern is laid out in */
-static int     reading;             /* for the text: nothing is drawn */
-static int     nest;
-static u32     op_tick;
-static POOL   *arg_pools[MAX_NEST];
+static CANVAS  *canvas;
+static GSTATE  *states;             /* GS_MAX of them, from the heap */
+static GSTATE  *gs;
+static int      gs_depth;
+static PATH     path;
+static int      pending_clip;       /* 1: W, 2: W* - at the next painting operator */
+static DICT    *resources;
+static RMAT     pattern_base;       /* the space a pattern is laid out in */
+static int      reading;            /* for the text: nothing is drawn */
+static int      nest;
+static uint32_t op_tick;
+static POOL    *arg_pools[MAX_NEST];
 
 /* text */
 static RMAT    text_m, line_m;
@@ -67,7 +67,7 @@ static fx      text_run;            /* how far along the line the pen has gone *
 static int     text_stale;          /* the rest of these want working out again */
 static fx      t_ax, t_ay, t_bx, t_by;
 static fx      pen_x, pen_y;
-static s32     glyph_mat[4];
+static int32_t glyph_mat[4];
 
 static void run_stream( OBJ *stm, DICT *res );
 
@@ -166,7 +166,7 @@ static int matrix_of( RMAT *mat, ARR *arr )
         return 0;
     }
     for ( index = 0; index < 6; index++ ) {
-        mat->m[index] = obj_real( arr_get( arr, (u32)index ) );
+        mat->m[index] = obj_real( arr_get( arr, (unsigned int)index ) );
     }
     return 1;
 }
@@ -370,7 +370,7 @@ static void ext_gstate( const char *name )
     DICT *dict = dict_dict( dict_dict( resources, "ExtGState" ), name );
     OBJ *val;
     ARR *arr, *dashes;
-    u32 index;
+    unsigned int index;
 
     if ( dict == NULL ) {
         return;
@@ -387,11 +387,11 @@ static void ext_gstate( const char *name )
         } else if ( str_cmp( name, "ML" ) == 0 ) {
             gs->miter = obj_fx( val );
         } else if ( str_cmp( name, "CA" ) == 0 ) {
-            gs->stroke.alpha = (u8)(alpha_of( val ) * gs->group_alpha / 255);
+            gs->stroke.alpha = (uint8_t)(alpha_of( val ) * gs->group_alpha / 255);
         } else if ( str_cmp( name, "ca" ) == 0 ) {
-            gs->fill.alpha = (u8)(alpha_of( val ) * gs->group_alpha / 255);
+            gs->fill.alpha = (uint8_t)(alpha_of( val ) * gs->group_alpha / 255);
         } else if ( str_cmp( name, "BM" ) == 0 ) {
-            gs->fill.blend = gs->stroke.blend = (u8)blend_of( val );
+            gs->fill.blend = gs->stroke.blend = (uint8_t)blend_of( val );
         } else if ( str_cmp( name, "Font" ) == 0 && val->type == T_ARR ) {
             gs->font = font_get( arr_get( val->u.arr, 0 ) );
             gs->size = obj_fx( arr_get( val->u.arr, 1 ) );
@@ -400,8 +400,8 @@ static void ext_gstate( const char *name )
             arr = val->u.arr;
             dashes = arr_get( arr, 0 )->type == T_ARR ? arr_get( arr, 0 )->u.arr : NULL;
             gs->ndash = 0;
-            for ( gs->ndash = 0; dashes && (u32)gs->ndash < dashes->count && gs->ndash < 12; gs->ndash++ ) {
-                gs->dash[gs->ndash] = obj_fx( arr_get( dashes, (u32)gs->ndash ) );
+            for ( gs->ndash = 0; dashes && (unsigned int)gs->ndash < dashes->count && gs->ndash < 12; gs->ndash++ ) {
+                gs->dash[gs->ndash] = obj_fx( arr_get( dashes, (unsigned int)gs->ndash ) );
             }
             gs->dash_phase = obj_fx( arr_get( arr, 1 ) );
         }
@@ -439,7 +439,7 @@ static void text_refresh( void )
 }
 
 /* a Type 3 font's glyph: a content stream of its own */
-static void type3_glyph( FONT *font, u32 code )
+static void type3_glyph( FONT *font, uint32_t code )
 {
     const char *name = font->gname[code & 255];
     OBJ *proc;
@@ -474,14 +474,14 @@ static void type3_glyph( FONT *font, u32 code )
 /* a character to the sink that wants its look as well: the font's
    flags and name, the color it would be drawn in, and which way its
    line runs */
-static void show_look( FONT *font, const u16 *uni, int count, fx step )
+static void show_look( FONT *font, const uint16_t *uni, int count, fx step )
 {
     TEXTCH ch;
     fx along = fx_hypot( t_ax, t_ay );
     int index;
 
     ch.flags = font->flags;
-    ch.render = (u8)gs->render;
+    ch.render = (uint8_t)gs->render;
     ch.xpos = pen_x;
     ch.ypos = pen_y;
     ch.size = fx_mul( fx_hypot( t_bx, t_by ), gs->size );
@@ -496,12 +496,12 @@ static void show_look( FONT *font, const u16 *uni, int count, fx step )
     }
 }
 
-static void show( const u8 *str, u32 len )
+static void show( const uint8_t *str, unsigned int len )
 {
     FONT *font = gs->font;
-    const u8 *before;
-    u16 uni[4];
-    u32 code;
+    const uint8_t *before;
+    uint16_t uni[4];
+    uint32_t code;
     fx step;
     int count, index;
 
@@ -569,7 +569,7 @@ static void show_array( ARR *arr )
 {
     OBJ *item;
     fx shift;
-    u32 index;
+    unsigned int index;
 
     for ( index = 0; index < arr->count; index++ ) {
         item = &arr->items[index];
@@ -701,8 +701,8 @@ static void inline_image( LEX *lex )
             count++;
         }
     }
-    dict = (DICT *)pool_alloc( lex->pool, sizeof( DICT ) + (u32)count * sizeof( DENT ) );
-    dict->count = (u32)count;
+    dict = (DICT *)pool_alloc( lex->pool, sizeof( DICT ) + (uint32_t)count * sizeof( DENT ) );
+    dict->count = (unsigned int)count;
     dict->ents = (DENT *)(dict + 1);
     for ( index = 0; index < count; index++ ) {
         dict->ents[index].key = (const char *)pairs[index * 2].u.str.ptr;
@@ -908,7 +908,7 @@ static void operate( LEX *lex, const char *op, OBJ *args, int nargs )
             NEED( 2 );
             gs->ndash = 0;
             if ( args[0].type == T_ARR ) {
-                for ( index = 0; (u32)index < args[0].u.arr->count && index < 12; index++ ) {
+                for ( index = 0; (unsigned int)index < args[0].u.arr->count && index < 12; index++ ) {
                     gs->dash[index] = obj_fx( &args[0].u.arr->items[index] );
                 }
                 gs->ndash = index;
@@ -1111,16 +1111,16 @@ static void run_stream( OBJ *stm, DICT *res )
 
 /* a page's /Contents may be several streams, to be read as one */
 typedef struct {
-    ARR *arr;
-    u32  next;
-    IN  *cur;
-    u8   buf[512];
+    ARR         *arr;
+    unsigned int next;
+    IN          *cur;
+    uint8_t      buf[512];
 } CONCAT;
 
 static int concat_fill( IN *in )
 {
     CONCAT *st = IN_STATE( in, CONCAT );
-    u32 got;
+    uint32_t got;
 
     for ( ;; ) {
         if ( st->cur ) {

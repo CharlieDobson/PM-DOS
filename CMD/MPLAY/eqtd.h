@@ -10,8 +10,8 @@
 
 void eqtd_init( void );
 void eqtd_done( void );
-void eqtd_set( const EQSET *eq, u32 rate, int channels );   /* the filters made again */
-void eqtd_apply( s16 *pcm, u32 frames );                    /* in place, interleaved */
+void eqtd_set( const EQSET *eq, uint32_t rate, int channels );  /* the filters made again */
+void eqtd_apply( int16_t *pcm, unsigned int frames );           /* in place, interleaved */
 int  eqtd_cost( void );         /* multiplies a sample per channel, 0 when nothing is done */
 
 #endif

@@ -33,27 +33,27 @@ typedef struct ZIP ZIP;
 /* an archive in "len" bytes at "data", which must stay where they are
    until zip_close.  NULL if it is not one, or there is no memory: "why"
    (which may be NULL) is told which. */
-ZIP  *zip_open_why( const u8 *data, u32 len, int *why );
+ZIP  *zip_open_why( const uint8_t *data, uint32_t len, int *why );
 #define zip_open( data, len )   zip_open_why( (data), (len), NULL )
 void  zip_close( ZIP *zip );
 
-u32   zip_count( const ZIP *zip );
+unsigned int zip_count( const ZIP *zip );
 /* a member's name, with '/' between directories; "" past the end */
-const char *zip_name( const ZIP *zip, u32 index );
+const char *zip_name( const ZIP *zip, unsigned int index );
 /* the member called exactly "name", or the same in any case of
    letters: its index, or -1 */
-int   zip_find( const ZIP *zip, const char *name );
-int   zip_ifind( const ZIP *zip, const char *name );
+int      zip_find( const ZIP *zip, const char *name );
+int      zip_ifind( const ZIP *zip, const char *name );
 /* how many bytes a member unpacks to */
-u32   zip_size( const ZIP *zip, u32 index );
+uint32_t zip_size( const ZIP *zip, unsigned int index );
 /* a member's bytes: a heap block for the caller to xfree (one byte
    longer than *len, and that byte is 0).  NULL, and zip_error says why. */
-u8   *zip_read( ZIP *zip, u32 index, u32 *len );
-int   zip_error( const ZIP *zip );      /* ZIP_*: the last zip_read's */
+uint8_t *zip_read( ZIP *zip, unsigned int index, uint32_t *len );
+int      zip_error( const ZIP *zip );   /* ZIP_*: the last zip_read's */
 /* the start of a member, for telling what it is without unpacking a
    big one: as much of it as fits in "cap" bytes at "buf", and zeroes
    after.  No CRC is checked.  1 if there was anything to give. */
-int   zip_peek( ZIP *zip, u32 index, u8 *buf, u32 cap );
+int      zip_peek( ZIP *zip, unsigned int index, uint8_t *buf, unsigned int cap );
 
 typedef struct ZIPW ZIPW;
 
@@ -64,14 +64,14 @@ ZIPW *zipw_new( OUT *out );
  * does not make it smaller.  0 when it could not be added (no memory,
  * or more members than an archive holds): the OUT is then failed too.
  */
-int   zipw_add( ZIPW *zipw, const char *name, const u8 *data, u32 len, int store );
+int   zipw_add( ZIPW *zipw, const char *name, const uint8_t *data, uint32_t len, int store );
 /*
  * A member a piece at a time, deflated: begin, any number of writes,
  * finish.  Each piece is packed by itself, so pieces of 32K and more
  * pack best.  The sizes are filled in by going back (out_seek).
  */
 int   zipw_begin( ZIPW *zipw, const char *name );
-int   zipw_write( ZIPW *zipw, const u8 *data, u32 len );
+int   zipw_write( ZIPW *zipw, const uint8_t *data, uint32_t len );
 int   zipw_finish( ZIPW *zipw );
 /* the directory, and the ZIPW is freed.  1 if all of it was written. */
 int   zipw_end( ZIPW *zipw );

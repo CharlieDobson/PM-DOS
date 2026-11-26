@@ -21,11 +21,11 @@
 
 #define CRED_MAX 64             /* a user name or a password, NUL included */
 
-static int  ctrl;               /* the control socket, 0 if not open */
-static int  binary = 1;         /* transfer type: 1 image, 0 ASCII */
-static char reply[1024];
-static char linebuf[1024];
-static u8   xfer[4096];
+static int     ctrl;            /* the control socket, 0 if not open */
+static int     binary = 1;      /* transfer type: 1 image, 0 ASCII */
+static char    reply[1024];
+static char    linebuf[1024];
+static uint8_t xfer[4096];
 
 /* the /USER: login from the command line, for the first connection */
 static char cl_user[CRED_MAX];
@@ -43,7 +43,7 @@ static int ftp_reply( void )
 {
     int code = 0, n, first = 1;
     char want[4];
-    u32 asked;
+    uint32_t asked;
 
     if ( !ctrl ) return 0;
     want[0] = 0;
@@ -75,12 +75,12 @@ static int ftp_cmd( const char *verb, const char *arg )
 {
     char *w = linebuf;
     const char *s;
-    u32 need = sl_strlen( verb ) + ( ( arg && *arg ) ? 1 + sl_strlen( arg ) : 0 ) + 2;
+    unsigned int need = sl_strlen( verb ) + ( ( arg && *arg ) ? 1 + sl_strlen( arg ) : 0 ) + 2;
     if ( need > sizeof( linebuf ) ) { sl_puts( "ftp: argument too long\r\n" ); return -1; }
     for ( s = verb; *s; ) *w++ = *s++;
     if ( arg && *arg ) { *w++ = ' '; for ( s = arg; *s; ) *w++ = *s++; }
     *w++ = '\r'; *w++ = '\n';
-    sl_send( ctrl, linebuf, (u32)( w - linebuf ), 1500 );
+    sl_send( ctrl, linebuf, (uint32_t)( w - linebuf ), 1500 );
     return ftp_reply();
 }
 
@@ -91,12 +91,12 @@ static int ftp_pasv( void )
     const char *s;
     int code, nums[6], ni = 0, val = 0, innum = 0;
     char *p;
-    u32 ip;
-    u16 port;
+    uint32_t ip;
+    uint16_t port;
     int data;
 
     for ( s = "PASV\r\n"; *s; ) *w++ = *s++;
-    sl_send( ctrl, linebuf, (u32)( w - linebuf ), 1500 );
+    sl_send( ctrl, linebuf, (uint32_t)( w - linebuf ), 1500 );
     code = ftp_reply();
     if ( code != 227 ) return 0;
 
@@ -111,7 +111,7 @@ static int ftp_pasv( void )
     if ( innum && ni < 6 ) nums[ni++] = val;
     if ( ni < 6 ) return 0;
     ip = MAKE_IP( nums[0], nums[1], nums[2], nums[3] );
-    port = (u16)( nums[4] * 256 + nums[5] );
+    port = (uint16_t)( nums[4] * 256 + nums[5] );
 
     data = sl_open( SOCK_STREAM );
     if ( data == 0 ) return 0;
@@ -137,9 +137,9 @@ static void login( const char *user, const char *pass, int ask )
     ftp_cmd( "PASS", pass );
 }
 
-static void do_open( const char *host, u16 port )
+static void do_open( const char *host, uint16_t port )
 {
-    u32 ip;
+    uint32_t ip;
     char user[CRED_MAX];
 
     if ( ctrl ) { sl_puts( "Already connected; close first.\r\n" ); return; }
@@ -178,7 +178,7 @@ static void do_list( const char *arg )
         {
             REGS regs;
             sl_memzero( &regs, sizeof( regs ) );
-            regs.eax = 0x4000; regs.ebx = 1; regs.ecx = (u32)got; regs.edx = (u32)xfer;
+            regs.eax = 0x4000; regs.ebx = 1; regs.ecx = (uint32_t)got; regs.edx = (uint32_t)xfer;
             int21( &regs );
         }
     }
@@ -189,13 +189,13 @@ static void do_list( const char *arg )
 static void do_get( const char *remote, const char *local )
 {
     int data, got, handle;
-    u32 total = 0;
+    unsigned int total = 0;
     REGS regs;
 
     if ( !ctrl ) { sl_puts( "Not connected.\r\n" ); return; }
     if ( local == NULL || *local == 0 ) local = remote;
     sl_memzero( &regs, sizeof( regs ) );
-    regs.eax = 0x3C00; regs.ecx = 0; regs.edx = (u32)local;
+    regs.eax = 0x3C00; regs.ecx = 0; regs.edx = (uint32_t)local;
     int21( &regs );
     if ( CF( regs ) ) { sl_puts( "ftp: cannot create " ); sl_puts( local ); sl_puts( "\r\n" ); return; }
     handle = (int)regs.eax;
@@ -212,7 +212,7 @@ static void do_get( const char *remote, const char *local )
         if ( got <= 0 ) break;
         total += got;
         sl_memzero( &regs, sizeof( regs ) );
-        regs.eax = 0x4000; regs.ebx = handle; regs.ecx = (u32)got; regs.edx = (u32)xfer;
+        regs.eax = 0x4000; regs.ebx = handle; regs.ecx = (uint32_t)got; regs.edx = (uint32_t)xfer;
         int21( &regs );
     }
     sl_sclose( data );
@@ -224,13 +224,13 @@ static void do_get( const char *remote, const char *local )
 static void do_put( const char *local, const char *remote )
 {
     int data, got, handle;
-    u32 total = 0;
+    unsigned int total = 0;
     REGS regs;
 
     if ( !ctrl ) { sl_puts( "Not connected.\r\n" ); return; }
     if ( remote == NULL || *remote == 0 ) remote = local;
     sl_memzero( &regs, sizeof( regs ) );
-    regs.eax = 0x3D00; regs.edx = (u32)local;        /* open for reading */
+    regs.eax = 0x3D00; regs.edx = (uint32_t)local;   /* open for reading */
     int21( &regs );
     if ( CF( regs ) ) { sl_puts( "ftp: cannot open " ); sl_puts( local ); sl_puts( "\r\n" ); return; }
     handle = (int)regs.eax;
@@ -244,12 +244,12 @@ static void do_put( const char *local, const char *remote )
     }
     for ( ;; ) {
         sl_memzero( &regs, sizeof( regs ) );
-        regs.eax = 0x3F00; regs.ebx = handle; regs.ecx = sizeof( xfer ); regs.edx = (u32)xfer;
+        regs.eax = 0x3F00; regs.ebx = handle; regs.ecx = sizeof( xfer ); regs.edx = (uint32_t)xfer;
         int21( &regs );
         got = (int)regs.eax;
         if ( got <= 0 ) break;
         total += got;
-        sl_send( data, xfer, (u32)got, 3000 );
+        sl_send( data, xfer, (uint32_t)got, 3000 );
     }
     sl_sclose( data );
     sl_memzero( &regs, sizeof( regs ) ); regs.eax = 0x3E00; regs.ebx = handle; int21( &regs );
@@ -287,16 +287,16 @@ static int stdin_is_console( void )
 static int get_line( char *buf, int max )
 {
     static char conl[258];
-    REGS regs;
-    int  n = 0, got, i;
-    u8   ch;
+    REGS    regs;
+    int     n = 0, got, i;
+    uint8_t ch;
 
     if ( stdin_is_console() ) {
         sl_memzero( &regs, sizeof( regs ) );
         regs.eax = 0x3F00;
         regs.ebx = 0;
         regs.ecx = sizeof( conl ) - 2;
-        regs.edx = (u32)conl;
+        regs.edx = (uint32_t)conl;
         int21( &regs );
         got = CF( regs ) ? 0 : (int)( regs.eax & 0xFFFF );
         if ( got > (int)sizeof( conl ) - 2 ) got = (int)sizeof( conl ) - 2;
@@ -311,7 +311,7 @@ static int get_line( char *buf, int max )
         regs.eax = 0x3F00;
         regs.ebx = 0;
         regs.ecx = 1;
-        regs.edx = (u32)&ch;
+        regs.edx = (uint32_t)&ch;
         int21( &regs );
         if ( CF( regs ) || ( regs.eax & 0xFFFF ) == 0 ) { buf[n] = 0; return n ? n : -1; }
         if ( ch == '\n' ) break;
@@ -430,7 +430,7 @@ void __cdecl dos_entry( void )
             do_close();
             break;
         } else if ( !sl_strcasecmp( verb, "open" ) ) {
-            u16 port = ( *a2 ) ? (u16)sl_atou( a2 ) : 21;
+            uint16_t port = ( *a2 ) ? (uint16_t)sl_atou( a2 ) : 21;
             do_open( a1, port );
         } else if ( !sl_strcasecmp( verb, "close" ) || !sl_strcasecmp( verb, "disconnect" ) ) {
             do_close();

@@ -86,11 +86,11 @@
 
 #define SPIN        400000L
 
-static u8  *rfd[RFDN];                  /* receive frame descriptors */
-static u8  *txcb[TXN];                  /* transmit command blocks */
-static u8  *cmdcb;                      /* for IA setup and configure */
-static u8  *tx_last;                    /* the block sent last, or 0 */
-static int  rx_cur, tx_cur;
+static uint8_t *rfd[RFDN];              /* receive frame descriptors */
+static uint8_t *txcb[TXN];              /* transmit command blocks */
+static uint8_t *cmdcb;                  /* for IA setup and configure */
+static uint8_t *tx_last;                /* the block sent last, or 0 */
+static int      rx_cur, tx_cur;
 
 /* the PCI cards, then the networks inside Intel's ICH2..ICH7 */
 static const PCI_ID eepro_ids[] = {
@@ -125,27 +125,27 @@ static const PCI_ID eepro_ids[] = {
    bit (08h): NetBEUI's functional address 03-00-00-00-00-01 is a
    multicast, so a card that is to carry NetBEUI must take them.  Byte
    18 bit 2 is clear: the CRC is not stored behind a frame. */
-static const u8 config_default[22] = {
+static const uint8_t config_default[22] = {
     22, 0x08, 0, 0, 0, 0, 0x32, 0x02, 1, 0,
     0x2E, 0, 0x60, 0, 0xF2, 0x48, 0, 0x40, 0xF2, 0x80, 0x3F, 0x0D
 };
 
-static u32 align16( u32 p ) { return ( p + 15 ) & ~15L; }
+static uint32_t align16( uint32_t p ) { return ( p + 15 ) & ~15L; }
 static void eedelay( void ) { inw( net_port + SCB_EEPROM ); }
 
-static u16 scb_status( void ) { return inw( net_port + SCB_STATUS ); }
+static uint16_t scb_status( void ) { return inw( net_port + SCB_STATUS ); }
 
 /* wait for the SCB command byte to clear (the last command taken) */
 static int scb_wait( void )
 {
-    u32 n;
+    unsigned int n;
     for ( n = 0; n < SPIN; n++ ) {
         if ( inb( net_port + SCB_CMD ) == 0 ) return 1;
     }
     return 0;
 }
 
-static int scb_cmd( u8 cmd, u32 ptr )
+static int scb_cmd( uint8_t cmd, uint32_t ptr )
 {
     if ( !scb_wait() ) return 0;
     outl( net_port + SCB_PTR, ptr );
@@ -156,29 +156,29 @@ static int scb_cmd( u8 cmd, u32 ptr )
 /* a word of the 93C46.  The EEPROM address is 6 or 8 bits wide; the
    width is found by clocking address bits until the chip's dummy zero
    comes back */
-static u16 ee_word( int addr, int abits )
+static uint16_t ee_word( int addr, int abits )
 {
-    u32 n;
-    u16 val = 0;
+    unsigned int n;
+    uint16_t val = 0;
     int i;
 
     outw( net_port + SCB_EEPROM, EE_CS );
     /* command: read is 110, then the address bits, most significant first */
     for ( i = 2; i >= 0; i-- ) {
-        u16 d = (u16)( EE_CS | ( ( 6 >> i ) & 1 ? EE_DI : 0 ) );
+        uint16_t d = (uint16_t)( EE_CS | ( ( 6 >> i ) & 1 ? EE_DI : 0 ) );
         outw( net_port + SCB_EEPROM, d ); eedelay();
         outw( net_port + SCB_EEPROM, d | EE_SK ); eedelay();
         outw( net_port + SCB_EEPROM, d ); eedelay();
     }
     for ( i = abits - 1; i >= 0; i-- ) {
-        u16 d = (u16)( EE_CS | ( ( addr >> i ) & 1 ? EE_DI : 0 ) );
+        uint16_t d = (uint16_t)( EE_CS | ( ( addr >> i ) & 1 ? EE_DI : 0 ) );
         outw( net_port + SCB_EEPROM, d ); eedelay();
         outw( net_port + SCB_EEPROM, d | EE_SK ); eedelay();
         outw( net_port + SCB_EEPROM, d ); eedelay();
     }
     for ( i = 0; i < 16; i++ ) {
         outw( net_port + SCB_EEPROM, EE_CS | EE_SK ); eedelay();
-        val = (u16)( ( val << 1 ) | ( ( inw( net_port + SCB_EEPROM ) & EE_DO ) ? 1 : 0 ) );
+        val = (uint16_t)( ( val << 1 ) | ( ( inw( net_port + SCB_EEPROM ) & EE_DO ) ? 1 : 0 ) );
         outw( net_port + SCB_EEPROM, EE_CS ); eedelay();
     }
     outw( net_port + SCB_EEPROM, 0 );
@@ -195,7 +195,7 @@ static int ee_abits( void )
 
     outw( net_port + SCB_EEPROM, EE_CS );
     for ( i = 2; i >= 0; i-- ) {
-        u16 d = (u16)( EE_CS | ( ( 6 >> i ) & 1 ? EE_DI : 0 ) );
+        uint16_t d = (uint16_t)( EE_CS | ( ( 6 >> i ) & 1 ? EE_DI : 0 ) );
         outw( net_port + SCB_EEPROM, d ); eedelay();
         outw( net_port + SCB_EEPROM, d | EE_SK ); eedelay();
         outw( net_port + SCB_EEPROM, d ); eedelay();
@@ -216,19 +216,20 @@ int card_find( void )
 {
     const PCI_ID *which;
     int isio, i, abits;
-    u32 at, need;
-    u8 *pool;
+    uint32_t at;
+    unsigned int need;
+    uint8_t *pool;
 
     if ( !net_pci_find( eepro_ids, &which ) ) return 1;
     net_pci_enable( net_pciaddr );
     /* the family has a memory BAR (0) and an I/O BAR (1); the SCB is
        reachable through either, and the port is simplest */
-    net_port = (u16)net_pci_bar( net_pciaddr, 1, &isio );
+    net_port = (uint16_t)net_pci_bar( net_pciaddr, 1, &isio );
     if ( net_port == 0 || !isio ) {
-        net_port = (u16)net_pci_bar( net_pciaddr, 0, &isio );
+        net_port = (uint16_t)net_pci_bar( net_pciaddr, 0, &isio );
         if ( net_port == 0 || !isio ) return 1;
     }
-    net_irq = (u8)net_pci_irqline( net_pciaddr );
+    net_irq = (uint8_t)net_pci_irqline( net_pciaddr );
     net_bus = NICB_PCI;
     net_flags = NICF_WORD;
 
@@ -238,9 +239,9 @@ int card_find( void )
 
     abits = ee_abits();
     for ( i = 0; i < 3; i++ ) {
-        u16 w = ee_word( i, abits );
-        net_mac[i * 2] = (u8)w;
-        net_mac[i * 2 + 1] = (u8)( w >> 8 );
+        uint16_t w = ee_word( i, abits );
+        net_mac[i * 2] = (uint8_t)w;
+        net_mac[i * 2 + 1] = (uint8_t)( w >> 8 );
     }
     if ( !net_mac_ok( net_mac ) ) return 1;
 
@@ -248,23 +249,23 @@ int card_find( void )
         need = RFDN * RFDSZ + TXN * TXCBSZ + 128 + 16;
         pool = net_alloc( need );
         if ( pool == 0 ) return 1;
-        at = align16( (u32)pool );
-        cmdcb = (u8 *)at;                   at += 128;
-        for ( i = 0; i < RFDN; i++ ) { rfd[i] = (u8 *)at; at += RFDSZ; }
-        for ( i = 0; i < TXN; i++ ) { txcb[i] = (u8 *)at; at += TXCBSZ; }
+        at = align16( (uint32_t)pool );
+        cmdcb = (uint8_t *)at;                   at += 128;
+        for ( i = 0; i < RFDN; i++ ) { rfd[i] = (uint8_t *)at; at += RFDSZ; }
+        for ( i = 0; i < TXN; i++ ) { txcb[i] = (uint8_t *)at; at += TXCBSZ; }
     }
     net_strcpy( net_name, "Intel 8255x (PRO/100)" );
     return 0;
 }
 
 /* run one command block through the CU and wait for it to complete */
-static int run_cb( u8 *cb )
+static int run_cb( uint8_t *cb )
 {
-    u32 n;
+    unsigned int n;
 
-    if ( !scb_cmd( CUC_START, (u32)cb ) ) return 0;
+    if ( !scb_cmd( CUC_START, (uint32_t)cb ) ) return 0;
     for ( n = 0; n < SPIN; n++ ) {
-        if ( *(volatile u16 *)cb & CB_C ) return 1;
+        if ( *(volatile uint16_t *)cb & CB_C ) return 1;
     }
     return 0;
 }
@@ -272,7 +273,7 @@ static int run_cb( u8 *cb )
 int card_setup( void )
 {
     int i;
-    u8 *cb = cmdcb;
+    uint8_t *cb = cmdcb;
 
     outl( net_port + SCB_PORT, 0 );             /* reset */
     for ( i = 0; i < 10000; i++ ) eedelay();
@@ -284,13 +285,13 @@ int card_setup( void )
 
     /* who we are */
     net_memzero( cb, 32 );
-    *(u16 *)( cb + 2 ) = CB_IASETUP | CB_EL;
+    *(uint16_t *)( cb + 2 ) = CB_IASETUP | CB_EL;
     net_memcpy( cb + 8, net_mac, 6 );
     if ( !run_cb( cb ) ) return 1;
 
     /* how to behave */
     net_memzero( cb, 32 );
-    *(u16 *)( cb + 2 ) = CB_CONFIG | CB_EL;
+    *(uint16_t *)( cb + 2 ) = CB_CONFIG | CB_EL;
     net_memcpy( cb + 8, config_default, 22 );
     if ( !run_cb( cb ) ) return 1;
 
@@ -298,28 +299,28 @@ int card_setup( void )
        whole frame right behind its 16-byte header (simplified), the
        last one the end of the ring (EL) */
     for ( i = 0; i < RFDN; i++ ) {
-        u8 *r = rfd[i];
+        uint8_t *r = rfd[i];
         net_memzero( r, 16 );
-        *(u16 *)( r + 2 ) = (u16)( i == RFDN - 1 ? CB_EL : 0 );
-        *(u32 *)( r + 4 ) = (u32)rfd[( i + 1 ) % RFDN];   /* link */
-        *(u32 *)( r + 8 ) = 0xFFFFFFFFL;                  /* no buffer descriptor */
-        *(u16 *)( r + 14 ) = RFD_SIZE;
+        *(uint16_t *)( r + 2 ) = (uint16_t)( i == RFDN - 1 ? CB_EL : 0 );
+        *(uint32_t *)( r + 4 ) = (uint32_t)rfd[( i + 1 ) % RFDN];  /* link */
+        *(uint32_t *)( r + 8 ) = 0xFFFFFFFFL;                      /* no buffer descriptor */
+        *(uint16_t *)( r + 14 ) = RFD_SIZE;
     }
     for ( i = 0; i < TXN; i++ ) {
-        u8 *t = txcb[i];
+        uint8_t *t = txcb[i];
         net_memzero( t, 24 );
-        *(u16 *)( t + 0 ) = CB_C;                         /* free */
+        *(uint16_t *)( t + 0 ) = CB_C;                             /* free */
     }
     rx_cur = tx_cur = 0;
     tx_last = 0;
 
-    if ( !scb_cmd( RUC_START, (u32)rfd[0] ) ) return 1;
+    if ( !scb_cmd( RUC_START, (uint32_t)rfd[0] ) ) return 1;
 
     /* what setting up raised (the CU going idle) is cleared before the
        mask comes off: a level line asserted with nobody to answer it
        is shut by the kernel after 256 in a second */
     outw( net_port + SCB_STATUS, ACK_ALL );
-    outw( net_port + SCB_CMD, (u16)( net_flags & NICF_POLLED ? SCB_MASK : 0 ) );  /* masked, or let it interrupt */
+    outw( net_port + SCB_CMD, (uint16_t)( net_flags & NICF_POLLED ? SCB_MASK : 0 ) ); /* masked, or let it interrupt */
     return 0;
 }
 
@@ -329,32 +330,32 @@ void card_stop( void )
     outw( net_port + SCB_CMD, SCB_MASK );       /* interrupts masked */
 }
 
-int card_send( const u8 *frame, u32 len )
+int card_send( const uint8_t *frame, unsigned int len )
 {
     int entry = tx_cur;
-    u8 *t = txcb[entry];
-    u32 n;
+    uint8_t *t = txcb[entry];
+    unsigned int n;
 
     /* one block at a time: the one before it done and the command unit
        idle, since a start while the unit is still active is not taken */
     if ( tx_last ) {
         for ( n = 0; n < SPIN; n++ ) {
-            if ( ( *(volatile u16 *)tx_last & CB_C ) && !( scb_status() & CUS_MASK ) ) break;
+            if ( ( *(volatile uint16_t *)tx_last & CB_C ) && !( scb_status() & CUS_MASK ) ) break;
         }
         if ( n == SPIN ) { net_stats.txerrors++; return 0; }
     }
-    *(u16 *)( t + 0 ) = 0;                       /* status */
-    *(u16 *)( t + 2 ) = CB_TX | CB_SF | CB_EL;
-    *(u32 *)( t + 4 ) = 0;                       /* link (end of list) */
-    *(u32 *)( t + 8 ) = (u32)( t + 16 );         /* the buffer list */
-    *(u16 *)( t + 12 ) = 0;                      /* no bytes in the block itself */
-    t[14] = 0xE0;                                /* transmit threshold */
-    t[15] = 1;                                   /* one buffer */
-    *(u32 *)( t + 16 ) = (u32)( t + 24 );        /* the buffer: address, */
-    *(u16 *)( t + 20 ) = (u16)len;               /* ...length, */
-    *(u16 *)( t + 22 ) = 1;                      /* ...and the last one */
+    *(uint16_t *)( t + 0 ) = 0;                      /* status */
+    *(uint16_t *)( t + 2 ) = CB_TX | CB_SF | CB_EL;
+    *(uint32_t *)( t + 4 ) = 0;                      /* link (end of list) */
+    *(uint32_t *)( t + 8 ) = (uint32_t)( t + 16 );   /* the buffer list */
+    *(uint16_t *)( t + 12 ) = 0;                     /* no bytes in the block itself */
+    t[14] = 0xE0;                                    /* transmit threshold */
+    t[15] = 1;                                       /* one buffer */
+    *(uint32_t *)( t + 16 ) = (uint32_t)( t + 24 );  /* the buffer: address, */
+    *(uint16_t *)( t + 20 ) = (uint16_t)len;         /* ...length, */
+    *(uint16_t *)( t + 22 ) = 1;                     /* ...and the last one */
     net_memcpy( t + 24, frame, len );
-    if ( !scb_cmd( CUC_START, (u32)t ) ) { net_stats.txerrors++; return 0; }
+    if ( !scb_cmd( CUC_START, (uint32_t)t ) ) { net_stats.txerrors++; return 0; }
     tx_last = t;
     tx_cur = ( entry + 1 ) % TXN;
     return 1;
@@ -362,17 +363,17 @@ int card_send( const u8 *frame, u32 len )
 
 static void rx_drain( void )
 {
-    u32 len, n;
-    u16 st;
-    u8 *r, *slot;
+    unsigned int len, n;
+    uint16_t st;
+    uint8_t *r, *slot;
 
     for ( n = 0; n < RFDN; n++ ) {
         r = rfd[rx_cur];
-        st = *(volatile u16 *)r;
+        st = *(volatile uint16_t *)r;
         if ( !( st & CB_C ) ) break;                     /* not filled yet */
         /* the count's top bits are EOF and F, which QEMU does not set;
            there is no CRC behind the frame (configure byte 18) */
-        len = *(volatile u16 *)( r + 12 ) & 0x3FFF;
+        len = *(volatile uint16_t *)( r + 12 ) & 0x3FFF;
         if ( ( st & CB_OK ) && len >= NIC_HDRLEN && len <= NIC_MAXFRAME ) {
             slot = net_rx_begin();
             net_memcpy( slot, r + 16, len );
@@ -382,32 +383,32 @@ static void rx_drain( void )
         }
         /* give it back as the new end of the ring, then take the end
            off the one before it */
-        *(volatile u16 *)( r + 0 ) = 0;
-        *(volatile u16 *)( r + 12 ) = 0;
-        *(volatile u16 *)( r + 2 ) = CB_EL;
-        *(volatile u16 *)( rfd[( rx_cur + RFDN - 1 ) % RFDN] + 2 ) = 0;
+        *(volatile uint16_t *)( r + 0 ) = 0;
+        *(volatile uint16_t *)( r + 12 ) = 0;
+        *(volatile uint16_t *)( r + 2 ) = CB_EL;
+        *(volatile uint16_t *)( rfd[( rx_cur + RFDN - 1 ) % RFDN] + 2 ) = 0;
         rx_cur = ( rx_cur + 1 ) % RFDN;
     }
 }
 
 int card_service( void )
 {
-    u16 st;
-    u32 n;
+    uint16_t st;
+    unsigned int n;
     int mine = 0;
 
     for ( n = 0; n < 8; n++ ) {
         st = scb_status();
         if ( !( st & ACK_ALL ) ) break;
         mine = 1;
-        outw( net_port + SCB_STATUS, (u16)( st & ACK_ALL ) );   /* ack */
+        outw( net_port + SCB_STATUS, (uint16_t)( st & ACK_ALL ) ); /* ack */
         if ( st & ( ACK_FR | ACK_RNR ) ) rx_drain();
     }
     /* the receive unit stopped at the end of the ring: drained, it is
        started again at the first free descriptor */
     if ( ( scb_status() & RUS_MASK ) != RUS_READY ) {
         rx_drain();
-        scb_cmd( RUC_START, (u32)rfd[rx_cur] );
+        scb_cmd( RUC_START, (uint32_t)rfd[rx_cur] );
     }
     return mine;
 }

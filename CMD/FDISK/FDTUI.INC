@@ -233,9 +233,11 @@ tu_nd_ok:
         jnz     tu_nd_some
         mov     dword ptr [tui_ndisks],1  ; one disk saying "no disk" beats
 tu_nd_some:                               ; a screen with nothing on it
+        call    tu_dlist                ; which of them are offered
         call    mu_disks                ; the Disk menu, an item a disk
-        xor     eax,eax
+        bsf     eax,dword ptr [tui_dmask]       ; the first one offered
         mov     [tui_disk],eax
+        xor     eax,eax
         mov     [tr_sel],eax
         mov     [ls_top],eax
         mov     [cap_len],eax
@@ -2372,26 +2374,70 @@ tu_about:
         jmp     tu_box
 
 ;--- the disks -------------------------------------------------------
+; Tab and Shift+Tab go round the disks tu_dlist offered, and pass over
+; the numbers with no hard disk behind them.
 tu_nextdisk:
         mov     eax,[tui_disk]
+tnd_lp:
         inc     eax
         cmp     eax,[tui_ndisks]
-        jb      tu_seldisk
+        jb      tnd_try
         xor     eax,eax
+tnd_try:
+        bt      dword ptr [tui_dmask],eax
+        jnc     tnd_lp
         jmp     short tu_seldisk
 tu_prevdisk:
         mov     eax,[tui_disk]
+tpd_lp:
         or      eax,eax
         jnz     tpd_back
         mov     eax,[tui_ndisks]
 tpd_back:
         dec     eax
+        bt      dword ptr [tui_dmask],eax
+        jnc     tpd_lp
 tu_seldisk:
         mov     [tui_disk],eax
         mov     dword ptr [tr_sel],0
         mov     dword ptr [ls_top],0
 tu_reread:
         call    tui_load
+        ret
+
+;--- tu_dlist - tui_dmask: a bit for each disk number the Disk menu and
+;--- Tab offer.  A hard disk that is there, and every USB unit, there or
+;--- not, because a stick can be plugged in while FDISK runs and a hard
+;--- disk cannot.  With eight hard-disk numbers, listing them all would
+;--- fill the menu with disks the machine does not have.  Nothing at all
+;--- offers disk 0, which then says "no disk".
+tu_dlist:
+        pushad
+        mov     dword ptr [tui_dmask],0
+        xor     ebx,ebx                 ; EBX = the disk number
+tdk_one:
+        cmp     ebx,[tui_ndisks]
+        jae     tdk_done
+        cmp     ebx,MAX_PHYS
+        jae     tdk_take                ; a USB unit
+        lea     edx,[ebx+80h]
+        mov     edi,OFFSET dsk_rec
+        mov     eax,0F10Ch
+        int     21h
+        jc      tdk_next
+        test    byte ptr [dsk_rec+DSK_FLAGS],DSKF_PRESENT
+        jz      tdk_next
+tdk_take:
+        bts     dword ptr [tui_dmask],ebx
+tdk_next:
+        inc     ebx
+        jmp     short tdk_one
+tdk_done:
+        cmp     dword ptr [tui_dmask],0
+        jne     tdk_out
+        mov     dword ptr [tui_dmask],1
+tdk_out:
+        popad
         ret
 
 tu_quit:
@@ -3499,6 +3545,7 @@ tu_changed  db  0                       ; a write only a restart will show
 dr_press    dd  0                       ; the drag: the row pressed,
 dr_target   dd  0                       ; and the row that moves
 tui_disk    dd  0
+tui_dmask   dd  0                       ; the disks offered (tu_dlist)
 tui_ndisks  dd  0
 tr_n        dd  0
 tr_sel      dd  0

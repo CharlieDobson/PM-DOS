@@ -23,31 +23,31 @@
 
 /* a listed directory entry: this header, then the name and the 8.3 name */
 typedef struct {
-    u32 size;
-    u16 time, date;
-    u8  attr;
-    u8  namelen;                /* strlen( name ), at most 255 */
+    uint32_t size;
+    uint16_t time, date;
+    uint8_t  attr;
+    uint8_t  namelen;           /* strlen( name ), at most 255 */
 } ENTRY;
 
 typedef struct {
-    u8  *buf;
-    u32  used, cap;
+    uint8_t     *buf;
+    unsigned int used, cap;
 } ELIST;
 
 #define COPYBUF_MAX (64u * 1024u)
 
-static char  src_rel[PATH_MAX];     /* below the source dir, '\'-ended */
-static char  dst_rel[PATH_MAX];     /* the same below the destination */
-static char  made[PATH_MAX];        /* the last directory known to exist */
-static u8   *copybuf;
-static u32   copylen;
-static u32   copied;                /* files copied, or listed with /L */
-static u32   matched;               /* files the pattern found at all */
-static int   too_long;              /* a path would not fit */
-static int   errors;
-static int   error_exit;
-static int   overwrite_all;
-static int   broken;                /* ^C */
+static char         src_rel[PATH_MAX];  /* below the source dir, '\'-ended */
+static char         dst_rel[PATH_MAX];  /* the same below the destination */
+static char         made[PATH_MAX];     /* the last directory known to exist */
+static uint8_t     *copybuf;
+static unsigned int copylen;
+static unsigned int copied;             /* files copied, or listed with /L */
+static unsigned int matched;            /* files the pattern found at all */
+static int          too_long;           /* a path would not fit */
+static int          errors;
+static int          error_exit;
+static int          overwrite_all;
+static int          broken;             /* ^C */
 
 /* ------------------------------------------------------------------ */
 /* the lists                                                           */
@@ -55,10 +55,10 @@ static int   broken;                /* ^C */
 
 static void list_add( ELIST *list, const FINDREC *rec )
 {
-    u32 nlen = str_len( rec->name ), alen = str_len( rec->alias );
-    u32 need = sizeof( ENTRY ) + nlen + 1 + alen + 1;
+    unsigned int nlen = str_len( rec->name ), alen = str_len( rec->alias );
+    unsigned int need = sizeof( ENTRY ) + nlen + 1 + alen + 1;
     ENTRY *ent;
-    u8 *grown;
+    uint8_t *grown;
 
     if ( nlen > 255 ) {
         too_long = 1;
@@ -70,7 +70,7 @@ static void list_add( ELIST *list, const FINDREC *rec )
         while ( list->used + need > list->cap ) {
             list->cap *= 2;
         }
-        grown = (u8 *)xalloc( list->cap );
+        grown = (uint8_t *)xalloc( list->cap );
         if ( list->used ) {
             mem_cpy( grown, list->buf, list->used );
         }
@@ -82,16 +82,16 @@ static void list_add( ELIST *list, const FINDREC *rec )
     ent->time = rec->time;
     ent->date = rec->date;
     ent->attr = rec->attr;
-    ent->namelen = (u8)nlen;
+    ent->namelen = (uint8_t)nlen;
     mem_cpy( ent + 1, rec->name, nlen + 1 );
-    mem_cpy( (u8 *)(ent + 1) + nlen + 1, rec->alias, alen + 1 );
+    mem_cpy( (uint8_t *)(ent + 1) + nlen + 1, rec->alias, alen + 1 );
     list->used += need;
 }
 
-static ENTRY *list_next( ELIST *list, u32 *pos )
+static ENTRY *list_next( ELIST *list, unsigned int *pos )
 {
     ENTRY *ent;
-    u32 nlen, alen;
+    unsigned int nlen, alen;
 
     if ( *pos >= list->used ) {
         return NULL;
@@ -118,8 +118,8 @@ static int list_dir( const char *dir, const char *pattern, int dirs, ELIST *list
 {
     char spec[PATH_MAX];
     FINDREC rec;
-    u32 handle;
-    u16 attrs;
+    uint32_t handle;
+    uint16_t attrs;
     int rc;
 
     if ( !str_cpyn( spec, dir, sizeof( spec ) ) || !str_catn( spec, pattern, sizeof( spec ) ) ) {
@@ -185,8 +185,8 @@ static int check_break( void )
 static int ensure_dir( void )
 {
     char path[PATH_MAX];
-    u16 attr;
-    u32 len, pos;
+    uint16_t attr;
+    unsigned int len, pos;
     int rc;
 
     if ( !str_cpyn( path, job.dst_full, sizeof( path ) )
@@ -229,8 +229,9 @@ static int ensure_dir( void )
 /* the bytes, the time and the attributes.  0, or a DOS error code */
 static int copy_data( const char *src, const char *dst, const ENTRY *ent )
 {
-    u32 in, out, got, put;
-    u16 attr;
+    uint32_t in, out;
+    unsigned int got, put;
+    uint16_t attr;
     int rc;
 
     rc = sys_open_read( src, &in );
@@ -280,7 +281,7 @@ static int copy_data( const char *src, const char *dst, const ENTRY *ent )
 /* what is at "path" already: 0 and its entry, or not there */
 static int probe( const char *path, FINDREC *rec )
 {
-    u32 handle;
+    uint32_t handle;
 
     if ( has_wild( path ) ) {
         return -1;
@@ -424,7 +425,7 @@ static int walk( void )
     char dir[PATH_MAX];
     ELIST files, subs;
     ENTRY *ent;
-    u32 pos, slen, dlen;
+    unsigned int pos, slen, dlen;
     int rc = 0;
 
     mem_set( &files, 0, sizeof( files ) );
@@ -484,7 +485,7 @@ int copy_run( void )
     char count[16];
 
     copylen = COPYBUF_MAX;
-    while ( (copybuf = (u8 *)try_alloc( copylen )) == NULL ) {
+    while ( (copybuf = (uint8_t *)try_alloc( copylen )) == NULL ) {
         copylen /= 2;
         if ( copylen < 512 ) {
             out_of_memory();

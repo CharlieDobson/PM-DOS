@@ -33,7 +33,7 @@ void tx_free( TEXT *text )
 void tx_add( TEXT *text, const char *line )
 {
     char **grown, *copy;
-    u32 len = str_len( line );
+    unsigned int len = str_len( line );
     int cap;
 
     while ( len && line[len - 1] == ' ' ) {     /* nothing ends in blanks */
@@ -41,13 +41,13 @@ void tx_add( TEXT *text, const char *line )
     }
     if ( text->count == text->cap ) {
         cap = text->cap ? text->cap * 2 : 32;
-        grown = (char **)try_alloc( (u32)cap * sizeof( char * ) );
+        grown = (char **)try_alloc( (unsigned int)cap * sizeof( char * ) );
         if ( grown == NULL ) {
             text->failed = 1;
             return;
         }
         if ( text->count ) {
-            mem_cpy( grown, text->line, (u32)text->count * sizeof( char * ) );
+            mem_cpy( grown, text->line, (unsigned int)text->count * sizeof( char * ) );
         }
         xfree( text->line );
         text->line = grown;
@@ -101,10 +101,10 @@ void __cdecl tx_fieldf( TEXT *text, int label_width, const char *label, const ch
 /* the ROMs                                                            */
 /* ------------------------------------------------------------------ */
 
-u8 *rom_load( u32 addr, u32 len )
+uint8_t *rom_load( uint32_t addr, unsigned int len )
 {
-    u8 *rom = (u8 *)try_alloc( len + 1 );
-    u32 done, part;
+    uint8_t *rom = (uint8_t *)try_alloc( len + 1 );
+    unsigned int done, part;
 
     if ( rom == NULL ) {
         return NULL;
@@ -126,9 +126,9 @@ static int is_letter( int ch )
 /* "name" in rom[from..to), standing as a word of its own - "ATI" is
    not in "compatible" - and not the first word of "IBM compatible",
    which every clone's BIOS says of itself */
-static int name_in( const u8 *rom, u32 len, u32 from, u32 to, const char *name )
+static int name_in( const uint8_t *rom, unsigned int len, unsigned int from, unsigned int to, const char *name )
 {
-    u32 nlen = str_len( name ), pos = from;
+    unsigned int nlen = str_len( name ), pos = from;
     int at;
 
     while ( nlen && name[nlen - 1] == ' ' ) {
@@ -139,7 +139,7 @@ static int name_in( const u8 *rom, u32 len, u32 from, u32 to, const char *name )
         if ( at < 0 ) {
             return 0;
         }
-        pos += (u32)at;
+        pos += (unsigned int)at;
         if ( (pos == 0 || !is_letter( rom[pos - 1] ))
              && (pos + nlen >= len || !is_letter( rom[pos + nlen] ))
              && (pos + nlen + 11 > len || mem_ifind( rom + pos + nlen, 11, " compatible" ) != 0) ) {
@@ -154,10 +154,10 @@ static int name_in( const u8 *rom, u32 len, u32 from, u32 to, const char *name )
    64K of code, so it is believed only near the start of a 4K block,
    where a BIOS keeps its copyright lines.  A long one is believed
    anywhere. */
-int rom_find_name( const u8 *rom, u32 len, const char *const *names )
+int rom_find_name( const uint8_t *rom, unsigned int len, const char *const *names )
 {
     int index;
-    u32 block, span;
+    unsigned int block, span;
 
     for ( index = 0; names[index]; index++ ) {
         if ( str_len( names[index] ) > 3 ) {
@@ -188,9 +188,9 @@ static int is_digit( int ch )
 
 /* does this text call itself a version: Ver, Rev, Rel, or a v and a
    digit */
-static int names_version( const u8 *text, u32 len )
+static int names_version( const uint8_t *text, unsigned int len )
 {
-    u32 pos;
+    unsigned int pos;
 
     if ( mem_ifind( text, len, "Ver" ) >= 0 || mem_ifind( text, len, "Rev" ) >= 0
          || mem_ifind( text, len, "Rel" ) >= 0 ) {
@@ -211,9 +211,9 @@ static int names_version( const u8 *text, u32 len )
 /* Up to three strings that hold a version number: a full stop with a
    digit on each side of it, in readable text that says "version" one
    way or another.  Returns how many. */
-int rom_versions( const u8 *rom, u32 len, char found[3][64] )
+int rom_versions( const uint8_t *rom, unsigned int len, char found[3][64] )
 {
-    u32 pos, start, end, count;
+    unsigned int pos, start, end, count;
     int have = 0, same;
 
     found[0][0] = found[1][0] = found[2][0] = 0;
@@ -248,9 +248,9 @@ int rom_versions( const u8 *rom, u32 len, char found[3][64] )
 
 /* The latest "nn/nn/nn" there is, as mm/dd/yy.  Two digits of year: 80
    and up are taken for the 1900s. */
-int rom_date( const u8 *rom, u32 len, char *date )
+int rom_date( const uint8_t *rom, unsigned int len, char *date )
 {
-    u32 pos, best = 0, stamp;
+    unsigned int pos, best = 0, stamp;
     int year;
 
     date[0] = 0;
@@ -264,8 +264,8 @@ int rom_date( const u8 *rom, u32 len, char *date )
         }
         year = (rom[pos + 4] - '0') * 10 + (rom[pos + 5] - '0');
         year += year < 80 ? 2000 : 1900;
-        stamp = (u32)year * 10000 + (u32)((rom[pos - 2] - '0') * 10 + (rom[pos - 1] - '0')) * 100
-                + (u32)((rom[pos + 1] - '0') * 10 + (rom[pos + 2] - '0'));
+        stamp = (unsigned int)year * 10000 + (unsigned int)((rom[pos - 2] - '0') * 10 + (rom[pos - 1] - '0')) * 100
+                + (unsigned int)((rom[pos + 1] - '0') * 10 + (rom[pos + 2] - '0'));
         if ( stamp > best ) {
             best = stamp;
             mem_cpy( date, rom + pos - 2, 8 );
@@ -284,9 +284,9 @@ static int in_string( int ch )
 /* The readable text round rom[at], for the browser: back to where it
    starts - 192 bytes at most - and on to where it ends, 240 at most,
    with the blank space at either end left off. */
-u32 rom_string( const u8 *rom, u32 len, u32 at, u32 *length )
+unsigned int rom_string( const uint8_t *rom, unsigned int len, unsigned int at, unsigned int *length )
 {
-    u32 start = at, end = at;
+    unsigned int start = at, end = at;
 
     while ( start > 0 && at - start < 192 && in_string( rom[start - 1] ) ) {
         start--;

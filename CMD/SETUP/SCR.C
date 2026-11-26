@@ -26,10 +26,10 @@
 #include "setup.h"
 #include "text.h"
 
-static u16  want[SCR_ROWS * SCR_COLS];
-static u16  shown[SCR_ROWS * SCR_COLS];
-static int  cur_row = -1, cur_col = -1;         /* -1 = hidden */
-static int  shown_row = -2, shown_col = -2;
+static uint16_t want[SCR_ROWS * SCR_COLS];
+static uint16_t shown[SCR_ROWS * SCR_COLS];
+static int      cur_row = -1, cur_col = -1;     /* -1 = hidden */
+static int      shown_row = -2, shown_col = -2;
 
 /* the status line's keys, kept so a box can put them back */
 static char status_keys[100];
@@ -82,7 +82,7 @@ void scr_flush( void )
 
 void scr_putn( int row, int col, int attr, const char *text, int len )
 {
-    u16 *cell;
+    uint16_t *cell;
 
     if ( row < 0 || row >= SCR_ROWS ) {
         return;
@@ -90,7 +90,7 @@ void scr_putn( int row, int col, int attr, const char *text, int len )
     cell = want + row * SCR_COLS;
     while ( len-- > 0 && *text ) {
         if ( col >= 0 && col < SCR_COLS ) {
-            cell[col] = ((u16)attr << 8) | (u8)*text;
+            cell[col] = ((uint16_t)attr << 8) | (uint8_t)*text;
         }
         col++;
         text++;
@@ -109,7 +109,7 @@ void scr_fill( int row, int col, int rows, int cols, int attr, int ch )
     for ( r = row; r < row + rows && r < SCR_ROWS; r++ ) {
         for ( c = col; c < col + cols && c < SCR_COLS; c++ ) {
             if ( r >= 0 && c >= 0 ) {
-                want[r * SCR_COLS + c] = ((u16)attr << 8) | (u8)ch;
+                want[r * SCR_COLS + c] = ((uint16_t)attr << 8) | (uint8_t)ch;
             }
         }
     }
@@ -117,10 +117,10 @@ void scr_fill( int row, int col, int rows, int cols, int attr, int ch )
 
 void scr_attr( int row, int col, int cols, int attr )
 {
-    u16 *cell = want + row * SCR_COLS;
+    uint16_t *cell = want + row * SCR_COLS;
 
     for ( ; cols > 0 && col < SCR_COLS; col++, cols-- ) {
-        cell[col] = ((u16)attr << 8) | (cell[col] & 0xFF);
+        cell[col] = ((uint16_t)attr << 8) | (cell[col] & 0xFF);
     }
 }
 
@@ -135,12 +135,12 @@ void scr_nocursor( void )
     cur_row = cur_col = -1;
 }
 
-void scr_save( u16 *cells )
+void scr_save( uint16_t *cells )
 {
     mem_cpy( cells, want, sizeof( want ) );
 }
 
-void scr_restore( const u16 *cells )
+void scr_restore( const uint16_t *cells )
 {
     mem_cpy( want, cells, sizeof( want ) );
 }
@@ -261,7 +261,7 @@ void scr_box( int top, int left, int bottom, int right, int attr,
               const char *title )
 {
     int r, len;
-    u16 a = (u16)attr << 8;
+    uint16_t a = (uint16_t)attr << 8;
 
     /* every box Setup draws fits; one that would not is cut to the
        screen rather than written past it */
@@ -304,7 +304,7 @@ void scr_box( int top, int left, int bottom, int right, int attr,
 
 /* Row 16: "NNN% complete"; rows 17-20 a box, and in rows 18-19 a bar of
    58 blocks for the whole */
-void scr_gauge( u32 done, u32 total )
+void scr_gauge( uint32_t done, uint32_t total )
 {
     char line[16];
     int pct, cells;
@@ -379,8 +379,8 @@ static void test_open( void )
 
 static void log_write( const char *text, int len )
 {
-    u16 handle, done;
-    u32 size;
+    uint16_t handle, done;
+    uint32_t size;
 
     if ( !test_log[0] ) {
         return;
@@ -393,7 +393,7 @@ static void log_write( const char *text, int len )
     if ( plat_size( handle, &size ) == 0 ) {
         plat_seek( handle, size );      /* written on the end */
     }
-    plat_write( handle, text, (u16)len, &done );
+    plat_write( handle, text, (uint16_t)len, &done );
     plat_close( handle );
 }
 

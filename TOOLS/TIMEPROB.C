@@ -24,6 +24,7 @@
 #include <conio.h>
 #include <dos.h>
 #include <string.h>
+#include <stdint.h>
 
 #define LOGNAME "C:\\TIMEPROB.TXT"
 
@@ -44,7 +45,7 @@ static void note( const char *text )
 }
 
 /*--- INT 1Ch, hooked through DOS the way a program would -----------*/
-static volatile unsigned ticks1C, ticks08;
+static volatile uint16_t ticks1C, ticks08;
 static void ( __interrupt __far *old1C )( void );
 static void ( __interrupt __far *old08 )( void );
 
@@ -60,9 +61,9 @@ static void __interrupt __far tick08( void )
     _chain_intr( old08 );
 }
 
-static unsigned pitRead( void )
+static uint16_t pitRead( void )
 {
-    unsigned lo, hi;
+    uint16_t lo, hi;
 
     outp( 0x43, 0x00 );                /* latch counter 0 */
     lo = inp( 0x40 );
@@ -70,13 +71,13 @@ static unsigned pitRead( void )
     return ( hi << 8 ) | lo;
 }
 
-static unsigned pitStatus( void )
+static uint8_t pitStatus( void )
 {
     outp( 0x43, 0xE2 );                /* read-back: status of counter 0 */
     return inp( 0x40 );
 }
 
-static unsigned rtcSeconds( void )
+static uint8_t rtcSeconds( void )
 {
     outp( 0x70, 0x00 );
     return inp( 0x71 );
@@ -93,7 +94,8 @@ int PASCAL WinMain( HINSTANCE inst, HINSTANCE prev, LPSTR cmdLine, int show )
 {
     DWORD       t0, t1, c0, b0, m0, m1;
     long        turns;
-    unsigned    p0, p1, p2, s0, s1, r0, r1, n0;
+    uint16_t    p0, p1, p2, n0;
+    uint8_t     s0, s1, r0, r1;
     HINSTANCE   mm;
     TIMEGETTIME timeGetTime = NULL;
 

@@ -30,7 +30,7 @@ int ide_trace;                  /* no IDE here: TRON changes nothing */
 
 void host_set_root( const char *root );
 void host_set_keys( const char *path );
-u16 *host_screen( int *rows, int *cols );
+uint16_t *host_screen( int *rows, int *cols );
 
 void out_of_memory( void )
 {
@@ -47,7 +47,7 @@ static void dump_screen( const char *path )
 {
     FILE *fp = fopen( path, "w" );
     int rows, cols, r, c;
-    u16 *cells;
+    uint16_t *cells;
 
     if ( fp == NULL ) {
         return;
@@ -68,8 +68,9 @@ static void dump_screen( const char *path )
 static PROGRAM *round_trip( PROGRAM *prog )
 {
     PROGRAM *back;
-    u8 *blob;
-    u32 len, flags;
+    uint8_t *blob;
+    unsigned int len;
+    uint32_t flags;
     int rc;
     char module[PATH_MAX];
 
@@ -94,8 +95,8 @@ static int make_file( const char *file, const char *exe, const char *runtime, in
     FILE *in, *out;
     PROGRAM *prog;
     CERR err;
-    u8 *blob;
-    u32 len;
+    uint8_t *blob;
+    unsigned int len;
     char module[PATH_MAX], *dot;
     const char *base = file, *scan;
     int ch;
@@ -152,7 +153,7 @@ static void prog_free( PROGRAM *prog, int packed )
 static int list_program( void )
 {
     int t;
-    u32 l;
+    unsigned int l;
     char out[MAX_LINE + 64];
     CERR err;
 
@@ -176,7 +177,7 @@ int main( int argc, char **argv )
     const char *make_exe = NULL, *make_rt = NULL;
     int i, rc, why, list = 0, pack = 0;
     int debug = 1;
-    u32 run_at = 0, n;
+    unsigned int run_at = 0, n;
     PROGRAM *prog;
     CERR err;
     STMTLOC *loc;

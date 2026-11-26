@@ -79,33 +79,33 @@
 
 /* One cabinet of the set. */
 typedef struct {
-    long   base;                /* where it starts in the joined stream     */
-    long   embed;               /* how far into its own file it starts     */
-    UInt32 size;                /* cbCabinet                               */
-    UInt16 setId, index;        /* which set, and its place in it          */
-    UInt16 flags;
-    UInt16 numFolders, numFiles;
-    UInt32 filesAt;             /* coffFiles: the CFFILE table             */
-    UInt32 foldersAt;           /* just past the header: the CFFOLDER table */
-    int    folderReserve;       /* bytes reserved after each CFFOLDER      */
-    int    dataReserve;         /* and after each CFDATA header            */
+    long     base;              /* where it starts in the joined stream     */
+    long     embed;             /* how far into its own file it starts     */
+    uint32_t size;              /* cbCabinet                               */
+    uint16_t setId, index;      /* which set, and its place in it          */
+    uint16_t flags;
+    uint16_t numFolders, numFiles;
+    uint32_t filesAt;           /* coffFiles: the CFFILE table             */
+    uint32_t foldersAt;         /* just past the header: the CFFOLDER table */
+    int      folderReserve;     /* bytes reserved after each CFFOLDER      */
+    int      dataReserve;       /* and after each CFDATA header            */
 } CabVol;
 
 /* One cabinet's share of a folder. */
 typedef struct {
-    int    vol;
-    UInt32 dataAt;              /* coffCabStart: its first CFDATA          */
-    UInt16 numBlocks;
-    UInt32 packed;              /* compressed bytes, or 0xFFFFFFFF          */
+    int      vol;
+    uint32_t dataAt;            /* coffCabStart: its first CFDATA          */
+    uint16_t numBlocks;
+    uint32_t packed;            /* compressed bytes, or 0xFFFFFFFF          */
 } CabPart;
 
 /* A folder: one compressed stream, perhaps spread over several cabinets.
  * Its parts are always consecutive in the part table, because the folder
  * that crosses a join is the LAST of one cabinet and the FIRST of the next. */
 typedef struct {
-    UInt16 type;                /* typeCompress                            */
-    int    firstPart, numParts;
-    int    firstEntry;          /* the entry that reports its packed size  */
+    uint16_t type;              /* typeCompress                            */
+    int      firstPart, numParts;
+    int      firstEntry;        /* the entry that reports its packed size  */
 } CabFolder;
 
 struct CabArchive {
@@ -118,20 +118,20 @@ struct CabArchive {
     int        numParts, capParts;
     CabEntry  *entries;
     int        numEntries, capEntries;
-    UInt32     sumBlocks;       /* blocks the last run checked by checksum */
-    UInt32     bareBlocks;      /* and blocks that carried none            */
+    uint32_t   sumBlocks;       /* blocks the last run checked by checksum */
+    uint32_t   bareBlocks;      /* and blocks that carried none            */
 };
 
 /*---- Little-endian fields --------------------------------------------------*/
-static UInt32 CabLe16( const Byte *ptr )
+static uint32_t CabLe16( const uint8_t *ptr )
 {
-    return ptr[0] | ( (UInt32)ptr[1] << 8 );
+    return ptr[0] | ( (uint32_t)ptr[1] << 8 );
 }
 
-static UInt32 CabLe32( const Byte *ptr )
+static uint32_t CabLe32( const uint8_t *ptr )
 {
-    return ptr[0] | ( (UInt32)ptr[1] << 8 ) |
-           ( (UInt32)ptr[2] << 16 ) | ( (UInt32)ptr[3] << 24 );
+    return ptr[0] | ( (uint32_t)ptr[1] << 8 ) |
+           ( (uint32_t)ptr[2] << 16 ) | ( (uint32_t)ptr[3] << 24 );
 }
 
 /*---- The block checksum ----------------------------------------------------
@@ -140,16 +140,17 @@ static UInt32 CabLe32( const Byte *ptr )
  * and the one detail worth getting right.  A block's checksum covers its
  * data first, then the four size bytes of its header; not the reserved area.
  *--------------------------------------------------------------------------- */
-static UInt32 CabChecksum( const Byte *data, UInt32 len, UInt32 sum )
+static uint32_t CabChecksum( const uint8_t *data, uint32_t len, uint32_t sum )
 {
-    UInt32 i, tail = 0;
+    uint32_t tail = 0;
+    unsigned i;
 
     for ( i = 0; i + 4 <= len; i += 4 )
         sum ^= CabLe32( data + i );
     switch ( len & 3 )
     {
-    case 3: tail |= (UInt32)data[i++] << 16;   /* and on into the next */
-    case 2: tail |= (UInt32)data[i++] << 8;
+    case 3: tail |= (uint32_t)data[i++] << 16; /* and on into the next */
+    case 2: tail |= (uint32_t)data[i++] << 8;
     case 1: tail |= data[i];
     }
     return sum ^ tail;
@@ -180,13 +181,13 @@ static int CabReadString( VolFile *fp, char *dst, int keep )
  * anything malformed, '_'. */
 static void CabUtf8Name( const char *src, char *dst, int dstSize )
 {
-    WCHAR       wide[CAB_NAME_MAX + 1];
-    const Byte *in = (const Byte *)src;
-    int         len = 0;
+    WCHAR          wide[CAB_NAME_MAX + 1];
+    const uint8_t *in = (const uint8_t *)src;
+    int            len = 0;
 
     while ( *in && len < CAB_NAME_MAX )
     {
-        UInt32 ch = *in++;
+        uint32_t ch = *in++;
 
         if ( ch >= 0xC0 && ch < 0xE0 && ( in[0] & 0xC0 ) == 0x80 )
         {
@@ -196,7 +197,7 @@ static void CabUtf8Name( const char *src, char *dst, int dstSize )
         else if ( ch >= 0xE0 && ch < 0xF0 && ( in[0] & 0xC0 ) == 0x80 &&
                   ( in[1] & 0xC0 ) == 0x80 )
         {
-            ch = ( ( ch & 0x0F ) << 12 ) | ( (UInt32)( in[0] & 0x3F ) << 6 ) |
+            ch = ( ( ch & 0x0F ) << 12 ) | ( (uint32_t)( in[0] & 0x3F ) << 6 ) |
                  ( in[1] & 0x3F );
             in += 2;
         }
@@ -220,10 +221,10 @@ static void CabUtf8Name( const char *src, char *dst, int dstSize )
 static int CabReadHeader( VolFile *fp, long at, long avail, int strict,
                           CabVol *vol, char *prevName, char *nextName )
 {
-    Byte   hdr[CAB_HDR_SIZE];
-    char   disk[CAB_NAME_MAX];
-    UInt32 pos = CAB_HDR_SIZE;
-    int    rc;
+    uint8_t  hdr[CAB_HDR_SIZE];
+    char     disk[CAB_NAME_MAX];
+    uint32_t pos = CAB_HDR_SIZE;
+    int      rc;
 
     if ( prevName ) prevName[0] = '\0';
     if ( nextName ) nextName[0] = '\0';
@@ -237,11 +238,11 @@ static int CabReadHeader( VolFile *fp, long at, long avail, int strict,
     memset( vol, 0, sizeof( *vol ) );
     vol->size       = CabLe32( hdr + 8 );
     vol->filesAt    = CabLe32( hdr + 16 );
-    vol->numFolders = (UInt16)CabLe16( hdr + 26 );
-    vol->numFiles   = (UInt16)CabLe16( hdr + 28 );
-    vol->flags      = (UInt16)CabLe16( hdr + 30 );
-    vol->setId      = (UInt16)CabLe16( hdr + 32 );
-    vol->index      = (UInt16)CabLe16( hdr + 34 );
+    vol->numFolders = (uint16_t)CabLe16( hdr + 26 );
+    vol->numFiles   = (uint16_t)CabLe16( hdr + 28 );
+    vol->flags      = (uint16_t)CabLe16( hdr + 30 );
+    vol->setId      = (uint16_t)CabLe16( hdr + 32 );
+    vol->index      = (uint16_t)CabLe16( hdr + 34 );
 
     if ( strict &&
          ( CabLe32( hdr + 12 ) != 0 || CabLe32( hdr + 20 ) != 0 ||
@@ -257,7 +258,7 @@ static int CabReadHeader( VolFile *fp, long at, long avail, int strict,
 
     if ( vol->flags & CAB_FLAG_RESERVE )
     {
-        Byte res[4];
+        uint8_t res[4];
 
         if ( VolRead( res, 1, 4, fp ) != 4 ) return SZ_ERR_READ;
         vol->folderReserve = res[2];
@@ -279,7 +280,7 @@ static int CabReadHeader( VolFile *fp, long at, long avail, int strict,
         if ( rc != SZ_OK ) return rc;
     }
 
-    vol->foldersAt = (UInt32)( VolTell( fp ) - at );
+    vol->foldersAt = (uint32_t)( VolTell( fp ) - at );
     return SZ_OK;
 }
 
@@ -365,9 +366,9 @@ static int CabFindSet( const char *path, long embed,
     n = 1;
     while ( vols[n - 1].flags & CAB_FLAG_NEXT )
     {
-        CabVol vol;
-        char   dummy[CAB_NAME_MAX];
-        UInt16 want = (UInt16)( vols[n - 1].index + 1 );
+        CabVol   vol;
+        char     dummy[CAB_NAME_MAX];
+        uint16_t want = (uint16_t)( vols[n - 1].index + 1 );
 
         if ( n >= CAB_MAX_SET ) return SZ_ERR_VOLUME;
         if ( want == named.index && named.setId == vols[0].setId )
@@ -423,21 +424,21 @@ static int CabGrow( void **table, int *cap, int need, size_t size )
  *--------------------------------------------------------------------------- */
 static int CabReadVolume( CabArchive *cab, int volIdx, int *joinFolder )
 {
-    CabVol  *vol      = &cab->vols[volIdx];
-    int      startEnt = cab->numEntries;
-    int     *map      = NULL;
-    UInt32  *starts   = NULL;
-    int      hasFromPrev = 0, hasToNext = 0;
-    int      merge, j, k, out, rc = SZ_OK;
-    UInt32   want;
+    CabVol   *vol      = &cab->vols[volIdx];
+    int       startEnt = cab->numEntries;
+    int      *map      = NULL;
+    uint32_t *starts   = NULL;
+    int       hasFromPrev = 0, hasToNext = 0;
+    int       merge, j, k, out, rc = SZ_OK;
+    uint32_t  want;
 
     map    = (int *)malloc( vol->numFolders * sizeof( int ) );
-    starts = (UInt32 *)malloc( ( vol->numFolders + 1 ) * sizeof( UInt32 ) );
+    starts = (uint32_t *)malloc( ( vol->numFolders + 1 ) * sizeof( uint32_t ) );
     if ( !map || !starts ) { rc = SZ_ERR_MEMORY; goto done; }
 
     /* The files first: whether this cabinet's first folder continues the
      * last one is something only the files can say. */
-    want = (UInt32)cab->numEntries + vol->numFiles;
+    want = (uint32_t)cab->numEntries + vol->numFiles;
     rc = ArcCheckEntryCount( want );
     if ( rc != SZ_OK ) goto done;
     if ( !CabGrow( (void **)&cab->entries, &cab->capEntries, (int)want,
@@ -449,9 +450,9 @@ static int CabReadVolume( CabArchive *cab, int volIdx, int *joinFolder )
     for ( k = 0; k < vol->numFiles; k++ )
     {
         CabEntry *ent = &cab->entries[cab->numEntries];
-        Byte      rec[CAB_FILE_SIZE];
+        uint8_t   rec[CAB_FILE_SIZE];
         char      raw[CAB_NAME_MAX];
-        UInt32    iFolder, attrib;
+        uint32_t  iFolder, attrib;
         int       i;
 
         if ( VolRead( rec, 1, CAB_FILE_SIZE, cab->fp ) != CAB_FILE_SIZE )
@@ -463,8 +464,8 @@ static int CabReadVolume( CabArchive *cab, int volIdx, int *joinFolder )
         ent->size    = CabLe32( rec );
         ent->offset  = CabLe32( rec + 4 );
         iFolder      = CabLe16( rec + 8 );
-        ent->modDate = (UInt16)CabLe16( rec + 10 );
-        ent->modTime = (UInt16)CabLe16( rec + 12 );
+        ent->modDate = (uint16_t)CabLe16( rec + 10 );
+        ent->modTime = (uint16_t)CabLe16( rec + 12 );
         attrib       = CabLe16( rec + 14 );
         ent->attrib  = attrib & CAB_ATTR_SHOWN;
         ent->folder  = (int)iFolder;        /* resolved below */
@@ -493,9 +494,9 @@ static int CabReadVolume( CabArchive *cab, int volIdx, int *joinFolder )
     { rc = SZ_ERR_READ; goto done; }
     for ( j = 0; j < vol->numFolders; j++ )
     {
-        Byte     rec[CAB_FOLDER_SIZE];
+        uint8_t  rec[CAB_FOLDER_SIZE];
         CabPart *part = &cab->parts[cab->numParts];
-        UInt16   type;
+        uint16_t type;
 
         if ( VolRead( rec, 1, CAB_FOLDER_SIZE, cab->fp ) != CAB_FOLDER_SIZE )
         { rc = SZ_ERR_READ; goto done; }
@@ -505,8 +506,8 @@ static int CabReadVolume( CabArchive *cab, int volIdx, int *joinFolder )
 
         part->vol       = volIdx;
         part->dataAt    = CabLe32( rec );
-        part->numBlocks = (UInt16)CabLe16( rec + 4 );
-        type            = (UInt16)CabLe16( rec + 6 );
+        part->numBlocks = (uint16_t)CabLe16( rec + 4 );
+        type            = (uint16_t)CabLe16( rec + 6 );
         starts[j]       = part->dataAt;
 
         if ( j == 0 && merge )
@@ -538,8 +539,8 @@ static int CabReadVolume( CabArchive *cab, int volIdx, int *joinFolder )
     for ( j = 0; j < vol->numFolders; j++ )
     {
         CabPart *part  = &cab->parts[cab->numParts - vol->numFolders + j];
-        UInt32   end   = starts[j + 1];
-        UInt32   heads = (UInt32)part->numBlocks *
+        uint32_t end   = starts[j + 1];
+        uint32_t heads = (uint32_t)part->numBlocks *
                          ( CAB_DATA_SIZE + vol->dataReserve );
 
         if ( end > part->dataAt && end - part->dataAt >= heads )
@@ -554,7 +555,7 @@ static int CabReadVolume( CabArchive *cab, int volIdx, int *joinFolder )
     for ( k = startEnt; k < cab->numEntries; k++ )
     {
         CabEntry *ent = &cab->entries[k];
-        UInt32    raw = (UInt32)ent->folder;
+        uint32_t  raw = (uint32_t)ent->folder;
 
         if ( raw == CAB_FROM_PREV || raw == CAB_PREV_AND_NEXT )
         {
@@ -638,7 +639,7 @@ fail:
     return rc;
 }
 
-int CabProbe( const unsigned char *sig, int len )
+int CabProbe( const uint8_t *sig, int len )
 {
     return len >= 8 && memcmp( sig, "MSCF", 4 ) == 0 &&
            sig[4] == 0 && sig[5] == 0 && sig[6] == 0 && sig[7] == 0;
@@ -656,14 +657,14 @@ int CabOpen( const char *path, CabArchive **out )
 int CabOpenScan( const char *path, CabArchive **out )
 {
     VolFile *fp;
-    Byte    *buf;
+    uint8_t *buf;
     long     len, base;
     int      rc = SZ_ERR_SIG;
 
     *out = NULL;
     if ( VolOpen( path, &fp ) != SZ_OK ) return SZ_ERR_OPEN;
     len = VolSize( fp );
-    buf = (Byte *)malloc( CAB_SCAN_CHUNK + CAB_HDR_SIZE );
+    buf = (uint8_t *)malloc( CAB_SCAN_CHUNK + CAB_HDR_SIZE );
     if ( !buf ) { VolClose( fp ); return SZ_ERR_MEMORY; }
 
     for ( base = 0; base < len && rc != SZ_OK; base += CAB_SCAN_CHUNK )
@@ -674,7 +675,7 @@ int CabOpenScan( const char *path, CabArchive **out )
         if ( want > CAB_SCAN_CHUNK + CAB_HDR_SIZE )
             want = CAB_SCAN_CHUNK + CAB_HDR_SIZE;
         if ( VolSeek( fp, base, SEEK_SET ) != 0 ) break;
-        got = (long)VolRead( buf, 1, (UInt32)want, fp );
+        got = (long)VolRead( buf, 1, (uint32_t)want, fp );
 
         for ( i = 0; i + CAB_HDR_SIZE <= got && i < CAB_SCAN_CHUNK; i++ )
         {
@@ -709,10 +710,10 @@ const CabEntry *CabGetEntry( CabArchive *cab, int index )
     return &cab->entries[index];
 }
 
-UInt32 CabEntryPacked( CabArchive *cab, int index )
+uint32_t CabEntryPacked( CabArchive *cab, int index )
 {
     const CabFolder *fold;
-    UInt32           sum = 0;
+    uint32_t         sum = 0;
     int              p;
 
     if ( !cab || index < 0 || index >= cab->numEntries ) return 0xFFFFFFFFUL;
@@ -722,7 +723,7 @@ UInt32 CabEntryPacked( CabArchive *cab, int index )
 
     for ( p = 0; p < fold->numParts; p++ )
     {
-        UInt32 part = cab->parts[fold->firstPart + p].packed;
+        uint32_t part = cab->parts[fold->firstPart + p].packed;
 
         if ( part == 0xFFFFFFFFUL ) return 0xFFFFFFFFUL;
         sum += part;
@@ -752,7 +753,7 @@ int CabVolumeCount( CabArchive *cab )
     return cab ? cab->numVols : 1;
 }
 
-void CabChecksumCount( CabArchive *cab, UInt32 *checked, UInt32 *bare )
+void CabChecksumCount( CabArchive *cab, uint32_t *checked, uint32_t *bare )
 {
     if ( checked ) *checked = cab ? cab->sumBlocks : 0;
     if ( bare )    *bare    = cab ? cab->bareBlocks : 0;
@@ -768,15 +769,15 @@ typedef struct {
     int         folder;
     int         method;
     int         part;           /* which of the folder's parts             */
-    UInt32      block;          /* blocks of it already read               */
+    uint32_t    block;          /* blocks of it already read               */
     long        nextAt;         /* the next CFDATA, in the joined stream   */
     MszipDec   *mszip;
     LzxDec     *lzx;
     QtmDec     *qtm;
-    Byte       *inBuf;
-    Byte       *frame;
-    UInt32      frameLen, frameUsed;
-    UInt32      pos;            /* folder offset of frame[frameUsed]       */
+    uint8_t    *inBuf;
+    uint8_t    *frame;
+    uint32_t    frameLen, frameUsed;
+    uint32_t    pos;            /* folder offset of frame[frameUsed]       */
 } CabReader;
 
 static void CrClose( CabReader *rd )
@@ -812,8 +813,8 @@ static int CrOpen( CabArchive *cab, int folder, CabReader *rd )
     }
     if ( rc == SZ_OK )
     {
-        rd->inBuf = (Byte *)malloc( CAB_BLOCK_IN );
-        rd->frame = (Byte *)malloc( CAB_BLOCK_OUT );
+        rd->inBuf = (uint8_t *)malloc( CAB_BLOCK_IN );
+        rd->frame = (uint8_t *)malloc( CAB_BLOCK_OUT );
         if ( !rd->inBuf || !rd->frame ) rc = SZ_ERR_MEMORY;
     }
     if ( rc != SZ_OK ) CrClose( rd );
@@ -826,15 +827,15 @@ static int CrOpen( CabArchive *cab, int folder, CabReader *rd )
 static int CrNextBlock( CabReader *rd )
 {
     CabFolder *fold = &rd->cab->folders[rd->folder];
-    UInt32     have = 0, outLen = 0;
+    uint32_t   have = 0, outLen = 0;
     int        rc;
 
     for ( ;; )
     {
         CabPart *part;
         CabVol  *vol;
-        Byte     hdr[CAB_DATA_SIZE];
-        UInt32   csum, cbData;
+        uint8_t  hdr[CAB_DATA_SIZE];
+        uint32_t csum, cbData;
 
         if ( rd->part >= fold->numParts ) return SZ_ERR_DATA;   /* ran out */
         part = &rd->cab->parts[fold->firstPart + rd->part];
@@ -886,7 +887,7 @@ static int CrNextBlock( CabReader *rd )
         break;
     case CAB_COMP_MSZIP:
     {
-        UInt32 got;
+        uint32_t got;
 
         rc = MszipDecodeBlock( rd->mszip, rd->inBuf, have, rd->frame,
                                CAB_BLOCK_OUT, &got, NULL );
@@ -908,11 +909,11 @@ static int CrNextBlock( CabReader *rd )
 }
 
 /* The next n bytes of the folder: to 'out', or nowhere when it is NULL. */
-static int CrCopy( CabReader *rd, UInt32 n, FILE *out )
+static int CrCopy( CabReader *rd, uint32_t n, FILE *out )
 {
     while ( n > 0 )
     {
-        UInt32 take;
+        uint32_t take;
 
         if ( rd->frameUsed == rd->frameLen )
         {
@@ -1037,9 +1038,9 @@ static int CabExtractEntry( CabReader *rd, const CabEntry *ent,
 }
 
 typedef struct {
-    int    folder;
-    UInt32 offset;
-    int    index;
+    int      folder;
+    uint32_t offset;
+    int      index;
 } CabOrder;
 
 static int CabOrderCmp( const void *left, const void *right )
@@ -1056,7 +1057,7 @@ static int CabOrderCmp( const void *left, const void *right )
  * meaning all.  A folder with a method this cannot decode, or too big a
  * window for the memory there is, costs its own files and nothing more: the
  * rest still extract and the reason comes back at the end, as with 7z. */
-static int CabExtractSet( CabArchive *cab, const Byte *want,
+static int CabExtractSet( CabArchive *cab, const uint8_t *want,
                           const char *destDir, SzProgress prog, void *user )
 {
     CabOrder *order;
@@ -1133,12 +1134,12 @@ int CabExtractAll( CabArchive *cab, const char *destDir,
 int CabExtractItems( CabArchive *cab, const int *indices, int count,
                      const char *destDir, SzProgress prog, void *user )
 {
-    Byte *want;
-    int   k, rc;
+    uint8_t *want;
+    int      k, rc;
 
     if ( !cab ) return SZ_ERR_FORMAT;
     if ( count <= 0 ) return SZ_OK;
-    want = (Byte *)calloc( cab->numEntries ? cab->numEntries : 1, 1 );
+    want = (uint8_t *)calloc( cab->numEntries ? cab->numEntries : 1, 1 );
     if ( !want ) return SZ_ERR_MEMORY;
     for ( k = 0; k < count; k++ )
         if ( indices[k] >= 0 && indices[k] < cab->numEntries )
@@ -1156,18 +1157,18 @@ int CabExtractItems( CabArchive *cab, const int *indices, int count,
  * small but not nothing: a tracking allocator caught this figure 2 KB short
  * on a 159-file cabinet before it was counted.
  *--------------------------------------------------------------------------- */
-UInt32 CabMemNeeded( CabArchive *cab )
+uint32_t CabMemNeeded( CabArchive *cab )
 {
-    UInt32 most = 0, perEntry = 0;
-    int    i;
+    uint32_t most = 0, perEntry = 0;
+    int      i;
 
     if ( cab )
-        perEntry = (UInt32)cab->numEntries * ( (UInt32)sizeof( CabOrder ) + 1 );
+        perEntry = (uint32_t)cab->numEntries * ( (uint32_t)sizeof( CabOrder ) + 1 );
 
     for ( i = 0; cab && i < cab->numFolders; i++ )
     {
-        UInt16 type = cab->folders[i].type;
-        UInt32 cost = 0;
+        uint16_t type = cab->folders[i].type;
+        uint32_t cost = 0;
 
         switch ( type & CAB_COMP_MASK )
         {
@@ -1177,7 +1178,7 @@ UInt32 CabMemNeeded( CabArchive *cab )
         }
         if ( cost > most ) most = cost;
     }
-    return most + CAB_BLOCK_IN + CAB_BLOCK_OUT + (UInt32)sizeof( CabReader ) +
+    return most + CAB_BLOCK_IN + CAB_BLOCK_OUT + (uint32_t)sizeof( CabReader ) +
            perEntry;
 }
 
@@ -1265,51 +1266,51 @@ static const char cdWhyBlocks[] =
 
 /* What happens to each of the old cabinet's folders. */
 typedef struct {
-    int    how;                 /* CD_DROP, CD_COPY or CD_RECODE           */
-    int    newIndex;            /* its number in the new cabinet           */
-    UInt32 kept, gone;          /* its files kept and deleted              */
-    UInt32 extent;              /* bytes to decode: the furthest kept end  */
-    UInt32 dataAt;              /* the new coffCabStart                    */
-    UInt32 blocks;              /* the new cCFData                         */
-    UInt16 type;                /* the new typeCompress                    */
+    int      how;               /* CD_DROP, CD_COPY or CD_RECODE           */
+    int      newIndex;          /* its number in the new cabinet           */
+    uint32_t kept, gone;        /* its files kept and deleted              */
+    uint32_t extent;            /* bytes to decode: the furthest kept end  */
+    uint32_t dataAt;            /* the new coffCabStart                    */
+    uint32_t blocks;            /* the new cCFData                         */
+    uint16_t type;              /* the new typeCompress                    */
 } CdFold;
 
 /* The new cabinet's data area as it is written, and the progress report. */
 typedef struct {
     FILE           *out;
-    UInt32          at;             /* bytes written so far                */
+    uint32_t        at;             /* bytes written so far                */
     int             dataReserve;
     int             stored;         /* this folder's blocks are not packed  */
-    UInt32          blocks;         /* CFDATA records in this folder        */
-    UInt32          folderPos;      /* its uncompressed bytes so far        */
+    uint32_t        blocks;         /* CFDATA records in this folder        */
+    uint32_t        folderPos;      /* its uncompressed bytes so far        */
     DeflEnc        *defl;
-    Byte           *raw;            /* the block being gathered            */
-    UInt32          rawLen;
-    Byte           *pack;           /* and that block packed               */
-    UInt32          packLen;
-    Byte           *copy;           /* one CFDATA record, copied whole      */
+    uint8_t        *raw;            /* the block being gathered            */
+    uint32_t        rawLen;
+    uint8_t        *pack;           /* and that block packed               */
+    uint32_t        packLen;
+    uint8_t        *copy;           /* one CFDATA record, copied whole      */
     const char     *why;
     ArcCompProgress prog;
     void           *user;
     int             fileIndex, fileCount;
     const char     *name;
-    UInt32          doneKB, doneFrac, totalKB;
+    uint32_t        doneKB, doneFrac, totalKB;
 } CabWriter;
 
-static void CabPut16( Byte *ptr, UInt32 val )
+static void CabPut16( uint8_t *ptr, uint32_t val )
 {
-    ptr[0] = (Byte)val;
-    ptr[1] = (Byte)( val >> 8 );
+    ptr[0] = (uint8_t)val;
+    ptr[1] = (uint8_t)( val >> 8 );
 }
 
-static void CabPut32( Byte *ptr, UInt32 val )
+static void CabPut32( uint8_t *ptr, uint32_t val )
 {
     CabPut16( ptr, val );
     CabPut16( ptr + 2, val >> 16 );
 }
 
 /* Kilobytes, rounded up, without overflowing near 4 GB. */
-static UInt32 CdKB( UInt32 bytes )
+static uint32_t CdKB( uint32_t bytes )
 {
     return ( bytes >> 10 ) + ( ( bytes & 1023 ) ? 1 : 0 );
 }
@@ -1329,7 +1330,7 @@ static int CwTell( CabWriter *cw )
 
 /* 'bytes' more of the work done.  Files that overlap make the decoder go
  * over part of a folder twice, so the count is held at the total. */
-static int CwWork( CabWriter *cw, UInt32 bytes )
+static int CwWork( CabWriter *cw, uint32_t bytes )
 {
     cw->doneFrac += bytes & 1023;
     cw->doneKB   += ( bytes >> 10 ) + ( cw->doneFrac >> 10 );
@@ -1339,7 +1340,7 @@ static int CwWork( CabWriter *cw, UInt32 bytes )
 }
 
 /*---- Writing the data area -------------------------------------------------*/
-static int CwWrite( CabWriter *cw, const void *data, UInt32 len )
+static int CwWrite( CabWriter *cw, const void *data, uint32_t len )
 {
     if ( len > CAB_SIZE_MAX - cw->at )
     {
@@ -1354,7 +1355,7 @@ static int CwWrite( CabWriter *cw, const void *data, UInt32 len )
 
 /* DEFLENC's output, into the block buffer.  Refusing when it is full makes
  * the encoder fail, and the block is then sent stored instead. */
-static int CwPackWrite( void *user, const Byte *data, UInt32 len )
+static int CwPackWrite( void *user, const uint8_t *data, uint32_t len )
 {
     CabWriter *cw = (CabWriter *)user;
 
@@ -1368,11 +1369,11 @@ static int CwPackWrite( void *user, const Byte *data, UInt32 len )
  * CrNextBlock verifies: the data, then the two size fields. */
 static int CwFlush( CabWriter *cw )
 {
-    static const Byte zeros[256];
-    Byte        hdr[CAB_DATA_SIZE];
-    const Byte *data = cw->raw;
-    UInt32      len  = cw->rawLen;
-    int         rc;
+    static const uint8_t zeros[256];
+    uint8_t        hdr[CAB_DATA_SIZE];
+    const uint8_t *data = cw->raw;
+    uint32_t       len  = cw->rawLen;
+    int            rc;
 
     if ( cw->rawLen == 0 ) return SZ_OK;
     if ( cw->blocks >= CAB_MAX_BLOCKS )
@@ -1410,7 +1411,7 @@ static int CwFlush( CabWriter *cw )
 
     rc = CwWrite( cw, hdr, CAB_DATA_SIZE );
     if ( rc == SZ_OK && cw->dataReserve )
-        rc = CwWrite( cw, zeros, (UInt32)cw->dataReserve );
+        rc = CwWrite( cw, zeros, (uint32_t)cw->dataReserve );
     if ( rc == SZ_OK ) rc = CwWrite( cw, data, len );
     if ( rc != SZ_OK ) return rc;
 
@@ -1420,11 +1421,11 @@ static int CwFlush( CabWriter *cw )
 }
 
 /* Kept bytes into the block being gathered. */
-static int CwPut( CabWriter *cw, const Byte *data, UInt32 len )
+static int CwPut( CabWriter *cw, const uint8_t *data, uint32_t len )
 {
     while ( len > 0 )
     {
-        UInt32 take = CAB_BLOCK_OUT - cw->rawLen;
+        uint32_t take = CAB_BLOCK_OUT - cw->rawLen;
 
         if ( take > len ) take = len;
         memcpy( cw->raw + cw->rawLen, data, take );
@@ -1451,12 +1452,12 @@ static int CdCopyFolder( CabArchive *cab, const CabFolder *fold, CabWriter *cw )
     const CabPart *part = &cab->parts[fold->firstPart];
     const CabVol  *vol  = &cab->vols[part->vol];
     long           at   = vol->base + (long)part->dataAt;
-    UInt32         k;
+    unsigned       k;
     int            rc;
 
     for ( k = 0; k < part->numBlocks; k++ )
     {
-        UInt32 cbData, rest;
+        uint32_t cbData, rest;
 
         if ( VolSeek( cab->fp, at, SEEK_SET ) != 0 ||
              VolRead( cw->copy, 1, CAB_DATA_SIZE, cab->fp ) != CAB_DATA_SIZE )
@@ -1464,7 +1465,7 @@ static int CdCopyFolder( CabArchive *cab, const CabFolder *fold, CabWriter *cw )
         cbData = CabLe16( cw->copy + 4 );
 
         /* 8 + 255 + 65535 at most, inside CAB_BLOCK_IN. */
-        rest = (UInt32)vol->dataReserve + cbData;
+        rest = (uint32_t)vol->dataReserve + cbData;
         if ( rest && VolRead( cw->copy + CAB_DATA_SIZE, 1, rest, cab->fp ) != rest )
             return SZ_ERR_READ;
 
@@ -1480,12 +1481,12 @@ static int CdCopyFolder( CabArchive *cab, const CabFolder *fold, CabWriter *cw )
 /* The next 'want' bytes of the folder: into the new block when 'keep' is
  * set, passed over when it is not.  CrCopy, except that the bytes go to the
  * writer and every decoded block counts as progress. */
-static int CdPass( CabReader *rd, CabWriter *cw, UInt32 want, int keep )
+static int CdPass( CabReader *rd, CabWriter *cw, uint32_t want, int keep )
 {
     while ( want > 0 )
     {
-        UInt32 take;
-        int    rc;
+        uint32_t take;
+        int      rc;
 
         if ( rd->frameUsed == rd->frameLen )
         {
@@ -1512,7 +1513,7 @@ static int CdPass( CabReader *rd, CabWriter *cw, UInt32 want, int keep )
  * offset; each one's new offset goes into newOff[].  Decoding stops at the
  * end of the last one kept - whatever follows it is not needed. */
 static int CdRecodeFolder( CabArchive *cab, int folder, const CabOrder *order,
-                           int count, UInt32 *newOff, CabWriter *cw )
+                           int count, uint32_t *newOff, CabWriter *cw )
 {
     CabReader rd;
     int       i, rc;
@@ -1558,8 +1559,8 @@ static int CdRecodeFolder( CabArchive *cab, int folder, const CabOrder *order,
  * round; the new cabinet gets the bytes the old one had.  With 'out' NULL,
  * only measured.
  *--------------------------------------------------------------------------- */
-static int CdFiles( CabArchive *cab, const Byte *del, const CdFold *folds,
-                    const UInt32 *newOff, Byte *rec, FILE *out, UInt32 *bytes )
+static int CdFiles( CabArchive *cab, const uint8_t *del, const CdFold *folds,
+                    const uint32_t *newOff, uint8_t *rec, FILE *out, uint32_t *bytes )
 {
     const CabVol *vol = &cab->vols[0];
     int           k;
@@ -1570,8 +1571,8 @@ static int CdFiles( CabArchive *cab, const Byte *del, const CdFold *folds,
 
     for ( k = 0; k < vol->numFiles; k++ )
     {
-        UInt32 len = CAB_FILE_SIZE;
-        int    ch;
+        uint32_t len = CAB_FILE_SIZE;
+        int      ch;
 
         if ( VolRead( rec, 1, CAB_FILE_SIZE, cab->fp ) != CAB_FILE_SIZE )
             return SZ_ERR_READ;
@@ -1580,7 +1581,7 @@ static int CdFiles( CabArchive *cab, const Byte *del, const CdFold *folds,
             ch = VolGetc( cab->fp );
             if ( ch == EOF ) return SZ_ERR_READ;
             if ( len >= CAB_REC_CAP ) return SZ_ERR_DATA;
-            rec[len++] = (Byte)ch;
+            rec[len++] = (uint8_t)ch;
         } while ( ch != 0 );
 
         if ( del[k] ) continue;
@@ -1589,7 +1590,7 @@ static int CdFiles( CabArchive *cab, const Byte *del, const CdFold *folds,
             const CdFold *fold = &folds[cab->entries[k].folder];
 
             if ( fold->how == CD_RECODE ) CabPut32( rec + 4, newOff[k] );
-            CabPut16( rec + 8, (UInt32)fold->newIndex );
+            CabPut16( rec + 8, (uint32_t)fold->newIndex );
             if ( fwrite( rec, 1, (size_t)len, out ) != (size_t)len )
                 return SZ_ERR_WRITE;
         }
@@ -1636,7 +1637,7 @@ static int CdCanDelete( CabArchive *cab, const char **why )
 }
 
 /* Can CabReader decode this method, at this window? */
-static int CdCanDecode( UInt16 type )
+static int CdCanDecode( uint16_t type )
 {
     int bits = CAB_WINDOW( type );
 
@@ -1652,7 +1653,7 @@ static int CdCanDecode( UInt16 type )
 
 /* Decide each folder's fate for this selection, numbering the ones that
  * stay.  *keptOut is the files left. */
-static int CdPlan( CabArchive *cab, const Byte *del, CdFold *folds,
+static int CdPlan( CabArchive *cab, const uint8_t *del, CdFold *folds,
                    int *keptOut, int *foldersOut, const char **why )
 {
     int kept = 0, numNew = 0, i, j;
@@ -1672,7 +1673,7 @@ static int CdPlan( CabArchive *cab, const Byte *del, CdFold *folds,
         kept++;
         if ( ent->size > 0 )
         {
-            UInt32 end = ent->offset + ent->size;
+            uint32_t end = ent->offset + ent->size;
 
             if ( end < ent->offset ) end = 0xFFFFFFFFUL;  /* for progress only */
             if ( end > fold->extent ) fold->extent = end;
@@ -1717,23 +1718,23 @@ static int CdPlan( CabArchive *cab, const Byte *del, CdFold *folds,
  * into the room left, now that every folder's position and block count is
  * known.
  *--------------------------------------------------------------------------- */
-static int CdWrite( CabArchive *cab, const Byte *del, CdFold *folds,
+static int CdWrite( CabArchive *cab, const uint8_t *del, CdFold *folds,
                     int kept, int numNew, FILE *out, CabWriter *cw )
 {
     const CabVol *vol = &cab->vols[0];
     CabOrder     *order  = NULL;
-    UInt32       *newOff = NULL;
-    Byte         *rec    = NULL;
-    Byte          hdr[CAB_HDR_SIZE + 4];
-    UInt32        hdrLen, filesAt, fileBytes, dataStart, left;
+    uint32_t     *newOff = NULL;
+    uint8_t      *rec    = NULL;
+    uint8_t       hdr[CAB_HDR_SIZE + 4];
+    uint32_t      hdrLen, filesAt, fileBytes, dataStart, left;
     int           reserve, needDefl = 0, count = 0, pos, i, j, rc;
 
     order  = (CabOrder *)malloc( (size_t)kept * sizeof( CabOrder ) );
-    newOff = (UInt32 *)calloc( (size_t)cab->numEntries, sizeof( UInt32 ) );
-    rec    = (Byte *)malloc( CAB_REC_CAP );
-    cw->raw  = (Byte *)malloc( CAB_BLOCK_OUT );
-    cw->pack = (Byte *)malloc( CAB_PACK_CAP );
-    cw->copy = (Byte *)malloc( CAB_BLOCK_IN );
+    newOff = (uint32_t *)calloc( (size_t)cab->numEntries, sizeof( uint32_t ) );
+    rec    = (uint8_t *)malloc( CAB_REC_CAP );
+    cw->raw  = (uint8_t *)malloc( CAB_BLOCK_OUT );
+    cw->pack = (uint8_t *)malloc( CAB_PACK_CAP );
+    cw->copy = (uint8_t *)malloc( CAB_BLOCK_IN );
     if ( !order || !newOff || !rec || !cw->raw || !cw->pack || !cw->copy )
     { rc = SZ_ERR_MEMORY; goto done; }
 
@@ -1744,7 +1745,7 @@ static int CdWrite( CabArchive *cab, const Byte *del, CdFold *folds,
             needDefl = 1;
         if ( folds[j].how == CD_COPY )
         {
-            UInt32 packed = cab->parts[cab->folders[j].firstPart].packed;
+            uint32_t packed = cab->parts[cab->folders[j].firstPart].packed;
 
             if ( packed != 0xFFFFFFFFUL ) cw->totalKB += CdKB( packed );
         }
@@ -1771,7 +1772,7 @@ static int CdWrite( CabArchive *cab, const Byte *del, CdFold *folds,
     /* The room the tables take. */
     reserve = ( vol->folderReserve != 0 || vol->dataReserve != 0 );
     hdrLen  = CAB_HDR_SIZE + ( reserve ? 4 : 0 );
-    filesAt = hdrLen + (UInt32)numNew * ( CAB_FOLDER_SIZE + vol->folderReserve );
+    filesAt = hdrLen + (uint32_t)numNew * ( CAB_FOLDER_SIZE + vol->folderReserve );
     rc = CdFiles( cab, del, folds, newOff, rec, NULL, &fileBytes );
     if ( rc != SZ_OK ) goto done;
     dataStart = filesAt + fileBytes;
@@ -1779,7 +1780,7 @@ static int CdWrite( CabArchive *cab, const Byte *del, CdFold *folds,
     memset( cw->raw, 0, CAB_BLOCK_OUT );
     for ( left = dataStart; left > 0; )
     {
-        UInt32 take = ( left < CAB_BLOCK_OUT ) ? left : CAB_BLOCK_OUT;
+        uint32_t take = ( left < CAB_BLOCK_OUT ) ? left : CAB_BLOCK_OUT;
 
         rc = CwWrite( cw, cw->raw, take );
         if ( rc != SZ_OK ) goto done;
@@ -1809,7 +1810,7 @@ static int CdWrite( CabArchive *cab, const Byte *del, CdFold *folds,
         else
         {
             rc = CdRecodeFolder( cab, j, order + first, pos - first, newOff, cw );
-            fold->type = (UInt16)( cw->stored ? CAB_COMP_NONE : CAB_COMP_MSZIP );
+            fold->type = (uint16_t)( cw->stored ? CAB_COMP_NONE : CAB_COMP_MSZIP );
         }
         if ( rc != SZ_OK ) goto done;
         fold->blocks = cw->blocks;
@@ -1829,23 +1830,23 @@ static int CdWrite( CabArchive *cab, const Byte *del, CdFold *folds,
     CabPut32( hdr + 16, filesAt );
     hdr[24] = 3;                                /* version 1.3 */
     hdr[25] = 1;
-    CabPut16( hdr + 26, (UInt32)numNew );
-    CabPut16( hdr + 28, (UInt32)kept );
+    CabPut16( hdr + 26, (uint32_t)numNew );
+    CabPut16( hdr + 28, (uint32_t)kept );
     CabPut16( hdr + 30, reserve ? CAB_FLAG_RESERVE : 0 );
     CabPut16( hdr + 32, vol->setId );
     CabPut16( hdr + 34, vol->index );
     if ( reserve )
     {
         /* cbCFHeader stays 0: the header's own reserve is dropped. */
-        hdr[38] = (Byte)vol->folderReserve;
-        hdr[39] = (Byte)vol->dataReserve;
+        hdr[38] = (uint8_t)vol->folderReserve;
+        hdr[39] = (uint8_t)vol->dataReserve;
     }
     if ( fwrite( hdr, 1, (size_t)hdrLen, out ) != (size_t)hdrLen )
     { rc = SZ_ERR_WRITE; goto done; }
 
     for ( j = 0; j < cab->numFolders; j++ )
     {
-        Byte frec[CAB_FOLDER_SIZE];
+        uint8_t frec[CAB_FOLDER_SIZE];
 
         if ( folds[j].how == CD_DROP ) continue;
         CabPut32( frec, folds[j].dataAt );
@@ -1863,7 +1864,7 @@ static int CdWrite( CabArchive *cab, const Byte *del, CdFold *folds,
             size_t size = (size_t)vol->folderReserve;
 
             if ( VolSeek( cab->fp, at, SEEK_SET ) != 0 ||
-                 VolRead( rec, 1, (UInt32)size, cab->fp ) != (UInt32)size )
+                 VolRead( rec, 1, (uint32_t)size, cab->fp ) != (uint32_t)size )
             { rc = SZ_ERR_READ; goto done; }
             if ( fwrite( rec, 1, size, out ) != size )
             { rc = SZ_ERR_WRITE; goto done; }
@@ -1888,7 +1889,7 @@ done:
     return rc;
 }
 
-int CabDeleteWrite( CabArchive *cab, const Byte *del, FILE *out,
+int CabDeleteWrite( CabArchive *cab, const uint8_t *del, FILE *out,
                     ArcCompProgress prog, void *user, const char **why )
 {
     CabWriter cw;

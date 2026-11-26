@@ -41,11 +41,11 @@
 
 /* the modulator's operator for each channel of a register set; the
    carrier's is 3 further on */
-static const u8 opl_slot[9] = { 0, 1, 2, 8, 9, 10, 16, 17, 18 };
+static const uint8_t opl_slot[9] = { 0, 1, 2, 8, 9, 10, 16, 17, 18 };
 
 static void opl_reg( MDSTATE *md, int bank, int reg, int val )
 {
-    md_stage( md, EV_OPL, (u8)bank, (u8)reg, (u8)val );
+    md_stage( md, EV_OPL, (uint8_t)bank, (uint8_t)reg, (uint8_t)val );
 }
 
 /* -> the register set; *chan the channel in it */
@@ -55,9 +55,9 @@ static int opl_where( int voice, int *chan )
     return voice / 9;
 }
 
-static u8 opl_misc( const MDSTATE *md, const MDVOICE *vc, int op )
+static uint8_t opl_misc( const MDSTATE *md, const MDVOICE *vc, int op )
 {
-    u8 misc = vc->patch->op[op].misc;
+    uint8_t misc = vc->patch->op[op].misc;
 
     if ( !vc->drum && md->chan[vc->chan].modulation >= VIB_FROM ) {
         misc |= OP_VIB;
@@ -65,9 +65,9 @@ static u8 opl_misc( const MDSTATE *md, const MDVOICE *vc, int op )
     return misc;
 }
 
-static u8 opl_c0( const MDSTATE *md, const MDVOICE *vc )
+static uint8_t opl_c0( const MDSTATE *md, const MDVOICE *vc )
 {
-    u8 val = (u8)(vc->patch->fbc & 0x0F), pan = md->chan[vc->chan].pan;
+    uint8_t val = (uint8_t)(vc->patch->fbc & 0x0F), pan = md->chan[vc->chan].pan;
 
     if ( md->synth == SYN_OPL3 ) {
         val |= pan < 32 ? 0x10 : pan >= 96 ? 0x20 : 0x30;
@@ -114,16 +114,16 @@ void opl_level( MDSTATE *md, int voice )
 {
     MDVOICE *vc = &md->voice[voice];
     const MDPATCH *patch = vc->patch;
-    u32 vol, bright, tl[2];
+    uint32_t vol, bright, tl[2];
     int chan, bank = opl_where( voice, &chan ), op;
-    u8 val;
+    uint8_t val;
 
     vol = (md_voice_att( md, vc ) + 16) >> 5;
     bright = ((md_vel_att[vc->vel & 0x7F] + 16) >> 5) >> 2;
-    tl[0] = (u32)(patch->op[0].level & 0x3F) + ((patch->fbc & 1) ? vol : bright);
-    tl[1] = (u32)(patch->op[1].level & 0x3F) + vol;
+    tl[0] = (uint32_t)(patch->op[0].level & 0x3F) + ((patch->fbc & 1) ? vol : bright);
+    tl[1] = (uint32_t)(patch->op[1].level & 0x3F) + vol;
     for ( op = 0; op < 2; op++ ) {
-        val = (u8)((patch->op[op].level & 0xC0) | (tl[op] > 63 ? 63 : tl[op]));
+        val = (uint8_t)((patch->op[op].level & 0xC0) | (tl[op] > 63 ? 63 : tl[op]));
         if ( val != vc->opl_40[op] ) {
             opl_reg( md, bank, 0x40 + opl_slot[chan] + op * 3, val );
             vc->opl_40[op] = val;
@@ -135,7 +135,7 @@ void opl_pan( MDSTATE *md, int voice )
 {
     MDVOICE *vc = &md->voice[voice];
     int chan, bank = opl_where( voice, &chan );
-    u8 val = opl_c0( md, vc );
+    uint8_t val = opl_c0( md, vc );
 
     if ( val != vc->opl_c0 ) {
         opl_reg( md, bank, 0xC0 + chan, val );
@@ -147,12 +147,12 @@ void opl_vibrato( MDSTATE *md, int voice )
 {
     MDVOICE *vc = &md->voice[voice];
     int chan, bank = opl_where( voice, &chan ), op;
-    u8 vib;
+    uint8_t vib;
 
     if ( vc->loaded == NULL ) {
         return;
     }
-    vib = (u8)(opl_misc( md, vc, 1 ) & OP_VIB);
+    vib = (uint8_t)(opl_misc( md, vc, 1 ) & OP_VIB);
     if ( vib == vc->opl_vib ) {
         return;
     }
@@ -167,12 +167,12 @@ static void opl_freq( MDSTATE *md, int voice, int key )
 {
     MDVOICE *vc = &md->voice[voice];
     int chan, bank = opl_where( voice, &chan );
-    u32 fnum, block;
-    u8 a0, b0;
+    uint32_t fnum, block;
+    uint8_t a0, b0;
 
     md_fnum( md_pitch_hz( md_voice_pitch( md, vc ) ), &fnum, &block );
-    a0 = (u8)(fnum & 0xFF);
-    b0 = (u8)((key ? 0x20 : 0) | (block << 2) | (fnum >> 8));
+    a0 = (uint8_t)(fnum & 0xFF);
+    b0 = (uint8_t)((key ? 0x20 : 0) | (block << 2) | (fnum >> 8));
     if ( a0 != vc->opl_a0 ) {
         opl_reg( md, bank, 0xA0 + chan, a0 );
         vc->opl_a0 = a0;
@@ -190,7 +190,7 @@ void opl_start( MDSTATE *md, int voice )
     int chan, bank = opl_where( voice, &chan ), op, slot;
 
     if ( vc->opl_b0 & 0x20 ) {
-        vc->opl_b0 &= (u8)~0x20;
+        vc->opl_b0 &= (uint8_t)~0x20;
         opl_reg( md, bank, 0xB0 + chan, vc->opl_b0 );
     }
     if ( vc->loaded != patch ) {
@@ -202,7 +202,7 @@ void opl_start( MDSTATE *md, int voice )
             opl_reg( md, bank, 0xE0 + slot, patch->op[op].wave & 3 );
         }
         vc->loaded = patch;
-        vc->opl_vib = (u8)(opl_misc( md, vc, 1 ) & OP_VIB);
+        vc->opl_vib = (uint8_t)(opl_misc( md, vc, 1 ) & OP_VIB);
         vc->opl_c0 = 0xFF;
     } else {
         opl_vibrato( md, voice );
@@ -218,7 +218,7 @@ void opl_stop( MDSTATE *md, int voice )
     int chan, bank = opl_where( voice, &chan );
 
     if ( vc->opl_b0 & 0x20 ) {
-        vc->opl_b0 &= (u8)~0x20;
+        vc->opl_b0 &= (uint8_t)~0x20;
         opl_reg( md, bank, 0xB0 + chan, vc->opl_b0 );
     }
 }

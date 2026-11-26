@@ -22,27 +22,28 @@
 #include <string.h>
 #include <dos.h>
 #include <i86.h>
+#include <stdint.h>
 
 #define CHUNK   2048
 #define ROUNDS  1000
 
-static unsigned char far *tickp = (unsigned char far *)MK_FP( 0x40, 0x6C );
-static unsigned char      buf[CHUNK + 16];
-static unsigned char      buf2[CHUNK + 16];
-static unsigned long      far_;
+static uint8_t far *tickp = (uint8_t far *)MK_FP( 0x40, 0x6C );
+static uint8_t            buf[CHUNK + 16];
+static uint8_t            buf2[CHUNK + 16];
+static uint32_t           far_;
 static void ( far *xmsEntry )( void );
-static unsigned           xmsHandle;
-static unsigned long      xmsPhys;
+static uint16_t           xmsHandle;
+static uint32_t           xmsPhys;
 
 /* the descriptor table INT 15h AH=87h wants: six 8-byte descriptors */
-static unsigned char gdt[48];
+static uint8_t gdt[48];
 
 struct xmove {
-    unsigned long len;
-    unsigned      srcH;
-    unsigned long srcO;
-    unsigned      dstH;
-    unsigned long dstO;
+    uint32_t len;
+    uint16_t srcH;
+    uint32_t srcO;
+    uint16_t dstH;
+    uint32_t dstO;
 };
 static struct xmove mv;
 
@@ -56,9 +57,9 @@ static void say( const char *text )
     fputs( "\n", stdout );
 }
 
-static unsigned long ticks( void )
+static uint32_t ticks( void )
 {
-    return *(unsigned long far *)tickp;
+    return *(uint32_t far *)tickp;
 }
 
 static int xmsPresent( void )
@@ -76,9 +77,9 @@ static int xmsPresent( void )
 }
 
 /* AH = function, DX in, returns AX; BX and DX come back in *bx, *dx */
-static unsigned xmsCall( unsigned char fn, unsigned dxIn, unsigned *bx, unsigned *dx )
+static uint16_t xmsCall( uint8_t fn, uint16_t dxIn, uint16_t *bx, uint16_t *dx )
 {
-    unsigned rax, rbx, rdx;
+    uint16_t rax, rbx, rdx;
     _asm {
         mov     ah, fn
         mov     dx, dxIn
@@ -92,9 +93,9 @@ static unsigned xmsCall( unsigned char fn, unsigned dxIn, unsigned *bx, unsigned
     return rax;
 }
 
-static unsigned xmsMove( void )
+static uint16_t xmsMove( void )
 {
-    unsigned rax;
+    uint16_t rax;
     _asm {
         push    ds
         push    si
@@ -108,21 +109,21 @@ static unsigned xmsMove( void )
     return rax;
 }
 
-static void setDesc( int which, unsigned long base, unsigned len )
+static void setDesc( int which, uint32_t base, unsigned len )
 {
-    unsigned char *d = gdt + which * 8;
-    d[0] = (unsigned char)( ( len - 1 ) & 0xFF );
-    d[1] = (unsigned char)( ( len - 1 ) >> 8 );
-    d[2] = (unsigned char)( base & 0xFF );
-    d[3] = (unsigned char)( ( base >> 8 ) & 0xFF );
-    d[4] = (unsigned char)( ( base >> 16 ) & 0xFF );
+    uint8_t *d = gdt + which * 8;
+    d[0] = (uint8_t)( ( len - 1 ) & 0xFF );
+    d[1] = (uint8_t)( ( len - 1 ) >> 8 );
+    d[2] = (uint8_t)( base & 0xFF );
+    d[3] = (uint8_t)( ( base >> 8 ) & 0xFF );
+    d[4] = (uint8_t)( ( base >> 16 ) & 0xFF );
     d[5] = 0x93;
     d[6] = 0;
-    d[7] = (unsigned char)( base >> 24 );
+    d[7] = (uint8_t)( base >> 24 );
 }
 
 /* INT 15h AH=87h: CX words from the source descriptor to the destination */
-static int biosMove( unsigned long src, unsigned long dst, unsigned bytes )
+static int biosMove( uint32_t src, uint32_t dst, unsigned bytes )
 {
     union REGS r;
     struct SREGS s;
@@ -138,10 +139,10 @@ static int biosMove( unsigned long src, unsigned long dst, unsigned bytes )
     return r.x.cflag ? -1 : r.h.ah;
 }
 
-static void report( const char *what, unsigned long t0, unsigned long t1, unsigned rounds, int bad )
+static void report( const char *what, uint32_t t0, uint32_t t1, unsigned rounds, int bad )
 {
     char line[120];
-    unsigned long dt = t1 - t0;
+    uint32_t dt = t1 - t0;
     /* 18.2 ticks a second: a tick is 54945 us */
     unsigned long us = ( dt * 54945UL ) / rounds;
     sprintf( line, "%-34s %5lu ticks for %u calls = %6lu us a call%s",
@@ -151,8 +152,8 @@ static void report( const char *what, unsigned long t0, unsigned long t1, unsign
 
 int main( void )
 {
-    unsigned bx, dx, ax;
-    unsigned long bufFlat, t0, t1;
+    uint16_t bx, dx, ax;
+    uint32_t bufFlat, t0, t1;
     unsigned i;
     int bad;
     char line[120];
@@ -161,7 +162,7 @@ int main( void )
     if ( out == NULL ) out = stdout;
     say( "MOVEPROB - the cost of a 2K move to extended memory and back" );
 
-    bufFlat = ( (unsigned long)FP_SEG( buf ) << 4 ) + FP_OFF( buf );
+    bufFlat = ( (uint32_t)FP_SEG( buf ) << 4 ) + FP_OFF( buf );
     sprintf( line, "buffer at %05lX, %u rounds of %u bytes", bufFlat, ROUNDS, CHUNK );
     say( line );
 
@@ -190,17 +191,17 @@ int main( void )
         say( line );
         xmsPhys = 0;
     } else {
-        xmsPhys = ( (unsigned long)dx << 16 ) | bx;
+        xmsPhys = ( (uint32_t)dx << 16 ) | bx;
     }
     sprintf( line, "64K block: handle %u at %08lX", xmsHandle, xmsPhys );
     say( line );
 
-    for ( i = 0; i < CHUNK; i++ ) buf[i] = (unsigned char)( i * 7 + 3 );
+    for ( i = 0; i < CHUNK; i++ ) buf[i] = (uint8_t)( i * 7 + 3 );
 
     /* XMS 0Bh, out and back */
     mv.len = CHUNK;
     mv.srcH = 0;
-    mv.srcO = ( (unsigned long)FP_SEG( buf ) << 16 ) | FP_OFF( buf );
+    mv.srcO = ( (uint32_t)FP_SEG( buf ) << 16 ) | FP_OFF( buf );
     mv.dstH = xmsHandle;
     mv.dstO = 0;
     bad = 0;
@@ -214,7 +215,7 @@ int main( void )
     mv.srcH = xmsHandle;
     mv.srcO = 0;
     mv.dstH = 0;
-    mv.dstO = ( (unsigned long)FP_SEG( buf ) << 16 ) | FP_OFF( buf );
+    mv.dstO = ( (uint32_t)FP_SEG( buf ) << 16 ) | FP_OFF( buf );
     memset( buf, 0, CHUNK );
     bad = 0;
     t0 = ticks();
@@ -224,15 +225,15 @@ int main( void )
     t1 = ticks();
     report( "XMS 0Bh extended -> conventional", t0, t1, ROUNDS, bad );
     for ( i = 0; i < CHUNK; i++ ) {
-        if ( buf[i] != (unsigned char)( i * 7 + 3 ) ) break;
+        if ( buf[i] != (uint8_t)( i * 7 + 3 ) ) break;
     }
     say( i == CHUNK ? "  and the bytes came back right" : "  BUT THE BYTES CAME BACK WRONG" );
 
     /* INT 15h 87h, out and back - or, with no physical address to go
        to, between the two conventional buffers */
-    for ( i = 0; i < CHUNK; i++ ) buf[i] = (unsigned char)( i * 5 + 1 );
+    for ( i = 0; i < CHUNK; i++ ) buf[i] = (uint8_t)( i * 5 + 1 );
     far_ = xmsPhys ? xmsPhys + 4096
-                   : ( (unsigned long)FP_SEG( buf2 ) << 4 ) + FP_OFF( buf2 );
+                   : ( (uint32_t)FP_SEG( buf2 ) << 4 ) + FP_OFF( buf2 );
     bad = 0;
     t0 = ticks();
     for ( i = 0; i < ROUNDS; i++ ) {
@@ -249,7 +250,7 @@ int main( void )
     t1 = ticks();
     report( xmsPhys ? "INT 15h 87h extended -> conventional" : "INT 15h 87h low -> low, back", t0, t1, ROUNDS, bad );
     for ( i = 0; i < CHUNK; i++ ) {
-        if ( buf[i] != (unsigned char)( i * 5 + 1 ) ) break;
+        if ( buf[i] != (uint8_t)( i * 5 + 1 ) ) break;
     }
     say( i == CHUNK ? "  and the bytes came back right" : "  BUT THE BYTES CAME BACK WRONG" );
 

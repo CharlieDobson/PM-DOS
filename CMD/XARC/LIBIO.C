@@ -34,8 +34,8 @@
 #include <sys/stat.h>
 #include "xsys.h"
 
-u8  *xa_psp;
-int  xa_lfn = 1;
+uint8_t *xa_psp;
+int      xa_lfn = 1;
 
 static const char *env_block;
 static char tail[300];
@@ -49,7 +49,7 @@ void xa_clear( REGS *regs )
     memset( regs, 0, sizeof( *regs ) );
 }
 
-int xa_dos( REGS *regs, u32 func )
+int xa_dos( REGS *regs, uint32_t func )
 {
     regs->eax = func;
     int21( regs );
@@ -61,7 +61,7 @@ int xa_dos( REGS *regs, u32 func )
 
 /* A 71h call: 0 when it worked, its error when it failed, and -1 when
    the long-name calls are not there - after which none is tried again. */
-static int lfn_call( REGS *regs, u32 func )
+static int lfn_call( REGS *regs, uint32_t func )
 {
     int rc;
 
@@ -90,13 +90,13 @@ void xa_crt_init( void )
 {
     REGS regs;
     const char *full;
-    u32 len;
+    unsigned len;
     int quoted;
 
     xa_clear( &regs );
     xa_dos( &regs, 0x6200 );
-    xa_psp = (u8 *)regs.ebx;
-    env_block = (const char *)*(u32 *)(xa_psp + 0x2C);
+    xa_psp = (uint8_t *)regs.ebx;
+    env_block = (const char *)*(uint32_t *)(xa_psp + 0x2C);
     len = xa_psp[0x80];
     if ( len > 126 ) {
         len = 126;
@@ -158,7 +158,7 @@ void exit( int code )
     }
     fflush( NULL );
     xa_clear( &regs );
-    xa_dos( &regs, 0x4C00 | ((u32)code & 0xFF) );
+    xa_dos( &regs, 0x4C00 | ((uint32_t)code & 0xFF) );
 }
 
 /* ------------------------------------------------------------------ */
@@ -182,18 +182,18 @@ struct _xa_file {
     int      handle;
     unsigned flags;
     int      state;
-    u8      *buf;
-    u32      size;              /* of buf */
-    u32      pos;
-    u32      len;
+    uint8_t *buf;
+    unsigned size;              /* of buf */
+    unsigned pos;
+    unsigned len;
     long     base;              /* the file offset buf[0] stands for */
     int      ungot;             /* text mode's look past a CR, or -1 */
     FILE    *next;              /* every file open, for exit's flush */
 };
 
-static u8 out_buf[256];
-static u8 err_buf[16];
-static u8 in_buf[256];
+static uint8_t out_buf[256];
+static uint8_t err_buf[16];
+static uint8_t in_buf[256];
 
 /* text streams, as DOS's are: the console moves down a line on LF and
    back to the left only on CR (test mode's keys are read raw, SCR.C) */
@@ -207,21 +207,21 @@ FILE *_xa_stderr = &std_err;
 
 static FILE *open_files;
 
-static int raw_read( int handle, void *buf, u32 len, u32 *got )
+static int raw_read( int handle, void *buf, uint32_t len, uint32_t *got )
 {
     REGS regs;
     int rc;
 
     xa_clear( &regs );
-    regs.ebx = (u32)handle;
+    regs.ebx = (uint32_t)handle;
     regs.ecx = len;
-    regs.edx = (u32)buf;
+    regs.edx = (uint32_t)buf;
     rc = xa_dos( &regs, 0x3F00 );
     *got = rc ? 0 : regs.eax;
     return rc;
 }
 
-static int raw_write( int handle, const void *buf, u32 len )
+static int raw_write( int handle, const void *buf, uint32_t len )
 {
     REGS regs;
 
@@ -229,9 +229,9 @@ static int raw_write( int handle, const void *buf, u32 len )
         return 0;
     }
     xa_clear( &regs );
-    regs.ebx = (u32)handle;
+    regs.ebx = (uint32_t)handle;
     regs.ecx = len;
-    regs.edx = (u32)buf;
+    regs.edx = (uint32_t)buf;
     if ( xa_dos( &regs, 0x4000 ) ) {
         return -1;
     }
@@ -244,9 +244,9 @@ static long raw_seek( int handle, long offset, int whence )
     REGS regs;
 
     xa_clear( &regs );
-    regs.ebx = (u32)handle;
-    regs.ecx = (u32)offset;
-    if ( xa_dos( &regs, 0x4200 | (u32)(whence & 3) ) ) {
+    regs.ebx = (uint32_t)handle;
+    regs.ecx = (uint32_t)offset;
+    if ( xa_dos( &regs, 0x4200 | (uint32_t)(whence & 3) ) ) {
         return -1L;
     }
     return (long)regs.eax;
@@ -257,7 +257,7 @@ static int raw_close( int handle )
     REGS regs;
 
     xa_clear( &regs );
-    regs.ebx = (u32)handle;
+    regs.ebx = (uint32_t)handle;
     return xa_dos( &regs, 0x3E00 );
 }
 
@@ -269,10 +269,10 @@ static int raw_open( const char *path, int access, int action, int *handle )
     int rc;
 
     xa_clear( &regs );
-    regs.esi = (u32)path;
-    regs.ebx = (u32)access;
+    regs.esi = (uint32_t)path;
+    regs.ebx = (uint32_t)access;
     regs.ecx = 0;
-    regs.edx = (u32)action;
+    regs.edx = (uint32_t)action;
     rc = lfn_call( &regs, 0x716C );
     if ( rc >= 0 ) {
         *handle = (int)AX( regs );
@@ -280,14 +280,14 @@ static int raw_open( const char *path, int access, int action, int *handle )
     }
     /* the classic calls: 3Ch makes or empties, 3Dh opens */
     xa_clear( &regs );
-    regs.edx = (u32)path;
+    regs.edx = (uint32_t)path;
     if ( action & 0x02 ) {
         rc = xa_dos( &regs, 0x3C00 );
     } else {
-        rc = xa_dos( &regs, 0x3D00 | (u32)access );
+        rc = xa_dos( &regs, 0x3D00 | (uint32_t)access );
         if ( rc == 2 && (action & 0x10) ) {
             xa_clear( &regs );
-            regs.edx = (u32)path;
+            regs.edx = (uint32_t)path;
             rc = xa_dos( &regs, 0x3C00 );
         }
     }
@@ -335,7 +335,7 @@ FILE *fopen( const char *path, const char *mode )
     fp->handle = handle;
     fp->flags = flags;
     fp->state = ST_IDLE;
-    fp->buf = (u8 *)(fp + 1);
+    fp->buf = (uint8_t *)(fp + 1);
     fp->size = BUFSIZ;
     fp->ungot = -1;
     if ( mode[0] == 'a' ) {
@@ -428,7 +428,7 @@ int fclose( FILE *fp )
 /* the next byte as the file holds it; EOF at the end */
 static int raw_getc( FILE *fp )
 {
-    u32 got;
+    uint32_t got;
 
     if ( fp->state != ST_READ ) {
         if ( !(fp->flags & XF_READ) ) {
@@ -509,21 +509,22 @@ char *fgets( char *buf, int size, FILE *fp )
 
 size_t fread( void *buf, size_t size, size_t count, FILE *fp )
 {
-    u8 *to = (u8 *)buf;
-    u32 want, done = 0, take, got;
+    uint8_t *to = (uint8_t *)buf;
+    uint32_t got;
+    unsigned want, done = 0, take;
     int ch;
 
     if ( size == 0 || count == 0 ) {
         return 0;
     }
-    want = (u32)size * (u32)count;
+    want = (unsigned)size * (unsigned)count;
     if ( fp->flags & XF_TEXT ) {
         for ( ; done < want; done++ ) {
             ch = fgetc( fp );
             if ( ch == EOF ) {
                 break;
             }
-            to[done] = (u8)ch;
+            to[done] = (uint8_t)ch;
         }
         return done / size;
     }
@@ -584,7 +585,7 @@ static int raw_putc( FILE *fp, int ch )
         settle( fp );
         fp->state = ST_WRITE;
     }
-    fp->buf[fp->pos++] = (u8)ch;
+    fp->buf[fp->pos++] = (uint8_t)ch;
     if ( fp->pos >= fp->size || (fp->flags & XF_NOBUF)
          || ((fp->flags & XF_LINE) && ch == '\n') ) {
         if ( settle( fp ) ) {
@@ -604,13 +605,13 @@ int fputc( int ch, FILE *fp )
 
 size_t fwrite( const void *buf, size_t size, size_t count, FILE *fp )
 {
-    const u8 *from = (const u8 *)buf;
-    u32 want, done = 0, take;
+    const uint8_t *from = (const uint8_t *)buf;
+    unsigned want, done = 0, take;
 
     if ( size == 0 || count == 0 ) {
         return 0;
     }
-    want = (u32)size * (u32)count;
+    want = (unsigned)size * (unsigned)count;
     if ( (fp->flags & (XF_TEXT | XF_LINE | XF_NOBUF)) ) {
         for ( ; done < want; done++ ) {
             if ( fputc( from[done], fp ) == EOF ) {
@@ -658,7 +659,7 @@ size_t fwrite( const void *buf, size_t size, size_t count, FILE *fp )
 int fputs( const char *text, FILE *fp )
 {
     for ( ; *text; text++ ) {
-        if ( fputc( (u8)*text, fp ) == EOF ) {
+        if ( fputc( (unsigned char)*text, fp ) == EOF ) {
             return EOF;
         }
     }
@@ -696,7 +697,7 @@ int fseek( FILE *fp, long offset, int whence )
        reader that steps back over a header costs nothing */
     if ( fp->state == ST_READ && whence == SEEK_SET && fp->ungot < 0
          && offset >= fp->base && offset <= fp->base + (long)fp->len ) {
-        fp->pos = (u32)(offset - fp->base);
+        fp->pos = (unsigned)(offset - fp->base);
         fp->flags &= ~XF_EOF;
         return 0;
     }
@@ -737,9 +738,9 @@ int _chsize( int handle, long size )
         return -1;
     }
     xa_clear( &regs );
-    regs.ebx = (u32)handle;
+    regs.ebx = (uint32_t)handle;
     regs.ecx = 0;
-    regs.edx = (u32)&regs;
+    regs.edx = (uint32_t)&regs;
     return xa_dos( &regs, 0x4000 ) ? -1 : 0;
 }
 
@@ -747,18 +748,18 @@ int _chsize( int handle, long size )
 /* names and folders                                                   */
 /* ------------------------------------------------------------------ */
 
-static int path_call( const char *path, u32 lfn_func, u32 func )
+static int path_call( const char *path, uint32_t lfn_func, uint32_t func )
 {
     REGS regs;
     int rc;
 
     xa_clear( &regs );
-    regs.edx = (u32)path;
+    regs.edx = (uint32_t)path;
     regs.esi = 0;                       /* 7141h: no wildcards */
     rc = lfn_call( &regs, lfn_func );
     if ( rc < 0 ) {
         xa_clear( &regs );
-        regs.edx = (u32)path;
+        regs.edx = (uint32_t)path;
         rc = xa_dos( &regs, func );
     }
     return rc ? -1 : 0;
@@ -775,13 +776,13 @@ int rename( const char *from, const char *to )
     int rc;
 
     xa_clear( &regs );
-    regs.edx = (u32)from;
-    regs.edi = (u32)to;
+    regs.edx = (uint32_t)from;
+    regs.edi = (uint32_t)to;
     rc = lfn_call( &regs, 0x7156 );
     if ( rc < 0 ) {
         xa_clear( &regs );
-        regs.edx = (u32)from;
-        regs.edi = (u32)to;
+        regs.edx = (uint32_t)from;
+        regs.edi = (uint32_t)to;
         rc = xa_dos( &regs, 0x5600 );
     }
     return rc ? -1 : 0;
@@ -801,7 +802,7 @@ int _chdrive( int drive )
     REGS regs;
 
     xa_clear( &regs );
-    regs.edx = (u32)(drive - 1);
+    regs.edx = (uint32_t)(drive - 1);
     xa_dos( &regs, 0x0E00 );
     return _getdrive() == drive ? 0 : -1;
 }
@@ -816,13 +817,13 @@ static int drive_cwd( int drive, char *buf, size_t size )
 
     tmp[0] = 0;
     xa_clear( &regs );
-    regs.edx = (u32)drive;
-    regs.esi = (u32)tmp;
+    regs.edx = (uint32_t)drive;
+    regs.esi = (uint32_t)tmp;
     rc = lfn_call( &regs, 0x7147 );
     if ( rc < 0 ) {
         xa_clear( &regs );
-        regs.edx = (u32)drive;
-        regs.esi = (u32)tmp;
+        regs.edx = (uint32_t)drive;
+        regs.esi = (uint32_t)tmp;
         rc = xa_dos( &regs, 0x4700 );
     }
     if ( rc || strlen( tmp ) >= size ) {
@@ -876,8 +877,8 @@ char *_fullpath( char *buf, const char *path, size_t size )
         buf[used] = 0;
         return buf;
     }
-    if ( isalpha( (u8)path[0] ) && path[1] == ':' ) {
-        drive = toupper( (u8)path[0] ) - 'A' + 1;
+    if ( isalpha( (unsigned char)path[0] ) && path[1] == ':' ) {
+        drive = toupper( (unsigned char)path[0] ) - 'A' + 1;
         rest = path + 2;
     } else {
         drive = _getdrive();
@@ -1034,7 +1035,7 @@ time_t time( time_t *now )
 }
 
 /* a DOS date and time, as a time_t */
-static time_t dos_to_time( unsigned date, unsigned clock )
+static time_t dos_to_time( uint16_t date, uint16_t clock )
 {
     struct tm at;
 
@@ -1062,8 +1063,8 @@ static time_t dos_to_time( unsigned date, unsigned clock )
 int stat( const char *path, struct stat *info )
 {
     REGS regs;
-    static u8 rec[320];
-    u32 attr, size, stamp;
+    static uint8_t rec[320];
+    uint32_t attr, size, stamp;
     int rc;
     size_t len = strlen( path );
 
@@ -1076,13 +1077,13 @@ int stat( const char *path, struct stat *info )
         return 0;
     }
     xa_clear( &regs );
-    regs.edx = (u32)path;
-    regs.edi = (u32)rec;
+    regs.edx = (uint32_t)path;
+    regs.edi = (uint32_t)rec;
     regs.ecx = FIND_ALL;                /* CL allowed, CH required: none */
     regs.esi = 1;                       /* DOS date and time */
     rc = lfn_call( &regs, 0x714E );
     if ( rc == 0 ) {
-        u32 handle = AX( regs );
+        uint32_t handle = AX( regs );
 
         attr = RD32( rec );
         stamp = RD32( rec + 0x14 );
@@ -1092,16 +1093,16 @@ int stat( const char *path, struct stat *info )
         xa_dos( &regs, 0x71A1 );
     } else if ( rc < 0 ) {
         xa_clear( &regs );
-        regs.edx = (u32)rec;
+        regs.edx = (uint32_t)rec;
         xa_dos( &regs, 0x1A00 );        /* the DTA, for the classic search */
         xa_clear( &regs );
-        regs.edx = (u32)path;
+        regs.edx = (uint32_t)path;
         regs.ecx = FIND_ALL;
         if ( xa_dos( &regs, 0x4E00 ) != 0 ) {
             return -1;
         }
         attr = rec[0x15];
-        stamp = ((u32)RD16( rec + 0x18 ) << 16) | RD16( rec + 0x16 );
+        stamp = ((uint32_t)RD16( rec + 0x18 ) << 16) | RD16( rec + 0x16 );
         size = RD32( rec + 0x1A );
     } else {
         return -1;
@@ -1109,7 +1110,7 @@ int stat( const char *path, struct stat *info )
     info->st_attr = (unsigned)(attr & 0xFF);
     info->st_mode = (attr & 0x10) ? S_IFDIR : S_IFREG;
     info->st_size = (off_t)size;
-    info->st_mtime = dos_to_time( (unsigned)(stamp >> 16), (unsigned)(stamp & 0xFFFF) );
+    info->st_mtime = dos_to_time( (uint16_t)(stamp >> 16), (uint16_t)(stamp & 0xFFFF) );
     info->st_atime = info->st_ctime = info->st_mtime;
     return 0;
 }

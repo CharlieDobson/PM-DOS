@@ -45,6 +45,7 @@ const char tx_keys_ehx[] = "ENTER=Continue  F1=Help  F3=Exit";
 const char tx_keys_ehxp[] = "ENTER=Continue  F1=Help  F3=Exit  ESC=Previous Screen";
 const char tx_keys_ex[] = "ENTER=Continue  F3=Exit";
 const char tx_keys_e[] = "ENTER=Continue";
+const char tx_keys_retry[] = "ENTER=Retry  ESC=Skip  F3=Exit";
 const char tx_keys_help[] = "F3=Exit  ESC=Previous Screen";
 const char tx_keys_commit[] = "Y=Install PM-DOS  F3=Exit";
 
@@ -374,7 +375,8 @@ const char tx_insert_3[] = "When you are ready to continue, press ENTER.";
 const char tx_cperr_title[] = "SETUP ERROR DETECTED";
 const char tx_cperr_read[] = "Setup could not read the file %s.";
 const char tx_cperr_write[] = "Setup could not write the file %s.";
-const char tx_cperr_go[] = "To go on without this file, press ENTER.";
+const char tx_cperr_retry[] = "To try again, press ENTER.";
+const char tx_cperr_skip[] = "To go on without this file, press ESC.";
 const char tx_wp_title[] = "DISK WRITE ERROR";
 const char tx_remove[] = "Remove any disks from your floppy disk drives, and then press ENTER.";
 const char tx_formatting_fl[] = "Formatting the disk. Please wait.";

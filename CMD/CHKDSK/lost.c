@@ -17,9 +17,10 @@
  * it; one that runs back into its own head is a loop and is cut.
  * Returns the number of chains.
  */
-static u32 find_chains( int simulate )
+static unsigned int find_chains( int simulate )
 {
-    u32 clus, cur, next, chains = 0;
+    uint32_t clus, cur, next;
+    unsigned int chains = 0;
 
     for ( clus = 2; clus <= vol.maxclus; clus++ ) {
         if ( !(vol.map[clus] & MF_LOST) || (vol.map[clus] & MF_SEEN) ) {
@@ -52,9 +53,9 @@ static u32 find_chains( int simulate )
     return chains;
 }
 
-static u32 chain_length( u32 clus )
+static uint32_t chain_length( uint32_t clus )
 {
-    u32 len = 0;
+    uint32_t len = 0;
 
     while ( CLUS_OK( clus ) && len <= vol.nclus ) {
         len++;
@@ -64,21 +65,21 @@ static u32 chain_length( u32 clus )
 }
 
 /* next FILEnnnn.CHK name not already present in the root; -1 if none */
-static int next_name( DIRBUF *root, u8 *name, u32 *seq )
+static int next_name( DIRBUF *root, uint8_t *name, unsigned int *seq )
 {
-    u32 i, num;
+    unsigned int i, num;
     int used;
 
     for ( ; *seq < 10000; (*seq)++ ) {
         mem_cpy( name, "FILE0000CHK", 11 );
         num = *seq;
-        name[7] = (u8)('0' + num % 10);  num /= 10;
-        name[6] = (u8)('0' + num % 10);  num /= 10;
-        name[5] = (u8)('0' + num % 10);  num /= 10;
-        name[4] = (u8)('0' + num % 10);
+        name[7] = (uint8_t)('0' + num % 10);  num /= 10;
+        name[6] = (uint8_t)('0' + num % 10);  num /= 10;
+        name[5] = (uint8_t)('0' + num % 10);  num /= 10;
+        name[4] = (uint8_t)('0' + num % 10);
         used = 0;
         for ( i = 0; i < root->nent; i++ ) {
-            const u8 *ent = root->data + i * DE_LEN;
+            const uint8_t *ent = root->data + i * DE_LEN;
             if ( ent[0] == 0 ) {
                 break;
             }
@@ -97,13 +98,13 @@ static int next_name( DIRBUF *root, u8 *name, u32 *seq )
 }
 
 /* free slot in the root: deleted, or the end marker (DOS CHAINREC) */
-static u32 free_slot( DIRBUF *root, u32 *pos )
+static unsigned int free_slot( DIRBUF *root, unsigned int *pos )
 {
-    u32 i;
+    unsigned int i;
 
     for ( ;; ) {
         for ( i = *pos; i < root->nent; i++ ) {
-            u8 ch = root->data[i * DE_LEN];
+            uint8_t ch = root->data[i * DE_LEN];
             if ( ch == 0 && i + 1 == root->nent && !root->fixed_root &&
                  root->clus.count != 0 &&
                  CLUS_OK( fat_get( root->clus.items[root->clus.count - 1] ) ) ) {
@@ -125,12 +126,13 @@ static u32 free_slot( DIRBUF *root, u32 *pos )
     }
 }
 
-static void recover( u32 chains, u32 lost )
+static void recover( unsigned int chains, uint32_t lost )
 {
     DIRBUF root;
-    u32 clus, slot, pos = 0, seq = 0, made = 0;
-    u64 sz;
-    u8 *ent, name[11];
+    uint32_t clus;
+    unsigned int slot, pos = 0, seq = 0, made = 0;
+    uint64_t sz;
+    uint8_t *ent, name[11];
 
     st.orph_clus = lost;
     if ( dir_load_root( &root ) != 0 ) {
@@ -176,7 +178,8 @@ static void recover( u32 chains, u32 lost )
 
 void lost_chains( void )
 {
-    u32 clus, val, lost = 0, chains;
+    uint32_t clus, val, lost = 0;
+    unsigned int chains;
     int simulate = !opt.dofix || st.ftrunc;
     char num[40], num2[40], pad[48];
 

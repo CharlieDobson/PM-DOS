@@ -15,8 +15,8 @@
 
 #define MIN_WIDTH   0xC000L         /* three quarters of a pixel: thinner is not seen */
 
-static PT  *dash_pts;               /* one dash, being collected */
-static u32  dash_count, dash_cap;
+static PT          *dash_pts;       /* one dash, being collected */
+static unsigned int dash_count, dash_cap;
 
 /* ------------------------------------------------------------------ */
 /* building                                                            */
@@ -47,8 +47,8 @@ void path_dash_done( void )
 static void path_add( PATH *path, fx px, fx py, int flags )
 {
     PT *pts;
-    u8 *marks;
-    u32 cap;
+    uint8_t *marks;
+    unsigned int cap;
 
     if ( path->count == path->cap ) {
         /* the points and their flags in one block: were they two, the
@@ -56,7 +56,7 @@ static void path_add( PATH *path, fx px, fx py, int flags )
            second (xalloc leaves by pdf_fail) */
         cap = path->cap ? path->cap * 2 : 256;
         pts = (PT *)xalloc( cap * (sizeof( PT ) + 1) );
-        marks = (u8 *)(pts + cap);
+        marks = (uint8_t *)(pts + cap);
         if ( path->pts ) {
             mem_cpy( pts, path->pts, path->count * sizeof( PT ) );
             mem_cpy( marks, path->flags, path->count );
@@ -68,7 +68,7 @@ static void path_add( PATH *path, fx px, fx py, int flags )
     }
     path->pts[path->count].x = px;
     path->pts[path->count].y = py;
-    path->flags[path->count] = (u8)flags;
+    path->flags[path->count] = (uint8_t)flags;
     path->count++;
 }
 
@@ -130,7 +130,7 @@ void path_curve( PATH *path, fx x1, fx y1, fx x2, fx y2, fx x3, fx y3 )
     if ( other > bend ) {
         bend = other;
     }
-    steps = (int)isqrt( (u32)(bend >> 14) ) + 1;    /* about sqrt( 3 * bend ) over 2 */
+    steps = (int)isqrt( (uint32_t)(bend >> 14) ) + 1; /* about sqrt( 3 * bend ) over 2 */
     if ( steps > 96 ) {
         steps = 96;
     }
@@ -161,7 +161,7 @@ void path_close( PATH *path )
 
 void path_bounds( const PATH *path, fx *x0, fx *y0, fx *x1, fx *y1 )
 {
-    u32 index;
+    unsigned int index;
 
     *x0 = *y0 = FX_MAX;
     *x1 = *y1 = -FX_MAX;
@@ -187,7 +187,7 @@ int path_as_rect( const PATH *path, int *x0, int *y0, int *x1, int *y1 )
 {
     const PT *pts = path->pts;
     fx bx0, by0, bx1, by1;
-    u32 count = path->count;
+    unsigned int count = path->count;
 
     if ( count == 5 && pts[4].x == pts[0].x && pts[4].y == pts[0].y ) {
         count = 4;
@@ -218,7 +218,7 @@ int path_as_rect( const PATH *path, int *x0, int *y0, int *x1, int *y1 )
 void path_edges( const PATH *path )
 {
     const PT *pts = path->pts;
-    u32 index, start = 0;
+    unsigned int index, start = 0;
 
     for ( index = 0; index < path->count; index++ ) {
         if ( path->flags[index] & PF_START ) {
@@ -243,7 +243,7 @@ void path_edges( const PATH *path )
    of a stroke winds the same way */
 static void emit_poly( PT *pts, int count )
 {
-    s32 area = 0;
+    int32_t area = 0;
     int index, other;
 
     for ( index = 0; index < count; index++ ) {
@@ -327,12 +327,12 @@ static void emit_join( const PT *at, fx ax, fx ay, fx bx, fx by, fx half, const 
 }
 
 /* one run of points, stroked: "closed" joins the last to the first */
-static void stroke_run( const PT *pts, u32 count, int closed, const STROKE *stroke )
+static void stroke_run( const PT *pts, unsigned int count, int closed, const STROKE *stroke )
 {
     PT quad[4];
     fx half = (stroke->width < MIN_WIDTH ? MIN_WIDTH : stroke->width) / 2;
     fx ux = 0, uy = 0, px = 0, py = 0, fx0 = 0, fy0 = 0, x0, y0, x1, y1;
-    u32 index, total = closed ? count + 1 : count, segs = 0;
+    unsigned int index, total = closed ? count + 1 : count, segs = 0;
     const PT *from, *to;
     int joins = half > 0xA000L;
 
@@ -423,10 +423,10 @@ static void dash_point( fx px, fx py )
     dash_count++;
 }
 
-static void stroke_dashed( const PT *pts, u32 count, int closed, const STROKE *stroke )
+static void stroke_dashed( const PT *pts, unsigned int count, int closed, const STROKE *stroke )
 {
     fx remain, seglen, pos, take, ux, uy, skip = stroke->phase;
-    u32 index, total = closed ? count + 1 : count;
+    unsigned int index, total = closed ? count + 1 : count;
     const PT *from, *to;
     int which = 0, on = 1, guard;
 
@@ -487,11 +487,11 @@ static void stroke_dashed( const PT *pts, u32 count, int closed, const STROKE *s
 
 void path_stroke_edges( const PATH *path, const STROKE *stroke )
 {
-    u32 index, start = 0, count;
+    unsigned int index, start = 0, count;
     fx total = 0;
     int dashed = 0, closed;
 
-    for ( index = 0; index < (u32)stroke->ndash; index++ ) {
+    for ( index = 0; index < (unsigned int)stroke->ndash; index++ ) {
         total += stroke->dash[index];
     }
     dashed = stroke->ndash > 0 && total > 0x4000L;

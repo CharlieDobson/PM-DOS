@@ -25,7 +25,7 @@
 
 #define LPT_ERRBITS 0x29            /* INT 17h: out of paper, I/O error, time-out */
 
-static int retry_word( const char *text, u32 len )
+static int retry_word( const char *text, unsigned int len )
 {
     if ( len == 1 ) {
         switch ( ch_upper( text[0] ) ) {
@@ -216,7 +216,7 @@ int lpt_parse( SCAN *sc, REQ *rq, int slot )
 /* LPTn=COMm[:], and nothing after it */
 int route_parse( SCAN *sc, REQ *rq, const ITEM *it )
 {
-    u32 len = it->vlen;
+    unsigned int len = it->vlen;
 
     rq->form = F_ROUTE;
     if ( len == 5 && it->value[4] == ':' ) {
@@ -270,7 +270,7 @@ static void say_retry( int retry )
 void lpt_set( const REQ *rq )
 {
     char dev[6], num[4];
-    u8 codes[4];
+    uint8_t codes[4];
     int ncodes = 0, pos, status, retry;
     PORTSET set;
 
@@ -300,7 +300,7 @@ void lpt_set( const REQ *rq )
             out_line( M_PRNERR, NULL, NULL );
         } else {
             if ( rq->cols ) {
-                num_str( num, (u32)rq->cols );
+                num_str( num, (unsigned int)rq->cols );
                 out_line( M_SETFOR, dev + 3, num );
             }
             if ( rq->lines ) {

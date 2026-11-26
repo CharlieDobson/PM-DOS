@@ -33,6 +33,14 @@
  * not say which drive a handle's file is on.)  The test mode's key file
  * and log are the exception, and are kept on another drive.
  *
+ * ONLY A DISK THAT SPINS IS OPTIMIZED.  Moving files on flash memory
+ * wears it out and buys no speed, so a solid-state disk is refused, and
+ * so is a USB disk, which is nearly always flash and cannot be asked,
+ * and a RAM disk.  A mounted image counts as the disk its file is on.
+ * That is checked before anything is read, with /F and /U as well.  A
+ * disk that does not say what it is goes ahead: every hard disk from
+ * before ATA-7 is one of those.
+ *
  * THE EXIT CODE, as MS-DOS has it:
  *
  *     0   the drive was optimized
@@ -240,15 +248,36 @@ static void __cdecl tell( const char *fmt, ... )
     fe_message( line, 1 );
 }
 
+/* The sentence that refuses a drive for what it is stored on ("%c" for
+   the letter), or NULL when the drive may be optimized */
+static const char *medium_refusal( int drive )
+{
+    switch ( sys_drive_medium( drive ) ) {
+    case MED_SOLID:
+        return tx_solid;
+    case MED_USB:
+        return tx_usb;
+    case MED_RAM:
+        return tx_ramdisk;
+    }
+    return NULL;
+}
+
 /* Read a drive and make it the one being worked on.  0 = it is loaded
    (dst.errors says whether it is sound), or the DFE_* that was said. */
 static int load_drive( int drive )
 {
+    const char *refusal;
     int rc;
 
     release_drive();
     if ( sys_drive_kind( drive ) == DK_NONE ) {
         tell( sys_drive_exfat( drive ) ? tx_exfat : tx_not_local, 'A' + drive );
+        return DFE_GENERAL;
+    }
+    refusal = medium_refusal( drive );
+    if ( refusal != NULL ) {
+        tell( refusal, 'A' + drive );
         return DFE_GENERAL;
     }
     if ( fe_log_drive() == drive ) {
@@ -285,7 +314,7 @@ static int load_drive( int drive )
 }
 
 /* what is wrong with the drive, and what can be done about it */
-static void fs_text( char *buf, u32 max, int drive, int again )
+static void fs_text( char *buf, unsigned int max, int drive, int again )
 {
     int bit, left = dst.errors;
 
@@ -305,12 +334,12 @@ static void fs_text( char *buf, u32 max, int drive, int again )
 /* SCANDISK.EXE, where the shell would find it: here, along PATH, in
    the root of the boot drive.  A native program is not told where it
    was loaded from. */
-static int find_scandisk( char *path, u32 max )
+static int find_scandisk( char *path, unsigned int max )
 {
     static const char name[] = "SCANDISK.EXE";
     const char *list = sys_getenv( "PATH" );
     char dir[PATH_MAX];
-    u32 len;
+    unsigned int len;
 
     if ( sys_exists( name ) ) {
         str_cpyn( path, name, max );
@@ -354,7 +383,7 @@ static int run_scandisk( int drive )
     code = sys_exec( path, tail, &error );
     fe_resume();
     if ( code < 0 ) {
-        tell( tx_scandisk_failed, path, (u32)error );
+        tell( tx_scandisk_failed, path, (unsigned int)error );
         return 0;
     }
     return 1;
@@ -489,6 +518,7 @@ static void session( void )
 
 void defrag_main( void )
 {
+    const char *refusal;
     char line[120];
 
     if ( sys_init() != 0 ) {
@@ -513,6 +543,13 @@ void defrag_main( void )
 #endif
     if ( opt.drive >= 0 && sys_drive_kind( opt.drive ) == DK_NONE ) {
         sfmt( line, sizeof( line ), sys_drive_exfat( opt.drive ) ? tx_exfat : tx_bad_drive, 'A' + opt.drive );
+        say( line );
+        say( "\r\n" );
+        sys_exit( DFE_GENERAL );
+    }
+    refusal = opt.drive >= 0 ? medium_refusal( opt.drive ) : NULL;
+    if ( refusal != NULL ) {
+        sfmt( line, sizeof( line ), refusal, 'A' + opt.drive );
         say( line );
         say( "\r\n" );
         sys_exit( DFE_GENERAL );

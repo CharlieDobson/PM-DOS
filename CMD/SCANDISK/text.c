@@ -185,16 +185,16 @@ const char *pb_info( int kind )
 /* dates and times, as the country writes them (CHKDSK's)              */
 /* ------------------------------------------------------------------ */
 
-static char *two( u32 val, char *cur )
+static char *two( unsigned int val, char *cur )
 {
     cur[0] = (char)('0' + (val / 10) % 10);
     cur[1] = (char)('0' + val % 10);
     return cur + 2;
 }
 
-char *fmt_date( u16 dos_date, char *buf )
+char *fmt_date( uint16_t dos_date, char *buf )
 {
-    u32 day = dos_date & 31, mon = (dos_date >> 5) & 15, year = 1980 + (dos_date >> 9);
+    unsigned int day = dos_date & 31, mon = (dos_date >> 5) & 15, year = 1980 + (dos_date >> 9);
     char *cur = buf;
 
     switch ( country.date_fmt ) {
@@ -218,9 +218,9 @@ char *fmt_date( u16 dos_date, char *buf )
     return buf;
 }
 
-char *fmt_time( u16 dos_time, char *buf )
+char *fmt_time( uint16_t dos_time, char *buf )
 {
-    u32 hour = dos_time >> 11, min = (dos_time >> 5) & 63;
+    unsigned int hour = dos_time >> 11, min = (dos_time >> 5) & 63;
     char *cur = buf;
     char ampm = 'a';
 
@@ -254,7 +254,7 @@ const char *drive_verdict( void )
 {
     static char line[200];
     char drive = (char)('A' + vol.drive);
-    u32 left = st.found - st.fixed;
+    unsigned int left = st.found - st.fixed;
 
     if ( !st.logical_done ) {
         sfmt( line, sizeof( line ), "ScanDisk did not finish checking drive %c:.", drive );
@@ -272,7 +272,7 @@ const char *drive_verdict( void )
     return line;
 }
 
-static void row( TEXT *text, u32 clusters, const char *what, u32 count, const char *one,
+static void row( TEXT *text, uint32_t clusters, const char *what, unsigned int count, const char *one,
                  const char *many )
 {
     char num[40], line[120];
@@ -288,7 +288,7 @@ static void row( TEXT *text, u32 clusters, const char *what, u32 count, const ch
 
 void summary_text( TEXT *text )
 {
-    u32 avail;
+    uint32_t avail;
     char num[40], line[200];
 
     tx_wrap( text, drive_verdict(), LOG_WIDTH );
@@ -331,7 +331,7 @@ void summary_text( TEXT *text )
     }
     row( text, avail, "free", 0, NULL, NULL );
     tx_add( text, "" );
-    fmt_bytes( (u64)vol.bpc, num );
+    fmt_bytes( (uint64_t)vol.bpc, num );
     tx_addf( text, "%18s bytes in each cluster", num );
     tx_addf( text, "%,18u clusters on the drive", vol.nclus );
     tx_addf( text, "%,18u clusters free", avail );

@@ -48,7 +48,7 @@
 #include "xml.h"
 
 #ifdef PW_PEAK
-extern u32 pw_peak_heap;        /* F_DOCX.C's */
+extern unsigned int pw_peak_heap; /* F_DOCX.C's */
 #define PEAK()  if ( heap_in_use() > pw_peak_heap ) { pw_peak_heap = heap_in_use(); }
 #else
 #define PEAK()
@@ -103,15 +103,15 @@ static const struct {
                          CF_ALLCAPS | CF_OUTLINE | CF_SHADOW)
 
 typedef struct {
-    u16 set;                    /* XC_*: which of the members below are given */
-    u16 tog_set;                /* which of CF_TOGGLES are given... */
-    u16 tog;                    /* ...and whether each is on */
-    u16 font, size;
-    u16 under;                  /* CF_UNDER, CF_DUNDER, CF_WUNDER or 0 */
-    u16 vert;                   /* CF_SUPER, CF_SUB or 0 */
-    u8  hilite;
-    u8  spare;
-    u32 color;
+    uint16_t set;               /* XC_*: which of the members below are given */
+    uint16_t tog_set;           /* which of CF_TOGGLES are given... */
+    uint16_t tog;               /* ...and whether each is on */
+    uint16_t font, size;
+    uint16_t under;             /* CF_UNDER, CF_DUNDER, CF_WUNDER or 0 */
+    uint16_t vert;              /* CF_SUPER, CF_SUB or 0 */
+    uint8_t  hilite;
+    uint8_t  spare;
+    uint32_t color;
 } XCHP;
 
 #define XP_ALIGN        0x0001
@@ -128,15 +128,15 @@ typedef struct {
                          PF_BORDER_LEFT | PF_BORDER_RIGHT)
 
 typedef struct {
-    u16 set;                    /* XP_* */
-    u16 flag_set;               /* which of PF_GIVEN are given... */
-    u16 flags;                  /* ...and whether each is on */
-    u8  align, line_rule;
-    u8  break_after;            /* a page ends after it */
-    u8  ntabs;
-    u16 before, after, line;
-    s32 left, right, first;
-    WTAB *tabs;                 /* a style's own block; from the paragraph's indent */
+    uint16_t set;               /* XP_* */
+    uint16_t flag_set;          /* which of PF_GIVEN are given... */
+    uint16_t flags;             /* ...and whether each is on */
+    uint8_t  align, line_rule;
+    uint8_t  break_after;       /* a page ends after it */
+    uint8_t  ntabs;
+    uint16_t before, after, line;
+    int      left, right, first;
+    WTAB    *tabs;              /* a style's own block; from the paragraph's indent */
 } XPAP;
 
 enum { FAMILY_PARA = 1, FAMILY_TEXT, FAMILY_TABLE, FAMILY_COLUMN, FAMILY_CELL, FAMILY_OTHER };
@@ -145,63 +145,63 @@ enum { FAMILY_PARA = 1, FAMILY_TEXT, FAMILY_TABLE, FAMILY_COLUMN, FAMILY_CELL, F
 #define PARENT_DEPTH    32
 
 typedef struct {
-    u32  name, parent, display, list, master;   /* strings */
-    u8   family;                /* FAMILY_* */
-    u8   scope;                 /* 0 a common style, 1 content.xml's own, 2 styles.xml's own */
-    u8   state;                 /* 0 as read, 1 being folded, 2 folded with its parents */
-    u8   is_default;            /* the family's default style */
-    u8   ruled;                 /* a cell's: it has borders */
-    u8   has_width;
-    u16  page_number;           /* the page number it starts with, 0 for none */
-    s32  width, tbl_left;       /* a column's or table's width; a table's left margin */
-    int  wd;                    /* the document's style it became, -1 not yet */
-    XCHP chp;
-    XPAP pap;
+    unsigned int name, parent, display, list, master; /* strings */
+    uint8_t      family;            /* FAMILY_* */
+    uint8_t      scope;             /* 0 a common style, 1 content.xml's own, 2 styles.xml's own */
+    uint8_t      state;             /* 0 as read, 1 being folded, 2 folded with its parents */
+    uint8_t      is_default;        /* the family's default style */
+    uint8_t      ruled;             /* a cell's: it has borders */
+    uint8_t      has_width;
+    uint16_t     page_number;       /* the page number it starts with, 0 for none */
+    int          width, tbl_left;   /* a column's or table's width; a table's left margin */
+    int          wd;                /* the document's style it became, -1 not yet */
+    XCHP         chp;
+    XPAP         pap;
 } OSTYLE;
 
 #define LIST_LEVELS     10
 
 typedef struct {
-    u8  fmt;                    /* LIST_* */
-    u8  ind_set;                /* its indents are given */
-    u8  legacy;                 /* ...as space before and label width */
-    u8  spare;
-    u16 start;
-    s32 left, first;
+    uint8_t  fmt;               /* LIST_* */
+    uint8_t  ind_set;           /* its indents are given */
+    uint8_t  legacy;            /* ...as space before and label width */
+    uint8_t  spare;
+    uint16_t start;
+    int      left, first;
 } OLEVEL;
 
 typedef struct {
-    u32 name;
-    u8  scope;
-    u8  used;                   /* a list of this style has been met in the text */
-    OLEVEL lvl[LIST_LEVELS];
+    unsigned int name;
+    uint8_t      scope;
+    uint8_t      used;          /* a list of this style has been met in the text */
+    OLEVEL       lvl[LIST_LEVELS];
 } OLIST;
 
 typedef struct {
-    u32 name;
-    int font;                   /* the document's font */
+    unsigned int name;
+    int          font;          /* the document's font */
 } OFONT;
 
 typedef struct {
-    u32 name;
-    PAGESETUP page;
-    s32 head_room, foot_room;   /* a header's and footer's height with its gap */
-    u8  has_size, has_head, has_foot;
+    unsigned int name;
+    PAGESETUP    page;
+    int          head_room, foot_room; /* a header's and footer's height with its gap */
+    uint8_t      has_size, has_head, has_foot;
 } OPAGE;
 
 typedef struct {
-    u32 name, layout;
-    u32 next;                   /* the master page of the pages after its first */
+    unsigned int name, layout;
+    unsigned int next;          /* the master page of the pages after its first */
 } OMASTER;
 
 /* the list a paragraph is being read in, at one depth */
 typedef struct {
-    int list;                   /* which OLIST, -1 for none named */
-    u8  items;                  /* how many items it has had: 2 for "more than one" */
-    u8  paras;                  /* how many paragraphs the item in hand has had */
-    u8  runs_on;                /* its numbers carry on from the list before */
-    u8  header;                 /* the item in hand is a list's heading */
-    u16 item_start;             /* the number the item in hand says it has, 0 for none */
+    int      list;              /* which OLIST, -1 for none named */
+    uint8_t  items;             /* how many items it has had: 2 for "more than one" */
+    uint8_t  paras;             /* how many paragraphs the item in hand has had */
+    uint8_t  runs_on;           /* its numbers carry on from the list before */
+    uint8_t  header;            /* the item in hand is a list's heading */
+    uint16_t item_start;        /* the number the item in hand says it has, 0 for none */
 } OLDEPTH;
 
 #define MAX_LIST_DEPTH  16
@@ -226,62 +226,62 @@ typedef struct {
 #define M_META          8       /* read the title and author */
 
 typedef struct {
-    WDOC *doc;
-    ZIP  *zip;
-    int   nomem, flat;
-    char *str;
-    u32   str_len, str_cap;
-    OSTYLE *style;
-    u32   nstyle, style_cap;
-    OLIST *list;
-    u32   nlist, list_cap;
-    OFONT *font;
-    u32   nfont, font_cap;
-    OPAGE *page;
-    u32   npage, page_cap;
-    OMASTER *master;
-    u32   nmaster, master_cap;
-    XCHP  def_chp;              /* what a file that says nothing gets */
-    XPAP  def_pap;
-    int   mode;                 /* M_* */
-    int   scope;                /* whose automatic styles the part in hand has: 1 or 2 */
+    WDOC        *doc;
+    ZIP         *zip;
+    int          nomem, flat;
+    char        *str;
+    unsigned int str_len, str_cap;
+    OSTYLE      *style;
+    unsigned int nstyle, style_cap;
+    OLIST       *list;
+    unsigned int nlist, list_cap;
+    OFONT       *font;
+    unsigned int nfont, font_cap;
+    OPAGE       *page;
+    unsigned int npage, page_cap;
+    OMASTER     *master;
+    unsigned int nmaster, master_cap;
+    XCHP         def_chp;           /* what a file that says nothing gets */
+    XPAP         def_pap;
+    int          mode;              /* M_* */
+    int          scope;             /* whose automatic styles the part in hand has: 1 or 2 */
 
     /* the story being read */
-    WBUILD wb;
-    int   story_on;
-    int   p_depth;
-    int   para_style;           /* the paragraph's OSTYLE, -1 for none */
-    int   break_after;
-    int   space;                /* the last character was white space */
-    XCHP  span[MAX_SPANS];      /* the properties in force: the paragraph's, then each span's */
-    int   nspan, span_base, span_over;
-    int   pbase[MAX_PDEPTH];    /* where each open paragraph's own properties are in "span" */
-    OLDEPTH lst[MAX_LIST_DEPTH];
-    int   nlst, lst_base, lst_over;
-    ONEST nest[MAX_NEST];
-    int   nnest;
-    int   note_obj;             /* the note whose body comes next, -1 for none */
+    WBUILD       wb;
+    int          story_on;
+    int          p_depth;
+    int          para_style;        /* the paragraph's OSTYLE, -1 for none */
+    int          break_after;
+    int          space;             /* the last character was white space */
+    XCHP         span[MAX_SPANS];   /* the properties in force: the paragraph's, then each span's */
+    int          nspan, span_base, span_over;
+    int          pbase[MAX_PDEPTH]; /* where each open paragraph's own properties are in "span" */
+    OLDEPTH      lst[MAX_LIST_DEPTH];
+    int          nlst, lst_base, lst_over;
+    ONEST        nest[MAX_NEST];
+    int          nnest;
+    int          note_obj;          /* the note whose body comes next, -1 for none */
     /* a frame */
-    s32   frame_cx, frame_cy;
-    int   frame_done;
+    int          frame_cx, frame_cy;
+    int          frame_done;
     /* the outermost table */
-    int   tbl_depth, in_head_rows;
-    s32   tbl_left, tbl_width;
-    s32   grid[MAX_GRID];
-    int   ngrid, grid_fixed;
-    TROW  row;
-    int   row_ruled, col, covered;
-    s32   edge;
-    u32   cell_from;
-    int   cell_span, cell_repeat;
-    WPARA *cell_last;
+    int          tbl_depth, in_head_rows;
+    int          tbl_left, tbl_width;
+    int          grid[MAX_GRID];
+    int          ngrid, grid_fixed;
+    TROW         row;
+    int          row_ruled, col, covered;
+    int          edge;
+    unsigned int cell_from;
+    int          cell_span, cell_repeat;
+    WPARA       *cell_last;
     /* the page */
-    int   seen_first;           /* the first paragraph of the text has been met */
-    u32   first_master;         /* the master page it asks for: a string, 0 for none */
-    u16   first_number;
-    u32   want_master;          /* the master page whose header and footer are wanted */
-    u32   next_master;          /* ...and the one its later pages have */
-    int   in_master, head_done, foot_done;
+    int          seen_first;        /* the first paragraph of the text has been met */
+    unsigned int first_master;      /* the master page it asks for: a string, 0 for none */
+    uint16_t     first_number;
+    unsigned int want_master;       /* the master page whose header and footer are wanted */
+    unsigned int next_master;       /* ...and the one its later pages have */
+    int          in_master, head_done, foot_done;
 } ODT;
 
 #define STR( ctx, at )  ((ctx)->str + (at))
@@ -290,10 +290,10 @@ typedef struct {
 /* small things                                                        */
 /* ------------------------------------------------------------------ */
 
-static u32 odt_str( ODT *ctx, const char *text )
+static unsigned int odt_str( ODT *ctx, const char *text )
 {
     char *fresh;
-    u32 len, want, at;
+    unsigned int len, want, at;
 
     if ( text == NULL ) {
         return 0;
@@ -321,10 +321,10 @@ static u32 odt_str( ODT *ctx, const char *text )
     return at;
 }
 
-static int odt_grow( ODT *ctx, void **array, u32 *cap, u32 need, u32 size, u32 limit )
+static int odt_grow( ODT *ctx, void **array, unsigned int *cap, unsigned int need, unsigned int size, unsigned int limit )
 {
     void *fresh;
-    u32 want;
+    unsigned int want;
 
     if ( need <= *cap ) {
         return 1;
@@ -346,20 +346,20 @@ static int odt_grow( ODT *ctx, void **array, u32 *cap, u32 need, u32 size, u32 l
     return 1;
 }
 
-static s32 odt_clamp( s32 value, s32 low, s32 high )
+static int odt_clamp( int value, int low, int high )
 {
     return value < low ? low : value > high ? high : value;
 }
 
 /* value * num / den to the nearest, for numbers whose product would not fit */
-static u32 odt_muldiv( u32 value, u32 num, u32 den )
+static unsigned int odt_muldiv( unsigned int value, unsigned int num, unsigned int den )
 {
     return (value / den) * num + ((value % den) * num + den / 2) / den;
 }
 
-static int odt_int( const char *text, s32 *out )
+static int odt_int( const char *text, int *out )
 {
-    s32 value = 0;
+    int value = 0;
     int minus = 0, digits = 0;
 
     if ( text == NULL ) {
@@ -383,9 +383,9 @@ static int odt_int( const char *text, s32 *out )
  * the twips they were).
  * *rest is where the number stopped.  0 if there are no digits.
  */
-static int odt_number( const char *text, s32 *milli, const char **rest )
+static int odt_number( const char *text, int *milli, const char **rest )
 {
-    u32 whole = 0, frac = 0, scale = 1000;
+    unsigned int whole = 0, frac = 0, scale = 1000;
     int minus = 0, digits = 0;
 
     if ( text == NULL ) {
@@ -399,12 +399,12 @@ static int odt_number( const char *text, s32 *milli, const char **rest )
     }
     for ( ; *text >= '0' && *text <= '9'; text++, digits++ ) {
         if ( whole < 100000UL ) {
-            whole = whole * 10 + (u32)(*text - '0');
+            whole = whole * 10 + (unsigned int)(*text - '0');
         }
     }
     if ( *text == '.' ) {
         for ( text++; *text >= '0' && *text <= '9'; text++, digits++ ) {
-            frac += (u32)(*text - '0') * scale;
+            frac += (unsigned int)(*text - '0') * scale;
             scale /= 10;
         }
     }
@@ -414,23 +414,23 @@ static int odt_number( const char *text, s32 *milli, const char **rest )
     if ( whole > 100000UL ) {
         whole = 100000UL;
     }
-    *milli = minus ? -(s32)(whole * 10000 + frac) : (s32)(whole * 10000 + frac);
+    *milli = minus ? -(int)(whole * 10000 + frac) : (int)(whole * 10000 + frac);
     *rest = text;
     return 1;
 }
 
 /* a length in any of the units OpenDocument has -> twips, to the
    nearest.  0 for what is not a length (a percentage is not). */
-static int odt_twips( const char *text, s32 *out )
+static int odt_twips( const char *text, int *out )
 {
     const char *unit;
-    s32 milli;
-    u32 size, twips;
+    int milli;
+    unsigned int size, twips;
 
     if ( !odt_number( text, &milli, &unit ) ) {
         return 0;
     }
-    size = (u32)(milli < 0 ? -milli : milli);
+    size = (unsigned int)(milli < 0 ? -milli : milli);
     if ( unit[0] == 'p' && unit[1] == 't' ) {
         twips = odt_muldiv( size, 1, 500 );
     } else if ( unit[0] == 'i' && unit[1] == 'n' ) {
@@ -448,14 +448,14 @@ static int odt_twips( const char *text, s32 *out )
     } else {
         return 0;
     }
-    *out = milli < 0 ? -(s32)twips : (s32)twips;
+    *out = milli < 0 ? -(int)twips : (int)twips;
     return 1;
 }
 
 /* "#rrggbb" */
-static int odt_color( const char *text, u32 *out )
+static int odt_color( const char *text, uint32_t *out )
 {
-    u32 value = 0;
+    uint32_t value = 0;
     int index, digit;
 
     if ( text == NULL || text[0] != '#' ) {
@@ -472,28 +472,28 @@ static int odt_color( const char *text, u32 *out )
         } else {
             return 0;
         }
-        value = (value << 4) | (u32)digit;
+        value = (value << 4) | (uint32_t)digit;
     }
     *out = value;
     return 1;
 }
 
 /* Word's sixteen highlighters, in the order Word numbers them */
-static const u32 odt_hilites[16] = {
+static const uint32_t odt_hilites[16] = {
     0x000000UL, 0x0000FFUL, 0x00FFFFUL, 0x00FF00UL, 0xFF00FFUL, 0xFF0000UL, 0xFFFF00UL, 0xFFFFFFUL,
     0x000080UL, 0x008080UL, 0x008000UL, 0x800080UL, 0x800000UL, 0x808000UL, 0x808080UL, 0xC0C0C0UL
 };
 
 /* the highlighter nearest a background colour */
-static int odt_hilite( u32 rgb )
+static int odt_hilite( uint32_t rgb )
 {
-    s32 part, far_off, best = 0x7FFFFFFFL;
+    int part, far_off, best = 0x7FFFFFFFL;
     int index, shift, nearest = 0;
 
     for ( index = 0; index < 16; index++ ) {
         far_off = 0;
         for ( shift = 0; shift < 24; shift += 8 ) {
-            part = (s32)((rgb >> shift) & 0xFF) - (s32)((odt_hilites[index] >> shift) & 0xFF);
+            part = (int)((rgb >> shift) & 0xFF) - (int)((odt_hilites[index] >> shift) & 0xFF);
             far_off += part * part;
         }
         if ( far_off < best ) {
@@ -504,7 +504,7 @@ static int odt_hilite( u32 rgb )
     return nearest + 1;
 }
 
-static int odt_sniff( const u8 *data, u32 len )
+static int odt_sniff( const uint8_t *data, uint32_t len )
 {
     if ( len >= 8 && mem_cmp( data, "\x89PNG\r\n\x1A\n", 8 ) == 0 ) {
         return IMG_PNG;
@@ -531,16 +531,16 @@ static int odt_sniff( const u8 *data, u32 len )
     return IMG_UNKNOWN;
 }
 
-static u8 *odt_part( ODT *ctx, const char *name, u32 *len )
+static uint8_t *odt_part( ODT *ctx, const char *name, uint32_t *len )
 {
-    u8 *data;
+    uint8_t *data;
     int index = zip_find( ctx->zip, name );
 
     *len = 0;
     if ( index < 0 ) {
         return NULL;
     }
-    data = zip_read( ctx->zip, (u32)index, len );
+    data = zip_read( ctx->zip, (unsigned int)index, len );
     if ( data == NULL && zip_error( ctx->zip ) == ZIP_NOMEM ) {
         ctx->nomem = 1;
     }
@@ -548,10 +548,10 @@ static u8 *odt_part( ODT *ctx, const char *name, u32 *len )
     return data;
 }
 
-static XML *odt_xml( ODT *ctx, const u8 *data, u32 len )
+static XML *odt_xml( ODT *ctx, const uint8_t *data, uint32_t len )
 {
     XML *xml = xml_open( data, len );
-    u32 index;
+    unsigned int index;
 
     if ( xml == NULL ) {
         ctx->nomem = 1;
@@ -592,7 +592,7 @@ static void xchp_over( XCHP *dst, const XCHP *src )
         dst->vert = src->vert;
     }
     dst->set |= src->set;
-    dst->tog = (u16)((dst->tog & ~src->tog_set) | (src->tog & src->tog_set));
+    dst->tog = (uint16_t)((dst->tog & ~src->tog_set) | (src->tog & src->tog_set));
     dst->tog_set |= src->tog_set;
 }
 
@@ -625,7 +625,7 @@ static void xpap_over( XPAP *dst, const XPAP *src )
         dst->break_after = src->break_after;
     }
     dst->set |= src->set;
-    dst->flags = (u16)((dst->flags & ~src->flag_set) | (src->flags & src->flag_set));
+    dst->flags = (uint16_t)((dst->flags & ~src->flag_set) | (src->flags & src->flag_set));
     dst->flag_set |= src->flag_set;
 }
 
@@ -633,7 +633,7 @@ static void xchp_chp( const XCHP *from, CHP *chp )
 {
     chp->font = from->font;
     chp->size = from->size;
-    chp->flags = (u16)((from->tog & CF_TOGGLES) | from->under | from->vert);
+    chp->flags = (uint16_t)((from->tog & CF_TOGGLES) | from->under | from->vert);
     chp->hilite = from->hilite;
     chp->spare = 0;
     chp->color = from->color;
@@ -643,13 +643,13 @@ static void xchp_chp( const XCHP *from, CHP *chp )
 /* styles                                                              */
 /* ------------------------------------------------------------------ */
 
-static void odt_toggle( XCHP *chp, u16 flag, int on )
+static void odt_toggle( XCHP *chp, uint16_t flag, int on )
 {
     chp->tog_set |= flag;
     if ( on ) {
         chp->tog |= flag;
     } else {
-        chp->tog &= (u16)~flag;
+        chp->tog &= (uint16_t)~flag;
     }
 }
 
@@ -657,7 +657,7 @@ static void odt_toggle( XCHP *chp, u16 flag, int on )
    or the name itself */
 static int odt_font( ODT *ctx, const char *name )
 {
-    u32 index;
+    unsigned int index;
 
     for ( index = 0; index < ctx->nfont; index++ ) {
         if ( str_cmp( STR( ctx, ctx->font[index].name ), name ) == 0 ) {
@@ -671,7 +671,7 @@ static int odt_font( ODT *ctx, const char *name )
 static int odt_family( ODT *ctx, const char *family, int kind, int fixed )
 {
     char name[FONT_NAME_LEN];
-    u32 len = 0;
+    unsigned int len = 0;
 
     while ( *family == ' ' || *family == '\'' || *family == '"' ) {
         family++;
@@ -687,19 +687,19 @@ static int odt_family( ODT *ctx, const char *family, int kind, int fixed )
 static void odt_text_props( ODT *ctx, const XML *xml, XCHP *chp )
 {
     const char *val, *type, *rest;
-    s32 value;
-    u32 rgb;
+    int value;
+    uint32_t rgb;
 
     val = xml_attr( xml, NS_STYLE, "font-name" );
     if ( val != NULL && val[0] ) {
-        chp->font = (u16)odt_font( ctx, val );
+        chp->font = (uint16_t)odt_font( ctx, val );
         chp->set |= XC_FONT;
     } else if ( (val = xml_attr( xml, NS_FO, "font-family" )) != NULL && val[0] ) {
-        chp->font = (u16)odt_family( ctx, val, FAM_ANY, -1 );
+        chp->font = (uint16_t)odt_family( ctx, val, FAM_ANY, -1 );
         chp->set |= XC_FONT;
     }
     if ( odt_twips( xml_attr( xml, NS_FO, "font-size" ), &value ) && value > 0 ) {
-        chp->size = (u16)odt_clamp( (value + 5) / 10, 2, 1000 );
+        chp->size = (uint16_t)odt_clamp( (value + 5) / 10, 2, 1000 );
         chp->set |= XC_SIZE;
     }
     val = xml_attr( xml, NS_FO, "font-weight" );
@@ -718,10 +718,10 @@ static void odt_text_props( ODT *ctx, const XML *xml, XCHP *chp )
         type = xml_attr( xml, NS_STYLE, "text-underline-type" );
         rest = xml_attr( xml, NS_STYLE, "text-underline-mode" );
         chp->set |= XC_UNDER;
-        chp->under = (u16)(str_cmp( val, "none" ) == 0 ? 0 :
-                           ((type != NULL && str_cmp( type, "double" ) == 0) || str_cmp( val, "double" ) == 0) ?
-                           CF_DUNDER : (rest != NULL && str_cmp( rest, "skip-white-space" ) == 0) ? CF_WUNDER :
-                           CF_UNDER);
+        chp->under = (uint16_t)(str_cmp( val, "none" ) == 0 ? 0 :
+                                ((type != NULL && str_cmp( type, "double" ) == 0) || str_cmp( val, "double" ) == 0) ?
+                                CF_DUNDER : (rest != NULL && str_cmp( rest, "skip-white-space" ) == 0) ? CF_WUNDER :
+                                CF_UNDER);
     }
     val = xml_attr( xml, NS_STYLE, "text-line-through-style" );
     if ( val == NULL ) {
@@ -739,7 +739,7 @@ static void odt_text_props( ODT *ctx, const XML *xml, XCHP *chp )
         } else if ( str_ncmp( val, "sub", 3 ) == 0 ) {
             chp->vert = CF_SUB;
         } else if ( odt_number( val, &value, &rest ) && value != 0 ) {
-            chp->vert = (u16)(value > 0 ? CF_SUPER : CF_SUB);
+            chp->vert = (uint16_t)(value > 0 ? CF_SUPER : CF_SUB);
         }
     }
     val = xml_attr( xml, NS_STYLE, "use-window-font-color" );
@@ -755,7 +755,7 @@ static void odt_text_props( ODT *ctx, const XML *xml, XCHP *chp )
         val = xml_attr( xml, NS_STYLE, "text-background-color" );
     }
     if ( val != NULL ) {
-        chp->hilite = (u8)(odt_color( val, &rgb ) ? odt_hilite( rgb ) : 0);
+        chp->hilite = (uint8_t)(odt_color( val, &rgb ) ? odt_hilite( rgb ) : 0);
         chp->set |= XC_HILITE;
     }
     val = xml_attr( xml, NS_FO, "font-variant" );
@@ -790,21 +790,21 @@ static int odt_line( const char *val )
 static void odt_para_props( ODT *ctx, const XML *xml, XPAP *pap )
 {
     static const char *const sides[4] = { "border-top", "border-bottom", "border-left", "border-right" };
-    static const u16 bits[4] = { PF_BORDER_TOP, PF_BORDER_BOT, PF_BORDER_LEFT, PF_BORDER_RIGHT };
+    static const uint16_t bits[4] = { PF_BORDER_TOP, PF_BORDER_BOT, PF_BORDER_LEFT, PF_BORDER_RIGHT };
     const char *val, *rest;
-    s32 value;
+    int value;
     int index;
 
     val = xml_attr( xml, NS_FO, "text-align" );
     if ( val != NULL ) {
-        pap->align = (u8)(str_cmp( val, "center" ) == 0 ? AL_CENTER :
-                          (str_cmp( val, "end" ) == 0 || str_cmp( val, "right" ) == 0) ? AL_RIGHT :
-                          str_cmp( val, "justify" ) == 0 ? AL_JUSTIFY : AL_LEFT);
+        pap->align = (uint8_t)(str_cmp( val, "center" ) == 0 ? AL_CENTER :
+                               (str_cmp( val, "end" ) == 0 || str_cmp( val, "right" ) == 0) ? AL_RIGHT :
+                               str_cmp( val, "justify" ) == 0 ? AL_JUSTIFY : AL_LEFT);
         pap->set |= XP_ALIGN;
     }
     if ( odt_twips( xml_attr( xml, NS_FO, "margin" ), &value ) ) {
         pap->left = pap->right = odt_clamp( value, -31680, 31680 );
-        pap->before = pap->after = (u16)odt_clamp( value, 0, 31680 );
+        pap->before = pap->after = (uint16_t)odt_clamp( value, 0, 31680 );
         pap->set |= XP_LEFT | XP_RIGHT | XP_BEFORE | XP_AFTER;
     }
     if ( odt_twips( xml_attr( xml, NS_FO, "margin-left" ), &value ) ) {
@@ -820,11 +820,11 @@ static void odt_para_props( ODT *ctx, const XML *xml, XPAP *pap )
         pap->set |= XP_FIRST;
     }
     if ( odt_twips( xml_attr( xml, NS_FO, "margin-top" ), &value ) ) {
-        pap->before = (u16)odt_clamp( value, 0, 31680 );
+        pap->before = (uint16_t)odt_clamp( value, 0, 31680 );
         pap->set |= XP_BEFORE;
     }
     if ( odt_twips( xml_attr( xml, NS_FO, "margin-bottom" ), &value ) ) {
-        pap->after = (u16)odt_clamp( value, 0, 31680 );
+        pap->after = (uint16_t)odt_clamp( value, 0, 31680 );
         pap->set |= XP_AFTER;
     }
     /* the three ways a line's height is said */
@@ -835,45 +835,45 @@ static void odt_para_props( ODT *ctx, const XML *xml, XPAP *pap )
         pap->set |= XP_LINE;
     } else if ( val != NULL && odt_number( val, &value, &rest ) && value > 0 ) {
         if ( rest[0] == '%' ) {
-            pap->line = (u16)odt_clamp( (s32)odt_muldiv( (u32)value, 12, 50000UL ), 1, 31680 );
+            pap->line = (uint16_t)odt_clamp( (int)odt_muldiv( (unsigned int)value, 12, 50000UL ), 1, 31680 );
             pap->line_rule = LS_MULTIPLE;
             pap->set |= XP_LINE;
         } else if ( odt_twips( val, &value ) && value > 0 ) {
-            pap->line = (u16)odt_clamp( value, 1, 31680 );
+            pap->line = (uint16_t)odt_clamp( value, 1, 31680 );
             pap->line_rule = LS_EXACT;
             pap->set |= XP_LINE;
         }
     }
     if ( odt_twips( xml_attr( xml, NS_STYLE, "line-height-at-least" ), &value ) && value > 0 ) {
-        pap->line = (u16)odt_clamp( value, 1, 31680 );
+        pap->line = (uint16_t)odt_clamp( value, 1, 31680 );
         pap->line_rule = LS_ATLEAST;
         pap->set |= XP_LINE;
     }
     val = xml_attr( xml, NS_FO, "keep-with-next" );
     if ( val != NULL ) {
         pap->flag_set |= PF_KEEPNEXT;
-        pap->flags = (u16)(str_cmp( val, "always" ) == 0 ? pap->flags | PF_KEEPNEXT : pap->flags & ~PF_KEEPNEXT);
+        pap->flags = (uint16_t)(str_cmp( val, "always" ) == 0 ? pap->flags | PF_KEEPNEXT : pap->flags & ~PF_KEEPNEXT);
     }
     val = xml_attr( xml, NS_FO, "keep-together" );
     if ( val != NULL ) {
         pap->flag_set |= PF_KEEP;
-        pap->flags = (u16)(str_cmp( val, "always" ) == 0 ? pap->flags | PF_KEEP : pap->flags & ~PF_KEEP);
+        pap->flags = (uint16_t)(str_cmp( val, "always" ) == 0 ? pap->flags | PF_KEEP : pap->flags & ~PF_KEEP);
     }
     val = xml_attr( xml, NS_FO, "break-before" );
     if ( val != NULL ) {
         pap->flag_set |= PF_PAGEBEFORE;
-        pap->flags = (u16)((str_cmp( val, "page" ) == 0 || str_cmp( val, "column" ) == 0) ?
-                           pap->flags | PF_PAGEBEFORE : pap->flags & ~PF_PAGEBEFORE);
+        pap->flags = (uint16_t)((str_cmp( val, "page" ) == 0 || str_cmp( val, "column" ) == 0) ?
+                                pap->flags | PF_PAGEBEFORE : pap->flags & ~PF_PAGEBEFORE);
     }
     val = xml_attr( xml, NS_FO, "break-after" );
     if ( val != NULL ) {
-        pap->break_after = (u8)(str_cmp( val, "page" ) == 0 || str_cmp( val, "column" ) == 0);
+        pap->break_after = (uint8_t)(str_cmp( val, "page" ) == 0 || str_cmp( val, "column" ) == 0);
         pap->set |= XP_BREAK;
     }
     val = xml_attr( xml, NS_FO, "border" );
     if ( val != NULL ) {
         pap->flag_set |= PF_BORDER_TOP | PF_BORDER_BOT | PF_BORDER_LEFT | PF_BORDER_RIGHT;
-        pap->flags &= (u16)~(PF_BORDER_TOP | PF_BORDER_BOT | PF_BORDER_LEFT | PF_BORDER_RIGHT);
+        pap->flags &= (uint16_t)~(PF_BORDER_TOP | PF_BORDER_BOT | PF_BORDER_LEFT | PF_BORDER_RIGHT);
         if ( odt_line( val ) ) {
             pap->flags |= PF_BORDER_TOP | PF_BORDER_BOT | PF_BORDER_LEFT | PF_BORDER_RIGHT;
         }
@@ -882,7 +882,7 @@ static void odt_para_props( ODT *ctx, const XML *xml, XPAP *pap )
         val = xml_attr( xml, NS_FO, sides[index] );
         if ( val != NULL ) {
             pap->flag_set |= bits[index];
-            pap->flags = (u16)(odt_line( val ) ? pap->flags | bits[index] : pap->flags & ~bits[index]);
+            pap->flags = (uint16_t)(odt_line( val ) ? pap->flags | bits[index] : pap->flags & ~bits[index]);
         }
     }
     if ( odt_twips( xml_attr( xml, NS_STYLE, "tab-stop-distance" ), &value ) && value > 0 && ctx->doc != NULL ) {
@@ -895,7 +895,7 @@ static void odt_tab_stops( XML *xml, XPAP *pap, WTAB *tabs )
 {
     const char *val;
     WTAB *tab;
-    s32 value;
+    int value;
     int depth = xml->depth, inner;
 
     while ( xml_child( xml, depth ) ) {
@@ -915,14 +915,14 @@ static void odt_tab_stops( XML *xml, XPAP *pap, WTAB *tabs )
             tab->pos = odt_clamp( value, -31680, 31680 );
             val = xml_attr( xml, NS_STYLE, "type" );
             if ( val != NULL ) {
-                tab->kind = (u8)(str_cmp( val, "center" ) == 0 ? TAB_CENTER : str_cmp( val, "right" ) == 0 ? TAB_RIGHT :
-                                 str_cmp( val, "char" ) == 0 ? TAB_DECIMAL : TAB_LEFT);
+                tab->kind = (uint8_t)(str_cmp( val, "center" ) == 0 ? TAB_CENTER : str_cmp( val, "right" ) == 0 ? TAB_RIGHT :
+                                      str_cmp( val, "char" ) == 0 ? TAB_DECIMAL : TAB_LEFT);
             }
             val = xml_attr( xml, NS_STYLE, "leader-style" );
             if ( val != NULL && str_cmp( val, "none" ) != 0 ) {
-                tab->lead = (u8)(str_cmp( val, "dotted" ) == 0 ? LEAD_DOTS :
-                                 (str_cmp( val, "dash" ) == 0 || str_cmp( val, "long-dash" ) == 0) ? LEAD_DASHES :
-                                 LEAD_LINE);
+                tab->lead = (uint8_t)(str_cmp( val, "dotted" ) == 0 ? LEAD_DOTS :
+                                      (str_cmp( val, "dash" ) == 0 || str_cmp( val, "long-dash" ) == 0) ? LEAD_DASHES :
+                                      LEAD_LINE);
                 val = xml_attr( xml, NS_STYLE, "leader-text" );
                 if ( val != NULL && val[0] == '.' ) {
                     tab->lead = LEAD_DOTS;
@@ -932,7 +932,7 @@ static void odt_tab_stops( XML *xml, XPAP *pap, WTAB *tabs )
                     tab->lead = LEAD_LINE;
                 }
             } else if ( (val = xml_attr( xml, NS_STYLE, "leader-char" )) != NULL && val[0] > ' ' ) {
-                tab->lead = (u8)(val[0] == '.' ? LEAD_DOTS : val[0] == '-' ? LEAD_DASHES : LEAD_LINE);
+                tab->lead = (uint8_t)(val[0] == '.' ? LEAD_DOTS : val[0] == '-' ? LEAD_DASHES : LEAD_LINE);
             }
         }
     }
@@ -943,17 +943,17 @@ static void odt_style_tabs( ODT *ctx, OSTYLE *style, const WTAB *tabs, int count
     WTAB *fresh = NULL;
 
     if ( count > 0 ) {
-        fresh = (WTAB *)try_alloc( (u32)count * sizeof( WTAB ) );
+        fresh = (WTAB *)try_alloc( (unsigned int)count * sizeof( WTAB ) );
         if ( fresh == NULL ) {
             ctx->nomem = 1;
             count = 0;
         } else {
-            mem_cpy( fresh, tabs, (u32)count * sizeof( WTAB ) );
+            mem_cpy( fresh, tabs, (unsigned int)count * sizeof( WTAB ) );
         }
     }
     xfree( style->pap.tabs );
     style->pap.tabs = fresh;
-    style->pap.ntabs = (u8)count;
+    style->pap.ntabs = (uint8_t)count;
 }
 
 /* a <style:style> or <style:default-style>, kept */
@@ -963,7 +963,7 @@ static void odt_style_read( ODT *ctx, XML *xml, int scope, int is_default )
     XPAP stops;
     OSTYLE *style;
     const char *val;
-    s32 value;
+    int value;
     int depth = xml->depth, both;
 
     if ( !odt_grow( ctx, (void **)&ctx->style, &ctx->style_cap, ctx->nstyle + 1, sizeof( OSTYLE ), MAX_OSTYLES ) ) {
@@ -972,13 +972,13 @@ static void odt_style_read( ODT *ctx, XML *xml, int scope, int is_default )
     style = &ctx->style[ctx->nstyle];
     mem_set( style, 0, sizeof( OSTYLE ) );
     style->wd = -1;
-    style->scope = (u8)scope;
-    style->is_default = (u8)is_default;
+    style->scope = (uint8_t)scope;
+    style->is_default = (uint8_t)is_default;
     val = xml_attr( xml, NS_STYLE, "family" );
-    style->family = (u8)(val == NULL ? FAMILY_OTHER : str_cmp( val, "paragraph" ) == 0 ? FAMILY_PARA :
-                         str_cmp( val, "text" ) == 0 ? FAMILY_TEXT : str_cmp( val, "table" ) == 0 ? FAMILY_TABLE :
-                         str_cmp( val, "table-column" ) == 0 ? FAMILY_COLUMN :
-                         str_cmp( val, "table-cell" ) == 0 ? FAMILY_CELL : FAMILY_OTHER);
+    style->family = (uint8_t)(val == NULL ? FAMILY_OTHER : str_cmp( val, "paragraph" ) == 0 ? FAMILY_PARA :
+                              str_cmp( val, "text" ) == 0 ? FAMILY_TEXT : str_cmp( val, "table" ) == 0 ? FAMILY_TABLE :
+                              str_cmp( val, "table-column" ) == 0 ? FAMILY_COLUMN :
+                              str_cmp( val, "table-cell" ) == 0 ? FAMILY_CELL : FAMILY_OTHER);
     ctx->nstyle++;
     /* the strings may move as they are added; the style does not */
     style->name = odt_str( ctx, xml_attr( xml, NS_STYLE, "name" ) );
@@ -1027,7 +1027,7 @@ static void odt_style_read( ODT *ctx, XML *xml, int scope, int is_default )
             }
             odt_para_props( ctx, xml, &style->pap );
             if ( odt_int( xml_attr( xml, NS_STYLE, "page-number" ), &value ) && value > 0 ) {
-                style->page_number = (u16)odt_clamp( value, 1, 65535L );
+                style->page_number = (uint16_t)odt_clamp( value, 1, 65535L );
             }
             mem_set( &stops, 0, sizeof( stops ) );
             odt_tab_stops( xml, &stops, tabs );
@@ -1041,7 +1041,7 @@ static void odt_style_read( ODT *ctx, XML *xml, int scope, int is_default )
 
 static void odt_styles_free( ODT *ctx )
 {
-    u32 index;
+    unsigned int index;
 
     for ( index = 0; index < ctx->nstyle; index++ ) {
         xfree( ctx->style[index].pap.tabs );
@@ -1055,7 +1055,7 @@ static void odt_styles_free( ODT *ctx )
    common one.  -1 for none. */
 static int odt_style_find( const ODT *ctx, int family, const char *name, int scope )
 {
-    u32 index;
+    unsigned int index;
     int common = -1;
 
     if ( name == NULL || name[0] == 0 ) {
@@ -1104,7 +1104,7 @@ static void odt_style_fold( ODT *ctx, int index, int depth )
             xpap_over( &pap, &style->pap );
             style->pap = pap;
             style->pap.tabs = own;
-            style->pap.ntabs = (u8)own_count;
+            style->pap.ntabs = (uint8_t)own_count;
             if ( !had_tabs ) {
                 /* no tab stops of its own: its parent's */
                 odt_style_tabs( ctx, style, base->pap.tabs, base->pap.ntabs );
@@ -1125,9 +1125,10 @@ static void odt_style_fold( ODT *ctx, int index, int depth )
 }
 
 /* a name as a user sees it: "Heading_20_1" is "Heading 1" */
-static void odt_display( const char *name, char *out, u32 max )
+static void odt_display( const char *name, char *out, unsigned int max )
 {
-    u32 used = 0, code;
+    unsigned int used = 0;
+    uint32_t code;
     int digit, index;
 
     while ( *name && used < max - 1 ) {
@@ -1137,7 +1138,7 @@ static void odt_display( const char *name, char *out, u32 max )
                 digit = name[index];
                 digit = digit >= '0' && digit <= '9' ? digit - '0' : digit >= 'a' && digit <= 'f' ? digit - 'a' + 10 :
                         digit >= 'A' && digit <= 'F' ? digit - 'A' + 10 : 99;
-                code = code * 16 + (u32)digit;
+                code = code * 16 + (uint32_t)digit;
             }
             if ( code >= 0x20 && code < 0x7F ) {
                 out[used++] = (char)code;
@@ -1166,7 +1167,7 @@ static int odt_style_kind( const char *name, const char **as )
         { "Header", "Header", STY_HEADER }, { "Footer", "Footer", STY_FOOTER },
         { "Footnote", "Footnote Text", STY_FOOTNOTE }, { "Footnote Text", "Footnote Text", STY_FOOTNOTE }
     };
-    u32 index;
+    unsigned int index;
 
     for ( index = 0; index < sizeof( known ) / sizeof( known[0] ); index++ ) {
         if ( str_icmp( name, known[index].name ) == 0 ) {
@@ -1246,7 +1247,7 @@ static int odt_wd_style( ODT *ctx, int index, int heading )
     made->pap.after = pap.after;
     made->pap.line = pap.line;
     made->pap.line_rule = pap.line_rule;
-    made->pap.flags = (u16)(pap.flags & PF_GIVEN);
+    made->pap.flags = (uint16_t)(pap.flags & PF_GIVEN);
     return style->wd;
 }
 
@@ -1282,7 +1283,7 @@ static void odt_list_read( ODT *ctx, XML *xml, int scope )
     OLIST *list;
     OLEVEL *level;
     const char *val;
-    s32 value, before, width;
+    int value, before, width;
     int depth = xml->depth, inner, deeper, index, bullet;
 
     if ( !odt_grow( ctx, (void **)&ctx->list, &ctx->list_cap, ctx->nlist + 1, sizeof( OLIST ), 4096 ) ) {
@@ -1290,7 +1291,7 @@ static void odt_list_read( ODT *ctx, XML *xml, int scope )
     }
     list = &ctx->list[ctx->nlist];
     mem_set( list, 0, sizeof( OLIST ) );
-    list->scope = (u8)scope;
+    list->scope = (uint8_t)scope;
     for ( index = 0; index < LIST_LEVELS; index++ ) {
         list->lvl[index].fmt = LIST_BULLET;
         list->lvl[index].start = 1;
@@ -1307,11 +1308,11 @@ static void odt_list_read( ODT *ctx, XML *xml, int scope )
         level->fmt = LIST_BULLET;
         if ( !bullet ) {
             val = xml_attr( xml, NS_STYLE, "num-format" );
-            level->fmt = (u8)(val == NULL || val[0] == 0 ? LIST_NONE : val[0] == 'a' ? LIST_LOWER :
-                              val[0] == 'A' ? LIST_UPPER : val[0] == 'i' ? LIST_ROMAN_LOWER :
-                              val[0] == 'I' ? LIST_ROMAN_UPPER : LIST_NUMBER);
+            level->fmt = (uint8_t)(val == NULL || val[0] == 0 ? LIST_NONE : val[0] == 'a' ? LIST_LOWER :
+                                   val[0] == 'A' ? LIST_UPPER : val[0] == 'i' ? LIST_ROMAN_LOWER :
+                                   val[0] == 'I' ? LIST_ROMAN_UPPER : LIST_NUMBER);
             if ( odt_int( xml_attr( xml, NS_TEXT, "start-value" ), &value ) ) {
-                level->start = (u16)odt_clamp( value, 0, 65535L );
+                level->start = (uint16_t)odt_clamp( value, 0, 65535L );
             }
         }
         inner = xml->depth;
@@ -1347,7 +1348,7 @@ static void odt_list_read( ODT *ctx, XML *xml, int scope )
 
 static int odt_list_find( const ODT *ctx, const char *name, int scope )
 {
-    u32 index;
+    unsigned int index;
     int common = -1;
 
     for ( index = 0; name != NULL && name[0] && index < ctx->nlist; index++ ) {
@@ -1368,7 +1369,7 @@ static void odt_page_read( ODT *ctx, XML *xml )
 {
     OPAGE *page;
     const char *val;
-    s32 value, room;
+    int value, room;
     int depth = xml->depth, inner, head, both;
 
     if ( !odt_grow( ctx, (void **)&ctx->page, &ctx->page_cap, ctx->npage + 1, sizeof( OPAGE ), 4096 ) ) {
@@ -1392,7 +1393,7 @@ static void odt_page_read( ODT *ctx, XML *xml )
                 page->has_size |= 2;
             }
             val = xml_attr( xml, NS_STYLE, "print-orientation" );
-            page->page.landscape = (u8)(val != NULL && str_cmp( val, "landscape" ) == 0);
+            page->page.landscape = (uint8_t)(val != NULL && str_cmp( val, "landscape" ) == 0);
             if ( odt_twips( xml_attr( xml, NS_FO, "margin" ), &value ) ) {
                 page->page.top = page->page.bottom = page->page.left = page->page.right = odt_clamp( value, 0, 31680 );
             }
@@ -1460,7 +1461,7 @@ static void odt_styles_in( ODT *ctx, XML *xml, int scope )
    file says nothing, then the file's default styles */
 static void odt_defaults( ODT *ctx )
 {
-    u32 index;
+    unsigned int index;
 
     for ( index = 0; index < ctx->nstyle; index++ ) {
         if ( ctx->style[index].is_default && ctx->style[index].family == FAMILY_PARA ) {
@@ -1479,7 +1480,7 @@ static void odt_chp_now( ODT *ctx )
     xchp_chp( &ctx->span[ctx->nspan - 1], &ctx->wb.chp );
 }
 
-static void odt_put( ODT *ctx, u32 code )
+static void odt_put( ODT *ctx, uint32_t code )
 {
     if ( ctx->story_on ) {
         wb_char( &ctx->wb, code );
@@ -1489,11 +1490,12 @@ static void odt_put( ODT *ctx, u32 code )
 
 /* characters of the XML: white space is not text until it is one space
    between words */
-static void odt_text( ODT *ctx, const u8 *text, u32 len )
+static void odt_text( ODT *ctx, const uint8_t *text, unsigned int len )
 {
-    u16 run[256];
-    const u8 *end = text + len;
-    u32 used = 0, code;
+    uint16_t run[256];
+    const uint8_t *end = text + len;
+    unsigned int used = 0;
+    uint32_t code;
 
     while ( text < end ) {
         code = utf8_get( &text, end );
@@ -1513,10 +1515,10 @@ static void odt_text( ODT *ctx, const u8 *text, u32 len )
         }
         if ( code >= 0x10000UL ) {
             code -= 0x10000UL;
-            run[used++] = (u16)(0xD800 + (code >> 10));
+            run[used++] = (uint16_t)(0xD800 + (code >> 10));
             code = 0xDC00 + (code & 0x3FF);
         }
-        run[used++] = (u16)code;
+        run[used++] = (uint16_t)code;
         if ( used >= sizeof( run ) / sizeof( run[0] ) - 2 ) {
             wb_text( &ctx->wb, run, used );
             used = 0;
@@ -1542,7 +1544,7 @@ static void odt_para_begin( ODT *ctx, const XML *xml, int heading )
     const OSTYLE *style = NULL;
     const OLEVEL *level;
     OLDEPTH *at;
-    s32 value;
+    int value;
     int index, list = -1, depth, count;
 
     if ( ctx->p_depth > 0 && ctx->wb.para != NULL ) {
@@ -1562,7 +1564,7 @@ static void odt_para_begin( ODT *ctx, const XML *xml, int heading )
     if ( heading && odt_int( xml_attr( xml, NS_TEXT, "outline-level" ), &value ) ) {
         heading = (int)odt_clamp( value, 1, 6 );
     }
-    out->style = (u8)odt_wd_style( ctx, index, heading );
+    out->style = (uint8_t)odt_wd_style( ctx, index, heading );
     out->list = LIST_NONE;
     out->level = 0;
     out->list_start = 0;
@@ -1594,10 +1596,10 @@ static void odt_para_begin( ODT *ctx, const XML *xml, int heading )
             }
             if ( at->paras == 0 && !at->header && level->fmt != LIST_NONE ) {
                 out->list = level->fmt;
-                out->level = (u8)(depth <= LIST_LEVELS ? depth - 1 : LIST_LEVELS - 1);
+                out->level = (uint8_t)(depth <= LIST_LEVELS ? depth - 1 : LIST_LEVELS - 1);
                 if ( level->fmt != LIST_BULLET ) {
-                    out->list_start = (u16)(at->item_start ? at->item_start :
-                                            at->items > 1 ? 0 : (depth == 1 && at->runs_on) ? 0 : level->start);
+                    out->list_start = (uint16_t)(at->item_start ? at->item_start :
+                                                 at->items > 1 ? 0 : (depth == 1 && at->runs_on) ? 0 : level->start);
                 }
             } else if ( at->paras != 0 || at->header ) {
                 pap.first = 0;          /* more of an item: beside its text, with no number */
@@ -1615,7 +1617,7 @@ static void odt_para_begin( ODT *ctx, const XML *xml, int heading )
     out->after = pap.after;
     out->line = pap.line;
     out->line_rule = pap.line_rule;
-    out->flags = (u16)(pap.flags & PF_GIVEN);
+    out->flags = (uint16_t)(pap.flags & PF_GIVEN);
     /* a file's tab stops are counted from the paragraph's indent */
     count = pap.ntabs <= MAX_TABS ? pap.ntabs : MAX_TABS;
     for ( index = 0; index < count; index++ ) {
@@ -1633,9 +1635,9 @@ static void odt_para_begin( ODT *ctx, const XML *xml, int heading )
             ctx->first_master = style->master;
             ctx->first_number = style->page_number;
         }
-        out->flags &= (u16)~PF_PAGEBEFORE;      /* a break before the first is no break */
+        out->flags &= (uint16_t)~PF_PAGEBEFORE;  /* a break before the first is no break */
     } else if ( style != NULL && style->master && style->scope != 0 ) {
-        out->flags |= PF_PAGEBEFORE;            /* a new kind of page starts a page */
+        out->flags |= PF_PAGEBEFORE;             /* a new kind of page starts a page */
     }
     if ( ctx->p_depth < MAX_PDEPTH ) {
         ctx->pbase[ctx->p_depth] = ctx->nspan;
@@ -1663,7 +1665,7 @@ static void odt_para_end( ODT *ctx )
         wb_char( &ctx->wb, WCH_PAGE );
         ctx->break_after = 0;
     }
-    pap->flags &= (u16)~(PF_INTABLE | PF_CELLEND | PF_ROWEND);
+    pap->flags &= (uint16_t)~(PF_INTABLE | PF_CELLEND | PF_ROWEND);
     if ( ctx->tbl_depth ) {
         pap->flags |= PF_INTABLE;
     }
@@ -1741,10 +1743,11 @@ static void odt_nest_end( ODT *ctx )
 }
 
 /* base64, white space and all, into a block of its own */
-static u8 *odt_base64( const u8 *text, u32 len, u32 *out_len )
+static uint8_t *odt_base64( const uint8_t *text, unsigned int len, uint32_t *out_len )
 {
-    u8 *out = (u8 *)try_alloc( len / 4 * 3 + 4 );
-    u32 used = 0, bits = 0, index;
+    uint8_t *out = (uint8_t *)try_alloc( len / 4 * 3 + 4 );
+    uint32_t used = 0, bits = 0;
+    unsigned int index;
     int have = 0, value, code;
 
     if ( out == NULL ) {
@@ -1757,27 +1760,27 @@ static u8 *odt_base64( const u8 *text, u32 len, u32 *out_len )
         if ( value < 0 ) {
             continue;
         }
-        bits = (bits << 6) | (u32)value;
+        bits = (bits << 6) | (uint32_t)value;
         if ( ++have == 4 ) {
-            out[used++] = (u8)(bits >> 16);
-            out[used++] = (u8)(bits >> 8);
-            out[used++] = (u8)bits;
+            out[used++] = (uint8_t)(bits >> 16);
+            out[used++] = (uint8_t)(bits >> 8);
+            out[used++] = (uint8_t)bits;
             have = 0;
             bits = 0;
         }
     }
     if ( have == 3 ) {
-        out[used++] = (u8)(bits >> 10);
-        out[used++] = (u8)(bits >> 2);
+        out[used++] = (uint8_t)(bits >> 10);
+        out[used++] = (uint8_t)(bits >> 2);
     } else if ( have == 2 ) {
-        out[used++] = (u8)(bits >> 4);
+        out[used++] = (uint8_t)(bits >> 4);
     }
     *out_len = used;
     return out;
 }
 
 /* a picture's bytes become an object in the line */
-static void odt_image_put( ODT *ctx, const u8 *data, u32 len )
+static void odt_image_put( ODT *ctx, const uint8_t *data, uint32_t len )
 {
     int kind, obj;
 
@@ -1803,8 +1806,8 @@ static void odt_image_put( ODT *ctx, const u8 *data, u32 len )
 static void odt_image( ODT *ctx, XML *xml )
 {
     const char *href = xml_attr( xml, NS_XLINK, "href" );
-    u8 *data;
-    u32 len;
+    uint8_t *data;
+    uint32_t len;
     int depth = xml->depth;
 
     if ( ctx->frame_done ) {
@@ -1824,7 +1827,7 @@ static void odt_image( ODT *ctx, XML *xml )
     /* in a one-file document the picture is inside the element */
     while ( xml_child( xml, depth ) ) {
         if ( xml_is( xml, NS_OFFICE, "binary-data" ) && xml_next( xml ) == XML_TEXT ) {
-            data = odt_base64( (const u8 *)xml->text, xml->text_len, &len );
+            data = odt_base64( (const uint8_t *)xml->text, xml->text_len, &len );
             if ( data == NULL ) {
                 ctx->nomem = 1;
             }
@@ -1841,7 +1844,7 @@ static void odt_image( ODT *ctx, XML *xml )
 /* the columns have all been met: any with no width share what is left */
 static void odt_grid_fix( ODT *ctx )
 {
-    s32 known = 0, share;
+    int known = 0, share;
     int index, blank = 0;
 
     if ( ctx->grid_fixed ) {
@@ -1873,7 +1876,7 @@ static void odt_cell_end( ODT *ctx, int span )
 {
     PAP blank;
     WPARA *para;
-    s32 width = 0;
+    int width = 0;
     int index;
 
     if ( ctx->wb.para != NULL ) {
@@ -1903,7 +1906,7 @@ static void odt_cell_end( ODT *ctx, int span )
     } else {
         ctx->row.edge[MAX_CELLS - 1] = ctx->edge;
         if ( ctx->cell_last != NULL && ctx->cell_last != para ) {
-            ctx->cell_last->pap.flags &= (u16)~PF_CELLEND;
+            ctx->cell_last->pap.flags &= (uint16_t)~PF_CELLEND;
         }
         ctx->doc->lost |= LOST_TABLES;
     }
@@ -1929,7 +1932,7 @@ static void odt_row_end( ODT *ctx )
     if ( ctx->row.ncells == 0 || ctx->cell_last == NULL ) {
         return;
     }
-    ctx->row.borders = (u8)ctx->row_ruled;
+    ctx->row.borders = (uint8_t)ctx->row_ruled;
     ctx->cell_last->pap.flags |= PF_ROWEND;
     if ( !pap_set_row( &ctx->cell_last->pap, &ctx->row ) ) {
         ctx->nomem = 1;
@@ -1939,7 +1942,7 @@ static void odt_row_end( ODT *ctx )
 
 static void odt_table_start( ODT *ctx, XML *xml )
 {
-    s32 value;
+    int value;
     int index, repeat;
 
     if ( xml_is( xml, NS_TABLE, "table" ) ) {
@@ -1980,7 +1983,7 @@ static void odt_table_start( ODT *ctx, XML *xml )
         odt_grid_fix( ctx );
         mem_set( &ctx->row, 0, sizeof( TROW ) );
         ctx->row.left = ctx->tbl_left;
-        ctx->row.header = (u8)ctx->in_head_rows;
+        ctx->row.header = (uint8_t)ctx->in_head_rows;
         ctx->edge = ctx->tbl_left;
         ctx->col = ctx->covered = ctx->row_ruled = 0;
         ctx->cell_last = NULL;
@@ -2058,7 +2061,7 @@ static void odt_content_start( ODT *ctx, XML *xml )
     OLDEPTH *at;
     XCHP chp;
     const char *val;
-    s32 value;
+    int value;
     int index;
 
     if ( xml->ns == NS_TEXT ) {
@@ -2103,7 +2106,7 @@ static void odt_content_start( ODT *ctx, XML *xml )
             mem_set( at, 0, sizeof( OLDEPTH ) );
             at->list = odt_list_find( ctx, xml_attr( xml, NS_TEXT, "style-name" ), ctx->scope );
             val = xml_attr( xml, NS_TEXT, "continue-numbering" );
-            at->runs_on = (u8)(val != NULL && str_cmp( val, "true" ) == 0);
+            at->runs_on = (uint8_t)(val != NULL && str_cmp( val, "true" ) == 0);
             if ( at->list >= 0 && ctx->nlst - ctx->lst_base == 1 ) {
                 /* numbers that "carry on" need a list before this one to
                    carry on from: Word says it of every list */
@@ -2116,10 +2119,10 @@ static void odt_content_start( ODT *ctx, XML *xml )
             if ( ctx->nlst > ctx->lst_base && !ctx->lst_over ) {
                 at = &ctx->lst[ctx->nlst - 1];
                 at->paras = 0;
-                at->header = (u8)xml_is( xml, NS_TEXT, "list-header" );
+                at->header = (uint8_t)xml_is( xml, NS_TEXT, "list-header" );
                 at->item_start = 0;
                 if ( odt_int( xml_attr( xml, NS_TEXT, "start-value" ), &value ) ) {
-                    at->item_start = (u16)odt_clamp( value, 0, 65535L );
+                    at->item_start = (uint16_t)odt_clamp( value, 0, 65535L );
                 }
                 if ( at->items < 2 ) {
                     at->items++;
@@ -2291,7 +2294,7 @@ static void odt_meta( ODT *ctx, XML *xml )
  * One pass over one document: what "mode" asks for is read and the
  * rest is passed over.  1 if the XML was whole.
  */
-static int odt_pass( ODT *ctx, const u8 *data, u32 len, int mode, int scope )
+static int odt_pass( ODT *ctx, const uint8_t *data, uint32_t len, int mode, int scope )
 {
     XML *xml = odt_xml( ctx, data, len );
     const char *name;
@@ -2310,7 +2313,7 @@ static int odt_pass( ODT *ctx, const u8 *data, u32 len, int mode, int scope )
         }
         if ( token == XML_TEXT ) {
             if ( ctx->story_on && ctx->p_depth ) {
-                odt_text( ctx, (const u8 *)xml->text, xml->text_len );
+                odt_text( ctx, (const uint8_t *)xml->text, xml->text_len );
             }
             continue;
         }
@@ -2464,9 +2467,9 @@ static void odt_free( ODT *ctx )
 }
 
 /* a one-file document: XML whose root says it is a text document */
-static int odt_is_flat( const u8 *data, u32 len )
+static int odt_is_flat( const uint8_t *data, uint32_t len )
 {
-    u32 look = len < 4096 ? len : 4096;
+    unsigned int look = len < 4096 ? len : 4096;
 
     while ( look && (data[0] == ' ' || data[0] == '\r' || data[0] == '\n' || data[0] == '\t' || data[0] >= 0x80) ) {
         data++;
@@ -2476,9 +2479,9 @@ static int odt_is_flat( const u8 *data, u32 len )
            mem_find( data, look, "office:mimetype=\"" MIME_ODT ) >= 0;
 }
 
-static int odt_detect( const u8 *data, u32 len, const char *ext )
+static int odt_detect( const uint8_t *data, uint32_t len, const char *ext )
 {
-    u8 head[512];
+    uint8_t head[512];
     ZIP *zip;
     int index, sure = 0;
 
@@ -2494,7 +2497,7 @@ static int odt_detect( const u8 *data, u32 len, const char *ext )
         return 0;
     }
     index = zip_find( zip, "mimetype" );
-    if ( index >= 0 && zip_peek( zip, (u32)index, head, sizeof( head ) - 1 ) ) {
+    if ( index >= 0 && zip_peek( zip, (unsigned int)index, head, sizeof( head ) - 1 ) ) {
         head[sizeof( head ) - 1] = 0;
         for ( index = (int)str_len( (const char *)head ); index > 0 && head[index - 1] <= ' '; index-- ) {
             head[index - 1] = 0;
@@ -2506,7 +2509,7 @@ static int odt_detect( const u8 *data, u32 len, const char *ext )
     } else if ( index < 0 ) {
         /* no mimetype at all: the root of content.xml says */
         index = zip_find( zip, "content.xml" );
-        if ( index >= 0 && zip_peek( zip, (u32)index, head, sizeof( head ) - 1 ) &&
+        if ( index >= 0 && zip_peek( zip, (unsigned int)index, head, sizeof( head ) - 1 ) &&
              mem_find( head, sizeof( head ) - 1, ":document-content" ) >= 0 &&
              mem_find( head, sizeof( head ) - 1, "opendocument:xmlns:text" ) >= 0 ) {
             sure = 90;
@@ -2537,7 +2540,7 @@ static void odt_page_setup( ODT *ctx )
 {
     WDOC *doc = ctx->doc;
     const OPAGE *page = NULL;
-    u32 index, layout = 0;
+    unsigned int index, layout = 0;
 
     ctx->want_master = ctx->next_master = 0;
     for ( index = 0; index < ctx->nmaster; index++ ) {
@@ -2572,14 +2575,14 @@ static void odt_page_setup( ODT *ctx )
             doc->page.bottom = odt_clamp( page->page.bottom + page->foot_room, 0, 31680 );
         }
     }
-    doc->page.first_page = (u16)(ctx->first_number ? ctx->first_number : 1);
+    doc->page.first_page = (uint16_t)(ctx->first_number ? ctx->first_number : 1);
 }
 
-static int odt_load( const u8 *data, u32 len, WDOC *doc )
+static int odt_load( const uint8_t *data, uint32_t len, WDOC *doc )
 {
     ODT *ctx = odt_new( doc );
-    u8 *part;
-    u32 part_len;
+    uint8_t *part;
+    uint32_t part_len;
     int why, rc = WE_OK, ok;
 
     if ( ctx == NULL ) {
@@ -2686,44 +2689,44 @@ static int odt_load( const u8 *data, u32 len, WDOC *doc )
 
 typedef struct {
     const WPARA *para;          /* a paragraph that looks so */
-    u8  key;                    /* PK_* */
+    uint8_t key;                /* PK_* */
 } WPSTYLE;
 
 typedef struct {
-    u8  kind[LIST_LEVELS];      /* LIST_*, 0xFF for a level nothing has used */
+    uint8_t kind[LIST_LEVELS];  /* LIST_*, 0xFF for a level nothing has used */
 } WLIST;
 
 typedef struct {
-    WDOC *doc;
-    ZIPW *zipw;
-    OUT  *part;                 /* the part being written, a piece of it */
-    OUT  *scrap;                /* where the text goes the first time through: nowhere */
-    OUT  *to;                   /* one of the two: where text is written now */
-    int   failed;
-    const char *prefix;         /* "" in content.xml, "M" in styles.xml: its styles' names */
-    WPSTYLE *pstyle;
-    u32   npstyle, pstyle_cap;
-    WLIST *list;
-    u32   nlist, list_cap;      /* lists met so far in this pass; made in the first */
-    u32   cur_list;             /* the list open, or the one before: its number, 0 for none */
-    u8   *chp_used;             /* by CHP number */
-    u8   *img_used;             /* by object */
-    u32   ntable, nnote;
-    int   content;              /* the part in hand is content.xml: notes are written */
-    int   first_left;           /* the text's first paragraph is still to come */
+    WDOC        *doc;
+    ZIPW        *zipw;
+    OUT         *part;          /* the part being written, a piece of it */
+    OUT         *scrap;         /* where the text goes the first time through: nowhere */
+    OUT         *to;            /* one of the two: where text is written now */
+    int          failed;
+    const char  *prefix;        /* "" in content.xml, "M" in styles.xml: its styles' names */
+    WPSTYLE     *pstyle;
+    unsigned int npstyle, pstyle_cap;
+    WLIST       *list;
+    unsigned int nlist, list_cap; /* lists met so far in this pass; made in the first */
+    unsigned int cur_list;      /* the list open, or the one before: its number, 0 for none */
+    uint8_t     *chp_used;      /* by CHP number */
+    uint8_t     *img_used;      /* by object */
+    unsigned int ntable, nnote;
+    int          content;       /* the part in hand is content.xml: notes are written */
+    int          first_left;    /* the text's first paragraph is still to come */
     /* the lists open where the text is being written */
-    int   ldepth;
-    u8    item_open[LIST_LEVELS + 1];
-    u8    item_count[LIST_LEVELS + 1];  /* 0 until a list has had an item */
-    int   space;                /* the last character written was a space, or the paragraph's start */
+    int          ldepth;
+    uint8_t      item_open[LIST_LEVELS + 1];
+    uint8_t      item_count[LIST_LEVELS + 1]; /* 0 until a list has had an item */
+    int          space;         /* the last character written was a space, or the paragraph's start */
 } ODTW;
 
 #define PUT( text )     out_str( w->to, (text) )
 
 static void odtw_drain( ODTW *w, int all )
 {
-    u8 *data;
-    u32 len, size;
+    uint8_t *data;
+    uint32_t len, size;
 
     if ( w->to == w->scrap ) {
         if ( out_error( w->scrap ) ) {
@@ -2768,9 +2771,9 @@ static void odtw_finish( ODTW *w )
 
 /* a length as an attribute: points, which twips are a whole number of
    hundredths of */
-static void odtw_len( OUT *out, const char *name, s32 twips )
+static void odtw_len( OUT *out, const char *name, int twips )
 {
-    u32 size = (u32)(twips < 0 ? -twips : twips);
+    unsigned int size = (unsigned int)(twips < 0 ? -twips : twips);
 
     out_fmt( out, " %s=\"%s%u.%02upt\"", name, twips < 0 ? "-" : "", size / 20, (size % 20) * 5 );
 }
@@ -2784,10 +2787,10 @@ static void odtw_attr( OUT *out, const char *name, const char *value )
 
 /* a style's name as the file must spell it: letters and digits, and
    anything else as _hh_ */
-static void odtw_name( const WDOC *doc, u32 index, char *out )
+static void odtw_name( const WDOC *doc, unsigned int index, char *out )
 {
     const char *name;
-    u32 used = 0;
+    unsigned int used = 0;
 
     if ( index == 0 || index >= doc->nstyle ) {
         str_cpy( out, "Standard" );
@@ -2798,11 +2801,11 @@ static void odtw_name( const WDOC *doc, u32 index, char *out )
              (*name >= '0' && *name <= '9' && used > 0) ) {
             out[used++] = *name;
         } else {
-            used += (u32)sfmt( out + used, 8, "_%02x_", (u32)(u8)*name );
+            used += (unsigned int)sfmt( out + used, 8, "_%02x_", (uint32_t)(uint8_t)*name );
         }
     }
     if ( used == 0 ) {
-        used = (u32)sfmt( out, 16, "Style%u", index );
+        used = (unsigned int)sfmt( out, 16, "Style%u", index );
     }
     out[used] = 0;
 }
@@ -2822,14 +2825,14 @@ static const char *odtw_ext( int kind )
     return NULL;
 }
 
-static u16 odtw_under( u16 flags )
+static uint16_t odtw_under( uint16_t flags )
 {
-    return (u16)(flags & CF_DUNDER ? CF_DUNDER : flags & CF_WUNDER ? CF_WUNDER : flags & CF_UNDER);
+    return (uint16_t)(flags & CF_DUNDER ? CF_DUNDER : flags & CF_WUNDER ? CF_WUNDER : flags & CF_UNDER);
 }
 
-static u16 odtw_vert( u16 flags )
+static uint16_t odtw_vert( uint16_t flags )
 {
-    return (u16)(flags & CF_SUPER ? CF_SUPER : flags & CF_SUB);
+    return (uint16_t)(flags & CF_SUPER ? CF_SUPER : flags & CF_SUB);
 }
 
 /*
@@ -2840,8 +2843,8 @@ static u16 odtw_vert( u16 flags )
 static void odtw_text_props( ODTW *w, OUT *out, const CHP *chp, const CHP *base )
 {
     const WDOC *doc = w->doc;
-    u16 under = odtw_under( chp->flags ), vert = odtw_vert( chp->flags ), was = (u16)(base != NULL ? base->flags : ~chp->flags);
-    u32 start = out_tell( out );
+    uint16_t under = odtw_under( chp->flags ), vert = odtw_vert( chp->flags ), was = (uint16_t)(base != NULL ? base->flags : ~chp->flags);
+    uint32_t start = out_tell( out );
 
     out_str( out, "<style:text-properties" );
     if ( (base == NULL || chp->font != base->font) && chp->font < doc->nfont ) {
@@ -2849,8 +2852,8 @@ static void odtw_text_props( ODTW *w, OUT *out, const CHP *chp, const CHP *base 
     }
     if ( base == NULL || chp->size != base->size ) {
         out_fmt( out, " fo:font-size=\"%u%spt\" style:font-size-asian=\"%u%spt\" style:font-size-complex=\"%u%spt\"",
-                 (u32)chp->size / 2, chp->size & 1 ? ".5" : "", (u32)chp->size / 2, chp->size & 1 ? ".5" : "",
-                 (u32)chp->size / 2, chp->size & 1 ? ".5" : "" );
+                 (uint32_t)chp->size / 2, chp->size & 1 ? ".5" : "", (uint32_t)chp->size / 2, chp->size & 1 ? ".5" : "",
+                 (uint32_t)chp->size / 2, chp->size & 1 ? ".5" : "" );
     }
     if ( (chp->flags ^ was) & CF_BOLD ) {
         out_fmt( out, " fo:font-weight=\"%s\" style:font-weight-asian=\"%s\" style:font-weight-complex=\"%s\"",
@@ -2925,9 +2928,10 @@ static void odtw_para_props( ODTW *w, OUT *out, const PAP *pap, const PAP *base,
 {
     static const char *const aligns[4] = { "start", "center", "end", "justify" };
     static const char *const sides[4] = { "top", "bottom", "left", "right" };
-    static const u16 bits[4] = { PF_BORDER_TOP, PF_BORDER_BOT, PF_BORDER_LEFT, PF_BORDER_RIGHT };
+    static const uint16_t bits[4] = { PF_BORDER_TOP, PF_BORDER_BOT, PF_BORDER_LEFT, PF_BORDER_RIGHT };
     static const char *const kinds[4] = { "left", "center", "right", "char" };
-    u32 start = out_tell( out ), tenths;
+    uint32_t start = out_tell( out );
+    unsigned int tenths;
     int index;
 
     out_str( out, "<style:paragraph-properties" );
@@ -2952,8 +2956,8 @@ static void odtw_para_props( ODTW *w, OUT *out, const PAP *pap, const PAP *base,
         } else {
             /* a whole percentage where that comes back as the same
                number of 240ths, a tenth of one where it would not */
-            tenths = ((u32)(pap->line ? pap->line : 240) * 1000 + 120) / 240;
-            if ( (((tenths + 5) / 10) * 240 + 50) / 100 == (u32)(pap->line ? pap->line : 240) ) {
+            tenths = ((unsigned int)(pap->line ? pap->line : 240) * 1000 + 120) / 240;
+            if ( (((tenths + 5) / 10) * 240 + 50) / 100 == (unsigned int)(pap->line ? pap->line : 240) ) {
                 out_fmt( out, " fo:line-height=\"%u%%\"", (tenths + 5) / 10 );
             } else {
                 out_fmt( out, " fo:line-height=\"%u.%u%%\"", tenths / 10, tenths % 10 );
@@ -2979,7 +2983,7 @@ static void odtw_para_props( ODTW *w, OUT *out, const PAP *pap, const PAP *base,
         out_str( out, " fo:padding=\"1pt\"" );
     }
     if ( (key & PK_FIRST) && w->doc->page.first_page != 1 ) {
-        out_fmt( out, " style:page-number=\"%u\"", (u32)w->doc->page.first_page );
+        out_fmt( out, " style:page-number=\"%u\"", (uint32_t)w->doc->page.first_page );
     }
     if ( pap->ntabs && pap->tabs != NULL ) {
         out_str( out, "><style:tab-stops>" );
@@ -3046,7 +3050,7 @@ static int odtw_pstyle( ODTW *w, const WPARA *para, int key )
     const WSTYLE *style = &doc->style[para->pap.style < doc->nstyle ? para->pap.style : 0];
     WPSTYLE *fresh;
     PAP look;
-    u32 index, want;
+    unsigned int index, want;
 
     look = style->pap;
     look.style = para->pap.style;
@@ -3071,7 +3075,7 @@ static int odtw_pstyle( ODTW *w, const WPARA *para, int key )
         w->pstyle_cap = want;
     }
     w->pstyle[w->npstyle].para = para;
-    w->pstyle[w->npstyle].key = (u8)key;
+    w->pstyle[w->npstyle].key = (uint8_t)key;
     return (int)w->npstyle++;
 }
 
@@ -3098,7 +3102,7 @@ static void odtw_lists_close( ODTW *w, int down_to )
 static void odtw_lists_for( ODTW *w, const PAP *pap )
 {
     WLIST *list;
-    u32 want_cap;
+    unsigned int want_cap;
     int listed = pap->list != LIST_NONE && pap->list <= LIST_ROMAN_UPPER;
     int level = pap->level < LIST_LEVELS ? pap->level : LIST_LEVELS - 1, want = listed ? level + 1 : 0, runs_on = 0;
 
@@ -3166,7 +3170,7 @@ static void odtw_lists_for( ODTW *w, const PAP *pap )
     /* a list's first item starts at 1 without being told; any other
        start is said */
     if ( pap->list_start > 1 || (pap->list_start == 1 && w->item_count[want]) ) {
-        out_fmt( w->to, "<text:list-item text:start-value=\"%u\">", (u32)pap->list_start );
+        out_fmt( w->to, "<text:list-item text:start-value=\"%u\">", (uint32_t)pap->list_start );
     } else {
         PUT( "<text:list-item>" );
     }
@@ -3178,14 +3182,14 @@ static void odtw_story( ODTW *w, const STORY *story );
 
 /* a run of the paragraph's text, with what is not a letter written as
    the element it is */
-static void odtw_run_text( ODTW *w, const u16 *text, u32 len )
+static void odtw_run_text( ODTW *w, const uint16_t *text, unsigned int len )
 {
     static const char *const fields[5] = {
         "<text:page-number text:select-page=\"current\">1</text:page-number>", "<text:page-count>1</text:page-count>",
         "<text:date>1/1/2026</text:date>", "<text:time>12:00</text:time>",
         "<text:file-name text:display=\"name-and-extension\">Document</text:file-name>"
     };
-    u32 pos = 0, from, count;
+    unsigned int pos = 0, from, count;
 
     while ( pos < len ) {
         from = pos;
@@ -3237,8 +3241,8 @@ static void odtw_para( ODTW *w, const WPARA *para )
     const CHP *chp;
     const WOBJ *item;
     const char *tag = "text:p";
-    u8 saved_open[LIST_LEVELS + 1], saved_count[LIST_LEVELS + 1];
-    u32 off, run, len = para->len, from = 0, saved_list;
+    uint8_t saved_open[LIST_LEVELS + 1], saved_count[LIST_LEVELS + 1];
+    unsigned int off, run, len = para->len, from = 0, saved_list;
     int saved_depth;
     int key = odtw_key( w, para ), number = odtw_pstyle( w, para, key ), obj, span, heading = 0;
 
@@ -3249,7 +3253,7 @@ static void odtw_para( ODTW *w, const WPARA *para )
         tag = "text:h";
     }
     if ( number >= 0 ) {
-        out_fmt( w->to, "<%s text:style-name=\"%sP%u\"", tag, w->prefix, (u32)number + 1 );
+        out_fmt( w->to, "<%s text:style-name=\"%sP%u\"", tag, w->prefix, (uint32_t)number + 1 );
     } else {
         odtw_name( doc, para->pap.style, name );
         out_fmt( w->to, "<%s text:style-name=\"%s\"", tag, name );
@@ -3274,24 +3278,24 @@ static void odtw_para( ODTW *w, const WPARA *para )
         span = mem_cmp( chp, &style->chp, sizeof( CHP ) ) != 0;
         if ( para->text[off] == WCH_OBJ ) {
             obj = wd_obj_at( para, off );
-            if ( obj < 0 || (u32)obj >= doc->nobj ) {
+            if ( obj < 0 || (unsigned int)obj >= doc->nobj ) {
                 continue;
             }
             item = &doc->obj[obj];
             if ( item->kind == OBJ_IMAGE && odtw_ext( item->fmt ) != NULL && item->data != NULL && item->len ) {
                 w->img_used[obj] = 1;
                 out_fmt( w->to, "<draw:frame draw:name=\"Picture%u\" text:anchor-type=\"as-char\" draw:z-index=\"0\"",
-                         (u32)obj + 1 );
+                         (uint32_t)obj + 1 );
                 odtw_len( w->to, "svg:width", odt_clamp( item->width, 1, 0x7FFFFL ) );
                 odtw_len( w->to, "svg:height", odt_clamp( item->height, 1, 0x7FFFFL ) );
                 out_fmt( w->to, "><draw:image xlink:href=\"Pictures/img%u.%s\" xlink:type=\"simple\""
-                         " xlink:show=\"embed\" xlink:actuate=\"onLoad\"/></draw:frame>", (u32)obj + 1,
+                         " xlink:show=\"embed\" xlink:actuate=\"onLoad\"/></draw:frame>", (uint32_t)obj + 1,
                          odtw_ext( item->fmt ) );
                 w->space = 0;
             } else if ( item->kind == OBJ_NOTE && w->content && item->story != NULL ) {
                 if ( span ) {
                     w->chp_used[para->attr[off]] = 1;
-                    out_fmt( w->to, "<text:span text:style-name=\"%sT%u\">", w->prefix, (u32)para->attr[off] );
+                    out_fmt( w->to, "<text:span text:style-name=\"%sT%u\">", w->prefix, (uint32_t)para->attr[off] );
                 }
                 w->nnote++;
                 out_fmt( w->to, "<text:note text:id=\"%s%u\" text:note-class=\"%s\"><text:note-citation>%u"
@@ -3320,7 +3324,7 @@ static void odtw_para( ODTW *w, const WPARA *para )
         }
         if ( span ) {
             w->chp_used[para->attr[off]] = 1;
-            out_fmt( w->to, "<text:span text:style-name=\"%sT%u\">", w->prefix, (u32)para->attr[off] );
+            out_fmt( w->to, "<text:span text:style-name=\"%sT%u\">", w->prefix, (uint32_t)para->attr[off] );
         }
         odtw_run_text( w, para->text + off, run );
         if ( span ) {
@@ -3330,7 +3334,7 @@ static void odtw_para( ODTW *w, const WPARA *para )
     out_fmt( w->to, "</%s>", tag );
 }
 
-static int odtw_grid_add( s32 *grid, int count, s32 pos )
+static int odtw_grid_add( int *grid, int count, int pos )
 {
     int at, move;
 
@@ -3346,7 +3350,7 @@ static int odtw_grid_add( s32 *grid, int count, s32 pos )
     return count + 1;
 }
 
-static int odtw_grid_at( const s32 *grid, int count, s32 pos )
+static int odtw_grid_at( const int *grid, int count, int pos )
 {
     int at = 0;
 
@@ -3377,10 +3381,10 @@ static void odtw_cell_close( ODTW *w, int span )
     }
 }
 
-static void odtw_row( ODTW *w, const STORY *story, u32 from, u32 to, const TROW *row, const s32 *grid, int ngrid )
+static void odtw_row( ODTW *w, const STORY *story, unsigned int from, unsigned int to, const TROW *row, const int *grid, int ngrid )
 {
-    s32 prev = row->left, edge;
-    u32 index = from;
+    int prev = row->left, edge;
+    unsigned int index = from;
     int cell, col = odtw_grid_at( grid, ngrid, row->left ), next, ncells = row->ncells, span;
 
     if ( ncells > MAX_CELLS ) {
@@ -3418,14 +3422,14 @@ static void odtw_row( ODTW *w, const STORY *story, u32 from, u32 to, const TROW 
 /* the table that starts at paragraph "from" -> the paragraph after it.
    Its own styles - its width and each column's - are written the first
    time through, into the part itself. */
-static u32 odtw_table( ODTW *w, const STORY *story, u32 from )
+static unsigned int odtw_table( ODTW *w, const STORY *story, unsigned int from )
 {
-    s32 grid[MAX_GRIDW + 2];
+    int grid[MAX_GRIDW + 2];
     TROW whole;
     const PAP *pap;
     const TROW *row;
-    s32 prev;
-    u32 to, index, row_from;
+    int prev;
+    unsigned int to, index, row_from;
     int ngrid = 0, cell, heads = 1, in_heads = 0;
 
     odtw_lists_close( w, 0 );
@@ -3504,7 +3508,7 @@ static u32 odtw_table( ODTW *w, const STORY *story, u32 from )
 
 static void odtw_story( ODTW *w, const STORY *story )
 {
-    u32 index = 0;
+    unsigned int index = 0;
 
     while ( index < story->count ) {
         if ( story->para[index]->pap.flags & PF_INTABLE ) {
@@ -3526,7 +3530,7 @@ static void odtw_fonts( ODTW *w )
 {
     static const char *const generic[7] = { "", "roman", "swiss", "modern", "script", "decorative", "" };
     const WDOC *doc = w->doc;
-    u32 index;
+    unsigned int index;
 
     PUT( "<office:font-face-decls>" );
     for ( index = 0; index < doc->nfont; index++ ) {
@@ -3552,7 +3556,7 @@ static void odtw_auto_styles( ODTW *w )
     const WDOC *doc = w->doc;
     const WPARA *para;
     const WSTYLE *style;
-    u32 index;
+    unsigned int index;
     int level, kind, fill;
 
     for ( index = 0; index < w->npstyle; index++ ) {
@@ -3659,8 +3663,8 @@ static void odtw_styles( ODTW *w )
     const WSTYLE *style;
     CHP plain;
     PAP none;
-    s32 room;
-    u32 index;
+    int room;
+    unsigned int index;
     int head;
 
     mem_set( &plain, 0, sizeof( plain ) );
@@ -3760,8 +3764,8 @@ static void odtw_meta( ODTW *w )
     odtw_info( w, "meta:initial-creator", doc->author );
     odtw_info( w, "dc:creator", doc->author );
     odtw_info( w, "meta:keyword", doc->keywords );
-    out_fmt( w->to, "<meta:creation-date>%04u-%02u-%02uT%02u:%02u:%02u</meta:creation-date>", (u32)now.year,
-             (u32)now.month, (u32)now.day, (u32)now.hour, (u32)now.minute, (u32)now.second );
+    out_fmt( w->to, "<meta:creation-date>%04u-%02u-%02uT%02u:%02u:%02u</meta:creation-date>", (uint32_t)now.year,
+             (uint32_t)now.month, (uint32_t)now.day, (uint32_t)now.hour, (uint32_t)now.minute, (uint32_t)now.second );
     PUT( "</office:meta></office:document-meta>" );
     odtw_finish( w );
 }
@@ -3773,7 +3777,7 @@ static void odtw_manifest( ODTW *w )
         "image/bmp"
     };
     const WDOC *doc = w->doc;
-    u32 index;
+    unsigned int index;
 
     odtw_begin( w, "META-INF/manifest.xml" );
     PUT( "<manifest:manifest xmlns:manifest=\"urn:oasis:names:tc:opendocument:xmlns:manifest:1.0\""
@@ -3794,13 +3798,13 @@ static void odtw_manifest( ODTW *w )
 
 /* a picture's bytes into the archive; a bare DIB with the header that
    makes it a .BMP file */
-static void odtw_media( ODTW *w, u32 obj )
+static void odtw_media( ODTW *w, unsigned int obj )
 {
     char name[48];
     const WOBJ *image = &w->doc->obj[obj];
     OUT *bmp;
-    u8 *data;
-    u32 len, head, colors, bits;
+    uint8_t *data;
+    uint32_t len, head, colors, bits;
     int packed = image->fmt == IMG_PNG || image->fmt == IMG_JPEG || image->fmt == IMG_GIF;
 
     sfmt( name, sizeof( name ), "Pictures/img%u.%s", obj + 1, odtw_ext( image->fmt ) );
@@ -3837,7 +3841,7 @@ static void odtw_media( ODTW *w, u32 obj )
 static int odt_save( WDOC *doc, OUT *out, int variant )
 {
     ODTW *w;
-    u32 index;
+    unsigned int index;
     int rc = WE_OK;
 
     (void)variant;
@@ -3850,8 +3854,8 @@ static int odt_save( WDOC *doc, OUT *out, int variant )
     w->part = out_mem();
     w->scrap = out_mem();
     w->zipw = zipw_new( out );
-    w->chp_used = (u8 *)try_alloc( doc->nchp + 1 );
-    w->img_used = (u8 *)try_alloc( doc->nobj + 1 );
+    w->chp_used = (uint8_t *)try_alloc( doc->nchp + 1 );
+    w->img_used = (uint8_t *)try_alloc( doc->nobj + 1 );
     if ( w->part == NULL || w->scrap == NULL || w->zipw == NULL || w->chp_used == NULL || w->img_used == NULL ) {
         w->failed = 1;
     } else {
@@ -3859,7 +3863,7 @@ static int odt_save( WDOC *doc, OUT *out, int variant )
         mem_set( w->img_used, 0, doc->nobj + 1 );
         w->to = w->part;
         /* first, and as it is: how a reader knows the file at a glance */
-        if ( !zipw_add( w->zipw, "mimetype", (const u8 *)MIME_ODT, sizeof( MIME_ODT ) - 1, 1 ) ) {
+        if ( !zipw_add( w->zipw, "mimetype", (const uint8_t *)MIME_ODT, sizeof( MIME_ODT ) - 1, 1 ) ) {
             w->failed = 1;
         }
         odtw_content( w );

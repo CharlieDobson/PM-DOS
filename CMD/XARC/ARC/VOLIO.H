@@ -39,7 +39,7 @@ void   VolClose( VolFile *v );
 
 /* fread's shape and meaning: returns the count of whole items read.  Reads
  * run across volume joins transparently. */
-UInt32 VolRead( void *buf, UInt32 size, UInt32 count, VolFile *v );
+uint32_t VolRead( void *buf, uint32_t size, uint32_t count, VolFile *v );
 
 /* SEEK_SET / SEEK_CUR / SEEK_END over the joined stream.  0 on success. */
 int    VolSeek( VolFile *v, long off, int whence );

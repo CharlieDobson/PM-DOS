@@ -86,7 +86,7 @@ static int sl_add( STRLIST *list, const char *text )
     }
     if ( list->count == list->cap ) {
         cap = list->cap ? list->cap * 2 : 64;
-        grown = (char **)try_realloc( list->item, (u32)cap * sizeof( char * ) );
+        grown = (char **)try_realloc( list->item, (unsigned int)cap * sizeof( char * ) );
         if ( grown == NULL ) {
             return 0;
         }
@@ -199,7 +199,7 @@ static int wild_match( const char *pat, const char *name )
 static int patterns_match( const char *patterns, const char *name )
 {
     char one[80];
-    u32 len;
+    unsigned int len;
 
     while ( *patterns ) {
         for ( len = 0; patterns[len] && patterns[len] != ';'; len++ ) {
@@ -222,9 +222,9 @@ static int patterns_match( const char *patterns, const char *name )
 /* The extension a name with none is given: the first pattern's, when
    that pattern is "*." and plain letters - "*.DOC;*.DOT" gives ".DOC",
    "*.*" gives nothing.  0 when there is none. */
-static int default_ext( const char *patterns, char *ext, u32 max )
+static int default_ext( const char *patterns, char *ext, unsigned int max )
 {
-    u32 len;
+    unsigned int len;
 
     if ( patterns[0] != '*' || patterns[1] != '.' ) {
         return 0;
@@ -282,7 +282,7 @@ static int make_path( const char *name, char *out )
 static int drive_ready( void )
 {
     FINDREC *rec;
-    u32 handle;
+    uint32_t handle;
     int rc, ready;
 
     rec = (FINDREC *)try_alloc( sizeof( FINDREC ) );
@@ -358,9 +358,9 @@ static void cur_dir( char *out )
 static void fill_lists( FDATA *fd )
 {
     FINDREC *rec;
-    u32 handle;
+    uint32_t handle;
     char dir[PATH_LEN + 4];
-    u32 len;
+    unsigned int len;
 
     sl_free( &fd->files );
     sl_free( &fd->dirs );
@@ -477,7 +477,7 @@ static int take_name( DLG *dlg )
     char ext[16], text[PATH_LEN + 40];
     const char *last;
     char *slash;
-    u16 attr;
+    uint16_t attr;
 
     if ( fd->name[0] == 0 ) {
         return 0;
@@ -611,7 +611,7 @@ static int fb_run( const char *title, char *path, const FBTYPE *types, int ntype
     char start_dir[PATH_LEN + 4], begin[PATH_LEN];
     const char *name;
     int start_drive, answer, index, first = type ? *type : 0;
-    u16 attr;
+    uint16_t attr;
 
     fd = (FDATA *)try_alloc( sizeof( FDATA ) );
     if ( fd == NULL ) {

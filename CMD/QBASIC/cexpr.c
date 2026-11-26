@@ -420,7 +420,7 @@ static QTYPE parse_pow( void )
 QTYPE c_peek_type( void )
 {
     int save = cc->tp;
-    u32 at = c_here();
+    unsigned int at = c_here();
     QTYPE type = expr();
 
     cc->tp = save;
@@ -530,7 +530,7 @@ static int any_in( SCOPE *scope, const char *upper, int kind )
 
 static void make_storage( SYM *sym, SCOPE *scope, int force_static )
 {
-    u32 size = sym->kind == SK_ARRAY ? 4 : type_size( sym->type );
+    unsigned int size = sym->kind == SK_ARRAY ? 4 : type_size( sym->type );
     int is_static = force_static;
 
     if ( scope == &cc->module || scope == cc->immscope ) {
@@ -701,14 +701,14 @@ void c_addr( VREF *ref )
 }
 
 /* the address of what a symbol names (an array's slot, or a scalar) */
-static void sym_addr( SYM *sym, u32 extra );
+static void sym_addr( SYM *sym, unsigned int extra );
 
 void c_sym_addr( SYM *sym )
 {
     sym_addr( sym, 0 );
 }
 
-static void sym_addr( SYM *sym, u32 extra )
+static void sym_addr( SYM *sym, unsigned int extra )
 {
     switch ( sym->scope ) {
     case SC_GLOBAL: c_op32( OP_AG, sym->offset + extra ); break;
@@ -728,7 +728,7 @@ static QTYPE fields( VREF *ref, QTYPE type, const char *chain )
 {
     char part[NAME_MAX + 1];
     QTYPE ftype;
-    u32 foff;
+    unsigned int foff;
     int len;
 
     while ( *chain ) {
@@ -779,7 +779,7 @@ static void subscripts( SYM *sym )
     }
     c_need( TK_RPAREN, ")" );
     if ( sym->ndims == 0 ) {
-        sym->ndims = (u8)count;
+        sym->ndims = (uint8_t)count;
     } else if ( sym->ndims != count ) {
         c_fail_tok( "Wrong number of dimensions" );
     }
@@ -800,7 +800,7 @@ static void implicit_array( SYM *sym, int ndims )
     SCOPE *scope;
     int i;
 
-    sym->ndims = (u8)ndims;
+    sym->ndims = (uint8_t)ndims;
     sym->flags |= SF_IMPLICIT;
     if ( cc->checking ) {
         return;
@@ -808,7 +808,7 @@ static void implicit_array( SYM *sym, int ndims )
     if ( sym->scope == SC_GLOBAL || sym->scope == SC_STATIC ) {
         ARRINIT *init;
         if ( cc->narrinit == cc->arrinit_cap ) {
-            u32 cap = cc->arrinit_cap ? cc->arrinit_cap * 2 : 32;
+            unsigned int cap = cc->arrinit_cap ? cc->arrinit_cap * 2 : 32;
             ARRINIT *grown = (ARRINIT *)try_realloc( cc->arrinit, cap * sizeof( ARRINIT ) );
             if ( grown == NULL ) {
                 c_fail( "Out of memory" );
@@ -819,13 +819,13 @@ static void implicit_array( SYM *sym, int ndims )
         init = &cc->arrinit[cc->narrinit++];
         mem_set( init, 0, sizeof( *init ) );
         init->scope = sym->scope;
-        init->proc = (u16)(cc->procscope ? cc->procscope->proc : 0);
+        init->proc = (uint16_t)(cc->procscope ? cc->procscope->proc : 0);
         init->offset = sym->offset;
         init->type = sym->type;
         init->esize = type_size( sym->type );
-        init->ndims = (u8)ndims;
+        init->ndims = (uint8_t)ndims;
         init->flags = AF_STATIC | AF_IMPLICIT;
-        init->bounds = (s32 *)c_pool( ndims * 2 * sizeof( s32 ) );
+        init->bounds = (int32_t *)c_pool( ndims * 2 * sizeof( int32_t ) );
         for ( i = 0; i < ndims; i++ ) {
             init->bounds[i * 2] = cc->option_base;
             init->bounds[i * 2 + 1] = 10;
@@ -834,10 +834,10 @@ static void implicit_array( SYM *sym, int ndims )
     }
     scope = cc->procscope;
     if ( scope->nimp_arr == scope->cap_imp ) {
-        u32 cap = scope->cap_imp ? scope->cap_imp * 2 : 8;
-        scope->imp_arr = (u32 *)try_realloc( scope->imp_arr, cap * sizeof( u32 ) );
+        unsigned int cap = scope->cap_imp ? scope->cap_imp * 2 : 8;
+        scope->imp_arr = (unsigned int *)try_realloc( scope->imp_arr, cap * sizeof( unsigned int ) );
         scope->imp_type = (QTYPE *)try_realloc( scope->imp_type, cap * sizeof( QTYPE ) );
-        scope->imp_dims = (u8 *)try_realloc( scope->imp_dims, cap );
+        scope->imp_dims = (uint8_t *)try_realloc( scope->imp_dims, cap );
         if ( scope->imp_arr == NULL || scope->imp_type == NULL || scope->imp_dims == NULL ) {
             c_fail( "Out of memory" );
         }
@@ -845,7 +845,7 @@ static void implicit_array( SYM *sym, int ndims )
     }
     scope->imp_arr[scope->nimp_arr] = sym->offset;
     scope->imp_type[scope->nimp_arr] = sym->type;
-    scope->imp_dims[scope->nimp_arr] = (u8)ndims;
+    scope->imp_dims[scope->nimp_arr] = (uint8_t)ndims;
     scope->nimp_arr++;
 }
 
@@ -1189,14 +1189,14 @@ static int types_match( QTYPE param, QTYPE arg )
    as to an address); EREF notes them and copies the element in. */
 static void element_copy( QTYPE type )
 {
-    u32 copy, note, size = type_size( type );
-    u8 scope, note_scope;
+    unsigned int copy, note, size = type_size( type );
+    uint8_t scope, note_scope;
     int is_str = TKIND( type ) == TY_STR;
 
     if ( cc->neback >= MAX_EBACK ) {
         c_fail( "Expression too complex" );
     }
-    cc->code[cc->last_aidx] = (u8)(cc->code[cc->last_aidx] == OP_AIDX1 ? OP_AIDXR1 : OP_AIDXR);
+    cc->code[cc->last_aidx] = (uint8_t)(cc->code[cc->last_aidx] == OP_AIDX1 ? OP_AIDXR1 : OP_AIDXR);
     copy = c_temp( type, &scope );
     note = c_temp( TY_DOUBLE, &note_scope );        /* 8 bytes: the slot, the offset */
     c_op32( scope == SC_GLOBAL ? OP_AG : OP_AF, copy );
@@ -1207,7 +1207,7 @@ static void element_copy( QTYPE type )
     cc->eback[cc->neback].copy = copy;
     cc->eback[cc->neback].note = note;
     cc->eback[cc->neback].scope = scope;
-    cc->eback[cc->neback].is_str = (u8)is_str;
+    cc->eback[cc->neback].is_str = (uint8_t)is_str;
     cc->eback[cc->neback].size = size;
     cc->neback++;
 }
@@ -1230,8 +1230,8 @@ static void one_arg( PARAM *param, int parens, int by_value_only )
 {
     VREF ref;
     QTYPE type;
-    u8 scope;
-    u32 off;
+    uint8_t scope;
+    unsigned int off;
     int save = cc->tp;
 
     if ( param->array ) {
@@ -1257,7 +1257,7 @@ static void one_arg( PARAM *param, int parens, int by_value_only )
         return;
     }
     if ( !by_value_only && arg_is_variable( parens ) ) {
-        u32 at = c_here();
+        unsigned int at = c_here();
         cc->last_aidx = NOADDR;
         if ( c_var( &ref, 0, 0 ) ) {
             if ( types_match( param->type, ref.type ) ) {
@@ -1360,7 +1360,7 @@ static QTYPE call_function( SYM *psym )
     base = cc->neback;
     c_call_args( proc, 1 );
     c_op( OP_CALL );
-    c_emit16( (u32)psym->proc );
+    c_emit16( (uint32_t)psym->proc );
     c_call_back( base );
     return proc->rettype;
 }
@@ -1439,11 +1439,11 @@ static QTYPE len_fn( void )
     open_paren();
     save = cc->tp;
     if ( arg_is_variable( 1 ) ) {
-        u32 code_at = c_here();
+        unsigned int code_at = c_here();
         if ( c_var( &ref, 0, 0 ) && TKIND( ref.type ) != TY_STR ) {
             cc->code_len = code_at;             /* its address is not wanted */
             close_paren();
-            c_push_l( (s32)type_size( ref.type ) );
+            c_push_l( (int32_t)type_size( ref.type ) );
             return TY_INT;
         }
         cc->code_len = code_at;
@@ -1470,7 +1470,7 @@ static QTYPE addr_fn( int routine )
             c_fail_tok( "Type mismatch" );
         }
         if ( routine == RT_VARPTRS ) {
-            c_push_l( (s32)ref.type );
+            c_push_l( (int32_t)ref.type );
         }
         if ( routine == RT_VARPTR && TKIND( ref.type ) == TY_STR ) {
             routine = RT_VARPTRSTR;
@@ -1873,7 +1873,7 @@ static QTYPE parse_atom( void )
         switch ( tok->ntype ) {
         case TY_INT:
         case TY_LONG:
-            c_push_l( (s32)tok->num );
+            c_push_l( (int32_t)tok->num );
             return tok->ntype;
         case TY_SINGLE:
             c_op( OP_CS );
@@ -1885,7 +1885,7 @@ static QTYPE parse_atom( void )
             return TY_DOUBLE;
         }
     case TK_STR: {
-        u32 len = tok->len - 1;
+        unsigned int len = tok->len - 1;
         if ( !(tok->flags & TF_UNTERM) ) {
             len--;
         }
@@ -1949,7 +1949,7 @@ SYM *c_label_ref( int module_level )
         if ( tok->num < 0 || tok->num > 65529.0 || tok->num != fp_trunc( tok->num ) ) {
             c_fail( "Invalid line number" );
         }
-        fmt_dec( (u32)tok->num, 0, upper );
+        fmt_dec( (unsigned int)tok->num, 0, upper );
     } else if ( tok->kind == TK_ID && tok->kw == 0 ) {
         c_name_of( tok, upper );
     } else {
@@ -2022,7 +2022,7 @@ static void k_atom( KVAL *val )
         c_next();
         return;
     case TK_STR: {
-        u32 len = tok->len - 1;
+        unsigned int len = tok->len - 1;
         int ok;
         if ( !(tok->flags & TF_UNTERM) ) {
             len--;
@@ -2185,7 +2185,7 @@ static void k_unary( KVAL *val )
     k_pow( val );
 }
 
-static s32 k_whole( KVAL *val )
+static int32_t k_whole( KVAL *val )
 {
     double rounded = fp_round( val->num );
 
@@ -2195,7 +2195,7 @@ static s32 k_whole( KVAL *val )
     if ( rounded < -2147483648.0 || rounded > 2147483647.0 ) {
         c_fail_tok( "Overflow" );
     }
-    return (s32)rounded;
+    return (int32_t)rounded;
 }
 
 static void k_mul( KVAL *val )
@@ -2226,7 +2226,7 @@ static void k_mul( KVAL *val )
             }
             k_fit( val );
         } else if ( kind == TK_BSLASH || (kind == TK_KW && c_tok()->kw == KW_MOD) ) {
-            s32 lhs_w, rhs_w;
+            int32_t lhs_w, rhs_w;
             c_next();
             k_unary( &rhs );
             k_need_num( val );
@@ -2240,7 +2240,7 @@ static void k_mul( KVAL *val )
             if ( rhs_w == 0 ) {
                 c_fail_tok( "Division by zero" );
             }
-            if ( lhs_w == (s32)0x80000000UL && rhs_w == -1 ) {
+            if ( lhs_w == (int32_t)0x80000000UL && rhs_w == -1 ) {
                 /* the one quotient a LONG cannot hold (the CPU faults on it) */
                 if ( kind == TK_BSLASH ) {
                     c_fail_tok( "Overflow" );
@@ -2271,7 +2271,7 @@ static void k_add( KVAL *val )
         k_mul( &rhs );
         if ( kind == TK_PLUS && val->type == TY_STR && rhs.type == TY_STR ) {
             /* not qs_cat: its errors are a run's */
-            u32 llen = QS_LEN( val->str ), rlen = QS_LEN( rhs.str );
+            unsigned int llen = QS_LEN( val->str ), rlen = QS_LEN( rhs.str );
             STR *both;
             int ok;
             if ( llen + rlen > STR_MAX ) {
@@ -2360,7 +2360,7 @@ static void k_logic( KVAL *val, int level )
 {
     static const int ops[] = { KW_IMP, KW_EQV, KW_XOR, KW_OR, KW_AND };
     KVAL rhs;
-    s32 lhs_w, rhs_w;
+    int32_t lhs_w, rhs_w;
 
     if ( level == 5 ) {
         k_not( val );
@@ -2407,7 +2407,7 @@ int const_expr( CELL *cval, QTYPE *type, STR **sval )
     *type = val.type;
     switch ( TKIND( val.type ) ) {
     case TY_INT:
-    case TY_LONG:   cval->l = (s32)val.num; break;
+    case TY_LONG:   cval->l = (int32_t)val.num; break;
     case TY_SINGLE: cval->s = (float)val.num; break;
     case TY_DOUBLE: cval->d = val.num; break;
     default:        *sval = val.str; break;

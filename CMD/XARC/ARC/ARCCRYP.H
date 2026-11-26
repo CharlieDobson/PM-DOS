@@ -66,11 +66,11 @@
  * Selected at compile time by AC_OEM_PASSWORDS, which the DOS and OS/2 builds
  * define.  Returns the number of UTF-16 code units written.
  *--------------------------------------------------------------------------*/
-int  PwToUtf16( const char *pw, Byte *out, int outMax );
+int  PwToUtf16( const char *pw, uint8_t *out, int outMax );
 
 /*---- ZipCrypto (traditional PKWARE encryption) ---------------------------- */
 typedef struct {
-    UInt32 k[3];
+    uint32_t k[3];
 } ZipCryptState;
 
 /* Initialise from the password.  ZipCrypto hashes the raw bytes, not UTF-16. */
@@ -79,7 +79,7 @@ void ZipCryptInit( ZipCryptState *zc, const char *pw );
 /* Decrypt in place.  The first 12 bytes of an encrypted zip entry are an
  * encryption header, not data - decrypt those first, check them with
  * ZipCryptCheck, then carry on through the payload with the same state. */
-void ZipCryptDecrypt( ZipCryptState *zc, Byte *buf, UInt32 len );
+void ZipCryptDecrypt( ZipCryptState *zc, uint8_t *buf, uint32_t len );
 
 /*
  * Verify the 12-byte header just decrypted.  Its last byte is a copy of a
@@ -95,7 +95,7 @@ void ZipCryptDecrypt( ZipCryptState *zc, Byte *buf, UInt32 len );
  * One wrong password in 256 passes this test; that is the format's own odds,
  * not ours, and the CRC catches the rest.
  */
-int  ZipCryptCheck( const Byte hdr12[12], UInt32 crc, UInt16 modTime,
+int  ZipCryptCheck( const uint8_t hdr12[12], uint32_t crc, uint16_t modTime,
                     int hasDesc );
 
 /*---- AES-CTR (WinZip AE-1/AE-2 flavour) ----------------------------------- *
@@ -105,35 +105,35 @@ int  ZipCryptCheck( const Byte hdr12[12], UInt32 crc, UInt16 modTime,
  * memorable way to lose an afternoon.
  *--------------------------------------------------------------------------*/
 typedef struct {
-    Byte rk[240];       /* round keys: 176 used for AES-128, 240 for AES-256 */
-    int  nr;            /* 10 or 14                                          */
-    Byte ctr[16];       /* the counter block, low bytes first                */
-    Byte pad[16];       /* current key-stream block                          */
-    int  used;          /* bytes of pad already consumed (16 = exhausted)    */
+    uint8_t rk[240];    /* round keys: 176 used for AES-128, 240 for AES-256 */
+    int     nr;         /* 10 or 14                                          */
+    uint8_t ctr[16];    /* the counter block, low bytes first                */
+    uint8_t pad[16];    /* current key-stream block                          */
+    int     used;       /* bytes of pad already consumed (16 = exhausted)    */
 } AesCtrState;
 
 /* keyBytes must be 16 or 32.  Returns SZ_OK, or SZ_ERR_UNSUPPORTED for a key
  * size we have no schedule for - see the AES-192 note in ARCCRYP.C. */
-int  AesCtrInit( AesCtrState *s, const Byte *key, int keyBytes );
+int  AesCtrInit( AesCtrState *s, const uint8_t *key, int keyBytes );
 
 /* XOR the key stream over buf.  Call repeatedly to stream a whole entry: the
  * counter and the partially-used pad carry across calls, so the split between
  * calls need not line up with the 16-byte blocks. */
-void AesCtrXor( AesCtrState *s, Byte *buf, UInt32 len );
+void AesCtrXor( AesCtrState *s, uint8_t *buf, uint32_t len );
 
 /*---- AES-CBC decryption (7z and RAR3) ------------------------------------- */
 typedef struct {
-    Byte rk[240];
-    int  nr;
-    Byte iv[16];        /* running: the last ciphertext block seen           */
+    uint8_t rk[240];
+    int     nr;
+    uint8_t iv[16];     /* running: the last ciphertext block seen           */
 } AesCbcState;
 
-int  AesCbcInit( AesCbcState *s, const Byte *key, int keyBytes,
-                 const Byte iv[16] );
+int  AesCbcInit( AesCbcState *s, const uint8_t *key, int keyBytes,
+                 const uint8_t iv[16] );
 
 /* Decrypt in place.  len must be a multiple of 16; the IV carries across calls
  * so a stream can be decrypted in chunks. */
-void AesCbcDecrypt( AesCbcState *s, Byte *buf, UInt32 len );
+void AesCbcDecrypt( AesCbcState *s, uint8_t *buf, uint32_t len );
 
 /*---- Streaming HMAC-SHA1 -------------------------------------------------- *
  * SHA.C offers HMAC only as a one-shot over a buffer in memory, which is no
@@ -147,18 +147,18 @@ void AesCbcDecrypt( AesCbcState *s, Byte *buf, UInt32 len );
  *--------------------------------------------------------------------------*/
 typedef struct {
     SHA1_CTX ctx;               /* running inner hash                       */
-    Byte     opad[64];          /* kept for the outer hash at the end       */
+    uint8_t  opad[64];          /* kept for the outer hash at the end       */
 } HmacSha1Ctx;
 
-void HmacSha1Init( HmacSha1Ctx *h, const Byte *key, int keyLen );
+void HmacSha1Init( HmacSha1Ctx *h, const uint8_t *key, int keyLen );
 void HmacSha1Update( HmacSha1Ctx *h, const void *data, unsigned len );
-void HmacSha1Final( HmacSha1Ctx *h, Byte out[20] );
+void HmacSha1Final( HmacSha1Ctx *h, uint8_t out[20] );
 
 /*---- PBKDF2 (RFC 2898) ---------------------------------------------------- */
-void Pbkdf2Sha1( const Byte *pw, int pwLen, const Byte *salt, int saltLen,
-                 UInt32 iter, Byte *out, int outLen );
-void Pbkdf2Sha256( const Byte *pw, int pwLen, const Byte *salt, int saltLen,
-                   UInt32 iter, Byte *out, int outLen );
+void Pbkdf2Sha1( const uint8_t *pw, int pwLen, const uint8_t *salt, int saltLen,
+                 unsigned iter, uint8_t *out, int outLen );
+void Pbkdf2Sha256( const uint8_t *pw, int pwLen, const uint8_t *salt, int saltLen,
+                   unsigned iter, uint8_t *out, int outLen );
 
 /*---- Per-format key derivation -------------------------------------------- */
 
@@ -169,8 +169,8 @@ void Pbkdf2Sha256( const Byte *pw, int pwLen, const Byte *salt, int saltLen,
  * two-byte password verifier.  Returns SZ_ERR_UNSUPPORTED for strength 2 -
  * see the AES-192 note in ARCCRYP.C.
  */
-int  ZipAesDeriveKeys( const char *pw, const Byte *salt, int strength,
-                       Byte *cipherKey, Byte *macKey, Byte pwVerify[2],
+int  ZipAesDeriveKeys( const char *pw, const uint8_t *salt, int strength,
+                       uint8_t *cipherKey, uint8_t *macKey, uint8_t pwVerify[2],
                        int *keyBytes );
 
 /* Salt length for a given strength, or 0 if the strength byte is not 1..3. */
@@ -184,7 +184,7 @@ int  ZipAesSaltLen( int strength );
  * mode nothing writes; we honour it because it costs three lines.
  */
 void SzAesDeriveKey( const char *pw, int numCyclesPower,
-                     const Byte *salt, int saltLen, Byte key[32] );
+                     const uint8_t *salt, int saltLen, uint8_t key[32] );
 
 /*---- RAR5 -----------------------------------------------------------------*
  * AES-256-CBC, keyed by PBKDF2-HMAC-SHA256 over the password as UTF-8.  The
@@ -203,8 +203,8 @@ void SzAesDeriveKey( const char *pw, int numCyclesPower,
  * what lets a wrong RAR5 password be rejected before a byte is decrypted,
  * which neither 7z nor RAR3 can do.
  *--------------------------------------------------------------------------*/
-void Rar5DeriveKeys( const char *pw, const Byte salt[16], int kdfCount,
-                     Byte key[32], Byte hashKey[32], Byte pswCheck[8] );
+void Rar5DeriveKeys( const char *pw, const uint8_t salt[16], int kdfCount,
+                     uint8_t key[32], uint8_t hashKey[32], uint8_t pswCheck[8] );
 
 /*
  * RAR5 "tweaked" checksums.
@@ -218,7 +218,7 @@ void Rar5DeriveKeys( const char *pw, const Byte salt[16], int kdfCount,
  * Only applied when the crypt record asks for it; an encrypted entry without
  * that flag stores an ordinary CRC.
  */
-UInt32 Rar5TweakCrc( UInt32 crc, const Byte hashKey[32] );
+uint32_t Rar5TweakCrc( uint32_t crc, const uint8_t hashKey[32] );
 
 /*
  * RAR3 (RAR 2.9 / 3.x / 4.x) AES-128-CBC key derivation.
@@ -238,7 +238,7 @@ UInt32 Rar5TweakCrc( UInt32 crc, const Byte hashKey[32] );
  * detected up front - it is inferred afterwards from a failed CRC, exactly as
  * for 7z.  See the SZ_ERR_PASSWORD / SZ_ERR_BADPASS note in ARCDEFS.H.
  */
-void Rar3DeriveKeys( const char *pw, const Byte salt[8],
-                     Byte key[16], Byte iv[16] );
+void Rar3DeriveKeys( const char *pw, const uint8_t salt[8],
+                     uint8_t key[16], uint8_t iv[16] );
 
 #endif /* ARCCRYP_H */

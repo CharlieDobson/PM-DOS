@@ -34,10 +34,10 @@ void LzxFree( LzxDec *dec );
 /* Decode one frame: 'in' is the block's compressed bytes and exactly outLen
  * bytes (at most LZX_FRAME_SIZE) are produced into 'out'.  SZ_ERR_DATA when
  * the bits do not describe that many bytes. */
-int  LzxDecodeFrame( LzxDec *dec, const Byte *in, UInt32 inLen,
-                     Byte *out, UInt32 outLen );
+int  LzxDecodeFrame( LzxDec *dec, const uint8_t *in, uint32_t inLen,
+                     uint8_t *out, uint32_t outLen );
 
 /* Bytes a decoder with this window holds, for ArcMemNeeded. */
-UInt32 LzxMemNeeded( int windowBits );
+uint32_t LzxMemNeeded( int windowBits );
 
 #endif /* LZXDEC_H */

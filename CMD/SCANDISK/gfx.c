@@ -48,7 +48,7 @@
 #define LINE_BYTES      (GW / 8)
 
 #define BDA_POINTS      0x485   /* a character's height, a word */
-#define VEC( n )        ((u32)(n) * 4)
+#define VEC( n )        ((uint32_t)(n) * 4)
 
 #define SEQ_INDEX       0x3C4
 #define SEQ_DATA        0x3C5
@@ -74,30 +74,30 @@
 int gfx_rows = 30;
 int gfx_cell_h = 16;
 
-static int adapter = -1;
-static u32 vid_sel, vid_bytes;
-static u32 mode_now = 0xFFFF;   /* the mode sys_video_set last set */
-static int gheight = MAX_H;     /* scan lines */
-static int cell_h = 16;
-static int grows = 30;
+static int      adapter = -1;
+static uint32_t vid_sel, vid_bytes;
+static uint32_t mode_now = 0xFFFF;  /* the mode sys_video_set last set */
+static int      gheight = MAX_H;    /* scan lines */
+static int      cell_h = 16;
+static int      grows = 30;
 
-static u8 *pic;                 /* the picture */
-static u8 *planes;              /* changed lines as four planes */
-static u8  font14[14 * 256], font16[16 * 256];
-static int have14, have16;
-static int tried14, tried16;    /* the BIOS has been asked for that one */
-static const u8 *font = font16;
+static uint8_t *pic;               /* the picture */
+static uint8_t *planes;            /* changed lines as four planes */
+static uint8_t  font14[14 * 256], font16[16 * 256];
+static int      have14, have16;
+static int      tried14, tried16;  /* the BIOS has been asked for that one */
+static const uint8_t *font = font16;
 
 /* a scan line's changed pixels, first and last: first > last for none */
-static u16 dirty_lo[MAX_H], dirty_hi[MAX_H];
+static uint16_t dirty_lo[MAX_H], dirty_hi[MAX_H];
 
-static int ptr_x, ptr_y, ptr_on;
-static u32 c2p_tab[16];
-static u8  blk[16][8];          /* the cell being painted */
-static u8  icons[PIC_COUNT][ICON_W * ICON_H];
-static int map_todo = 3, map_read = 14, map_bad = 12;
+static int      ptr_x, ptr_y, ptr_on;
+static uint32_t c2p_tab[16];
+static uint8_t  blk[16][8];     /* the cell being painted */
+static uint8_t  icons[PIC_COUNT][ICON_W * ICON_H];
+static int      map_todo = 3, map_read = 14, map_bad = 12;
 
-static const u8 vga16[16][3] = {        /* red, green, blue: six bits each */
+static const uint8_t vga16[16][3] = {   /* red, green, blue: six bits each */
     {  0,  0,  0 }, {  0,  0, 42 }, {  0, 42,  0 }, {  0, 42, 42 },
     { 42,  0,  0 }, { 42,  0, 42 }, { 42, 21,  0 }, { 42, 42, 42 },
     { 21, 21, 21 }, { 21, 21, 63 }, { 21, 63, 21 }, { 21, 63, 63 },
@@ -164,7 +164,7 @@ static const char *const now_shape[SMALL_H] = {
 int gfx_probe( void )
 {
     BREGS regs;
-    u8 probe;
+    uint8_t probe;
     int code;
 
     if ( adapter >= 0 ) {
@@ -202,7 +202,7 @@ int gfx_probe( void )
 /* the fonts                                                           */
 /* ------------------------------------------------------------------ */
 
-static int set_mode( u32 mode )
+static int set_mode( uint32_t mode )
 {
     if ( mode == mode_now ) {
         return 1;
@@ -215,9 +215,9 @@ static int set_mode( u32 mode )
     return 1;
 }
 
-static int read_far( u32 farptr, u8 *dst, u32 len )
+static int read_far( uint32_t farptr, uint8_t *dst, unsigned int len )
 {
-    u32 addr = ((farptr >> 16) << 4) + (farptr & 0xFFFF);
+    uint32_t addr = ((farptr >> 16) << 4) + (farptr & 0xFFFF);
 
     if ( farptr == 0 || addr + len > 0x100000UL ) {
         return 0;
@@ -226,7 +226,7 @@ static int read_far( u32 farptr, u8 *dst, u32 len )
 }
 
 /* every line of one character, ORed together */
-static int glyph_bits( const u8 *data, int height, int ch )
+static int glyph_bits( const uint8_t *data, int height, int ch )
 {
     int line, bits = 0;
 
@@ -240,25 +240,25 @@ static int glyph_bits( const u8 *data, int height, int ch )
    something in its capital A and something in its second half.  A
    table of another height fails the first of those: its space is read
    from the middle of some other character. */
-static int font_sane( const u8 *data, int height )
+static int font_sane( const uint8_t *data, int height )
 {
     return glyph_bits( data, height, ' ' ) == 0 && glyph_bits( data, height, 'A' ) != 0
            && glyph_bits( data, height, 0xDB ) != 0;
 }
 
 /* the table vector 43h points at, if that is a font of this height */
-static int font_at_vector( int height, u8 *dst )
+static int font_at_vector( int height, uint8_t *dst )
 {
-    u32 vec;
+    uint32_t vec;
 
     return sys_peek( VEC( 0x43 ), &vec, 4 ) && read_far( vec, dst, 256u * height )
            && font_sane( dst, height );
 }
 
 /* the font the BIOS left in vector 43h for the mode that is set */
-static int font_of_mode( int height, u8 *dst )
+static int font_of_mode( int height, uint8_t *dst )
 {
-    u16 points;
+    uint16_t points;
 
     if ( !sys_peek( BDA_POINTS, &points, 2 ) || points != height ) {
         return 0;
@@ -267,7 +267,7 @@ static int font_of_mode( int height, u8 *dst )
 }
 
 /* a font two lines taller or shorter: the top and the bottom line */
-static void font_stretch( const u8 *src, int src_h, u8 *dst, int dst_h )
+static void font_stretch( const uint8_t *src, int src_h, uint8_t *dst, int dst_h )
 {
     int ch, line, from;
 
@@ -344,7 +344,7 @@ static int font_load( int height )
 /* the pictures                                                        */
 /* ------------------------------------------------------------------ */
 
-static void small_icon( u8 *px, const char *const shape[] )
+static void small_icon( uint8_t *px, const char *const shape[] )
 {
     int line, col;
 
@@ -358,7 +358,7 @@ static void small_icon( u8 *px, const char *const shape[] )
 /* A sign 32 pixels by 28: a disc, or a triangle for a warning, with an
    outline and one character of the font on it, drawn twice a pixel
    apart to make it bold. */
-static void sign_icon( u8 *px, int triangle, int color, int ch, int ink )
+static void sign_icon( uint8_t *px, int triangle, int color, int ch, int ink )
 {
     int line, col, dx, dy, dist, half, bits, top, row;
 
@@ -371,14 +371,14 @@ static void sign_icon( u8 *px, int triangle, int color, int ch, int ink )
                 if ( line < 1 || line > ICON_H - 2 || col < 15 - half - 1 || col > 16 + half + 1 ) {
                     continue;
                 }
-                px[line * ICON_W + col] = (u8)(line == ICON_H - 2 || line == 1 || col <= 15 - half
-                                               || col >= 16 + half ? OUTLINE : color);
+                px[line * ICON_W + col] = (uint8_t)(line == ICON_H - 2 || line == 1 || col <= 15 - half
+                                                    || col >= 16 + half ? OUTLINE : color);
             } else {
                 dx = 2 * col - (ICON_W - 1);
                 dy = 2 * line - (ICON_H - 1);
                 dist = dx * dx + dy * dy;
                 if ( dist <= 27 * 27 ) {
-                    px[line * ICON_W + col] = (u8)(dist > 24 * 24 ? OUTLINE : color);
+                    px[line * ICON_W + col] = (uint8_t)(dist > 24 * 24 ? OUTLINE : color);
                 }
             }
         }
@@ -392,7 +392,7 @@ static void sign_icon( u8 *px, int triangle, int color, int ch, int ink )
         bits = font[ch * cell_h + line];
         for ( col = 0; col < 9; col++ ) {
             if ( (col < 8 && (bits & (0x80 >> col))) || (col > 0 && (bits & (0x80 >> (col - 1)))) ) {
-                px[row * ICON_W + 12 + col] = (u8)ink;
+                px[row * ICON_W + 12 + col] = (uint8_t)ink;
             }
         }
     }
@@ -437,8 +437,8 @@ int gfx_enter( void )
         return 0;
     }
     if ( pic == NULL ) {
-        pic = (u8 *)try_alloc( (u32)GW * MAX_H );
-        planes = (u8 *)try_alloc( 4u * LINE_BYTES * MAX_H );
+        pic = (uint8_t *)try_alloc( (unsigned int)GW * MAX_H );
+        planes = (uint8_t *)try_alloc( 4u * LINE_BYTES * MAX_H );
         if ( pic == NULL || planes == NULL ) {
             xfree( pic );
             xfree( planes );
@@ -465,7 +465,7 @@ int gfx_enter( void )
     grows = gfx_rows = gheight / height;
     icons_build();
     /* a mode set clears the screen, and so the picture starts the same */
-    mem_set( pic, 0, (u32)GW * MAX_H );
+    mem_set( pic, 0, (unsigned int)GW * MAX_H );
     clean_all();
     ptr_on = 0;
     return 1;
@@ -503,14 +503,14 @@ static void mark( int x0, int y0, int x1, int y1 )
     }
     for ( line = y0; line <= y1; line++ ) {
         if ( dirty_lo[line] > dirty_hi[line] ) {
-            dirty_lo[line] = (u16)x0;
-            dirty_hi[line] = (u16)x1;
+            dirty_lo[line] = (uint16_t)x0;
+            dirty_hi[line] = (uint16_t)x1;
         } else {
             if ( x0 < dirty_lo[line] ) {
-                dirty_lo[line] = (u16)x0;
+                dirty_lo[line] = (uint16_t)x0;
             }
             if ( x1 > dirty_hi[line] ) {
-                dirty_hi[line] = (u16)x1;
+                dirty_hi[line] = (uint16_t)x1;
             }
         }
     }
@@ -545,15 +545,15 @@ static void paint_char( int ch, int fg, int bg, int under )
     for ( line = 0; line < cell_h; line++ ) {
         if ( arms ) {
             for ( px = 0; px < 8; px++ ) {
-                blk[line][px] = (u8)bg;
+                blk[line][px] = (uint8_t)bg;
             }
             if ( (line <= mid && (arms & 1)) || (line >= mid && (arms & 2)) ) {
-                blk[line][3] = (u8)fg;
+                blk[line][3] = (uint8_t)fg;
             }
             if ( line == mid ) {
                 for ( px = 0; px < 8; px++ ) {
                     if ( (px <= 3 && (arms & 4)) || (px >= 3 && (arms & 8)) ) {
-                        blk[line][px] = (u8)fg;
+                        blk[line][px] = (uint8_t)fg;
                     }
                 }
             }
@@ -564,7 +564,7 @@ static void paint_char( int ch, int fg, int bg, int under )
             bits = 0xFF;
         }
         for ( px = 0; px < 8; px++ ) {
-            blk[line][px] = (u8)((bits & (0x80 >> px)) ? fg : bg);
+            blk[line][px] = (uint8_t)((bits & (0x80 >> px)) ? fg : bg);
         }
     }
 }
@@ -586,7 +586,7 @@ static void paint_bar( int data, int fg, int bg, CELL cell )
             } else {
                 color = px < done ? fg : bg;
             }
-            blk[line][px] = (u8)color;
+            blk[line][px] = (uint8_t)color;
         }
     }
 }
@@ -611,7 +611,7 @@ static void map_block( int top, int height, int state, int now )
             } else if ( state & MB_SOME ) {
                 on = on || col <= slope;
             }
-            blk[top + row][col] = (u8)(on ? color : 0);
+            blk[top + row][col] = (uint8_t)(on ? color : 0);
         }
     }
 }
@@ -637,13 +637,13 @@ static void paint_icon( int kind, int data, int fg, int bg )
     int first = big ? ((data >> 2) & 1) * cell_h - (2 * cell_h - ICON_H) / 2
                 : -(cell_h - SMALL_H) / 2;
     int line, px, row;
-    u8 dot;
+    uint8_t dot;
 
     for ( line = 0; line < cell_h; line++ ) {
         row = first + line;
         for ( px = 0; px < 8; px++ ) {
             dot = row < 0 || row >= height ? CLEAR : icons[kind][row * ICON_W + left + px];
-            blk[line][px] = (u8)(dot == CLEAR ? bg : dot == AS_TEXT ? fg : dot);
+            blk[line][px] = (uint8_t)(dot == CLEAR ? bg : dot == AS_TEXT ? fg : dot);
         }
     }
 }
@@ -679,18 +679,18 @@ static void paint_edges( CELL cell, int fg )
     }
     for ( px = 0; px < 8; px++ ) {
         if ( cell & CF_TOP ) {
-            blk[0][px] = (u8)edge;
+            blk[0][px] = (uint8_t)edge;
         }
         if ( cell & CF_BOTTOM ) {
-            blk[cell_h - 1][px] = (u8)edge;
+            blk[cell_h - 1][px] = (uint8_t)edge;
         }
     }
     for ( line = 0; line < cell_h; line++ ) {
         if ( cell & CF_LEFT ) {
-            blk[line][0] = (u8)edge;
+            blk[line][0] = (uint8_t)edge;
         }
         if ( cell & CF_RIGHT ) {
-            blk[line][7] = (u8)edge;
+            blk[line][7] = (uint8_t)edge;
         }
     }
 }
@@ -736,7 +736,7 @@ static void paint_button( CELL cell, int part )
             } else {
                 color = FACE;
             }
-            blk[line][px] = (u8)color;
+            blk[line][px] = (uint8_t)color;
         }
     }
 }
@@ -780,7 +780,7 @@ void gfx_cell( int row, int col, CELL cell )
         paint_edges( cell, fg );
     }
     for ( line = 0; line < cell_h; line++ ) {
-        mem_cpy( pic + (u32)(top + line) * GW + left, blk[line], 8 );
+        mem_cpy( pic + (unsigned int)(top + line) * GW + left, blk[line], 8 );
     }
     mark( left, top, left + 7, top + cell_h - 1 );
 }
@@ -807,20 +807,20 @@ void gfx_pointer( int px, int py, int show )
 
 /* a scan line as it goes to the screen: the picture's, with the
    pointer laid over the pixels from "lo" to "hi" */
-static const u8 *compose( int line, int lo, int hi, u8 *buf )
+static const uint8_t *compose( int line, int lo, int hi, uint8_t *buf )
 {
     const char *shape;
     int px, at;
 
     if ( !ptr_on || line < ptr_y || line >= ptr_y + 16 || ptr_x > hi || ptr_x + 15 < lo ) {
-        return pic + (u32)line * GW;
+        return pic + (unsigned int)line * GW;
     }
-    mem_cpy( buf + lo, pic + (u32)line * GW + lo, (u32)(hi - lo + 1) );
+    mem_cpy( buf + lo, pic + (unsigned int)line * GW + lo, (unsigned int)(hi - lo + 1) );
     shape = pointer_shape[line - ptr_y];
     for ( px = 0; px < 16; px++ ) {
         at = ptr_x + px;
         if ( at >= lo && at <= hi && shape[px] != '.' ) {
-            buf[at] = (u8)(shape[px] == 'k' ? 0 : 15);
+            buf[at] = (uint8_t)(shape[px] == 'k' ? 0 : 15);
         }
     }
     return buf;
@@ -836,33 +836,33 @@ static const u8 *compose( int line, int lo, int hi, u8 *buf )
    take the write. */
 static void flush_band( int first, int last, int blo, int bhi )
 {
-    static u8 buf[GW];
-    const u8 *src;
-    u8 *out;
-    u32 acc;
+    static uint8_t buf[GW];
+    const uint8_t *src;
+    uint8_t *out;
+    uint32_t acc;
     int line, byte, plane;
 
     for ( line = first; line <= last; line++ ) {
         src = compose( line, blo * 8, bhi * 8 + 7, buf ) + blo * 8;
-        out = planes + (u32)line * LINE_BYTES + blo;
+        out = planes + (unsigned int)line * LINE_BYTES + blo;
         for ( byte = blo; byte <= bhi; byte++, src += 8, out++ ) {
             acc = c2p_tab[src[0] & 15] | (c2p_tab[src[1] & 15] >> 1)
                   | (c2p_tab[src[2] & 15] >> 2) | (c2p_tab[src[3] & 15] >> 3)
                   | (c2p_tab[src[4] & 15] >> 4) | (c2p_tab[src[5] & 15] >> 5)
                   | (c2p_tab[src[6] & 15] >> 6) | (c2p_tab[src[7] & 15] >> 7);
-            out[0] = (u8)acc;
-            out[LINE_BYTES * MAX_H] = (u8)(acc >> 8);
-            out[2 * LINE_BYTES * MAX_H] = (u8)(acc >> 16);
-            out[3 * LINE_BYTES * MAX_H] = (u8)(acc >> 24);
+            out[0] = (uint8_t)acc;
+            out[LINE_BYTES * MAX_H] = (uint8_t)(acc >> 8);
+            out[2 * LINE_BYTES * MAX_H] = (uint8_t)(acc >> 16);
+            out[3 * LINE_BYTES * MAX_H] = (uint8_t)(acc >> 24);
         }
     }
     for ( plane = 0; plane < 4; plane++ ) {
         port_out( SEQ_INDEX, SEQ_MAPMASK );
         port_out( SEQ_DATA, 1u << plane );
         for ( line = first; line <= last; line++ ) {
-            vid_put( vid_sel, (u32)line * LINE_BYTES + blo,
-                     planes + (u32)plane * LINE_BYTES * MAX_H + (u32)line * LINE_BYTES + blo,
-                     (u32)(bhi - blo + 1) );
+            vid_put( vid_sel, (uint32_t)line * LINE_BYTES + blo,
+                     planes + (uint32_t)plane * LINE_BYTES * MAX_H + (uint32_t)line * LINE_BYTES + blo,
+                     (uint32_t)(bhi - blo + 1) );
         }
     }
     port_out( SEQ_INDEX, SEQ_MAPMASK );
@@ -903,20 +903,21 @@ void gfx_flush( void )
 /* test mode: the picture as a file                                    */
 /* ------------------------------------------------------------------ */
 
-static void put32( u8 *at, u32 val )
+static void put32( uint8_t *at, uint32_t val )
 {
-    at[0] = (u8)val;
-    at[1] = (u8)(val >> 8);
-    at[2] = (u8)(val >> 16);
-    at[3] = (u8)(val >> 24);
+    at[0] = (uint8_t)val;
+    at[1] = (uint8_t)(val >> 8);
+    at[2] = (uint8_t)(val >> 16);
+    at[3] = (uint8_t)(val >> 24);
 }
 
 /* a Windows bitmap, a byte a pixel: what is in the picture, with the
    pointer, which is what the screen was sent */
 int gfx_snapshot( const char *path )
 {
-    static u8 head[54 + 1024], buf[GW];
-    u32 handle, done;
+    static uint8_t head[54 + 1024], buf[GW];
+    uint32_t     handle;
+    unsigned int done;
     int line, color, rc;
 
     if ( pic == NULL || sys_create( path, &handle ) != 0 ) {
@@ -925,19 +926,19 @@ int gfx_snapshot( const char *path )
     mem_set( head, 0, sizeof( head ) );
     head[0] = 'B';
     head[1] = 'M';
-    put32( head + 2, sizeof( head ) + (u32)GW * gheight );
+    put32( head + 2, sizeof( head ) + (uint32_t)GW * gheight );
     put32( head + 10, sizeof( head ) );
     put32( head + 14, 40 );
     put32( head + 18, GW );
-    put32( head + 22, (u32)gheight );
+    put32( head + 22, (uint32_t)gheight );
     head[26] = 1;
     head[28] = 8;
-    put32( head + 34, (u32)GW * gheight );
+    put32( head + 34, (uint32_t)GW * gheight );
     put32( head + 46, 256 );
     for ( color = 0; color < 16; color++ ) {
-        head[54 + color * 4] = (u8)(vga16[color][2] << 2 | vga16[color][2] >> 4);
-        head[54 + color * 4 + 1] = (u8)(vga16[color][1] << 2 | vga16[color][1] >> 4);
-        head[54 + color * 4 + 2] = (u8)(vga16[color][0] << 2 | vga16[color][0] >> 4);
+        head[54 + color * 4] = (uint8_t)(vga16[color][2] << 2 | vga16[color][2] >> 4);
+        head[54 + color * 4 + 1] = (uint8_t)(vga16[color][1] << 2 | vga16[color][1] >> 4);
+        head[54 + color * 4 + 2] = (uint8_t)(vga16[color][0] << 2 | vga16[color][0] >> 4);
     }
     rc = sys_write( handle, head, sizeof( head ), &done );
     for ( line = gheight - 1; line >= 0 && rc == 0; line-- ) {

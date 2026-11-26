@@ -43,28 +43,28 @@
  */
 #include "defrag.h"
 
-static U32LIST plan;            /* what has a place to go to, lowest first */
-static U32LIST rest;            /* what could not be given one */
-static u32  boundary = 2;       /* the first cluster past the layout */
-static u32  hint;               /* where the last look for free space ended */
-static u32  work_total, work_done;
-static u32 *tmp_src;
+static U32LIST   plan;          /* what has a place to go to, lowest first */
+static U32LIST   rest;          /* what could not be given one */
+static uint32_t  boundary = 2;  /* the first cluster past the layout */
+static uint32_t  hint;          /* where the last look for free space ended */
+static uint32_t  work_total, work_done;
+static uint32_t *tmp_src;
 
-static int is_free( u32 clus )
+static int is_free( uint32_t clus )
 {
     return fat_get( clus ) == 0;
 }
 
 /* a cluster the layout may use: not bad, and not under something that
    is never moved */
-static int usable( u32 clus )
+static int usable( uint32_t clus )
 {
     return fat_get( clus ) != vol.bad_val && !(nodes[own[clus]].flags & NF_FIXED);
 }
 
-static int in_place( u32 node, u32 target )
+static int in_place( unsigned int node, uint32_t target )
 {
-    u32 at, clus = nodes[node].first;
+    uint32_t at, clus = nodes[node].first;
 
     for ( at = 0; at < nodes[node].nclus; at++, clus = fat_get( clus ) ) {
         if ( clus != target + at ) {
@@ -74,9 +74,9 @@ static int in_place( u32 node, u32 target )
     return 1;
 }
 
-static int in_pieces( u32 node )
+static int in_pieces( unsigned int node )
 {
-    u32 at, clus = nodes[node].first;
+    uint32_t at, clus = nodes[node].first;
 
     for ( at = 1; at < nodes[node].nclus; at++ ) {
         if ( fat_get( clus ) != clus + 1 ) {
@@ -87,7 +87,7 @@ static int in_pieces( u32 node )
     return 0;
 }
 
-static void worked( u32 clusters )
+static void worked( uint32_t clusters )
 {
     work_done += clusters;
     if ( work_done > work_total ) {
@@ -97,9 +97,9 @@ static void worked( u32 clusters )
 }
 
 /* it is where it is going to stay */
-static int placed( u32 node )
+static int placed( unsigned int node )
 {
-    u32 at, clus = nodes[node].first;
+    uint32_t at, clus = nodes[node].first;
 
     if ( !(nodes[node].flags & NF_PLACED) ) {
         nodes[node].flags |= NF_PLACED;
@@ -114,7 +114,7 @@ static int placed( u32 node )
 
 /* which sort a directory gets: none in a run that only unfragments, and
    none for a directory that is itself never moved */
-static int sort_of( u32 dirno )
+static int sort_of( unsigned int dirno )
 {
     (void)dirno;
     if ( opt.method != METHOD_FULL ) {
@@ -123,7 +123,7 @@ static int sort_of( u32 dirno )
     return opt.sort;
 }
 
-static int left_alone( u32 dirno )
+static int left_alone( unsigned int dirno )
 {
     return dirno != 0 && (nodes[dirs[dirno].node].flags & NF_FIXED);
 }
@@ -138,9 +138,9 @@ static int left_alone( u32 dirno )
  * looked at first, carrying on from where the last look ended; then the
  * layout's own far end, and last the holes below.
  */
-static u32 find_free( u32 want, u32 lo, u32 hi, int whole, u32 *len )
+static uint32_t find_free( uint32_t want, uint32_t lo, uint32_t hi, int whole, uint32_t *len )
 {
-    u32 from = boundary > hi ? boundary : hi, begin[4], finish[4], clus, run, last;
+    uint32_t from = boundary > hi ? boundary : hi, begin[4], finish[4], clus, run, last;
     int pass;
 
     if ( hint < from || hint > vol.maxclus ) {
@@ -173,9 +173,9 @@ static u32 find_free( u32 want, u32 lo, u32 hi, int whole, u32 *len )
 }
 
 /* how many of the clusters from "clus" on are free, up to "most" */
-static u32 free_lead( u32 clus, u32 most )
+static uint32_t free_lead( uint32_t clus, uint32_t most )
 {
-    u32 lead;
+    uint32_t lead;
 
     for ( lead = 0; lead < most && is_free( clus + lead ); lead++ ) {
     }
@@ -189,10 +189,10 @@ static u32 free_lead( u32 clus, u32 most )
 /* "count" clusters of "node" - src[], following "before" in its chain -
    into free space outside [lo, hi): as many of them as one free run
    takes.  *moved = 0 when there is nowhere. */
-static int evict( u32 node, u32 before, const u32 *src, u32 count, u32 lo, u32 hi, u32 *moved,
-                  u32 *where )
+static int evict( unsigned int node, uint32_t before, const uint32_t *src, uint32_t count, uint32_t lo, uint32_t hi, uint32_t *moved,
+                  uint32_t *where )
 {
-    u32 dst, len;
+    uint32_t dst, len;
     int rc;
 
     *moved = 0;
@@ -214,9 +214,10 @@ static int evict( u32 node, u32 before, const u32 *src, u32 count, u32 lo, u32 h
 /* whatever lies at "clus", which is somebody else's: the clusters from
    there on that are the same owner's and follow one another in its
    chain as they do on the drive, no further than "end" */
-static int evict_at( u32 clus, u32 end, u32 lo, u32 hi, u32 *moved )
+static int evict_at( uint32_t clus, uint32_t end, uint32_t lo, uint32_t hi, uint32_t *moved )
 {
-    u32 node = own[clus], limit = move_limit(), run, index, where;
+    unsigned int node = own[clus];
+    uint32_t     limit = move_limit(), run, index, where;
 
     for ( run = 1; run < limit && clus + run < end && own[clus + run] == node
                    && prev[clus + run] == clus + run - 1; run++ ) {
@@ -229,9 +230,9 @@ static int evict_at( u32 clus, u32 end, u32 lo, u32 hi, u32 *moved )
 
 /* every cluster of [lo, lo+count) made free.  DFE_NOFREE when there is
    nowhere to put what is there. */
-static int region_clear( u32 lo, u32 count )
+static int region_clear( uint32_t lo, uint32_t count )
 {
-    u32 end = lo + count, cur = lo, moved;
+    uint32_t end = lo + count, cur = lo, moved;
     int rc;
 
     while ( cur < end ) {
@@ -262,9 +263,9 @@ static int region_clear( u32 lo, u32 count )
  * just written its own idea of prev[] into; place_file() puts the links
  * back when it is done.
  */
-static void renumber( u32 *pos, u32 count, u32 idx, u32 moved, u32 where )
+static void renumber( uint32_t *pos, uint32_t count, uint32_t idx, uint32_t moved, uint32_t where )
 {
-    u32 index;
+    uint32_t index;
 
     for ( index = 0; index < moved; index++ ) {
         pos[idx + index] = where + index;
@@ -276,9 +277,9 @@ static void renumber( u32 *pos, u32 count, u32 idx, u32 moved, u32 where )
 }
 
 /* the file's own clusters number idx to idx+run-1 out of the way */
-static int evict_own( u32 node, u32 *pos, u32 count, u32 idx, u32 run, u32 lo, u32 hi, u32 *moved )
+static int evict_own( unsigned int node, uint32_t *pos, uint32_t count, uint32_t idx, uint32_t run, uint32_t lo, uint32_t hi, uint32_t *moved )
 {
-    u32 where = 0;
+    uint32_t where = 0;
     int rc;
 
     rc = evict( node, idx ? pos[idx - 1] : 0, pos + idx, run, lo, hi, moved, &where );
@@ -289,10 +290,10 @@ static int evict_own( u32 node, u32 *pos, u32 count, u32 idx, u32 run, u32 lo, u
 }
 
 /* as much of [want, want+most) made free as there is room elsewhere for */
-static int make_room( u32 node, u32 *pos, u32 count, u32 target, u32 at, u32 most )
+static int make_room( unsigned int node, uint32_t *pos, uint32_t count, uint32_t target, uint32_t at, uint32_t most )
 {
-    u32 want = target + at, stop = want + most, end = target + count, limit = move_limit();
-    u32 cur = want, idx, run, moved;
+    uint32_t want = target + at, stop = want + most, end = target + count, limit = move_limit();
+    uint32_t cur = want, idx, run, moved;
     int rc;
 
     while ( cur < stop ) {
@@ -324,9 +325,9 @@ static int make_room( u32 node, u32 *pos, u32 count, u32 target, u32 at, u32 mos
 
 /* Nothing is free outside the file's place at all: the one cluster that
    is wanted is cleared into any free cluster there is. */
-static int last_resort( u32 node, u32 *pos, u32 count, u32 want )
+static int last_resort( unsigned int node, uint32_t *pos, uint32_t count, uint32_t want )
 {
-    u32 dst, len, idx;
+    uint32_t dst, len, idx;
     int rc;
 
     dst = find_free( 1, want, want + 1, 0, &len );
@@ -348,16 +349,16 @@ static int last_resort( u32 node, u32 *pos, u32 count, u32 want )
     return move_run( own[want], prev[want], tmp_src, 1, dst );
 }
 
-static int place_file( u32 node, u32 target )
+static int place_file( unsigned int node, uint32_t target )
 {
-    u32 count = nodes[node].nclus, limit = move_limit(), slide = (limit + 1) / 2;
-    u32 *pos, at, clus, want, most, room, cur, index;
+    uint32_t count = nodes[node].nclus, limit = move_limit(), slide = (limit + 1) / 2;
+    uint32_t *pos, at, clus, want, most, room, cur, index;
     int rc = 0;
 
     if ( in_place( node, target ) ) {
         return placed( node );
     }
-    pos = (u32 *)xalloc( count * sizeof( u32 ) );
+    pos = (uint32_t *)xalloc( count * sizeof( uint32_t ) );
     for ( at = 0, clus = nodes[node].first; at < count; at++, clus = fat_get( clus ) ) {
         pos[at] = clus;
     }
@@ -428,15 +429,16 @@ static int place_file( u32 node, u32 target )
    arranged on the spot, and after that its clusters can be moved a
    piece at a time like a file's, because what is in memory is what is
    on the disk again. */
-static int settle( u32 dirno )
+static int settle( unsigned int dirno )
 {
     return dir_arrange( dirno, sort_of( dirno ) ) ? dir_rewrite( dirno ) : 0;
 }
 
-static int place_dir( u32 dirno, u32 target )
+static int place_dir( unsigned int dirno, uint32_t target )
 {
-    u32 node = dirs[dirno].node, count = nodes[node].nclus, end = target + count;
-    u32 at, clus, dst, len;
+    unsigned int node = dirs[dirno].node;
+    uint32_t     count = nodes[node].nclus, end = target + count;
+    uint32_t at, clus, dst, len;
     int rc, sort = sort_of( dirno ), inside = 0;
 
     if ( in_place( node, target ) ) {
@@ -493,10 +495,10 @@ static int place_dir( u32 dirno, u32 target )
 /* the layout of a full optimization                                   */
 /* ------------------------------------------------------------------ */
 
-static u32 *by_size;            /* seq's indexes, smallest first */
-static u32  by_count;
+static unsigned int *by_size;   /* seq's indexes, smallest first */
+static unsigned int  by_count;
 
-static void assign( u32 node, u32 target )
+static void assign( unsigned int node, uint32_t target )
 {
     nodes[node].target = target;
     list_add( &plan, node );
@@ -504,9 +506,9 @@ static void assign( u32 node, u32 target )
 
 /* the largest thing still without a place that is no more than "room"
    clusters, or N_NONE */
-static u32 pick_fit( const U32LIST *seq, u32 room )
+static unsigned int pick_fit( const U32LIST *seq, uint32_t room )
 {
-    u32 lo = 0, hi = by_count, mid;
+    unsigned int lo = 0, hi = by_count, mid;
 
     while ( lo < hi ) {                     /* the first that is too big */
         mid = (lo + hi) / 2;
@@ -527,11 +529,11 @@ static u32 pick_fit( const U32LIST *seq, u32 room )
 
 static void sort_by_size( const U32LIST *seq )
 {
-    u32 *spare, *swap, width, lo, mid, hi, left, right, out, index;
+    unsigned int *spare, *swap, width, lo, mid, hi, left, right, out, index;
 
     by_count = seq->count;
-    by_size = (u32 *)xalloc( (by_count ? by_count : 1) * sizeof( u32 ) );
-    spare = (u32 *)xalloc( (by_count ? by_count : 1) * sizeof( u32 ) );
+    by_size = (unsigned int *)xalloc( (by_count ? by_count : 1) * sizeof( unsigned int ) );
+    spare = (unsigned int *)xalloc( (by_count ? by_count : 1) * sizeof( unsigned int ) );
     for ( index = 0; index < by_count; index++ ) {
         by_size[index] = index;
     }
@@ -560,7 +562,8 @@ static void sort_by_size( const U32LIST *seq )
 static void plan_full( void )
 {
     U32LIST seq, kids, walk, files;
-    u32 at, dirno, index, node, cursor = 2, need, run, fill;
+    unsigned int at, dirno, index, node, fill;
+    uint32_t     cursor = 2, need, run;
 
     mem_set( &seq, 0, sizeof( seq ) );
     mem_set( &kids, 0, sizeof( kids ) );
@@ -651,9 +654,9 @@ static void plan_full( void )
 
 /* the lowest "count" clusters in a row that are free or the node's own;
    0 = there are none */
-static u32 region_for( u32 node, u32 count )
+static uint32_t region_for( unsigned int node, uint32_t count )
 {
-    u32 start = 2, clus;
+    uint32_t start = 2, clus;
 
     while ( start + count <= vol.maxclus + 1 ) {
         for ( clus = start + count; clus > start; clus-- ) {
@@ -670,9 +673,9 @@ static u32 region_for( u32 node, u32 count )
 }
 
 /* a file that is in pieces, into one; 0 as well when there is nowhere */
-static int unfragment( u32 node )
+static int unfragment( unsigned int node )
 {
-    u32 target = region_for( node, nodes[node].nclus );
+    uint32_t target = region_for( node, nodes[node].nclus );
 
     if ( target == 0 ) {
         worked( nodes[node].nclus );
@@ -681,9 +684,10 @@ static int unfragment( u32 node )
     return place_file( node, target );
 }
 
-static int unfragment_dir( u32 dirno )
+static int unfragment_dir( unsigned int dirno )
 {
-    u32 node = dirs[dirno].node, count = nodes[node].nclus, dst, len;
+    unsigned int node = dirs[dirno].node;
+    uint32_t     count = nodes[node].nclus, dst, len;
     int rc;
 
     if ( !in_pieces( node ) ) {
@@ -703,7 +707,7 @@ static int unfragment_dir( u32 dirno )
 /* the fragmented files, largest first */
 static void plan_unfrag( void )
 {
-    u32 node, index, hole, held;
+    unsigned int node, index, hole, held;
 
     plan.count = rest.count = 0;
     boundary = 2;
@@ -729,7 +733,7 @@ static void plan_unfrag( void )
 /* 1 = the method that is set would change something on this drive */
 int optimize_needed( void )
 {
-    u32 dirno, index;
+    unsigned int dirno, index;
 
     for ( dirno = 0; dirno < ndirs; dirno++ ) {
         if ( !left_alone( dirno ) && dir_check( dirno, sort_of( dirno ) ) ) {
@@ -755,7 +759,7 @@ int optimize_needed( void )
 
 static int run_full( void )
 {
-    u32 index, node;
+    unsigned int index, node;
     int rc = 0;
 
     plan_full();
@@ -805,7 +809,7 @@ static int run_full( void )
 
 static int run_unfrag( void )
 {
-    u32 index, dirno, left, before = 0;
+    unsigned int index, dirno, left, before = 0;
     int rc = 0, pass;
 
     plan_unfrag();
@@ -856,7 +860,7 @@ static int run_unfrag( void )
 
 int optimize( void )
 {
-    u32 clus;
+    uint32_t clus;
     int rc;
 
     if ( dst.free == 0 ) {
@@ -864,7 +868,7 @@ int optimize( void )
     }
     hint = 0;
     tree_unplace();
-    tmp_src = (u32 *)xalloc( move_limit() * sizeof( u32 ) );
+    tmp_src = (uint32_t *)xalloc( move_limit() * sizeof( uint32_t ) );
     rc = opt.method == METHOD_FULL ? run_full() : run_unfrag();
     xfree( tmp_src );
     tmp_src = NULL;

@@ -33,10 +33,10 @@
 
 /* the identification header */
 typedef struct {
-    u32  rate;
-    u32  channels;
-    int  log0, log1;            /* the two block sizes as powers of two */
-    s32  br_max, br_nom, br_min;
+    uint32_t rate;
+    uint32_t channels;
+    int      log0, log1;        /* the two block sizes as powers of two */
+    int32_t  br_max, br_nom, br_min;
 } VBID;
 
 /* what the player asked for, as the decoder takes it */
@@ -50,72 +50,72 @@ typedef struct {
 typedef struct VB VB;
 
 /* vbdec.c */
-int  vb_ident( VBID *id, const u8 *pkt, u32 len );         /* DE_OK, DE_FORMAT, DE_UNSUPPORTED */
-void vb_comment( const u8 *pkt, u32 len, DECINFO *info );
-int  vb_open( VB **vbp, const VBID *id, const u8 *pkt, u32 len, const VBOPT *opt );
-void vb_close( VB *vb );
-u32  vb_block( const VB *vb, const u8 *pkt, u32 len );    /* its block size, 0: not audio */
-u32  vb_decode( VB *vb, const u8 *pkt, u32 len, const s16 **pcm );    /* frames finished */
-void vb_restart( VB *vb );                                /* the next packet starts afresh */
+int          vb_ident( VBID *id, const uint8_t *pkt, unsigned int len ); /* DE_OK, DE_FORMAT, DE_UNSUPPORTED */
+void         vb_comment( const uint8_t *pkt, unsigned int len, DECINFO *info );
+int          vb_open( VB **vbp, const VBID *id, const uint8_t *pkt, unsigned int len, const VBOPT *opt );
+void         vb_close( VB *vb );
+unsigned int vb_block( const VB *vb, const uint8_t *pkt, unsigned int len );  /* its block size, 0: not audio */
+unsigned int vb_decode( VB *vb, const uint8_t *pkt, unsigned int len, const int16_t **pcm ); /* frames finished */
+void         vb_restart( VB *vb );                                            /* the next packet starts afresh */
 
 /* ------------------------------------------------------------------ */
 /* the inverse transform (vbmdct.c)                                    */
 /* ------------------------------------------------------------------ */
 /* one transform size: n samples out of n/2 lines */
 typedef struct {
-    int  log2n;
-    u32  n;
-    s32 *tw;                    /* n/4 pairs: cos and sin of 2 pi (m + 1/8) / n, Q30 */
-    s16 *tw16;                  /* the same, Q14 */
-    u16 *rev;                   /* n/4: where the FFT leaves output m */
-    s32 *win;                   /* n/2: the rising half of the window, Q31 */
-    s16 *win16;                 /* the same, Q15 */
-    s32 *eqtw;                  /* n/4 fours: the twiddles with the equalizer in them, Q28 */
+    int           log2n;
+    unsigned int  n;
+    int32_t      *tw;           /* n/4 pairs: cos and sin of 2 pi (m + 1/8) / n, Q30 */
+    int16_t      *tw16;         /* the same, Q14 */
+    uint16_t     *rev;          /* n/4: where the FFT leaves output m */
+    int32_t      *win;          /* n/2: the rising half of the window, Q31 */
+    int16_t      *win16;        /* the same, Q15 */
+    int32_t      *eqtw;         /* n/4 fours: the twiddles with the equalizer in them, Q28 */
 } VBMDCT;
 
 /* the FFT's twiddles, for the largest size: e^(j 2 pi t / K) for t < 3K/4 */
 typedef struct {
-    int  log2k;
-    s32 *tw;                    /* pairs, Q30 */
-    s16 *tw16;                  /* the same, Q14 */
+    int      log2k;
+    int32_t *tw;                /* pairs, Q30 */
+    int16_t *tw16;              /* the same, Q14 */
 } VBFFT;
 
-void vb_sincos( u32 phase, s32 *cosv, s32 *sinv );        /* phase: 2^32 to the turn; Q30 */
-int  vb_mdct_init( VBMDCT *md, int log2n );               /* 0, or -1 out of memory */
+void vb_sincos( uint32_t phase, int32_t *cosv, int32_t *sinv );  /* phase: 2^32 to the turn; Q30 */
+int  vb_mdct_init( VBMDCT *md, int log2n );                      /* 0, or -1 out of memory */
 void vb_mdct_free( VBMDCT *md );
 int  vb_fft_init( VBFFT *fft, int log2k );
 void vb_fft_free( VBFFT *fft );
-int  vb_mdct_eq( VBMDCT *md, const u32 *gain );          /* gain: n/2 lines, Q16; -1 no memory */
+int  vb_mdct_eq( VBMDCT *md, const uint32_t *gain );     /* gain: n/2 lines, Q16; -1 no memory */
 
 /* u (n/2 values) from the spectrum spec (n/2 lines); work holds n/2 */
-void vb_imdct( const VBMDCT *md, const VBFFT *fft, const s32 *spec, s32 *work, s32 *u,
+void vb_imdct( const VBMDCT *md, const VBFFT *fft, const int32_t *spec, int32_t *work, int32_t *u,
                int fast, int use_eq );
 
 /* The frames from the middle of the previous block to the middle of
-   this one, into pcm with "stride" s16s between frames.  prev and cur
+   this one, into pcm with "stride" samples between frames.  prev and cur
    are two blocks' u; win is the window of the smaller block.
    -> pn/4 + n/4 */
-u32  vb_lap( s16 *pcm, int stride, const s32 *prev, u32 pn, const s32 *cur, u32 n,
-             const VBMDCT *small, int fast );
+unsigned int vb_lap( int16_t *pcm, int stride, const int32_t *prev, unsigned int pn, const int32_t *cur,
+                     unsigned int n, const VBMDCT *small, int fast );
 
 /* ------------------------------------------------------------------ */
 /* the tables (vbtab.c)                                                */
 /* ------------------------------------------------------------------ */
-extern const u32 vb_floor1_mant[256];
-extern const u8  vb_floor1_exp[256];
-extern const s32 vb_cos_coarse[256];
-extern const s32 vb_cos_fine[256];
-extern const s32 vb_sin_fine[256];
-extern const u32 vb_atan_turn[31];
-extern const u32 vb_exp2_tab[257];
-extern const u32 vb_log2_tab[257];
-extern const u8  vb_rev8[256];
+extern const uint32_t vb_floor1_mant[256];
+extern const uint8_t  vb_floor1_exp[256];
+extern const int32_t  vb_cos_coarse[256];
+extern const int32_t  vb_cos_fine[256];
+extern const int32_t  vb_sin_fine[256];
+extern const uint32_t vb_atan_turn[31];
+extern const uint32_t vb_exp2_tab[257];
+extern const uint32_t vb_log2_tab[257];
+extern const uint8_t  vb_rev8[256];
 
 /* ------------------------------------------------------------------ */
 /* products the decoder needs besides FIX.H's                          */
 /* ------------------------------------------------------------------ */
 /* (a * b) >> 30, rounded */
-s32 vb_mul30r( s32 a, s32 b );
+int32_t vb_mul30r( int32_t a, int32_t b );
 #pragma aux vb_mul30r = \
     "imul edx" \
     "add eax,20000000h" \
@@ -124,7 +124,7 @@ s32 vb_mul30r( s32 a, s32 b );
     parm [eax] [edx] value [eax] modify exact [eax edx] nomemory;
 
 /* (a * b) >> 14, rounded: the fast path's twiddle (b) times a sample */
-s32 vb_mul14r( s32 a, s32 b );
+int32_t vb_mul14r( int32_t a, int32_t b );
 #pragma aux vb_mul14r = \
     "imul edx" \
     "add eax,2000h" \
@@ -133,7 +133,7 @@ s32 vb_mul14r( s32 a, s32 b );
     parm [eax] [edx] value [eax] modify exact [eax edx] nomemory;
 
 /* (a * b) >> 28, rounded */
-s32 vb_mul28r( s32 a, s32 b );
+int32_t vb_mul28r( int32_t a, int32_t b );
 #pragma aux vb_mul28r = \
     "imul edx" \
     "add eax,8000000h" \
@@ -142,13 +142,13 @@ s32 vb_mul28r( s32 a, s32 b );
     parm [eax] [edx] value [eax] modify exact [eax edx] nomemory;
 
 /* (a * b) >> 32, unsigned */
-u32 vb_umulhi( u32 a, u32 b );
+uint32_t vb_umulhi( uint32_t a, uint32_t b );
 #pragma aux vb_umulhi = \
     "mul edx" \
     parm [eax] [edx] value [edx] modify exact [eax edx] nomemory;
 
 /* a * b as 64 bits: the low half returned, the high half in *hi */
-u32 vb_mul64( s32 a, s32 b, s32 *hi );
+uint32_t vb_mul64( int32_t a, int32_t b, int32_t *hi );
 #pragma aux vb_mul64 = \
     "imul edx" \
     "mov [ebx],edx" \

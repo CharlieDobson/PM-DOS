@@ -17,11 +17,12 @@
 #include <conio.h>
 #include <dos.h>
 #include <i86.h>
+#include <stdint.h>
 
 static void ( __interrupt __far *old08 )( void );
 static unsigned nth;
 
-static void putHex( unsigned v )
+static void putHex( uint16_t v )
 {
     static const char digits[] = "0123456789ABCDEF";
     outp( 0xE9, digits[( v >> 12 ) & 15] );
@@ -44,7 +45,7 @@ static void __interrupt __far spy08( union INTPACK r )
         outp( 0xE9, ' ' ); outp( 0xE9, 'd' ); outp( 0xE9, 's' ); outp( 0xE9, '=' ); putHex( r.x.ds );
         {
             DWORD base = GetSelectorBase( r.x.cs );     /* CS's linear address, to name the module */
-            outp( 0xE9, ' ' ); outp( 0xE9, '@' ); putHex( (unsigned)( base >> 16 ) ); putHex( (unsigned)base );
+            outp( 0xE9, ' ' ); outp( 0xE9, '@' ); putHex( (uint16_t)( base >> 16 ) ); putHex( (uint16_t)base );
         }
         outp( 0xE9, '\n' );
     }

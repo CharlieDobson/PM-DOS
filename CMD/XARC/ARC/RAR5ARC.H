@@ -22,18 +22,18 @@
 #include "arccryp.h"    /* AC_MAX_PW */
 
 typedef struct {
-    char   name[SZ_MAX_NAME];
-    UInt32 size;
-    UInt32 packed;
-    UInt32 crc;
-    int    hasCrc;
-    int    methodCode;          /* 0 = stored, 1..5 = compression level      */
-    UInt32 mtimeLo, mtimeHi;    /* last-modified FILETIME (valid if hasMtime) */
-    int    hasMtime;
-    UInt32 attrib;              /* low byte = DOS attribute bits             */
-    int    dosAttr;             /* 1 = made on Windows; on Unix attrib is a
+    char     name[SZ_MAX_NAME];
+    uint32_t size;
+    uint32_t packed;
+    uint32_t crc;
+    int      hasCrc;
+    int      methodCode;        /* 0 = stored, 1..5 = compression level      */
+    uint32_t mtimeLo, mtimeHi;  /* last-modified FILETIME (valid if hasMtime) */
+    int      hasMtime;
+    uint32_t attrib;            /* low byte = DOS attribute bits             */
+    int      dosAttr;           /* 1 = made on Windows; on Unix attrib is a
                                    file mode instead                         */
-    int    isDir;
+    int      isDir;
 } Rar5Entry;
 
 typedef struct Rar5Archive Rar5Archive;
@@ -49,7 +49,7 @@ int  Rar5OpenPw( const char *path, const char *pw, Rar5Archive **out );
 int  Rar5NumEntries( Rar5Archive *r );
 
 /* Peak bytes one extraction needs; see ArcMemNeeded in ARCFILE.H. */
-UInt32 Rar5MemNeeded( Rar5Archive *r );
+uint32_t Rar5MemNeeded( Rar5Archive *r );
 
 /* Volumes in the set: 1 for an ordinary archive, N for a .partN.rar set. */
 int  Rar5VolumeCount( Rar5Archive *r );
@@ -62,7 +62,7 @@ void Rar5Close( Rar5Archive *r );
 
 /* Delete entries - ArcDeleteItems in ARCFILE.H; the arguments are set out
  * in ARCFILE.C.  The blocks kept are copied across as they are. */
-int  Rar5DeleteWrite( Rar5Archive *r, const Byte *del, FILE *out,
+int  Rar5DeleteWrite( Rar5Archive *r, const uint8_t *del, FILE *out,
                       ArcCompProgress prog, void *user, const char **why );
 
 /*---- Encryption ----------------------------------------------------------- *

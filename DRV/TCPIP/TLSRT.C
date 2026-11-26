@@ -14,23 +14,22 @@
  */
 #define ND_DRIVER
 #include "ndrv.h"
-
-typedef unsigned u_size;
+#include <stddef.h>
 
 /* ---- memory and string primitives (as PMCLIB, for the TLS core) ---- */
 
-void *memcpy( void *to, const void *from, u_size len )
+void *memcpy( void *to, const void *from, size_t len )
 {
-    u8 *dst = (u8 *)to;
-    const u8 *src = (const u8 *)from;
+    uint8_t *dst = (uint8_t *)to;
+    const uint8_t *src = (const uint8_t *)from;
     while ( len-- ) *dst++ = *src++;
     return to;
 }
 
-void *memmove( void *to, const void *from, u_size len )
+void *memmove( void *to, const void *from, size_t len )
 {
-    u8 *dst = (u8 *)to;
-    const u8 *src = (const u8 *)from;
+    uint8_t *dst = (uint8_t *)to;
+    const uint8_t *src = (const uint8_t *)from;
     if ( dst < src ) {
         while ( len-- ) *dst++ = *src++;
     } else {
@@ -40,16 +39,16 @@ void *memmove( void *to, const void *from, u_size len )
     return to;
 }
 
-void *memset( void *to, int value, u_size len )
+void *memset( void *to, int value, size_t len )
 {
-    u8 *dst = (u8 *)to;
-    while ( len-- ) *dst++ = (u8)value;
+    uint8_t *dst = (uint8_t *)to;
+    while ( len-- ) *dst++ = (uint8_t)value;
     return to;
 }
 
-int memcmp( const void *aptr, const void *bptr, u_size len )
+int memcmp( const void *aptr, const void *bptr, size_t len )
 {
-    const u8 *aa = (const u8 *)aptr, *bb = (const u8 *)bptr;
+    const uint8_t *aa = (const uint8_t *)aptr, *bb = (const uint8_t *)bptr;
     while ( len-- ) {
         if ( *aa != *bb ) return (int)*aa - (int)*bb;
         aa++; bb++;
@@ -57,9 +56,9 @@ int memcmp( const void *aptr, const void *bptr, u_size len )
     return 0;
 }
 
-u_size strlen( const char *s )
+size_t strlen( const char *s )
 {
-    u_size n = 0;
+    size_t n = 0;
     while ( s[n] ) n++;
     return n;
 }
@@ -67,12 +66,12 @@ u_size strlen( const char *s )
 int strcmp( const char *a, const char *b )
 {
     while ( *a && *a == *b ) { a++; b++; }
-    return (int)(u8)*a - (int)(u8)*b;
+    return (int)(unsigned char)*a - (int)(unsigned char)*b;
 }
 
-char *strncpy( char *to, const char *from, u_size max )
+char *strncpy( char *to, const char *from, size_t max )
 {
-    u_size i = 0;
+    size_t i = 0;
     while ( i < max && from[i] ) { to[i] = from[i]; i++; }
     while ( i < max ) to[i++] = 0;
     return to;
@@ -87,28 +86,28 @@ char *strchr( const char *s, int ch )
 /* ---- the heap: one arena block, grabbed once, carved first fit ---- */
 
 typedef struct hblk {
-    u_size size;                /* payload bytes */
-    u_size used;
+    size_t size;                /* payload bytes */
+    size_t used;
     struct hblk *next;
 } HBLK;
 
-#define HDR ( ( u_size )sizeof( HBLK ) )
+#define HDR ( ( size_t )sizeof( HBLK ) )
 
-static u8   *pool;
-static HBLK *head;
+static uint8_t *pool;
+static HBLK    *head;
 
 /* Grab the pool from the kernel arena.  Called at nd_init, before WfW
    loads, so the (large) block is there; tries a few sizes down.  Returns
    the bytes grabbed, or 0 if even the smallest would not fit. */
-u32 tlsrt_init( u32 want )
+unsigned int tlsrt_init( unsigned int want )
 {
-    static const u32 fallbacks[] = { 0x40000UL, 0x30000UL, 0x20000UL, 0 };
-    u32 bytes = want;
+    static const unsigned int fallbacks[] = { 0x40000UL, 0x30000UL, 0x20000UL, 0 };
+    unsigned int bytes = want;
     int i = 0;
 
-    if ( pool ) return (u32)( head->size + HDR );
+    if ( pool ) return (unsigned int)( head->size + HDR );
     for ( ;; ) {
-        pool = (u8 *)nds_alloc( bytes );
+        pool = (uint8_t *)nds_alloc( bytes );
         if ( pool ) break;
         bytes = fallbacks[i++];
         if ( bytes == 0 ) return 0;
@@ -120,7 +119,7 @@ u32 tlsrt_init( u32 want )
     return bytes;
 }
 
-void *malloc( u_size want )
+void *malloc( size_t want )
 {
     HBLK *b;
 
@@ -130,7 +129,7 @@ void *malloc( u_size want )
     for ( b = head; b; b = b->next ) {
         if ( b->used || b->size < want ) continue;
         if ( b->size >= want + HDR + 8 ) {          /* split the tail off */
-            HBLK *rest = (HBLK *)( (u8 *)b + HDR + want );
+            HBLK *rest = (HBLK *)( (uint8_t *)b + HDR + want );
             rest->size = b->size - want - HDR;
             rest->used = 0;
             rest->next = b->next;
@@ -138,7 +137,7 @@ void *malloc( u_size want )
             b->next = rest;
         }
         b->used = 1;
-        return (u8 *)b + HDR;
+        return (uint8_t *)b + HDR;
     }
     return (void *)0;
 }
@@ -160,19 +159,19 @@ void free( void *ptr )
 {
     HBLK *b;
     if ( ptr == (void *)0 ) return;
-    b = (HBLK *)( (u8 *)ptr - HDR );
+    b = (HBLK *)( (uint8_t *)ptr - HDR );
     b->used = 0;
     coalesce();
 }
 
-void *realloc( void *ptr, u_size want )
+void *realloc( void *ptr, size_t want )
 {
     HBLK *b;
     void *nu;
-    u_size old;
+    size_t old;
 
     if ( ptr == (void *)0 ) return malloc( want );
-    b = (HBLK *)( (u8 *)ptr - HDR );
+    b = (HBLK *)( (uint8_t *)ptr - HDR );
     old = b->size;
     if ( old >= want ) return ptr;      /* the block already holds enough */
     nu = malloc( want );

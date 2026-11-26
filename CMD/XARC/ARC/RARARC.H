@@ -19,17 +19,17 @@
 #include "szarc.h"      /* SzProgress + shared SZ_ERR_* result codes */
 
 typedef struct {
-    char   name[SZ_MAX_NAME];   /* archive-relative path (back-slashes)     */
-    UInt32 size;                /* uncompressed size                        */
-    UInt32 packed;              /* compressed size                          */
-    UInt32 crc;                 /* expected CRC-32                          */
-    int    methodCode;          /* RAR method byte (0x30 = stored)          */
-    int    unpVer;              /* unpack version (29/36 = RAR3 "v3")       */
-    UInt16 modDate, modTime;    /* MS-DOS packed modification date/time     */
-    UInt32 attrib;              /* file attributes (low byte = DOS bits)    */
-    int    dosAttr;             /* 1 = made on DOS, OS/2 or Windows; on Unix
-                                   attrib is a file mode instead            */
-    int    isDir;               /* directory entry                          */
+    char     name[SZ_MAX_NAME];  /* archive-relative path (back-slashes)    */
+    uint32_t size;               /* uncompressed size                       */
+    uint32_t packed;             /* compressed size                         */
+    uint32_t crc;                /* expected CRC-32                         */
+    int      methodCode;         /* RAR method byte (0x30 = stored)         */
+    int      unpVer;             /* unpack version (29/36 = RAR3 "v3")      */
+    uint16_t modDate, modTime;   /* MS-DOS packed modification date/time    */
+    uint32_t attrib;             /* file attributes (low byte = DOS bits)   */
+    int      dosAttr;            /* 1 = made on DOS, OS/2 or Windows; on Unix
+                                    attrib is a file mode instead            */
+    int      isDir;              /* directory entry                         */
 } RarEntry;
 
 typedef struct RarArchive RarArchive;
@@ -73,13 +73,13 @@ int  RarNeedsPassword( RarArchive *r );
 const char *RarComment( RarArchive *r );
 
 /* Peak bytes one extraction needs; see ArcMemNeeded in ARCFILE.H. */
-UInt32 RarMemNeeded( RarArchive *r );
+uint32_t RarMemNeeded( RarArchive *r );
 
 void RarClose( RarArchive *r );
 
 /* Delete entries - ArcDeleteItems in ARCFILE.H; the arguments are set out
  * in ARCFILE.C.  The blocks kept are copied across as they are. */
-int  RarDeleteWrite( RarArchive *r, const Byte *del, FILE *out,
+int  RarDeleteWrite( RarArchive *r, const uint8_t *del, FILE *out,
                      ArcCompProgress prog, void *user, const char **why );
 
 #endif /* RARARC_H */

@@ -15,30 +15,30 @@
 #define STOP            80      /* a term this far below the sum ends it */
 #define DIVBITS         127     /* bits a quotient here is taken to */
 
-static const u32 k_log2_10[5] = { 0x4DAFDB4D, 0x492BF6FF, 0xCD1B8AFE, 0xD49A784B, (u32)1 };
-static const u32 k_log2_e[5]  = { 0x691D3E89, 0xBE87FED0, 0x5C17F0BB, 0xB8AA3B29, (u32)0 };
-static const u32 k_pi[5]      = { 0x80DC1CD1, 0xC4C6628B, 0x2168C234, 0xC90FDAA2, (u32)1 };
-static const u32 k_log10_2[5] = { 0x0B7C9178, 0x8F8959AC, 0xFBCFF798, 0x9A209A84, (u32)-2 };
-static const u32 k_ln_2[5]    = { 0x03F2F6AF, 0xC9E3B398, 0xD1CF79AB, 0xB17217F7, (u32)-1 };
-static const u32 k_pi_2[5]    = { 0x80DC1CD1, 0xC4C6628B, 0x2168C234, 0xC90FDAA2, (u32)0 };
-static const u32 k_2_pi[5]    = { 0xF534DDC1, 0xFC2757D1, 0x4E441529, 0xA2F9836E, (u32)-1 };
-static const u32 k_sqrt2[5]   = { 0x754ABE9F, 0x597D89B3, 0xF9DE6484, 0xB504F333, (u32)0 };
+static const uint32_t k_log2_10[5] = { 0x4DAFDB4D, 0x492BF6FF, 0xCD1B8AFE, 0xD49A784B, (uint32_t)1 };
+static const uint32_t k_log2_e[5]  = { 0x691D3E89, 0xBE87FED0, 0x5C17F0BB, 0xB8AA3B29, (uint32_t)0 };
+static const uint32_t k_pi[5]      = { 0x80DC1CD1, 0xC4C6628B, 0x2168C234, 0xC90FDAA2, (uint32_t)1 };
+static const uint32_t k_log10_2[5] = { 0x0B7C9178, 0x8F8959AC, 0xFBCFF798, 0x9A209A84, (uint32_t)-2 };
+static const uint32_t k_ln_2[5]    = { 0x03F2F6AF, 0xC9E3B398, 0xD1CF79AB, 0xB17217F7, (uint32_t)-1 };
+static const uint32_t k_pi_2[5]    = { 0x80DC1CD1, 0xC4C6628B, 0x2168C234, 0xC90FDAA2, (uint32_t)0 };
+static const uint32_t k_2_pi[5]    = { 0xF534DDC1, 0xFC2757D1, 0x4E441529, 0xA2F9836E, (uint32_t)-1 };
+static const uint32_t k_sqrt2[5]   = { 0x754ABE9F, 0x597D89B3, 0xF9DE6484, 0xB504F333, (uint32_t)0 };
 
 /* pi/2 in three parts of 64 bits, so that q times the first is exact */
-static const u32 k_pio2_1[5]  = { 0x00000000, 0x00000000, 0x2168C234, 0xC90FDAA2, (u32)0 };
-static const u32 k_pio2_2[5]  = { 0x00000000, 0x00000000, 0x80DC1CD1, 0xC4C6628B, (u32)-64 };
-static const u32 k_pio2_3[5]  = { 0x00000000, 0x00000000, 0x299F31D0, 0xA4093822, (u32)-130 };
+static const uint32_t k_pio2_1[5]  = { 0x00000000, 0x00000000, 0x2168C234, 0xC90FDAA2, (uint32_t)0 };
+static const uint32_t k_pio2_2[5]  = { 0x00000000, 0x00000000, 0x80DC1CD1, 0xC4C6628B, (uint32_t)-64 };
+static const uint32_t k_pio2_3[5]  = { 0x00000000, 0x00000000, 0x299F31D0, 0xA4093822, (uint32_t)-130 };
 
 /* atan( k / 8 ), k = 1 to 8 */
-static const u32 k_atan[8][5] = {
-    { 0x3E888EF8, 0xC897989F, 0x617B6E32, 0xFEADD4D5, (u32)-4 },
-    { 0xF7A217E6, 0x6DC79EF5, 0x6406EB15, 0xFADBAFC9, (u32)-3 },
-    { 0xDCFE4483, 0x8AA32122, 0x26F78473, 0xB7B0CA0F, (u32)-2 },
-    { 0xBC3A8D03, 0x6FE445EC, 0x0DDA7B45, 0xED63382B, (u32)-2 },
-    { 0x65C43748, 0x5C835E16, 0xF7F59F9B, 0x8F005D5E, (u32)-1 },
-    { 0x457DAC9F, 0x19A87F2A, 0x34F70924, 0xA4BC7D19, (u32)-1 },
-    { 0x10A4443D, 0xCB2DA552, 0xC2319E73, 0xB8053E2B, (u32)-1 },
-    { 0x80DC1CD1, 0xC4C6628B, 0x2168C234, 0xC90FDAA2, (u32)-1 }
+static const uint32_t k_atan[8][5] = {
+    { 0x3E888EF8, 0xC897989F, 0x617B6E32, 0xFEADD4D5, (uint32_t)-4 },
+    { 0xF7A217E6, 0x6DC79EF5, 0x6406EB15, 0xFADBAFC9, (uint32_t)-3 },
+    { 0xDCFE4483, 0x8AA32122, 0x26F78473, 0xB7B0CA0F, (uint32_t)-2 },
+    { 0xBC3A8D03, 0x6FE445EC, 0x0DDA7B45, 0xED63382B, (uint32_t)-2 },
+    { 0x65C43748, 0x5C835E16, 0xF7F59F9B, 0x8F005D5E, (uint32_t)-1 },
+    { 0x457DAC9F, 0x19A87F2A, 0x34F70924, 0xA4BC7D19, (uint32_t)-1 },
+    { 0x10A4443D, 0xCB2DA552, 0xC2319E73, 0xB8053E2B, (uint32_t)-1 },
+    { 0x80DC1CD1, 0xC4C6628B, 0x2168C234, 0xC90FDAA2, (uint32_t)-1 }
 };
 
 /* FLDL2T, FLDL2E, FLDPI, FLDLG2, FLDLN2 - unrounded; the caller rounds
@@ -75,7 +75,7 @@ static int small( const wide *term, const wide *sum )
 static void ln_ratio( wide *res, const wide *num, const wide *den )
 {
     wide ratio, sq, power, term, sum;
-    u32 n;
+    unsigned int n;
 
     w_div( &ratio, num, den, DIVBITS );
     if ( ratio.kind == K_ZERO ) {
@@ -102,7 +102,7 @@ static void ln_ratio( wide *res, const wide *num, const wide *den )
 void fn_log2( wide *res, const wide *x )
 {
     wide mant, num, den, one, k, whole;
-    s32 ex = x->e;
+    int32_t ex = x->e;
 
     /* x = 2^ex m, m from sqrt(1/2) to sqrt(2) */
     mant = *x;
@@ -121,8 +121,8 @@ void fn_log2( wide *res, const wide *x )
     w_set( &k, k_log2_e );
     w_mul( res, res, &k );
     if ( ex != 0 ) {
-        w_int( &whole, (u32)( ex < 0 ? -ex : ex ) );
-        whole.sign = (u8)( ex < 0 );
+        w_int( &whole, (uint32_t)( ex < 0 ? -ex : ex ) );
+        whole.sign = (unsigned char)( ex < 0 );
         w_add( res, &whole, res );
     }
 }
@@ -154,7 +154,7 @@ void fn_log2p1( wide *res, const wide *x )
 void fn_exp2m1( wide *res, const wide *x )
 {
     wide arg, term, sum, two, k;
-    s32 halvings;
+    int32_t halvings;
     int n;
 
     if ( x->kind == K_ZERO ) {
@@ -191,7 +191,7 @@ void fn_exp2m1( wide *res, const wide *x )
     term = arg;
     for ( n = 2; n < 60; n++ ) {
         w_mul( &term, &term, &arg );
-        w_divs( &term, (u32)n );
+        w_divs( &term, (uint32_t)n );
         if ( small( &term, &sum ) ) {
             break;
         }
@@ -209,7 +209,7 @@ void fn_exp2m1( wide *res, const wide *x )
 static void atan_small( wide *res, const wide *u )
 {
     wide sq, power, term, sum;
-    u32 n;
+    unsigned int n;
 
     if ( u->kind == K_ZERO ) {
         *res = *u;
@@ -235,7 +235,7 @@ static void atan_small( wide *res, const wide *u )
 void fn_atan2( wide *res, const wide *y, const wide *x )
 {
     wide num, den, ratio, near8, part, one, k;
-    u32 eighths = 0;
+    unsigned int eighths = 0;
     int swap;
 
     num = *y;
@@ -299,7 +299,7 @@ void fn_atan2( wide *res, const wide *y, const wide *x )
 static void sincos_small( wide *sinv, wide *cosv, const wide *r )
 {
     wide sq, term, sum;
-    u32 n;
+    unsigned int n;
 
     w_mul( &sq, r, r );
     sq.sign = 1;
@@ -331,7 +331,7 @@ static void sincos_small( wide *sinv, wide *cosv, const wide *r )
 int fn_sincos( wide *sinv, wide *cosv, const wide *x )
 {
     wide mag, quot, red, part, prod, s, c;
-    u32 quad = 0;
+    unsigned int quad = 0;
 
     mag = *x;
     mag.sign = 0;

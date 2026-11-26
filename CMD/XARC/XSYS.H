@@ -12,18 +12,11 @@
 #ifndef XSYS_H
 #define XSYS_H
 
-/* u32 is the backend's own (ARC\SHA.H), which an "unsigned long" here
-   would collide with: both are 32 bits, but they are not one type */
-typedef unsigned char    u8;
-typedef unsigned short   u16;
-typedef unsigned int     u32;
-typedef int              s32;
-typedef unsigned __int64 u64;
-#define NST_U32_DEFINED
+#include <stdint.h>
 
 typedef struct {
-    u32 eax, ebx, ecx, edx, esi, edi;
-    u32 flags;                  /* in: bit 0 = CF before the INT */
+    uint32_t eax, ebx, ecx, edx, esi, edi;
+    uint32_t flags;             /* in: bit 0 = CF before the INT */
 } REGS;
 
 void __cdecl int21( REGS *regs );
@@ -35,33 +28,33 @@ void __cdecl crit_handler( void );
 #define AX( regs )      ((regs).eax & 0xFFFF)
 
 /* DOSINT.ASM's notes on the last critical errors (UI.C asks about them) */
-extern u32  crit_hits;
-extern u16  crit_code;          /* DI: 00h write-protected, 02h not ready... */
-extern u8   crit_drive;         /* AL: 0 = A: */
-extern u8   crit_flags;         /* AH: bit 0 a write, bit 7 not a disk */
-extern char break_hit;
+extern uint32_t crit_hits;
+extern uint16_t crit_code;      /* DI: 00h write-protected, 02h not ready... */
+extern uint8_t  crit_drive;     /* AL: 0 = A: */
+extern uint8_t  crit_flags;     /* AH: bit 0 a write, bit 7 not a disk */
+extern char     break_hit;
 
 /* INT 21h with EAX = "func" and the other registers as "regs" has them;
    0, or the error code the kernel gave (31 when it gave none) */
-int   xa_dos( REGS *regs, u32 func );
+int   xa_dos( REGS *regs, uint32_t func );
 void  xa_clear( REGS *regs );
 
 /* the program, from LIBIO.C */
-extern u8  *xa_psp;
-extern int  xa_lfn;             /* the 71h long-name calls are there */
+extern uint8_t *xa_psp;
+extern int      xa_lfn;         /* the 71h long-name calls are there */
 
 /* little-endian fields of on-disk and kernel records */
-#define RD16( p )       ((u16)(((const u8 *)(p))[0] | ((u16)((const u8 *)(p))[1] << 8)))
-#define RD32( p )       ((u32)RD16( p ) | ((u32)RD16( (const u8 *)(p) + 2 ) << 16))
+#define RD16( p )       ((uint16_t)(((const uint8_t *)(p))[0] | ((uint16_t)((const uint8_t *)(p))[1] << 8)))
+#define RD32( p )       ((uint32_t)RD16( p ) | ((uint32_t)RD16( (const uint8_t *)(p) + 2 ) << 16))
 
 /* 64-bit arithmetic without Watcom's run-time helpers, which XARC does
    not link: a 32x32 product, and a 64-bit number divided in place by a
    32-bit one, giving back the remainder */
-u64   xa_mul32( u32 lhs, u32 rhs );
-u32   xa_div64( u64 *num, u32 divisor );
-u32   xa_lo32( u64 val );
-u32   xa_hi32( u64 val );
-u64   xa_make64( u32 hi, u32 lo );
+uint64_t xa_mul32( uint32_t lhs, uint32_t rhs );
+uint32_t xa_div64( uint64_t *num, uint32_t divisor );
+uint32_t xa_lo32( uint64_t val );
+uint32_t xa_hi32( uint64_t val );
+uint64_t xa_make64( uint32_t hi, uint32_t lo );
 
 /* run before exit: put the screen back, close what the program has open */
 void  xa_on_exit( void (*fn)( void ) );

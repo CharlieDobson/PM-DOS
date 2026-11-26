@@ -41,21 +41,23 @@
 #define US_HEAD         10
 #define UF_UNREAD       0x01    /* the sector could not be read before */
 
-static u32  und_handle;
-static int  und_open;
-static int  und_drive = -1;
-static int  und_asked;          /* the question is asked once a run */
-static int  und_vol_noted;      /* this volume's 'UV' is in the file */
+static uint32_t und_handle;
+static int      und_open;
+static int      und_drive = -1;
+static int      und_asked;      /* the question is asked once a run */
+static int      und_vol_noted;  /* this volume's 'UV' is in the file */
 
 /* ------------------------------------------------------------------ */
 /* CRC-32                                                              */
 /* ------------------------------------------------------------------ */
 
-static u32 crc_table[256];
+static uint32_t crc_table[256];
 
-static u32 crc32( const u8 *data, u32 len )
+static uint32_t crc32( const uint8_t *data, unsigned int len )
 {
-    u32 crc = 0xFFFFFFFFul, index, bit, val;
+    uint32_t     crc = 0xFFFFFFFFul;
+    unsigned int index, bit;
+    uint32_t     val;
 
     if ( crc_table[1] == 0 ) {
         for ( index = 0; index < 256; index++ ) {
@@ -73,11 +75,11 @@ static u32 crc32( const u8 *data, u32 len )
 }
 
 /* a sector's CRC with the kernel's two flag bits taken out of it */
-static u32 sector_crc( u32 lba, const u8 *data, int fattype, u32 rsvd, u32 fatsz, u32 nfats,
-                       u32 bps )
+static uint32_t sector_crc( uint32_t lba, const uint8_t *data, int fattype, uint32_t rsvd, uint32_t fatsz, uint32_t nfats,
+                            uint32_t bps )
 {
-    u8 first[8];
-    u32 crc;
+    uint8_t first[8];
+    uint32_t crc;
 
     if ( fattype != 12 && lba >= rsvd && lba < rsvd + nfats * fatsz &&
          (lba - rsvd) % fatsz == 0 && bps >= 8 ) {
@@ -105,9 +107,9 @@ static void und_path( int drive, char *path )
     str_cpy( path + 3, UND_NAME );
 }
 
-static int und_put( const void *buf, u32 len )
+static int und_put( const void *buf, unsigned int len )
 {
-    u32 done;
+    unsigned int done;
 
     return sys_write( und_handle, buf, len, &done ) != 0 || done != len ? -1 : 0;
 }
@@ -120,8 +122,8 @@ int undo_active( void )
 int undo_create( int drive )
 {
     char path[20];
-    u8 head[UND_HEAD];
-    u16 date, time;
+    uint8_t head[UND_HEAD];
+    uint16_t date, time;
 
     und_path( drive, path );
     if ( sys_create( path, &und_handle ) != 0 ) {
@@ -185,10 +187,10 @@ static void und_lost( void )
     scan_quit( Q_DRIVE );
 }
 
-int undo_note( u32 lba, u32 count, const void *after )
+int undo_note( uint32_t lba, uint32_t count, const void *after )
 {
-    u8 rec[UV_LEN], *old, *sums;
-    u32 sec;
+    uint8_t rec[UV_LEN], *old, *sums;
+    uint32_t sec;
 
     if ( !und_open ) {
         return 0;
@@ -197,8 +199,8 @@ int undo_note( u32 lba, u32 count, const void *after )
         mem_set( rec, 0, sizeof( rec ) );
         rec[0] = 'U';
         rec[1] = 'V';
-        rec[2] = (u8)('A' + vol.drive);
-        rec[3] = (u8)vol.fattype;
+        rec[2] = (uint8_t)('A' + vol.drive);
+        rec[3] = (uint8_t)vol.fattype;
         WR16( rec + 4, vol.bps );
         WR32( rec + 6, vol.has_serial ? vol.serial : 0 );
         WR32( rec + 10, vol.tot_sec );
@@ -211,8 +213,8 @@ int undo_note( u32 lba, u32 count, const void *after )
         }
         und_vol_noted = 1;
     }
-    old = (u8 *)try_alloc( count * vol.bps );
-    sums = (u8 *)try_alloc( count * 5 );
+    old = (uint8_t *)try_alloc( count * vol.bps );
+    sums = (uint8_t *)try_alloc( count * 5 );
     if ( old == NULL || sums == NULL ) {
         out_of_memory();
     }
@@ -223,12 +225,12 @@ int undo_note( u32 lba, u32 count, const void *after )
             sums[sec * 5] = UF_UNREAD;
         }
         WR32( sums + sec * 5 + 1,
-              sector_crc( lba + sec, (const u8 *)after + sec * vol.bps, vol.fattype, vol.rsvd,
+              sector_crc( lba + sec, (const uint8_t *)after + sec * vol.bps, vol.fattype, vol.rsvd,
                           vol.fatsz, vol.nfats, vol.bps ) );
     }
     rec[0] = 'U';
     rec[1] = 'S';
-    rec[2] = (u8)('A' + vol.drive);
+    rec[2] = (uint8_t)('A' + vol.drive);
     rec[3] = 0;
     WR16( rec + 4, count );
     WR32( rec + 6, lba );
@@ -282,36 +284,36 @@ void undo_want( void )
 /* ------------------------------------------------------------------ */
 
 typedef struct {
-    u32 pos;                    /* where its sectors are in the file */
-    u32 lba;
-    u16 count;
-    u8  drive;                  /* 0 = A: */
-    u8  vol;                    /* which 'UV' it belongs to */
-    u8 *sums;                   /* count * 5 */
+    uint32_t pos;               /* where its sectors are in the file */
+    uint32_t lba;
+    uint16_t count;
+    uint8_t  drive;             /* 0 = A: */
+    uint8_t  vol;               /* which 'UV' it belongs to */
+    uint8_t *sums;              /* count * 5 */
 } UREC;
 
 typedef struct {
-    u8  drive, fattype;
-    u32 bps, serial, tot_sec, rsvd, fatsz, nfats;
+    uint8_t  drive, fattype;
+    uint32_t bps, serial, tot_sec, rsvd, fatsz, nfats;
 } UVOL;
 
-static UREC *urec;
-static u32   nrec, caprec;
-static UVOL  uvol[26];
-static u32   nvol;
+static UREC        *urec;
+static unsigned int nrec, caprec;
+static UVOL         uvol[26];
+static unsigned int nvol;
 
-static int und_get( void *buf, u32 len )
+static int und_get( void *buf, unsigned int len )
 {
-    u32 done;
+    unsigned int done;
 
     return sys_read( und_handle, buf, len, &done ) != 0 || done != len ? -1 : 0;
 }
 
 /* the records, read through once: -1 = that is not an Undo file */
-static int und_index( u32 size )
+static int und_index( uint32_t size )
 {
-    u8 head[UND_HEAD], rec[UV_LEN];
-    u32 pos = UND_HEAD, bps = 0, count;
+    uint8_t head[UND_HEAD], rec[UV_LEN];
+    uint32_t pos = UND_HEAD, bps = 0, count;
     UREC *grown;
 
     if ( und_get( head, UND_HEAD ) != 0 || mem_cmp( head, "PMSDUNDO", 8 ) != 0 ||
@@ -332,7 +334,7 @@ static int und_index( u32 size )
             if ( nvol == 26 || rec[2] < 'A' || rec[2] > 'Z' ) {
                 return -1;
             }
-            uvol[nvol].drive = (u8)(rec[2] - 'A');
+            uvol[nvol].drive = (uint8_t)(rec[2] - 'A');
             uvol[nvol].fattype = rec[3];
             uvol[nvol].bps = bps = RD16( rec + 4 );
             uvol[nvol].serial = RD32( rec + 6 );
@@ -370,15 +372,15 @@ static int und_index( u32 size )
             xfree( urec );
             urec = grown;
         }
-        urec[nrec].sums = (u8 *)xalloc( count * 5 );
+        urec[nrec].sums = (uint8_t *)xalloc( count * 5 );
         if ( und_get( urec[nrec].sums, count * 5 ) != 0 ) {
             break;
         }
         urec[nrec].pos = pos + US_HEAD + count * 5;
         urec[nrec].lba = RD32( rec + 6 );
-        urec[nrec].count = (u16)count;
+        urec[nrec].count = (uint16_t)count;
         urec[nrec].drive = uvol[nvol - 1].drive;
-        urec[nrec].vol = (u8)(nvol - 1);
+        urec[nrec].vol = (uint8_t)(nvol - 1);
         nrec++;
         pos += US_HEAD + count * 5 + count * bps;
     }
@@ -386,9 +388,9 @@ static int und_index( u32 size )
 }
 
 /* was this sector of this drive written again by a later record? */
-static int later_write( u32 from, u8 drive, u32 lba )
+static int later_write( unsigned int from, uint8_t drive, uint32_t lba )
 {
-    u32 index;
+    unsigned int index;
 
     for ( index = from + 1; index < nrec; index++ ) {
         if ( urec[index].drive == drive && lba >= urec[index].lba &&
@@ -400,11 +402,12 @@ static int later_write( u32 from, u8 drive, u32 lba )
 }
 
 /* every sector still holds the last thing ScanDisk wrote to it */
-static int und_unchanged( u32 which )
+static int und_unchanged( unsigned int which )
 {
     const UVOL *uv = &uvol[which];
-    u8 *sec = (u8 *)xalloc( uv->bps );
-    u32 index, off, lba;
+    uint8_t *sec = (uint8_t *)xalloc( uv->bps );
+    unsigned int index;
+    uint32_t     off, lba;
     int same = 1;
 
     for ( index = 0; index < nrec && same; index++ ) {
@@ -438,8 +441,10 @@ static int und_refuse( const char *text )
 int undo_restore( int drive )
 {
     char path[20], text[400], names[120], date[16], time[16];
-    u8 head[UND_HEAD], *buf;
-    u32 size, index, which, off;
+    uint8_t head[UND_HEAD], *buf;
+    uint32_t     size;
+    unsigned int index, which;
+    uint32_t     off;
     int bad = 0, len = 0;
 
     und_path( drive, path );
@@ -486,7 +491,7 @@ int undo_restore( int drive )
                   'A' + uvol[which].drive );
             return und_refuse( text );
         }
-        len += sfmt( names + len, sizeof( names ) - (u32)len, "%s%c:",
+        len += sfmt( names + len, sizeof( names ) - (unsigned int)len, "%s%c:",
                      which == 0 ? "" : which + 1 == nvol ? " and " : ", ",
                      'A' + uvol[which].drive );
     }
@@ -507,9 +512,9 @@ int undo_restore( int drive )
     for ( index = nrec; index-- > 0; ) {
         const UVOL *uv = &uvol[urec[index].vol];
 
-        buf = (u8 *)xalloc( (u32)urec[index].count * uv->bps );
+        buf = (uint8_t *)xalloc( (uint32_t)urec[index].count * uv->bps );
         if ( sys_seek( und_handle, urec[index].pos ) != 0 ||
-             und_get( buf, (u32)urec[index].count * uv->bps ) != 0 ) {
+             und_get( buf, (uint32_t)urec[index].count * uv->bps ) != 0 ) {
             bad = 1;
         } else {
             for ( off = 0; off < urec[index].count; off++ ) {

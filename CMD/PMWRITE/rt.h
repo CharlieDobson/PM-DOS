@@ -12,36 +12,36 @@
 
 #include "types.h"
 
-void  mem_set( void *dst, int val, u32 len );
-void  mem_cpy( void *dst, const void *src, u32 len );
+void  mem_set( void *dst, int val, unsigned int len );
+void  mem_cpy( void *dst, const void *src, unsigned int len );
 
-u32   str_len( const char *str );
-char *str_cpy( char *dst, const char *src );
-int   str_cpyn( char *dst, const char *src, u32 max );    /* 0 = it did not fit */
-int   str_catn( char *dst, const char *src, u32 max );    /* 0 = it did not fit */
-void  str_cpyt( char *dst, const char *src, u32 max );    /* what fits, and ended */
-int   str_icmp( const char *lhs, const char *rhs );
-int   str_nicmp( const char *lhs, const char *rhs, u32 len );
-int   ch_upper( int ch );
-int   ch_lower( int ch );
-char *str_rchr( const char *str, int ch );
-char *str_chr( const char *str, int ch );
-int   str_cmp( const char *lhs, const char *rhs );
-int   str_ncmp( const char *lhs, const char *rhs, u32 len );
-int   mem_cmp( const void *lhs, const void *rhs, u32 len );
-u32   dec_parse( const char *str, int *ok );  /* digits only; ok = 0 if none */
+unsigned int str_len( const char *str );
+char        *str_cpy( char *dst, const char *src );
+int          str_cpyn( char *dst, const char *src, unsigned int max );  /* 0 = it did not fit */
+int          str_catn( char *dst, const char *src, unsigned int max );  /* 0 = it did not fit */
+void         str_cpyt( char *dst, const char *src, unsigned int max );  /* what fits, and ended */
+int          str_icmp( const char *lhs, const char *rhs );
+int          str_nicmp( const char *lhs, const char *rhs, unsigned int len );
+int          ch_upper( int ch );
+int          ch_lower( int ch );
+char        *str_rchr( const char *str, int ch );
+char        *str_chr( const char *str, int ch );
+int          str_cmp( const char *lhs, const char *rhs );
+int          str_ncmp( const char *lhs, const char *rhs, unsigned int len );
+int          mem_cmp( const void *lhs, const void *rhs, unsigned int len );
+unsigned int dec_parse( const char *str, int *ok ); /* digits only; ok = 0 if none */
 
 /* "needle" in "len" bytes at "hay": where, or -1.  Letters in either
    case for mem_ifind. */
-int   mem_ifind( const u8 *hay, u32 len, const char *needle );
-int   mem_find( const u8 *hay, u32 len, const char *needle );
+int   mem_ifind( const uint8_t *hay, unsigned int len, const char *needle );
+int   mem_find( const uint8_t *hay, unsigned int len, const char *needle );
 
-void *try_alloc( u32 size );     /* NULL when out of memory            */
-void *xalloc( u32 size );        /* never returns NULL (exits instead) */
-void  xfree( void *ptr );
-u32   heap_in_use( void );       /* bytes handed out and not given back */
-void *try_realloc( void *ptr, u32 size );   /* NULL, and ptr kept, if there is no room */
-u32   mem_size( void *ptr );     /* what a block can hold */
+void        *try_alloc( unsigned int size );  /* NULL when out of memory       */
+void        *xalloc( unsigned int size );     /* never returns NULL (exits instead) */
+void         xfree( void *ptr );
+unsigned int heap_in_use( void );             /* bytes handed out and not given back */
+void        *try_realloc( void *ptr, unsigned int size ); /* NULL, and ptr kept, if there is no room */
+unsigned int mem_size( void *ptr );           /* what a block can hold */
 
 /*
  * A POOL is memory with one lifetime: everything a page needs is taken
@@ -52,16 +52,16 @@ u32   mem_size( void *ptr );     /* what a block can hold */
  */
 typedef struct POOL POOL;
 POOL *pool_new( void );
-void *pool_alloc( POOL *pool, u32 size );       /* zeroed */
-void *pool_big( POOL *pool, u32 size );         /* zeroed */
-void *pool_try_big( POOL *pool, u32 size );     /* NULL if there is none */
+void *pool_alloc( POOL *pool, unsigned int size );    /* zeroed */
+void *pool_big( POOL *pool, unsigned int size );      /* zeroed */
+void *pool_try_big( POOL *pool, unsigned int size );  /* NULL if there is none */
 void  pool_unbig( void *ptr );
 void  pool_free( POOL *pool );
-void  pool_reset( POOL *pool );                 /* empty, and ready to be filled again */
+void  pool_reset( POOL *pool );                       /* empty, and ready to be filled again */
 char *pool_str( POOL *pool, const char *str );
 
 /* decimal, right-aligned in at least "width" characters */
-char *fmt_dec( u32 val, int width, char *buf );
+char *fmt_dec( unsigned int val, int width, char *buf );
 
 /*
  * sfmt - printf into "buf", never more than "max" bytes with the NUL.
@@ -76,8 +76,8 @@ char *fmt_dec( u32 val, int width, char *buf );
  *
  * Returns the length written.
  */
-int   __cdecl sfmt( char *buf, u32 max, const char *fmt, ... );
-int   vfmt( char *buf, u32 max, const char *fmt, char *args );
+int   __cdecl sfmt( char *buf, unsigned int max, const char *fmt, ... );
+int   vfmt( char *buf, unsigned int max, const char *fmt, char *args );
 void  fmt_group_set( int ch );
 
 /* supplied by the program.  mem_reclaim empties a cache and returns 1,
@@ -89,7 +89,7 @@ void  out_of_memory( void );
 /* JMP.ASM: setjmp and longjmp, by other names so that nothing mistakes
    them for a library's */
 typedef struct {
-    u32 regs[6];                /* EBX ESI EDI EBP ESP EIP */
+    uint32_t regs[6];           /* EBX ESI EDI EBP ESP EIP */
 } JMPBUF;
 int   __cdecl rt_setjmp( JMPBUF *buf );
 void  __cdecl rt_longjmp( JMPBUF *buf, int val );

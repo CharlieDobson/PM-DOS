@@ -155,6 +155,29 @@ $default = @(
     # progress to the printer.
     'MODE', 'MODE LPT2=COM1', 'MODE COM1:96,N,8,1,E', 'MODE /STATUS', 'MODE LPT2', 'MODE COM1:96,N,8,1',
     'MODE CON LINES=50', 'MODE CON', 'MODE CON LINES=25',
+    # the box's interrupt flag as the box sees it: CLI, STI, PUSHF, POPF,
+    # IRET and INT, and a timer tick held off and handed over at the
+    # instruction that turns the flag back on
+    'VIFTEST',
+    # the vectors a child leaves hooked; /F and /G each end their whole
+    # box and /V, straight after, looks.  Before the resident timer
+    # handler below, whose hooks would be the ones found
+    'VECBACK', 'VECBACK /F', 'VECBACK /V', 'VECBACK /G', 'VECBACK /V',
+    # a box the kernel ends from a graphics screen: /G, /H, /R and /D each
+    # end their box in one, and /V straight after finds a text mode -
+    # the 50 lines the first one started on, then 25; /T ends one from
+    # a text screen and /K finds it left alone
+    'MODE CON LINES=50', 'SCRBACK /G', 'SCRBACK /V', 'MODE CON LINES=25',
+    'SCRBACK /H', 'SCRBACK /V', 'SCRBACK /R', 'SCRBACK /V', 'SCRBACK /D', 'SCRBACK /V',
+    'SCRBACK /T', 'SCRBACK /K',
+    # ...and one that ends itself in mode 13h: /W, the next batch line,
+    # finds it still set, as MS-DOS leaves it; each shell's prompt puts
+    # the text mode back, and the /V it reads from SCRBACK.KEY sees that
+    'SCRBACK /N', 'SCRBACK /W', 'CMD < SCRBACK.KEY', 'SCRBACK /N', 'SCRBACK /W', 'COMMAND < SCRBACK.KEY',
+    # the scan codes for a native program (21h/F0h AL=0Fh, 10h), and the
+    # keyboard making keys again for the next program when one ends with
+    # them on: L by 4Ch, F by a fault, and C straight after each looks
+    'RAWKEY', 'RAWKEY L', 'RAWKEY C', 'RAWKEY F', 'RAWKEY C',
     # last, because it leaves a program resident: a handler on the timer
     # and the clock that IRQXWAIT, a native program, waits on
     'IRQXTEST /I', 'IRQXWAIT', 'IRQXTEST /R'

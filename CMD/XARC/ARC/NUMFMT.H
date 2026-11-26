@@ -25,7 +25,7 @@
  * one number for both would either overflow or waste a lot of memory in the
  * per-entry arrays the list views keep.
  *
- * NUM_FMT_U32_MAX  is enough for NumFmt of any UInt32: ten digits, three
+ * NUM_FMT_U32_MAX  is enough for NumFmt of any uint32_t: ten digits, three
  *                  separators of up to NUM_SEP_MAX-1 bytes each, terminator.
  * NUM_FMT_MAX      is enough for NumFmtD of any double %.0f will spell.
  *
@@ -54,10 +54,10 @@ const char *NumGroupSep( void );
 
 /* Write v into buf with the separator in force and return buf.  buf must
  * have room for NUM_FMT_U32_MAX bytes.  Always succeeds. */
-char *NumFmt( UInt32 v, char *buf );
+char *NumFmt( uint32_t v, char *buf );
 
 /* The same, for a byte TOTAL.  Totals are accumulated as doubles because an
- * archive's contents can add up past what UInt32 holds even when no single
+ * archive's contents can add up past what uint32_t holds even when no single
  * entry does, so the front ends already carry them that way.  Negative and
  * non-finite values render as "0" rather than as something alarming.
  *
@@ -76,6 +76,6 @@ char *NumFmtD( double v, char *buf );
  * in full and the column grows, because a wrong size is worse than a ragged
  * column.  buf must have room for width+1 bytes, or NUM_FMT_MAX, whichever
  * is larger. */
-char *NumFmtRight( UInt32 v, char *buf, int width );
+char *NumFmtRight( uint32_t v, char *buf, int width );
 
 #endif /* NUMFMT_H */

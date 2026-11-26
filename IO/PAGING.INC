@@ -195,6 +195,7 @@ pgh_done:
 ; INVLPG.
 ;=====================================================================
 pg_guard:
+        mov     dword ptr ds:[v86_stkpg],-1     ; vgf_stk asks again
         push    eax
         push    ebx
         push    ecx
@@ -355,6 +356,7 @@ uwk_no:
 ;=====================================================================
 pg_a20:
         pushad
+        mov     dword ptr ds:[v86_stkpg],-1     ; vgf_stk asks again
         mov     byte ptr ds:[pg_a20st],al
 
         ; entry 256 of table 0 is linear 100000h: table 0 covers the
@@ -431,6 +433,7 @@ pg_a20st        db      0
 ;=====================================================================
 pg_map:
         pushad
+        mov     dword ptr ds:[v86_stkpg],-1     ; vgf_stk asks again
         or      ecx,ecx
         jz      pgm_done
         shr     eax,12                          ; linear page number = the
@@ -627,6 +630,7 @@ pgu_tno:
 ; it is refused rather than given the first megabyte.
 ;=====================================================================
 pg_mapphys:
+        mov     dword ptr ds:[v86_stkpg],-1     ; vgf_stk asks again
         push    ebx
         push    ecx
         push    esi

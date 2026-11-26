@@ -8,7 +8,7 @@
  *
  * WHAT A DOCUMENT IS.  Stories - the body, the running header, the
  * running footer, and one for each footnote - and a story is a list of
- * paragraphs.  A paragraph is its text, a u16 for each UTF-16 unit,
+ * paragraphs.  A paragraph is its text, a uint16_t for each UTF-16 unit,
  * and beside each unit the number of its character properties (a CHP:
  * font, size, bold and so on).  Equal CHPs share one number, so the
  * numbers of two characters are equal exactly when the characters look
@@ -68,15 +68,15 @@
 
 #define COLOR_AUTO      0xFF000000UL    /* the window's own text colour */
 #define RGB( red, green, blue ) \
-    (((u32)(red) << 16) | ((u32)(green) << 8) | (u32)(blue))
+    (((uint32_t)(red) << 16) | ((uint32_t)(green) << 8) | (uint32_t)(blue))
 
 typedef struct {
-    u16 font;           /* which of the document's fonts */
-    u16 size;           /* half points */
-    u16 flags;          /* CF_* */
-    u8  hilite;         /* 0 for none, or 1 + one of the sixteen colours */
-    u8  spare;          /* always 0, so that equal CHPs compare equal */
-    u32 color;          /* 00RRGGBB, or COLOR_AUTO */
+    uint16_t font;      /* which of the document's fonts */
+    uint16_t size;      /* half points */
+    uint16_t flags;     /* CF_* */
+    uint8_t  hilite;    /* 0 for none, or 1 + one of the sixteen colours */
+    uint8_t  spare;     /* always 0, so that equal CHPs compare equal */
+    uint32_t color;     /* 00RRGGBB, or COLOR_AUTO */
 } CHP;
 
 /* what kind of face a font is, for when the machine has not got it */
@@ -85,10 +85,10 @@ enum { FAM_ANY, FAM_ROMAN, FAM_SWISS, FAM_MODERN, FAM_SCRIPT, FAM_DECOR, FAM_SYM
 #define FONT_NAME_LEN   40
 
 typedef struct {
-    char name[FONT_NAME_LEN];   /* "Times New Roman", in ASCII */
-    u8   family;                /* FAM_* */
-    u8   fixed;                 /* every character the same width */
-    u16  spare;
+    char     name[FONT_NAME_LEN];  /* "Times New Roman", in ASCII */
+    uint8_t  family;               /* FAM_* */
+    uint8_t  fixed;                /* every character the same width */
+    uint16_t spare;
 } WFONT;
 
 /* ------------------------------------------------------------------ */
@@ -114,10 +114,10 @@ enum { LEAD_NONE, LEAD_DOTS, LEAD_DASHES, LEAD_LINE };
 #define MAX_TABS        40
 
 typedef struct {
-    s32 pos;            /* from the left margin */
-    u8  kind;           /* TAB_* */
-    u8  lead;           /* LEAD_* */
-    u16 spare;
+    int      pos;       /* from the left margin */
+    uint8_t  kind;      /* TAB_* */
+    uint8_t  lead;      /* LEAD_* */
+    uint16_t spare;
 } WTAB;
 
 /* how the lines of a paragraph are spaced */
@@ -135,31 +135,31 @@ enum { LIST_NONE, LIST_BULLET, LIST_NUMBER, LIST_LOWER, LIST_UPPER,
 
 /* a table row: where each cell ends, from the left margin */
 typedef struct {
-    u8  ncells;
-    u8  borders;        /* 1 = lines round the cells */
-    u8  header;         /* 1 = the row is repeated on each page */
-    u8  spare;
-    s32 left;           /* where the first cell starts */
-    s32 edge[MAX_CELLS];
+    uint8_t ncells;
+    uint8_t borders;    /* 1 = lines round the cells */
+    uint8_t header;     /* 1 = the row is repeated on each page */
+    uint8_t spare;
+    int     left;       /* where the first cell starts */
+    int     edge[MAX_CELLS];
 } TROW;
 
 typedef struct {
-    u8  align;          /* AL_* */
-    u8  style;          /* which of the document's styles */
-    u16 flags;          /* PF_* */
-    s32 left, right;    /* indents, from the margins inward */
-    s32 first;          /* the first line's own, added to "left": negative
-                           is a hanging indent */
-    u16 before, after;  /* space above and below */
-    u16 line;           /* line spacing: LS_* says what it counts */
-    u8  line_rule;      /* LS_* */
-    u8  list;           /* LIST_* */
-    u8  level;          /* a list's depth, 0 the outermost */
-    u8  ntabs;
-    u16 list_start;     /* a numbered list restarts with this number; 0: it
-                           carries on from the paragraph before */
-    WTAB *tabs;         /* the paragraph's own block, or NULL */
-    TROW *row;          /* PF_ROWEND: the paragraph's own block */
+    uint8_t  align;          /* AL_* */
+    uint8_t  style;          /* which of the document's styles */
+    uint16_t flags;          /* PF_* */
+    int      left, right;    /* indents, from the margins inward */
+    int      first;          /* the first line's own, added to "left": negative
+                                is a hanging indent */
+    uint16_t before, after;  /* space above and below */
+    uint16_t line;           /* line spacing: LS_* says what it counts */
+    uint8_t  line_rule;      /* LS_* */
+    uint8_t  list;           /* LIST_* */
+    uint8_t  level;          /* a list's depth, 0 the outermost */
+    uint8_t  ntabs;
+    uint16_t list_start;     /* a numbered list restarts with this number; 0: it
+                                carries on from the paragraph before */
+    WTAB    *tabs;           /* the paragraph's own block, or NULL */
+    TROW    *row;            /* PF_ROWEND: the paragraph's own block */
 } PAP;
 
 /* ------------------------------------------------------------------ */
@@ -174,11 +174,11 @@ enum { STY_NORMAL, STY_HEADING1, STY_HEADING2, STY_HEADING3, STY_HEADING4,
 #define MAX_STYLES      64
 
 typedef struct {
-    char name[STYLE_NAME_LEN];
-    u8   kind;          /* STY_* */
-    u8   spare[3];
-    CHP  chp;           /* what text in a paragraph of this style starts as */
-    PAP  pap;           /* tabs and row are NULL */
+    char    name[STYLE_NAME_LEN];
+    uint8_t kind;       /* STY_* */
+    uint8_t spare[3];
+    CHP     chp;        /* what text in a paragraph of this style starts as */
+    PAP     pap;        /* tabs and row are NULL */
 } WSTYLE;
 
 /* ------------------------------------------------------------------ */
@@ -192,49 +192,49 @@ enum { NOTE_FOOT, NOTE_END };
 typedef struct STORY STORY;
 
 typedef struct {
-    u8   kind;          /* OBJ_* */
-    u8   fmt;           /* IMG_* or NOTE_* */
-    u16  spare;
-    u8  *data;          /* an image: the picture file's bytes as they came */
-    u32  len;
-    s32  width, height; /* the size it is shown at */
-    STORY *story;       /* a note: its text */
+    uint8_t  kind;          /* OBJ_* */
+    uint8_t  fmt;           /* IMG_* or NOTE_* */
+    uint16_t spare;
+    uint8_t *data;          /* an image: the picture file's bytes as they came */
+    uint32_t len;
+    int      width, height; /* the size it is shown at */
+    STORY   *story;         /* a note: its text */
 } WOBJ;
 
 /* where in a paragraph an object is */
 typedef struct {
-    u32 off;            /* the WCH_OBJ character */
-    u32 obj;            /* which of the document's objects */
+    unsigned int off;   /* the WCH_OBJ character */
+    unsigned int obj;   /* which of the document's objects */
 } WANCH;
 
 /* ------------------------------------------------------------------ */
 /* paragraphs and stories                                              */
 /* ------------------------------------------------------------------ */
 typedef struct {
-    u16  *text;         /* UTF-16 */
-    u16  *attr;         /* a CHP number for each unit of text */
-    u32   len, cap;
-    PAP   pap;
-    WANCH *anch;        /* its objects, in order */
-    u32   nanch, anch_cap;
-    void *lay;          /* LAY.C's: its lines, when they have been made */
+    uint16_t    *text;      /* UTF-16 */
+    uint16_t    *attr;      /* a CHP number for each unit of text */
+    unsigned int len, cap;
+    PAP          pap;
+    WANCH       *anch;      /* its objects, in order */
+    unsigned int nanch, anch_cap;
+    void        *lay;       /* LAY.C's: its lines, when they have been made */
 } WPARA;
 
 struct STORY {
-    WPARA **para;
-    u32     count, cap;
+    WPARA      **para;
+    unsigned int count, cap;
 };
 
 /* ------------------------------------------------------------------ */
 /* the page                                                            */
 /* ------------------------------------------------------------------ */
 typedef struct {
-    s32 width, height;                  /* the paper, as it is read */
-    s32 left, right, top, bottom;       /* margins */
-    s32 header, footer;                 /* from the paper's edge to each */
-    u16 first_page;                     /* the number the first page has */
-    u8  landscape;
-    u8  spare;
+    int      width, height;             /* the paper, as it is read */
+    int      left, right, top, bottom;  /* margins */
+    int      header, footer;            /* from the paper's edge to each */
+    uint16_t first_page;                /* the number the first page has */
+    uint8_t  landscape;
+    uint8_t  spare;
 } PAGESETUP;
 
 /* ------------------------------------------------------------------ */
@@ -254,37 +254,37 @@ typedef struct {
 #define LOST_STYLES     0x0100  /* a style sheet in another file */
 
 typedef struct WDOC {
-    STORY   body, header, footer;
-    WOBJ   *obj;
-    u32     nobj, obj_cap;
-    CHP    *chp;                /* chp[0] is the document's default */
-    u32     nchp, chp_cap;
-    u16    *chp_hash;           /* wd_chp's: numbers + 1, 0 for an empty place */
-    u32     chp_hash_cap;
-    WFONT  *font;
-    u32     nfont, font_cap;
-    WSTYLE *style;              /* style[0] is Normal */
-    u32     nstyle;
-    PAGESETUP page;
-    s32     deftab;             /* tabs every so far, where none is set */
-    char    title[INFO_LEN];    /* these four are UTF-8 */
-    char    author[INFO_LEN];
-    char    subject[INFO_LEN];
-    char    keywords[INFO_LEN];
-    int     format;             /* FMT_* (FMT.H): what it was read from */
-    int     variant;            /* ...and which kind of that */
-    u32     lost;               /* LOST_* */
-    int     failed;             /* memory ran out while it was being made */
-    void   *aux;                /* the format's own, kept for saving it back */
+    STORY        body, header, footer;
+    WOBJ        *obj;
+    unsigned int nobj, obj_cap;
+    CHP         *chp;           /* chp[0] is the document's default */
+    unsigned int nchp, chp_cap;
+    uint16_t    *chp_hash;      /* wd_chp's: numbers + 1, 0 for an empty place */
+    unsigned int chp_hash_cap;
+    WFONT       *font;
+    unsigned int nfont, font_cap;
+    WSTYLE      *style;         /* style[0] is Normal */
+    unsigned int nstyle;
+    PAGESETUP    page;
+    int          deftab;        /* tabs every so far, where none is set */
+    char         title[INFO_LEN];  /* these four are UTF-8 */
+    char         author[INFO_LEN];
+    char         subject[INFO_LEN];
+    char         keywords[INFO_LEN];
+    int          format;        /* FMT_* (FMT.H): what it was read from */
+    int          variant;       /* ...and which kind of that */
+    uint32_t     lost;          /* LOST_* */
+    int          failed;        /* memory ran out while it was being made */
+    void        *aux;           /* the format's own, kept for saving it back */
     void  (*aux_free)( void *aux );
-    void   *undo;               /* WEDIT.C's */
-    u32     serial;             /* counts the changes WEDIT.C makes */
+    void        *undo;          /* WEDIT.C's */
+    unsigned int serial;        /* counts the changes WEDIT.C makes */
 } WDOC;
 
 /* a place in a story: between characters, 0 before the first */
 typedef struct {
-    u32 para;
-    u32 off;
+    unsigned int para;
+    unsigned int off;
 } WPOS;
 
 /* ------------------------------------------------------------------ */
@@ -311,8 +311,8 @@ int   wd_font( WDOC *doc, const char *name, int family, int fixed );
 
 /* the number of a CHP, added if it is new.  0, the default's, if there
    is no memory (and the document is marked failed). */
-u16   wd_chp( WDOC *doc, const CHP *chp );
-const CHP *wd_chp_get( const WDOC *doc, u16 id );
+uint16_t wd_chp( WDOC *doc, const CHP *chp );
+const CHP *wd_chp_get( const WDOC *doc, uint16_t id );
 
 /* a style by name, added with "kind" if it is not there -> its number.
    A new one starts as a copy of Normal.  STY_NORMAL..STY_FOOTNOTE are
@@ -330,24 +330,24 @@ int   pap_set_row( PAP *pap, const TROW *row );                 /* copied */
    "pap", or pap_init's when that is NULL */
 WPARA *wd_para_add( WDOC *doc, STORY *story, const PAP *pap );
 /* ...and anywhere: before the paragraph that is "index" now */
-WPARA *wd_para_insert( WDOC *doc, STORY *story, u32 index, const PAP *pap );
-void  wd_para_remove( WDOC *doc, STORY *story, u32 index );
+WPARA *wd_para_insert( WDOC *doc, STORY *story, unsigned int index, const PAP *pap );
+void  wd_para_remove( WDOC *doc, STORY *story, unsigned int index );
 
 /* text put into a paragraph at "off", all of it with one CHP */
-int   wd_text_insert( WDOC *doc, WPARA *para, u32 off, const u16 *text, u32 len, u16 chp );
+int   wd_text_insert( WDOC *doc, WPARA *para, unsigned int off, const uint16_t *text, unsigned int len, uint16_t chp );
 /* ...or each unit with its own */
-int   wd_text_insert2( WDOC *doc, WPARA *para, u32 off, const u16 *text, const u16 *attr, u32 len );
-void  wd_text_delete( WDOC *doc, WPARA *para, u32 off, u32 len );
+int   wd_text_insert2( WDOC *doc, WPARA *para, unsigned int off, const uint16_t *text, const uint16_t *attr, unsigned int len );
+void  wd_text_delete( WDOC *doc, WPARA *para, unsigned int off, unsigned int len );
 #define wd_text_add( doc, para, text, count, chp ) \
     wd_text_insert( (doc), (para), (para)->len, (text), (count), (chp) )
 
 /* an object: wd_obj_new makes one and returns its number (-1 if it
    could not); wd_obj_put sets it in a paragraph as a WCH_OBJ character */
-int   wd_image_new( WDOC *doc, const u8 *data, u32 len, int fmt, s32 width, s32 height );
+int   wd_image_new( WDOC *doc, const uint8_t *data, uint32_t len, int fmt, int width, int height );
 int   wd_note_new( WDOC *doc, int kind );           /* doc->obj[n].story is empty */
-int   wd_obj_put( WDOC *doc, WPARA *para, u32 off, int obj, u16 chp );
+int   wd_obj_put( WDOC *doc, WPARA *para, unsigned int off, int obj, uint16_t chp );
 /* the object at a WCH_OBJ character, or -1 */
-int   wd_obj_at( const WPARA *para, u32 off );
+int   wd_obj_at( const WPARA *para, unsigned int off );
 
 /* the story a note's text is in */
 STORY *wd_note_story( WDOC *doc, int obj );
@@ -363,8 +363,8 @@ extern void (*wd_undo_drop)( struct WDOC *doc );
 /* text put back as it was taken out: WCH_OBJ characters kept, with
    "anch" saying which object each is ("off" counted from the start of
    the text being put back).  WEDIT.C's undo is what this is for. */
-int   wd_text_restore( WDOC *doc, WPARA *para, u32 off, const u16 *text, const u16 *attr,
-                       u32 len, const WANCH *anch, u32 nanch );
+int   wd_text_restore( WDOC *doc, WPARA *para, unsigned int off, const uint16_t *text, const uint16_t *attr,
+                       unsigned int len, const WANCH *anch, unsigned int nanch );
 /* a paragraph's look changed some other way: its lines are stale */
 void  wd_para_touch( WPARA *para );
 
@@ -380,25 +380,25 @@ void  wd_para_touch( WPARA *para );
  * word processor's file works.
  */
 typedef struct {
-    WDOC  *doc;
-    STORY *story;
-    WPARA *para;        /* the paragraph being filled, or NULL */
-    CHP    chp;         /* what the next character will have */
-    PAP    pap;         /* what the paragraph will have (tabs and row are
+    WDOC    *doc;
+    STORY   *story;
+    WPARA   *para;      /* the paragraph being filled, or NULL */
+    CHP      chp;       /* what the next character will have */
+    PAP      pap;       /* what the paragraph will have (tabs and row are
                            the builder's own blocks) */
-    u16    chp_id;      /* wb_'s own: the number of "chp" when it was */
-    CHP    chp_was;     /* last asked for */
-    int    chp_known;
+    uint16_t chp_id;    /* wb_'s own: the number of "chp" when it was */
+    CHP      chp_was;   /* last asked for */
+    int      chp_known;
 } WBUILD;
 
 void  wb_init( WBUILD *wb, WDOC *doc, STORY *story );   /* Normal's CHP and PAP */
-void  wb_done( WBUILD *wb );            /* ends a paragraph that has text; frees */
-void  wb_char( WBUILD *wb, u32 code );  /* a Unicode character, of any plane */
-void  wb_text( WBUILD *wb, const u16 *text, u32 len );
-void  wb_bytes( WBUILD *wb, const u8 *text, u32 len, int codepage );   /* CP.H */
-void  wb_utf8( WBUILD *wb, const u8 *text, u32 len );
-void  wb_par( WBUILD *wb );             /* the paragraph ends here */
-void  wb_object( WBUILD *wb, int obj ); /* an object, as the next character */
+void  wb_done( WBUILD *wb );                /* ends a paragraph that has text; frees */
+void  wb_char( WBUILD *wb, uint32_t code ); /* a Unicode character, of any plane */
+void  wb_text( WBUILD *wb, const uint16_t *text, unsigned int len );
+void  wb_bytes( WBUILD *wb, const uint8_t *text, unsigned int len, int codepage ); /* CP.H */
+void  wb_utf8( WBUILD *wb, const uint8_t *text, unsigned int len );
+void  wb_par( WBUILD *wb );                 /* the paragraph ends here */
+void  wb_object( WBUILD *wb, int obj );     /* an object, as the next character */
 /* text goes to another story from now on (a header, a note); the
    paragraph in hand is ended first.  The CHP and PAP carry on. */
 void  wb_story( WBUILD *wb, STORY *story );
@@ -409,7 +409,7 @@ void  wb_story( WBUILD *wb, STORY *story );
 
 /* the run that starts at "off": how many units share one CHP number.
    0 at the paragraph's end. */
-u32   wd_run( const WPARA *para, u32 off );
+unsigned int wd_run( const WPARA *para, unsigned int off );
 
 /* ------------------------------------------------------------------ */
 /* errors a reader or writer answers with (FMT.H)                      */

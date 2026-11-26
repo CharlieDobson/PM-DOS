@@ -46,7 +46,7 @@
 #define KX_TLS13        4
 
 typedef struct {
-    unsigned short id;                  /* IANA cipher suite number */
+    uint16_t       id;                  /* IANA cipher suite number */
     unsigned char  kx;                  /* KX_* */
     unsigned char  gcm;                 /* AES-GCM rather than CBC + HMAC-SHA1 */
     unsigned char  sha384;              /* SHA-384 PRF / transcript, else SHA-256 */
@@ -73,7 +73,7 @@ static const suite_info SUITES[] = {
 
 /* The signature schemes offered (signature_algorithms), all of which
    x509_verify_scheme can check. */
-static const unsigned short SIG_SCHEMES[] = {
+static const uint16_t SIG_SCHEMES[] = {
     0x0403, 0x0503,                     /* ecdsa_secp256r1_sha256, secp384r1_sha384 */
     0x0804, 0x0805, 0x0806,             /* rsa_pss_rsae_sha256/384/512 */
     0x0401, 0x0501, 0x0601              /* rsa_pkcs1_sha256/384/512 */
@@ -120,22 +120,22 @@ struct tls_conn {
     nst_rng      *rng;
     SHA256_CTX    hh;                   /* running handshake hash (SHA-256)  */
     SHA384_CTX    hh384;                /* running handshake hash (SHA-384)  */
-    unsigned char crand[32];
-    unsigned char srand[32];
-    unsigned char sid[32];              /* legacy_session_id (middlebox compat) */
+    uint8_t       crand[32];
+    uint8_t       srand[32];
+    uint8_t       sid[32];              /* legacy_session_id (middlebox compat) */
     rsa_pubkey    skey;                 /* the leaf's RSA key (RSA key exchange) */
     x509_pubkey   lkey;                 /* the leaf's public key, RSA or EC */
     int           have_key;
     int           suite;                /* negotiated cipher suite          */
     const suite_info *si;               /* ...and what it means             */
-    unsigned char eph_priv[48];         /* our ephemeral ECDH private       */
-    unsigned char eph_pub[POINT_MAX];   /* our ephemeral ECDH public        */
+    uint8_t       eph_priv[48];         /* our ephemeral ECDH private       */
+    uint8_t       eph_pub[POINT_MAX];   /* our ephemeral ECDH public        */
     int           eph_group;            /* ...and its curve (GROUP_*)       */
-    unsigned char srv_point[POINT_MAX]; /* server ephemeral ECDH public, on
+    uint8_t       srv_point[POINT_MAX]; /* server ephemeral ECDH public, on
                                            eph_group's curve                */
     int           have_srv_point;
     int           hrr_group;            /* the share a HRR asked for, or 0  */
-    unsigned char master[48];           /* TLS 1.2 master secret            */
+    uint8_t       master[48];           /* TLS 1.2 master secret            */
     tls_keys      kw;                   /* client write */
     tls_keys      kr;                   /* client read (server write) */
 
@@ -146,38 +146,38 @@ struct tls_conn {
     int           ccs_sent;             /* our dummy ChangeCipherSpec       */
     int           keys13;               /* server records now encrypted     */
     int           step13;               /* S13_*                            */
-    unsigned char cookie[COOKIE_MAX];
+    uint8_t       cookie[COOKIE_MAX];
     int           cookielen;
-    unsigned char hs_secret[48];        /* handshake secret                 */
-    unsigned char c_secret[48];         /* client traffic secret (hs, then ap) */
-    unsigned char s_secret[48];         /* server traffic secret (hs, then ap) */
+    uint8_t       hs_secret[48];        /* handshake secret                 */
+    uint8_t       c_secret[48];         /* client traffic secret (hs, then ap) */
+    uint8_t       s_secret[48];         /* server traffic secret (hs, then ap) */
     int           ku_send;              /* the server asked for a KeyUpdate */
 
     int           cert_req;             /* the server asked for a certificate */
-    unsigned char req_ctx[255];         /* ...and its 1.3 request context   */
+    uint8_t       req_ctx[255];         /* ...and its 1.3 request context   */
     int           req_ctxlen;
 
-    unsigned char hbuf[HS_BUF];         /* reassembled handshake bytes */
+    uint8_t       hbuf[HS_BUF];         /* reassembled handshake bytes */
     int           hlen, hpos;
-    unsigned char rdrec[REC_MAX + 8];   /* scratch: app-phase read, 1.3 hs record */
+    uint8_t       rdrec[REC_MAX + 8];   /* scratch: app-phase read, 1.3 hs record */
 
     /* certificate validation */
-    unsigned char chain[MAX_CHAIN][CERT_MAX];   /* presented chain, leaf first */
+    uint8_t       chain[MAX_CHAIN][CERT_MAX];   /* presented chain, leaf first */
     int           chainlen[MAX_CHAIN];
     int           nchain;
     int           verify;
     char          vhost[256];
     char          vnow[15];
-    const unsigned char *vca;
+    const uint8_t *vca;
     int           vcalen;
     int           verr;
 
     /* resumable engine buffers */
     int           hs_state;
     char          hs_host[256];
-    unsigned char *ibuf;                /* inbound record bytes (growable) */
+    uint8_t      *ibuf;                 /* inbound record bytes (growable) */
     int           ilen, icap;
-    unsigned char obuf[2048];           /* outbound handshake bytes */
+    uint8_t       obuf[2048];           /* outbound handshake bytes */
     int           olen, opos;
 };
 
@@ -221,7 +221,7 @@ static int eph_make( tls_conn *c, int group )
 
 /* The ECDH shared secret (the X coordinate) from our key and the server's
    point; *slen gets 32 or 48.  0 / -1. */
-static int ecdh_shared( tls_conn *c, unsigned char *shared, int *slen )
+static int ecdh_shared( tls_conn *c, uint8_t *shared, int *slen )
 {
     if ( c->eph_group == GROUP_P384 ) {
         *slen = 48;
@@ -235,7 +235,7 @@ static int scheme_is_ecdsa( int scheme ) { return ( scheme & 0xFF ) == 0x03; }
 static int scheme_is_pkcs1( int scheme ) { return ( scheme & 0xFF ) == 0x01; }
 
 /* --- blocking I/O helpers (app phase + the blocking wrapper) -------------- */
-static int send_all(tls_send_fn s, void *ctx, const unsigned char *b, int len)
+static int send_all(tls_send_fn s, void *ctx, const uint8_t *b, int len)
 {
     int off = 0, n;
     while (off < len) { n = s(ctx, b + off, len - off); if (n <= 0) return -1; off += n; }
@@ -249,7 +249,7 @@ static void consume_record(tls_conn *c, int rl)
 /* Read up to 'want' bytes: first whatever the handshake left in ibuf
    (records that came in behind the server's Finished), then the socket. */
 static int raw_read( tls_conn *c, tls_recv_fn recv, void *ctx,
-                     unsigned char *dst, int want )
+                     uint8_t *dst, int want )
 {
     if ( c->ilen > 0 ) {
         int n = want < c->ilen ? want : c->ilen;
@@ -271,10 +271,10 @@ static int read_raw_record(tls_conn *c, tls_recv_fn recv, void *ctx, int *reclen
 }
 
 /* --- pure message helpers ------------------------------------------------- */
-static int put16( unsigned char *b, int i, int v )
+static int put16( uint8_t *b, int i, int v )
 {
-    b[i] = (unsigned char)( v >> 8 );
-    b[i + 1] = (unsigned char)v;
+    b[i] = (uint8_t)( v >> 8 );
+    b[i + 1] = (uint8_t)v;
     return i + 2;
 }
 
@@ -296,7 +296,7 @@ static int is_ipv4( const char *host )
 /* The ClientHello body.  The random, session id and key share were made in
    tls_hs_pump, so a second ClientHello after a HelloRetryRequest is the same
    but for the cookie, as RFC 8446 4.1.2 wants.  Returns the length, or -1. */
-static int build_client_hello( tls_conn *c, unsigned char *b, int cap )
+static int build_client_hello( tls_conn *c, uint8_t *b, int cap )
 {
     int i = 0, hlen = (int)strlen( c->hs_host ), extlenpos, n;
     int plen = point_len( c->eph_group );
@@ -358,21 +358,21 @@ static int build_client_hello( tls_conn *c, unsigned char *b, int cap )
 }
 
 /* SHA-256("HelloRetryRequest"): a ServerHello with this random is a HRR. */
-static const unsigned char HRR_RANDOM[32] = {
+static const uint8_t HRR_RANDOM[32] = {
     0xCF,0x21,0xAD,0x74,0xE5,0x9A,0x61,0x11,0xBE,0x1D,0x8C,0x02,0x1E,0x65,0xB8,0x91,
     0xC2,0xA2,0x11,0x16,0x7A,0xBB,0x8C,0x5E,0x07,0x9E,0x09,0xE2,0xC8,0xA8,0x33,0x9C
 };
 /* A 1.3 server that answers 1.2 puts "DOWNGRD" + 01 at the end of its random
    (00 for 1.1 and older); a client that offered 1.3 must refuse it, because
    something in the path removed 1.3 from the ClientHello (RFC 8446 4.1.3). */
-static const unsigned char DOWNGRADE[7] = { 0x44,0x4F,0x57,0x4E,0x47,0x52,0x44 };
+static const uint8_t DOWNGRADE[7] = { 0x44,0x4F,0x57,0x4E,0x47,0x52,0x44 };
 
 #define SH_TLS12  0
 #define SH_TLS13  1
 #define SH_HRR    2
 
 /* Parse a ServerHello (or HelloRetryRequest).  SH_* or -1. */
-static int parse_server_hello( tls_conn *c, const unsigned char *b, int blen )
+static int parse_server_hello( tls_conn *c, const uint8_t *b, int blen )
 {
     int ver, sidlen, off, suite, extend, is_hrr, sel_ver = 0, have_share = 0;
     const suite_info *si;
@@ -397,7 +397,7 @@ static int parse_server_hello( tls_conn *c, const unsigned char *b, int blen )
     }
     while ( off < extend ) {
         int et, el;
-        const unsigned char *ev;
+        const uint8_t *ev;
         if ( off + 4 > extend ) return -1;
         et = ( b[off] << 8 ) | b[off + 1];
         el = ( b[off + 2] << 8 ) | b[off + 3];
@@ -470,9 +470,9 @@ static int parse_server_hello( tls_conn *c, const unsigned char *b, int blen )
 /* Parse a TLS 1.2 ServerKeyExchange for ECDHE: named-curve params, then a
    signature over client_random || server_random || params by the leaf's key
    (RSA for ECDHE_RSA, ECDSA for ECDHE_ECDSA).  0 ok / -1 bad. */
-static int parse_ecdhe_ske(tls_conn *c, const unsigned char *b, int blen)
+static int parse_ecdhe_ske(tls_conn *c, const uint8_t *b, int blen)
 {
-    unsigned char msg[64 + 4 + POINT_MAX];
+    uint8_t msg[64 + 4 + POINT_MAX];
     int group, plen, params_len, scheme, sig_len, off;
 
     if ( blen < 4 || b[0] != 3 ) return -1;             /* named_curve */
@@ -508,7 +508,7 @@ static int parse_ecdhe_ske(tls_conn *c, const unsigned char *b, int blen)
 /* Certificate, 1.2 or 1.3 form (1.3 adds a request context in front and
    extensions after each certificate).  Keeps up to MAX_CHAIN certificates and
    takes the leaf's public key.  0 ok / -1 bad. */
-static int parse_certificate(tls_conn *c, const unsigned char *b, int blen)
+static int parse_certificate(tls_conn *c, const uint8_t *b, int blen)
 {
     int off = 0, total;
 
@@ -556,7 +556,7 @@ static int parse_certificate(tls_conn *c, const unsigned char *b, int blen)
 }
 
 void tls_set_verify(tls_conn *c, const char *host, const char *now14,
-                    const unsigned char *ca_der, int ca_len)
+                    const uint8_t *ca_der, int ca_len)
 {
     c->verify = 1;
     c->vhost[0] = '\0';
@@ -569,8 +569,8 @@ int tls_verify_error(tls_conn *c) { return c ? c->verr : 0; }
 
 /* Walk one DER TLV in the CA bundle (concatenated DER certs).  Advances pos
    past the cert; returns 1 and sets cert + certlen, or 0 at the end. */
-static int ca_next(const unsigned char *bundle, int len, int *pos,
-                   const unsigned char **cert, int *certlen)
+static int ca_next(const uint8_t *bundle, int len, int *pos,
+                   const uint8_t **cert, int *certlen)
 {
     int p = *pos, l, hdr;
     if (p + 2 > len || bundle[p] != 0x30) return 0;     /* need a SEQUENCE */
@@ -589,62 +589,88 @@ static int ca_next(const unsigned char *bundle, int len, int *pos,
     return 1;
 }
 
-/* Is 'top' signed by any CA in the trust bundle? 0 = anchored, -1 = not.
-   Handles RSA and ECDSA CA keys / signatures. */
-static int anchored_by_ca(tls_conn *c, const unsigned char *top, int toplen)
+/* Is 'cert' signed by a root in the trust bundle that is in date?  X509_OK if
+   so, X509_ERR_EXPIRED if only an out-of-date root signed it, X509_ERR_SIG if
+   no root did.  With by_name, only the roots whose subject is cert's issuer
+   are tried, which saves the public-key work of all the others.  Handles RSA
+   and ECDSA CA keys / signatures. */
+static int anchored_by_ca( tls_conn *c, const uint8_t *cert, int certlen, int by_name )
 {
-    const unsigned char *ca;
-    int pos = 0, calen;
+    const uint8_t *ca;
+    int pos = 0, calen, result = X509_ERR_SIG;
     x509_pubkey ck;
-    while (ca_next(c->vca, c->vcalen, &pos, &ca, &calen)) {
-        if (x509_get_pubkey(ca, calen, &ck) != X509_OK)
+
+    while ( ca_next( c->vca, c->vcalen, &pos, &ca, &calen ) ) {
+        if ( by_name && !x509_issuer_is( cert, certlen, ca, calen ) ) continue;
+        if ( x509_get_pubkey( ca, calen, &ck ) != X509_OK ) continue;
+        if ( x509_verify_signed( cert, certlen, &ck ) != X509_OK ) continue;
+        if ( c->vnow[0] && x509_check_validity( ca, calen, c->vnow ) != X509_OK ) {
+            result = X509_ERR_EXPIRED;
             continue;
-        if (x509_verify_signed(top, toplen, &ck) == X509_OK)
-            return 0;
+        }
+        return X509_OK;
     }
+    return result;
+}
+
+/* Walk up from the leaf and stop at the first certificate a bundle root
+   signed.  Whatever the server sent above that point is not needed, so an
+   old cross-certificate there cannot fail the connection.  Every certificate
+   used as an issuer on the way must be a CA, within its path length. */
+static int validate_cert( tls_conn *c )
+{
+    int i, rc, pathlen, expired = 0;
+    x509_pubkey ik;
+
+    if ( !c->verify ) return 0;
+    if ( c->nchain <= 0 ) { c->verr = X509_ERR_PARSE; return -1; }
+
+    /* hostname identity on the leaf */
+    if ( c->vhost[0] &&
+         x509_check_host( c->chain[0], c->chainlen[0], c->vhost ) != X509_OK ) {
+        c->verr = X509_ERR_HOST;
+        return -1;
+    }
+
+    for ( i = 0; i < c->nchain; i++ ) {
+        if ( c->vnow[0] &&
+             x509_check_validity( c->chain[i], c->chainlen[i], c->vnow ) != X509_OK ) {
+            c->verr = X509_ERR_EXPIRED;
+            return -1;
+        }
+        if ( c->vca == NULL ) continue;
+
+        rc = anchored_by_ca( c, c->chain[i], c->chainlen[i], 1 );
+        if ( rc == X509_OK ) return 0;
+        if ( rc == X509_ERR_EXPIRED ) expired = 1;
+        if ( i + 1 == c->nchain ) break;
+
+        /* chain[i+1] signs chain[i]; i certificates sit between it and the leaf */
+        rc = x509_ca_limit( c->chain[i + 1], c->chainlen[i + 1], &pathlen );
+        if ( rc != X509_OK ) { c->verr = rc; return -1; }
+        if ( pathlen >= 0 && i > pathlen ) { c->verr = X509_ERR_SIG; return -1; }
+        if ( x509_get_pubkey( c->chain[i + 1], c->chainlen[i + 1], &ik ) != X509_OK ) {
+            c->verr = X509_ERR_PARSE;
+            return -1;
+        }
+        if ( x509_verify_signed( c->chain[i], c->chainlen[i], &ik ) != X509_OK ) {
+            c->verr = X509_ERR_SIG;
+            return -1;
+        }
+    }
+    if ( c->vca == NULL ) return 0;
+
+    /* an issuer name can be encoded differently from the root's subject:
+       the last certificate gets every root in the bundle */
+    rc = anchored_by_ca( c, c->chain[c->nchain - 1], c->chainlen[c->nchain - 1], 0 );
+    if ( rc == X509_OK ) return 0;
+    c->verr = ( expired || rc == X509_ERR_EXPIRED ) ? X509_ERR_EXPIRED : X509_ERR_SIG;
     return -1;
 }
 
-static int validate_cert(tls_conn *c)
+static void derive_keys(tls_conn *c, const uint8_t *premaster, int pmlen)
 {
-    int i;
-    if (!c->verify) return 0;
-    if (c->nchain <= 0) { c->verr = X509_ERR_PARSE; return -1; }
-
-    /* hostname identity on the leaf */
-    if (c->vhost[0] &&
-        x509_check_host(c->chain[0], c->chainlen[0], c->vhost) != X509_OK) {
-        c->verr = X509_ERR_HOST; return -1;
-    }
-    /* validity window on every presented cert */
-    if (c->vnow[0]) {
-        for (i = 0; i < c->nchain; i++)
-            if (x509_check_validity(c->chain[i], c->chainlen[i], c->vnow) != X509_OK) {
-                c->verr = X509_ERR_EXPIRED; return -1;
-            }
-    }
-    /* signature chain: cert[i] signed by cert[i+1], then top anchored to a CA.
-       Each link may be RSA or ECDSA (x509_verify_signed dispatches). */
-    if (c->vca != NULL) {
-        for (i = 0; i + 1 < c->nchain; i++) {
-            x509_pubkey ik;
-            if (x509_get_pubkey(c->chain[i+1], c->chainlen[i+1], &ik) != X509_OK) {
-                c->verr = X509_ERR_PARSE; return -1;
-            }
-            if (x509_verify_signed(c->chain[i], c->chainlen[i], &ik) != X509_OK) {
-                c->verr = X509_ERR_SIG; return -1;
-            }
-        }
-        if (anchored_by_ca(c, c->chain[c->nchain-1], c->chainlen[c->nchain-1]) != 0) {
-            c->verr = X509_ERR_SIG; return -1;
-        }
-    }
-    return 0;
-}
-
-static void derive_keys(tls_conn *c, const unsigned char *premaster, int pmlen)
-{
-    unsigned char seed[64], kb[136];
+    uint8_t seed[64], kb[136];
     int sha384s = c->si->sha384;
     int kl = c->si->keylen;
 
@@ -670,19 +696,19 @@ static void derive_keys(tls_conn *c, const unsigned char *premaster, int pmlen)
     memset(kb, 0, sizeof(kb));
 }
 
-static void handshake_hash(tls_conn *c, unsigned char out[32])
+static void handshake_hash(tls_conn *c, uint8_t out[32])
 {
     SHA256_CTX tmp = c->hh;
     sha256_final(&tmp, out);
 }
 /* SHA-384 transcript snapshot (for the AES_256_GCM_SHA384 Finished/PRF). */
-static void handshake_hash384(tls_conn *c, unsigned char out[48])
+static void handshake_hash384(tls_conn *c, uint8_t out[48])
 {
     SHA384_CTX tmp = c->hh384;
     sha384_final(&tmp, out);
 }
 /* Fold a handshake message into both running transcript hashes. */
-static void transcript_update(tls_conn *c, const unsigned char *p, int n)
+static void transcript_update(tls_conn *c, const uint8_t *p, int n)
 {
     sha256_update(&c->hh, p, n);
     sha384_update(&c->hh384, p, n);
@@ -692,7 +718,7 @@ static void transcript_update(tls_conn *c, const unsigned char *p, int n)
 static int th_len( const tls_conn *c ) { return c->si->sha384 ? 48 : 32; }
 
 /* the transcript so far, under the suite's hash */
-static void th_hash( tls_conn *c, unsigned char *out )
+static void th_hash( tls_conn *c, uint8_t *out )
 {
     if ( c->si->sha384 ) {
         handshake_hash384( c, out );
@@ -701,8 +727,8 @@ static void th_hash( tls_conn *c, unsigned char *out )
     }
 }
 
-static void hmac_th( const tls_conn *c, const unsigned char *key,
-                     const unsigned char *msg, int msglen, unsigned char *out )
+static void hmac_th( const tls_conn *c, const uint8_t *key,
+                     const uint8_t *msg, int msglen, uint8_t *out )
 {
     if ( c->si->sha384 ) {
         hmac_sha384( key, 48, msg, msglen, out );
@@ -712,10 +738,10 @@ static void hmac_th( const tls_conn *c, const unsigned char *key,
 }
 
 /* Derive-Secret( secret, "derived", "" ): the salt for the next stage */
-static void derived_salt( const tls_conn *c, const unsigned char *secret,
-                          unsigned char *out )
+static void derived_salt( const tls_conn *c, const uint8_t *secret,
+                          uint8_t *out )
 {
-    unsigned char empty[48];
+    uint8_t empty[48];
     int hl = th_len( c );
     if ( hl == 48 ) {
         sha384( "", 0, empty );
@@ -726,9 +752,9 @@ static void derived_salt( const tls_conn *c, const unsigned char *secret,
 }
 
 /* Install one direction's record keys from a traffic secret. */
-static void install13( const tls_conn *c, tls_keys *k, const unsigned char *secret )
+static void install13( const tls_conn *c, tls_keys *k, const uint8_t *secret )
 {
-    unsigned char key[32], iv[12];
+    uint8_t key[32], iv[12];
     int hl = th_len( c ), kl = c->si->keylen;
     tls13_expand_label( hl, secret, "key", NULL, 0, key, kl );
     tls13_expand_label( hl, secret, "iv", NULL, 0, iv, 12 );
@@ -738,9 +764,9 @@ static void install13( const tls_conn *c, tls_keys *k, const unsigned char *secr
 }
 
 /* A KeyUpdate's next traffic secret, in place. */
-static void next_secret( const tls_conn *c, unsigned char *secret )
+static void next_secret( const tls_conn *c, uint8_t *secret )
 {
-    unsigned char next[48];
+    uint8_t next[48];
     int hl = th_len( c );
     tls13_expand_label( hl, secret, "traffic upd", NULL, 0, next, hl );
     memcpy( secret, next, hl );
@@ -751,7 +777,7 @@ static void next_secret( const tls_conn *c, unsigned char *secret )
    handshake traffic keys for both directions.  0 / -1. */
 static int start13( tls_conn *c )
 {
-    unsigned char shared[48], early[48], salt[48], th[48];
+    uint8_t shared[48], early[48], salt[48], th[48];
     int hl = th_len( c ), slen;
 
     if ( ecdh_shared( c, shared, &slen ) != 0 ) return -1;
@@ -773,23 +799,23 @@ static int start13( tls_conn *c )
 }
 
 /* --- resumable engine internals ------------------------------------------ */
-static int obuf_put(tls_conn *c, const unsigned char *d, int n)
+static int obuf_put(tls_conn *c, const uint8_t *d, int n)
 {
     if (c->olen + n > (int)sizeof(c->obuf)) return -1;
     memcpy(c->obuf + c->olen, d, n); c->olen += n; return 0;
 }
 
 /* Build + hash a client handshake message, wrap it in a record, queue it. */
-static int queue_handshake(tls_conn *c, int mtype, const unsigned char *body,
+static int queue_handshake(tls_conn *c, int mtype, const uint8_t *body,
                            int blen, int encrypt)
 {
-    unsigned char msg[1024], rec[1200];
+    uint8_t msg[1024], rec[1200];
     int mlen, reclen;
     if (4 + blen > (int)sizeof(msg)) return -1;
-    msg[0] = (unsigned char)mtype;
-    msg[1] = (unsigned char)(blen >> 16);
-    msg[2] = (unsigned char)(blen >> 8);
-    msg[3] = (unsigned char)blen;
+    msg[0] = (uint8_t)mtype;
+    msg[1] = (uint8_t)(blen >> 16);
+    msg[2] = (uint8_t)(blen >> 8);
+    msg[3] = (uint8_t)blen;
     memcpy(msg + 4, body, blen);
     mlen = 4 + blen;
     transcript_update(c, msg, mlen);
@@ -802,7 +828,7 @@ static int queue_handshake(tls_conn *c, int mtype, const unsigned char *body,
 }
 static int queue_ccs(tls_conn *c)
 {
-    unsigned char ccs = 1, rec[16];
+    uint8_t ccs = 1, rec[16];
     int reclen = tls_plain_record(TLS_CT_CHANGE_CIPHER_SPEC, &ccs, 1, rec, sizeof(rec));
     if (reclen < 0) return -1;
     return obuf_put(c, rec, reclen);
@@ -817,7 +843,7 @@ static int queue_ccs13( tls_conn *c )
 
 static int queue_client_hello( tls_conn *c )
 {
-    unsigned char ch[CH_MAX];
+    uint8_t ch[CH_MAX];
     int chlen = build_client_hello( c, ch, (int)sizeof( ch ) );
     if ( chlen < 0 ) return -1;
     return queue_handshake( c, HS_CLIENT_HELLO, ch, chlen, 0 );
@@ -834,7 +860,7 @@ static int have_record(tls_conn *c)
     return 5 + len;
 }
 
-static int hbuf_append(tls_conn *c, const unsigned char *p, int n)
+static int hbuf_append(tls_conn *c, const uint8_t *p, int n)
 {
     if (c->hpos > 0) {
         memmove(c->hbuf, c->hbuf + c->hpos, c->hlen - c->hpos);
@@ -848,9 +874,9 @@ static int hbuf_empty( const tls_conn *c ) { return c->hpos == c->hlen; }
 /* Next complete handshake message from hbuf: 1 have / 0 need more / -1 bad.
    NOT folded into the transcript: TLS 1.3's CertificateVerify and Finished
    are checked against the transcript before them, so the caller folds. */
-static int hbuf_next(tls_conn *c, int *mtype, unsigned char **body, int *blen)
+static int hbuf_next(tls_conn *c, int *mtype, uint8_t **body, int *blen)
 {
-    unsigned char *p;
+    uint8_t *p;
     int len;
     if (c->hlen - c->hpos < 4) return 0;
     p = c->hbuf + c->hpos;
@@ -866,25 +892,25 @@ static int hbuf_next(tls_conn *c, int *mtype, unsigned char **body, int *blen)
    ChangeCipherSpec + client Finished. */
 static int hs_send_keys(tls_conn *c)
 {
-    unsigned char hash[32], vfy[12];
+    uint8_t hash[32], vfy[12];
 
     if ( c->cert_req ) {                            /* no certificate to give */
-        unsigned char none[3];
+        uint8_t none[3];
         none[0] = none[1] = none[2] = 0;
         if ( queue_handshake( c, HS_CERTIFICATE, none, 3, 0 ) != 0 ) return -1;
     }
     if ( c->si->kx != KX_RSA ) {                    /* ECDHE key exchange */
-        unsigned char shared[48], cke[1 + POINT_MAX];
+        uint8_t shared[48], cke[1 + POINT_MAX];
         int slen, plen = point_len( c->eph_group );
         if (!c->have_srv_point) return -1;
         if ( ecdh_shared( c, shared, &slen ) != 0 ) return -1;
-        cke[0] = (unsigned char)plen;               /* ECPoint length */
+        cke[0] = (uint8_t)plen;                     /* ECPoint length */
         memcpy(cke + 1, c->eph_pub, plen);
         if (queue_handshake(c, HS_CLIENT_KEY_EXCHANGE, cke, 1 + plen, 0) != 0) return -1;
         derive_keys(c, shared, slen);               /* premaster = shared X */
         memset(shared, 0, sizeof(shared));
     } else {                                        /* RSA key exchange */
-        unsigned char premaster[48], enc[512], cke[520], rnd[512];
+        uint8_t premaster[48], enc[512], cke[520], rnd[512];
         int enclen;
         if ( c->lkey.type != X509_KEY_RSA ) return -1;
         premaster[0] = 3; premaster[1] = 3;
@@ -892,7 +918,7 @@ static int hs_send_keys(tls_conn *c)
         rng_bytes(c->rng, rnd, sizeof(rnd));
         if (rsa_pkcs1_encrypt(&c->skey, premaster, 48, rnd, enc) != 0) return -1;
         enclen = c->skey.klen;
-        cke[0] = (unsigned char)(enclen >> 8); cke[1] = (unsigned char)enclen;
+        cke[0] = (uint8_t)(enclen >> 8); cke[1] = (uint8_t)enclen;
         memcpy(cke + 2, enc, enclen);
         if (queue_handshake(c, HS_CLIENT_KEY_EXCHANGE, cke, enclen + 2, 0) != 0) return -1;
         derive_keys(c, premaster, 48);
@@ -901,7 +927,7 @@ static int hs_send_keys(tls_conn *c)
 
     if (queue_ccs(c) != 0) return -1;
     if (c->si->sha384) {
-        unsigned char h384[48];
+        uint8_t h384[48];
         handshake_hash384(c, h384);
         tls12_prf_sha384(c->master, 48, "client finished", h384, 48, vfy, 12);
     } else {
@@ -914,7 +940,7 @@ static int hs_send_keys(tls_conn *c)
 
 /* One TLS 1.2 server message after the ServerHello, already folded into
    the transcript.  0 ok / -1 bad. */
-static int hs_msg12( tls_conn *c, int mtype, const unsigned char *body, int blen )
+static int hs_msg12( tls_conn *c, int mtype, const uint8_t *body, int blen )
 {
     switch ( mtype ) {
     case HS_CERTIFICATE:
@@ -941,11 +967,11 @@ static int hs_msg12( tls_conn *c, int mtype, const unsigned char *body, int blen
 
 /* TLS 1.3 CertificateVerify: the leaf's signature over the transcript up to
    the Certificate ('th', taken before this message was folded in). */
-static int check_cv13( tls_conn *c, const unsigned char *b, int blen,
-                       const unsigned char *th )
+static int check_cv13( tls_conn *c, const uint8_t *b, int blen,
+                       const uint8_t *th )
 {
     static const char ctx[] = "TLS 1.3, server CertificateVerify";
-    unsigned char msg[64 + sizeof( ctx ) + 48];
+    uint8_t msg[64 + sizeof( ctx ) + 48];
     int scheme, slen, hl = th_len( c ), mlen;
 
     if ( blen < 4 ) return -1;
@@ -971,7 +997,7 @@ static int check_cv13( tls_conn *c, const unsigned char *b, int blen,
    handshake key, then switch both directions to the application keys. */
 static int finish13( tls_conn *c )
 {
-    unsigned char th[48], salt[48], master[48], c_ap[48], s_ap[48], fk[48], vfy[48];
+    uint8_t th[48], salt[48], master[48], c_ap[48], s_ap[48], fk[48], vfy[48];
     int hl = th_len( c );
 
     th_hash( c, th );                               /* CH .. server Finished */
@@ -982,9 +1008,9 @@ static int finish13( tls_conn *c )
 
     if ( queue_ccs13( c ) != 0 ) return -1;
     if ( c->cert_req ) {
-        unsigned char none[1 + 255 + 3];
+        uint8_t none[1 + 255 + 3];
         int n = 0;
-        none[n++] = (unsigned char)c->req_ctxlen;
+        none[n++] = (uint8_t)c->req_ctxlen;
         memcpy( none + n, c->req_ctx, c->req_ctxlen ); n += c->req_ctxlen;
         none[n++] = 0; none[n++] = 0; none[n++] = 0;    /* no certificates */
         if ( queue_handshake( c, HS_CERTIFICATE, none, n, 1 ) != 0 ) return -1;
@@ -1011,10 +1037,10 @@ static int finish13( tls_conn *c )
 
 /* One TLS 1.3 encrypted server message, in the order RFC 8446 4 fixes.
    'raw' is the whole message (header included), not yet folded.  0 / -1. */
-static int hs_msg13( tls_conn *c, int mtype, const unsigned char *body, int blen,
-                     const unsigned char *raw )
+static int hs_msg13( tls_conn *c, int mtype, const uint8_t *body, int blen,
+                     const uint8_t *raw )
 {
-    unsigned char th[48];
+    uint8_t th[48];
     int hl = th_len( c );
 
     if ( mtype == HS_CERTIFICATE_VERIFY || mtype == HS_FINISHED ) {
@@ -1051,7 +1077,7 @@ static int hs_msg13( tls_conn *c, int mtype, const unsigned char *body, int blen
         c->step13 = S13_FIN;
         return 0;
     case S13_FIN: {
-        unsigned char fk[48], expect[48];
+        uint8_t fk[48], expect[48];
         int i, diff = 0;
         if ( mtype != HS_FINISHED || blen != hl ) return -1;
         tls13_expand_label( hl, c->s_secret, "finished", NULL, 0, fk, hl );
@@ -1072,15 +1098,15 @@ static int hs_msg13( tls_conn *c, int mtype, const unsigned char *body, int blen
 
 /* HelloRetryRequest: the transcript restarts as message_hash(Hash(CH1)) ||
    HRR (RFC 8446 4.4.1), and the ClientHello goes again with the cookie. */
-static int do_hrr( tls_conn *c, const unsigned char *raw, int rawlen )
+static int do_hrr( tls_conn *c, const uint8_t *raw, int rawlen )
 {
-    unsigned char h[48], mh[4];
+    uint8_t h[48], mh[4];
     int hl = th_len( c );
 
     th_hash( c, h );                                /* Hash( ClientHello1 ) */
     sha256_init( &c->hh );
     sha384_init( &c->hh384 );
-    mh[0] = HS_MESSAGE_HASH; mh[1] = 0; mh[2] = 0; mh[3] = (unsigned char)hl;
+    mh[0] = HS_MESSAGE_HASH; mh[1] = 0; mh[2] = 0; mh[3] = (uint8_t)hl;
     transcript_update( c, mh, 4 );
     transcript_update( c, h, hl );
     transcript_update( c, raw, rawlen );
@@ -1094,7 +1120,7 @@ static int do_hrr( tls_conn *c, const unsigned char *raw, int rawlen )
 static int hs_messages( tls_conn *c )
 {
     int r, mtype, blen;
-    unsigned char *body;
+    uint8_t *body;
 
     while ( c->hs_state == HS_FLIGHT ) {
         r = hbuf_next( c, &mtype, &body, &blen );
@@ -1174,14 +1200,14 @@ void tls_hs_start(tls_conn *c, const char *host)
     c->ilen = 0;
 }
 
-int tls_hs_feed(tls_conn *c, const unsigned char *data, int len)
+int tls_hs_feed(tls_conn *c, const uint8_t *data, int len)
 {
     int need = c->ilen + len;
     if (need > c->icap) {
         int nc = c->icap ? c->icap : 8192;
-        unsigned char *nb;
+        uint8_t *nb;
         while (nc < need) nc *= 2;
-        nb = (unsigned char *)realloc(c->ibuf, nc);
+        nb = (uint8_t *)realloc(c->ibuf, nc);
         if (nb == NULL) return -1;
         c->ibuf = nb; c->icap = nc;
     }
@@ -1222,7 +1248,7 @@ int tls_hs_pump(tls_conn *c)
         }
 
         case HS_EXPECT_FIN: {
-            unsigned char fin[64], hash[32], expect[12];
+            uint8_t fin[64], hash[32], expect[12];
             int rl = have_record(c), ct, plen, i;
             if (rl == 0) return TLS_HS_WANT_READ;
             if (rl < 0 || c->ibuf[0] != TLS_CT_HANDSHAKE) {
@@ -1234,7 +1260,7 @@ int tls_hs_pump(tls_conn *c)
                 c->hs_state = HS_FAILED; return TLS_HS_ERROR;
             }
             if (c->si->sha384) {
-                unsigned char h384[48];
+                uint8_t h384[48];
                 handshake_hash384(c, h384);
                 tls12_prf_sha384(c->master, 48, "server finished", h384, 48, expect, 12);
             } else {
@@ -1253,12 +1279,12 @@ int tls_hs_pump(tls_conn *c)
     }
 }
 
-int  tls_hs_out_ptr(tls_conn *c, unsigned char **ptr)
+int  tls_hs_out_ptr(tls_conn *c, uint8_t **ptr)
 { *ptr = c->obuf + c->opos; return c->olen - c->opos; }
 void tls_hs_out_consume(tls_conn *c, int n)
 { c->opos += n; if (c->opos >= c->olen) { c->opos = c->olen = 0; } }
 int  tls_hs_pending_output(tls_conn *c) { return c->olen - c->opos; }
-int  tls_hs_leftover(tls_conn *c, unsigned char **ptr) { *ptr = c->ibuf; return c->ilen; }
+int  tls_hs_leftover(tls_conn *c, uint8_t **ptr) { *ptr = c->ibuf; return c->ilen; }
 
 /* --- lifecycle ------------------------------------------------------------ */
 tls_conn *tls_new(nst_rng *rng)
@@ -1284,8 +1310,8 @@ void tls_free(tls_conn *c)
 int tls_client_handshake(tls_conn *c, const char *host,
                          tls_send_fn send, tls_recv_fn recv, void *ioctx)
 {
-    unsigned char tmp[REC_MAX + 8];
-    unsigned char *p;
+    uint8_t tmp[REC_MAX + 8];
+    uint8_t *p;
     int st, n, m;
 
     tls_hs_start(c, host);
@@ -1309,10 +1335,10 @@ int tls_client_handshake(tls_conn *c, const char *host,
    request for one is answered with the next record we send), a session
    ticket is dropped (no resumption is offered).  TLS 1.2's are ignored, as
    they always were.  0 ok / -1 bad. */
-static int post_handshake( tls_conn *c, const unsigned char *p, int n )
+static int post_handshake( tls_conn *c, const uint8_t *p, int n )
 {
     int r, mtype, blen;
-    unsigned char *body;
+    uint8_t *body;
 
     if ( !c->tls13 ) return 0;
     if ( hbuf_append( c, p, n ) != 0 ) return -1;
@@ -1334,12 +1360,12 @@ static int post_handshake( tls_conn *c, const unsigned char *p, int n )
    goes first, under the old key, and this record under the new one - both in
    'out'.  Returns the bytes written, or -1. */
 #define KU_REC  ( TLS_REC_HDR + 4 + 1 + 1 + 16 )    /* a KeyUpdate record */
-static int protect_out( tls_conn *c, int type, const unsigned char *in, int len,
-                        unsigned char *out, int outcap )
+static int protect_out( tls_conn *c, int type, const uint8_t *in, int len,
+                        uint8_t *out, int outcap )
 {
     int pre = 0, n;
     if ( c->ku_send ) {
-        unsigned char ku[5];
+        uint8_t ku[5];
         if ( outcap < KU_REC + TLS_REC_HDR + len + 1 + 16 ) return -1;
         ku[0] = HS_KEY_UPDATE; ku[1] = 0; ku[2] = 0; ku[3] = 1;
         ku[4] = 0;                                  /* update_not_requested */
@@ -1354,11 +1380,11 @@ static int protect_out( tls_conn *c, int type, const unsigned char *in, int len,
 }
 
 int tls_write_app(tls_conn *c, tls_send_fn send, void *ioctx,
-                  const unsigned char *data, int len)
+                  const uint8_t *data, int len)
 {
-    unsigned char *rec;
+    uint8_t *rec;
     int reclen, rc;
-    rec = (unsigned char *)malloc(len + 128);
+    rec = (uint8_t *)malloc(len + 128);
     if (rec == NULL) return -1;
     reclen = protect_out(c, TLS_CT_APPLICATION_DATA, data, len, rec, len + 128);
     if (reclen < 0) { free(rec); return -1; }
@@ -1368,7 +1394,7 @@ int tls_write_app(tls_conn *c, tls_send_fn send, void *ioctx,
 }
 
 int tls_read_app(tls_conn *c, tls_recv_fn recv, void *ioctx,
-                 unsigned char *out, int outcap)
+                 uint8_t *out, int outcap)
 {
     int reclen, type, ct, plen;
     for (;;) {
@@ -1384,14 +1410,14 @@ int tls_read_app(tls_conn *c, tls_recv_fn recv, void *ioctx,
     }
 }
 
-int tls_app_encrypt(tls_conn *c, const unsigned char *in, int len,
-                    unsigned char *out, int outcap)
+int tls_app_encrypt(tls_conn *c, const uint8_t *in, int len,
+                    uint8_t *out, int outcap)
 {
     if (len > TLS_APP_MAX) len = TLS_APP_MAX;
     return protect_out(c, TLS_CT_APPLICATION_DATA, in, len, out, outcap);
 }
-int tls_app_decrypt(tls_conn *c, const unsigned char *rec, int reclen,
-                    unsigned char *out, int outcap, int *content_type)
+int tls_app_decrypt(tls_conn *c, const uint8_t *rec, int reclen,
+                    uint8_t *out, int outcap, int *content_type)
 {
     int plen = tls_unprotect(&c->kr, rec, reclen, content_type, out, outcap);
     if (plen >= 0 && *content_type == TLS_CT_HANDSHAKE &&
@@ -1421,7 +1447,7 @@ int tls_is_established(const tls_conn *c)
 int tls_get_cert_count(const tls_conn *c)
 { return c ? c->nchain : 0; }
 
-int tls_get_cert(const tls_conn *c, int index, unsigned char *out, int outcap)
+int tls_get_cert(const tls_conn *c, int index, uint8_t *out, int outcap)
 {
     int n;
     if (c == NULL || index < 0 || index >= c->nchain) return 0;
@@ -1436,8 +1462,8 @@ int tls_get_cert(const tls_conn *c, int index, unsigned char *out, int outcap)
    hard-wired to TLS_CT_APPLICATION_DATA).  Needed to emit a protected alert -
    close_notify - at shutdown.  Returns the record length, or -1. */
 int tls_app_encrypt_type(tls_conn *c, int content_type,
-                         const unsigned char *in, int len,
-                         unsigned char *out, int outcap)
+                         const uint8_t *in, int len,
+                         uint8_t *out, int outcap)
 {
     if (c == NULL || len > TLS_APP_MAX) return -1;
     return protect_out(c, content_type, in, len, out, outcap);

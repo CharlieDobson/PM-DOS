@@ -37,34 +37,34 @@ enum { XML_EOF, XML_START, XML_END, XML_TEXT, XML_ERROR };
 #define XML_NS_URI      "http://www.w3.org/XML/1998/namespace"
 
 typedef struct {
-    int   ns;                   /* the namespace's number */
-    const char *name;           /* the name after the colon: name_len bytes */
-    u32   name_len;
-    const char *value;          /* ends with a 0 */
-    u32   value_len;
-    u32   at;                   /* xml_next's own */
+    int          ns;            /* the namespace's number */
+    const char  *name;          /* the name after the colon: name_len bytes */
+    unsigned int name_len;
+    const char  *value;         /* ends with a 0 */
+    unsigned int value_len;
+    unsigned int at;            /* xml_next's own */
 } XATTR;
 
 typedef struct XML XML;
 
 struct XML {
     /* the piece xml_next last gave */
-    int   token;                /* XML_*: which kind it was */
-    int   ns;                   /* XML_START, XML_END: the element's namespace */
-    const char *name;           /* ...and its name: name_len bytes */
-    u32   name_len;
-    int   depth;                /* ...and how deep it is: 1 for the outermost */
-    XATTR *attr;                /* XML_START: its attributes */
-    u32   nattr;
-    const char *text;           /* XML_TEXT: text_len bytes */
-    u32   text_len;
+    int          token;         /* XML_*: which kind it was */
+    int          ns;            /* XML_START, XML_END: the element's namespace */
+    const char  *name;          /* ...and its name: name_len bytes */
+    unsigned int name_len;
+    int          depth;         /* ...and how deep it is: 1 for the outermost */
+    XATTR       *attr;          /* XML_START: its attributes */
+    unsigned int nattr;
+    const char  *text;          /* XML_TEXT: text_len bytes */
+    unsigned int text_len;
 };
 
 /* what xml_mark keeps: a place to come back to */
 typedef struct {
-    u32 pos;
-    u32 level, nbind;
-    int pending;
+    unsigned int pos;
+    unsigned int level, nbind;
+    int          pending;
 } XMARK;
 
 /*
@@ -72,7 +72,7 @@ typedef struct {
  * xml_close.  UTF-8, with or without a byte-order mark, or UTF-16 with
  * one.  NULL if there is no memory.
  */
-XML  *xml_open( const u8 *data, u32 len );
+XML  *xml_open( const uint8_t *data, uint32_t len );
 void  xml_close( XML *xml );
 /* a namespace the reader knows, and the number (not 0) it is given as.
    "uri" must stay where it is.  0 if there is no memory. */
@@ -102,7 +102,7 @@ int   xml_child( XML *xml, int depth );
 /* after a start: the text inside the element, whatever elements it is
    in, gathered into "buf" (cut to fit, ended with a 0), up to and
    including the element's end.  0 as for xml_skip. */
-int   xml_gather( XML *xml, char *buf, u32 max );
+int   xml_gather( XML *xml, char *buf, unsigned int max );
 /* a place kept and gone back to, to read something twice: marked
    after an element's start, and gone back to before anything after
    that element's end has been read */
@@ -121,8 +121,8 @@ void  xml_rewind( XML *xml, const XMARK *mark );
  * too, and a tab or a line end as a character reference, so that it
  * comes back as it went in.
  */
-void  xml_esc( OUT *out, const char *text, int quote );             /* UTF-8, to a 0 */
-void  xml_esc_n( OUT *out, const u8 *text, u32 len, int quote );    /* UTF-8 */
-void  xml_esc16( OUT *out, const u16 *text, u32 len, int quote );   /* a document's own */
+void  xml_esc( OUT *out, const char *text, int quote );                      /* UTF-8, to a 0 */
+void  xml_esc_n( OUT *out, const uint8_t *text, unsigned int len, int quote );   /* UTF-8 */
+void  xml_esc16( OUT *out, const uint16_t *text, unsigned int len, int quote );  /* a document's own */
 
 #endif

@@ -37,26 +37,26 @@ enum { PN_LCD, PN_AN, PN_SEEK, PN_TRANS, PN_EQ };
 #define BARS_MAX        64
 #define LCD_COLS        18              /* the time's width, in cells */
 
-static u8  bar_now[BARS_MAX];           /* the height shown, 0..255 */
-static u8  bar_peak[BARS_MAX];
-static u8  bar_hold[BARS_MAX];          /* frames the peak waits */
-static int bar_count = 32;
-static s16 scope[640];
-static int scope_count;
+static uint8_t  bar_now[BARS_MAX];      /* the height shown, 0..255 */
+static uint8_t  bar_peak[BARS_MAX];
+static uint8_t  bar_hold[BARS_MAX];     /* frames the peak waits */
+static int      bar_count = 32;
+static int16_t  scope[640];
+static int      scope_count;
 static const char *status_text;
-static u32 shown_sec = 0xFFFFFFFFUL;
-static int shown_seek = -1;
-static int shown_state = -1;
-static u32 sig_eq, sig_tr, sig_lcd;
+static uint32_t shown_sec = 0xFFFFFFFFUL;
+static int      shown_seek = -1;
+static int      shown_state = -1;
+static uint32_t sig_eq, sig_tr, sig_lcd;
 
 /* colors, chosen for the screen in view_layout */
 static struct {
-    u8 an_bg, an_grid;
-    u8 lit[3], dim[3];                  /* green, yellow, red */
-    u8 peak;
-    u8 scope;
-    u8 lcd_bg, lcd_on, lcd_off;
-    u8 groove, fill, curve, zero;
+    uint8_t an_bg, an_grid;
+    uint8_t lit[3], dim[3];             /* green, yellow, red */
+    uint8_t peak;
+    uint8_t scope;
+    uint8_t lcd_bg, lcd_on, lcd_off;
+    uint8_t groove, fill, curve, zero;
 } col;
 
 /* the transport buttons, left to right */
@@ -91,23 +91,23 @@ void view_init( void )
 static void pick_colors( void )
 {
     if ( gfx_on && gfx_colors == 256 ) {
-        col.an_bg = (u8)gfx_rgb( 0x000000UL );
-        col.an_grid = (u8)gfx_rgb( 0x0A1A0AUL );
-        col.lit[0] = (u8)gfx_rgb( 0x33FF33UL );
-        col.lit[1] = (u8)gfx_rgb( 0xFFFF33UL );
-        col.lit[2] = (u8)gfx_rgb( 0xFF3333UL );
-        col.dim[0] = (u8)gfx_rgb( 0x003300UL );
-        col.dim[1] = (u8)gfx_rgb( 0x333300UL );
-        col.dim[2] = (u8)gfx_rgb( 0x330000UL );
-        col.peak = (u8)gfx_rgb( 0xFFFFFFUL );
-        col.scope = (u8)gfx_rgb( 0x33FFFFUL );
-        col.lcd_bg = (u8)gfx_rgb( 0x000000UL );
-        col.lcd_on = (u8)gfx_rgb( 0x33FF66UL );
-        col.lcd_off = (u8)gfx_rgb( 0x002200UL );
-        col.groove = (u8)gfx_rgb( 0x333333UL );
-        col.fill = (u8)gfx_rgb( 0x0066CCUL );
-        col.curve = (u8)gfx_rgb( 0x0099FFUL );
-        col.zero = (u8)gfx_rgb( 0x999999UL );
+        col.an_bg = (uint8_t)gfx_rgb( 0x000000UL );
+        col.an_grid = (uint8_t)gfx_rgb( 0x0A1A0AUL );
+        col.lit[0] = (uint8_t)gfx_rgb( 0x33FF33UL );
+        col.lit[1] = (uint8_t)gfx_rgb( 0xFFFF33UL );
+        col.lit[2] = (uint8_t)gfx_rgb( 0xFF3333UL );
+        col.dim[0] = (uint8_t)gfx_rgb( 0x003300UL );
+        col.dim[1] = (uint8_t)gfx_rgb( 0x333300UL );
+        col.dim[2] = (uint8_t)gfx_rgb( 0x330000UL );
+        col.peak = (uint8_t)gfx_rgb( 0xFFFFFFUL );
+        col.scope = (uint8_t)gfx_rgb( 0x33FFFFUL );
+        col.lcd_bg = (uint8_t)gfx_rgb( 0x000000UL );
+        col.lcd_on = (uint8_t)gfx_rgb( 0x33FF66UL );
+        col.lcd_off = (uint8_t)gfx_rgb( 0x002200UL );
+        col.groove = (uint8_t)gfx_rgb( 0x333333UL );
+        col.fill = (uint8_t)gfx_rgb( 0x0066CCUL );
+        col.curve = (uint8_t)gfx_rgb( 0x0099FFUL );
+        col.zero = (uint8_t)gfx_rgb( 0x999999UL );
     } else {
         col.an_bg = 0;
         col.an_grid = 0;
@@ -209,9 +209,9 @@ void view_status( const char *text )
 /* ------------------------------------------------------------------ */
 /* small helpers                                                       */
 /* ------------------------------------------------------------------ */
-static void time_text( char *buf, u32 max, u32 ms )
+static void time_text( char *buf, unsigned int max, uint32_t ms )
 {
-    u32 sec = ms / 1000;
+    uint32_t sec = ms / 1000;
 
     if ( sec >= 3600 ) {
         sfmt( buf, max, "%u:%02u:%02u", sec / 3600, (sec / 60) % 60, sec % 60 );
@@ -231,7 +231,7 @@ static int is_playing( void )
 /* a button's cells on a text screen */
 static void text_button( int row, int col, const char *label, int lit )
 {
-    u8 attr = lit ? pal.menu_sel : pal.button;
+    uint8_t attr = lit ? pal.menu_sel : pal.button;
 
     scr_ch( row, col, '[', pal.desk );
     scr_putw( row, col + 1, label, 3, attr );
@@ -267,12 +267,12 @@ static int row_of_db( int half_db, int top, int rows )
 /* ------------------------------------------------------------------ */
 /* the seven segments of 0-9, a bit each: a top, b top right, c bottom
    right, d bottom, e bottom left, f top left, g middle */
-static const u8 seg_of[10] = { 0x3F, 0x06, 0x5B, 0x4F, 0x66, 0x6D, 0x7D, 0x07, 0x7F, 0x6F };
+static const uint8_t seg_of[10] = { 0x3F, 0x06, 0x5B, 0x4F, 0x66, 0x6D, 0x7D, 0x07, 0x7F, 0x6F };
 
 static void lcd_digit( int x, int y, int w, int h, int digit )
 {
     int t = w / 5 > 2 ? w / 5 : 2, half = h / 2, seg, i;
-    u8 on;
+    uint8_t on;
 
     seg = digit >= 0 && digit <= 9 ? seg_of[digit] : 0;
     for ( i = 0; i < 7; i++ ) {
@@ -339,7 +339,7 @@ static void paint_an( int pane, int x0, int y0, int x1, int y1 )
 {
     int x, y, w, h, bar, bw, gap, bx, row, seg, segs, lit, peak, band, i, py, prev;
     int margin;
-    u8 *line, color;
+    uint8_t *line, color;
     int left, right;
 
     if ( !pane_rect( pane, &x, &y, &w, &h ) ) {
@@ -385,7 +385,7 @@ static void paint_an( int pane, int x0, int y0, int x1, int y1 )
         if ( right >= gfx_width ) {
             right = gfx_width - 1;
         }
-        mem_set( line + left, col.an_bg, (u32)(right - left + 1) );
+        mem_set( line + left, col.an_bg, (unsigned int)(right - left + 1) );
         seg = (y + h - 3 - row) / 4;                    /* the segment this row is in */
         if ( row > y + h - 3 || row < y + 2 || seg >= segs || ((y + h - 3 - row) & 3) == 3 ) {
             continue;                                   /* a gap between segments */
@@ -420,7 +420,7 @@ static void paint_an( int pane, int x0, int y0, int x1, int y1 )
 static void draw_an_text( void )
 {
     int bar, row, col0, rows = plan.an_rows, level, cells, band;
-    u8 attr;
+    uint8_t attr;
 
     for ( row = 0; row < rows; row++ ) {
         scr_fill( plan.an_top + row, 0, scr_cols, ' ', ATTR( 7, 0 ) );
@@ -476,7 +476,7 @@ static int seek_at( int width )
     if ( st.pos_ms >= st.len_ms ) {
         return width;
     }
-    return (int)fx_umuldiv( st.pos_ms, (u32)width, st.len_ms );
+    return (int)fx_umuldiv( st.pos_ms, (uint32_t)width, st.len_ms );
 }
 
 static void paint_seek( int pane, int x0, int y0, int x1, int y1 )
@@ -639,7 +639,7 @@ static void draw_trans_text( void )
         at = set.volume * width / 100;
         scr_fill( plan.tr_top, vol_col() + 4, width, 0xFA, ATTR( 8, 0 ) );
         scr_fill( plan.tr_top, vol_col() + 4, at, 0xFE, ATTR( 10, 0 ) );
-        sfmt( text, sizeof( text ), "%3u%%", (u32)set.volume );
+        sfmt( text, sizeof( text ), "%3u%%", (unsigned int)set.volume );
         scr_put( plan.tr_top, vol_col() + 5 + width, text, pal.desk );
     }
 }
@@ -679,8 +679,8 @@ static int eq_track_rows( void )
 static void paint_eq( int pane, int x0, int y0, int x1, int y1 )
 {
     int x, y, w, h, index, sx, sy, top, bottom, mid, k, prev_y, py, rows;
-    u32 hz, gain;
-    s32 db256;
+    uint32_t hz, gain;
+    int32_t db256;
     int knob_w = 14;
 
     (void)x0; (void)y0; (void)x1; (void)y1;
@@ -705,20 +705,20 @@ static void paint_eq( int pane, int x0, int y0, int x1, int y1 )
         sx = eq_slider_col( 1 ) * CELL_W + CELL_W
              + k * (eq_slider_col( EQ_BANDS ) - eq_slider_col( 1 )) * CELL_W / 200;
         /* 31.25 Hz * 2^(9k/200) */
-        hz = (u32)31 << ((k * 9) / 200);
-        hz += hz * (u32)((k * 9) % 200) / 200;
+        hz = (uint32_t)31 << ((k * 9) / 200);
+        hz += hz * (uint32_t)((k * 9) % 200) / 200;
         gain = eq_gain_at( &set.eq, hz );
         /* the gain back to decibels: 20 log10 by steps of a quarter of
            a decibel, which is finer than a pixel of the display */
         db256 = 0;
         if ( gain > 65536UL ) {
             while ( gain > 65536UL && db256 < 12 * 256 ) {
-                gain = (u32)fx_umuldiv( gain, 63676UL, 65536UL );      /* -0.25 dB */
+                gain = (uint32_t)fx_umuldiv( gain, 63676UL, 65536UL );  /* -0.25 dB */
                 db256 += 64;
             }
         } else {
             while ( gain < 65536UL && db256 > -12 * 256 ) {
-                gain = (u32)fx_umuldiv( gain, 67450UL, 65536UL );      /* +0.25 dB */
+                gain = (uint32_t)fx_umuldiv( gain, 67450UL, 65536UL );  /* +0.25 dB */
                 db256 -= 64;
             }
         }
@@ -745,7 +745,7 @@ static void draw_eq_cells( void )
 {
     int index, row, c, rows = eq_track_rows(), top = eq_track_top(), at, zero, len;
     char text[48];
-    u8 attr, frame_attr = focus == FO_EQ ? pal.menu_sel : pal.dlg;
+    uint8_t attr, frame_attr = focus == FO_EQ ? pal.menu_sel : pal.dlg;
 
     for ( row = plan.low_top; row < plan.low_top + plan.low_rows; row++ ) {
         scr_fill( row, plan.eq_left, plan.eq_cols, ' ', gfx_on ? pal.dlg : pal.desk );
@@ -813,9 +813,9 @@ static void draw_list( void )
 {
     int row, index, rows = list_rows(), left = plan.pl_left, width = plan.pl_cols - 1, len;
     char text[200], time_buf[16];
-    u8 attr;
+    uint8_t attr;
 
-    sfmt( text, sizeof( text ), " Playlist  %u file%s ", (u32)plist_count, plist_count == 1 ? "" : "s" );
+    sfmt( text, sizeof( text ), " Playlist  %u file%s ", (unsigned int)plist_count, plist_count == 1 ? "" : "s" );
     scr_putw( plan.low_top, left, text, plan.pl_cols, focus == FO_LIST ? pal.menu_sel : pal.dlg );
     for ( row = 0; row < rows; row++ ) {
         index = plist_top + row;
@@ -833,11 +833,11 @@ static void draw_list( void )
         if ( plist[index].length_ms ) {
             time_text( time_buf, sizeof( time_buf ), plist[index].length_ms );
         }
-        sfmt( text, sizeof( text ), "%c%3u. %s", index == plist_now ? 0x10 : ' ', (u32)index + 1,
+        sfmt( text, sizeof( text ), "%c%3u. %s", index == plist_now ? 0x10 : ' ', (unsigned int)index + 1,
               plist[index].failed ? "(will not play) " : "" );
         len = (int)str_len( text );
         /* as much of the name as fits (the row cuts it shorter anyway) */
-        str_cpyt( text + len, plist_name( index ), sizeof( text ) - (u32)len );
+        str_cpyt( text + len, plist_name( index ), sizeof( text ) - (unsigned int)len );
         if ( time_buf[0] && width > len + 10 ) {
             /* the name cut short of the time, with a blank between */
             scr_putw( plan.low_top + 1 + row, left, text, width - (int)str_len( time_buf ) - 2, attr );
@@ -860,7 +860,7 @@ static void draw_info( void )
     PLSTAT st;
     char text[200], pos[16], len[16];
     int left = gfx_on ? LCD_COLS + 1 : 1, row, width;
-    u8 attr = gfx_on ? pal.dlg : pal.desk;
+    uint8_t attr = gfx_on ? pal.dlg : pal.desk;
     const char *name = plist_now >= 0 ? plist_name( plist_now ) : "";
 
     pl_status( &st );
@@ -928,7 +928,7 @@ static void draw_status( void )
     }
     if ( key_testing() && card->present ) {
         /* for the test log: what the driver and the kernel say */
-        u32 regs[6];
+        uint32_t regs[6];
 
         mem_set( regs, 0, sizeof( regs ) );
         regs[3] = card->irq;
@@ -936,7 +936,7 @@ static void draw_status( void )
             regs[0] = regs[1] = 0xFFFFFFFFUL;
         }
         sfmt( text, sizeof( text ), " T %u ms, card irqs %u, driver state %u, dropouts %u, line flags %X taken %u",
-              st.pos_ms, st.irqs, (u32)st.drv_state, st.underruns, regs[0], regs[1] );
+              st.pos_ms, st.irqs, (unsigned int)st.drv_state, st.underruns, regs[0], regs[1] );
     }
     scr_putw( plan.status_row, 0, text, scr_cols, pal.status );
     if ( set.eq.on && scr_cols > 40 ) {
@@ -952,24 +952,24 @@ static void draw_status( void )
 static void repaint_changed( void )
 {
     PLSTAT st;
-    u32 sig;
+    uint32_t sig;
     int index;
 
-    sig = (u32)set.eq.on | ((u32)focus << 1) | ((u32)eq_pick << 2) | ((u32)(u8)set.eq.preamp << 8);
+    sig = (uint32_t)set.eq.on | ((uint32_t)focus << 1) | ((uint32_t)eq_pick << 2) | ((uint32_t)(uint8_t)set.eq.preamp << 8);
     for ( index = 0; index < EQ_BANDS; index++ ) {
-        sig = sig * 31 + (u8)set.eq.band[index];
+        sig = sig * 31 + (uint8_t)set.eq.band[index];
     }
     if ( sig != sig_eq ) {
         sig_eq = sig;
         pane_damage_all( PN_EQ );
     }
     pl_status( &st );
-    sig = (u32)set.volume | ((u32)set.repeat << 8) | ((u32)set.shuffle << 10) | ((u32)st.state << 12);
+    sig = (uint32_t)set.volume | ((uint32_t)set.repeat << 8) | ((uint32_t)set.shuffle << 10) | ((uint32_t)st.state << 12);
     if ( sig != sig_tr ) {
         sig_tr = sig;
         pane_damage_all( PN_TRANS );
     }
-    sig = (st.pos_ms / 1000) | ((u32)st.state << 28);
+    sig = (st.pos_ms / 1000) | ((uint32_t)st.state << 28);
     if ( sig != sig_lcd ) {
         sig_lcd = sig;
         pane_damage_all( PN_LCD );
@@ -1031,7 +1031,7 @@ void view_draw( void )
    graphics screen the panes that changed told so */
 void view_animate( void )
 {
-    u8 fresh[BARS_MAX];
+    uint8_t fresh[BARS_MAX];
     int bar, changed = 0, sec_now, seek_now, state_now;
     PLSTAT st;
 
@@ -1048,7 +1048,7 @@ void view_animate( void )
                 }
                 bar_now[bar] = fresh[bar];
             } else {
-                bar_now[bar] = (u8)(bar_now[bar] > 20 ? bar_now[bar] - 20 : 0);
+                bar_now[bar] = (uint8_t)(bar_now[bar] > 20 ? bar_now[bar] - 20 : 0);
                 changed = 1;
             }
             if ( bar_now[bar] >= bar_peak[bar] ) {
@@ -1057,7 +1057,7 @@ void view_animate( void )
             } else if ( bar_hold[bar] > 0 ) {
                 bar_hold[bar]--;
             } else if ( bar_peak[bar] > 0 ) {
-                bar_peak[bar] = (u8)(bar_peak[bar] > 8 ? bar_peak[bar] - 8 : 0);
+                bar_peak[bar] = (uint8_t)(bar_peak[bar] > 8 ? bar_peak[bar] - 8 : 0);
                 changed = 1;
             }
         }
@@ -1069,8 +1069,8 @@ void view_animate( void )
         pl_status( &st );
         sec_now = (int)(st.pos_ms / 1000);
         state_now = st.state;
-        if ( (u32)sec_now != shown_sec || state_now != shown_state ) {
-            shown_sec = (u32)sec_now;
+        if ( (uint32_t)sec_now != shown_sec || state_now != shown_state ) {
+            shown_sec = (uint32_t)sec_now;
             shown_state = state_now;
             pane_damage_all( PN_LCD );
             pane_damage_all( PN_TRANS );
@@ -1109,9 +1109,9 @@ static void eq_drag( int index )
         }
         value &= ~1;                    /* whole decibels from the mouse */
         if ( index == 0 ) {
-            set.eq.preamp = (s8)value;
+            set.eq.preamp = (int8_t)value;
         } else {
-            set.eq.band[index - 1] = (s8)value;
+            set.eq.band[index - 1] = (int8_t)value;
         }
         set.preset = -1;
         eq_apply();
@@ -1148,7 +1148,7 @@ static void seek_drag( void )
             x = width;
         }
         if ( mouse.kind == ME_UP || !(mouse_buttons() & MBTN_LEFT) ) {
-            seek_to( fx_umuldiv( (u32)x, st.len_ms, (u32)width ) );
+            seek_to( fx_umuldiv( (uint32_t)x, st.len_ms, (uint32_t)width ) );
             break;
         }
         key = key_get();

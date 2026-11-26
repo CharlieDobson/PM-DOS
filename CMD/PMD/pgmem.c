@@ -37,9 +37,9 @@ static int name_char( int ch )
 
 /* the eight bytes at the end of a block's header, if they read as a
    name: DOS 4 and later put a program's there */
-static void header_name( u32 header, char *name )
+static void header_name( uint32_t header, char *name )
 {
-    u8 raw[8];
+    uint8_t raw[8];
     int index;
 
     name[0] = 0;
@@ -59,10 +59,11 @@ static void header_name( u32 header, char *name )
 
 /* The file a PSP was loaded from: after its environment's last string
    there is a word of 1 and then the path.  Just the name is kept. */
-static void psp_file_name( u32 psp_seg, char *name, u32 max )
+static void psp_file_name( uint32_t psp_seg, char *name, unsigned int max )
 {
-    static u8 env[1024];
-    u32 env_seg = peek_w( (psp_seg << 4) + 0x2C ), pos, start;
+    static uint8_t env[1024];
+    uint32_t env_seg = peek_w( (psp_seg << 4) + 0x2C );
+    unsigned int pos, start;
 
     name[0] = 0;
     if ( env_seg == 0 || env_seg >= 0xFFF0 ) {
@@ -93,10 +94,10 @@ static void psp_file_name( u32 psp_seg, char *name, u32 max )
 }
 
 /* what was typed after a program's name: its PSP, offset 80h */
-static void psp_params( u32 psp_seg, char *params, u32 max )
+static void psp_params( uint32_t psp_seg, char *params, unsigned int max )
 {
-    u8 tail[128];
-    u32 len, pos = 1, out = 0;
+    uint8_t tail[128];
+    unsigned int len, pos = 1, out = 0;
 
     sys_peek( (psp_seg << 4) + 0x80, tail, sizeof( tail ) );
     len = tail[0];
@@ -115,7 +116,7 @@ static void psp_params( u32 psp_seg, char *params, u32 max )
 static void item_name( MEMITEM *item, const MEMBLK *blk )
 {
     char name[20];
-    u32 owner = blk->owner & 0xFFFF;
+    uint32_t owner = blk->owner & 0xFFFF;
 
     item->params[0] = 0;
     if ( blk->sig == 'Z' ) {
@@ -160,7 +161,7 @@ int mem_items( MEMITEM **items )
     MEMITEM *list = (MEMITEM *)try_alloc( MAX_BLOCKS * sizeof( MEMITEM ) );
     MEMBLK blk;
     int count = 0, arena;
-    u32 index;
+    unsigned int index;
 
     *items = list;
     if ( list == NULL ) {
@@ -179,13 +180,13 @@ int mem_items( MEMITEM **items )
 }
 
 /* who has the memory an address below 1MB is in: a block's name, or "" */
-const char *mem_owner_name( u32 addr )
+const char *mem_owner_name( uint32_t addr )
 {
     static char name[20];
     MEMITEM item;
     MEMBLK blk;
     int arena;
-    u32 index;
+    unsigned int index;
 
     name[0] = 0;
     for ( arena = ARENA_CONV; arena <= ARENA_UPPER; arena++ ) {
@@ -220,18 +221,18 @@ void pg_tsr( TEXT *text )
 /* ------------------------------------------------------------------ */
 
 typedef struct {
-    u32  header;                /* seg:off, as a far pointer in a dword */
-    u16  attr;
-    int  block;                 /* a block device: units, not a name */
-    int  units;
-    char name[9];
+    uint32_t header;            /* seg:off, as a far pointer in a dword */
+    uint16_t attr;
+    int      block;             /* a block device: units, not a name */
+    int      units;
+    char     name[9];
 } DEVICE;
 
 /* the chain's next driver; 0 when "at" was the last.  Start with 0. */
-static u32 dev_next( u32 at, DEVICE *dev )
+static uint32_t dev_next( uint32_t at, DEVICE *dev )
 {
-    u8 head[18];
-    u32 flat, next;
+    uint8_t head[18];
+    uint32_t flat, next;
     int index;
 
     if ( at == 0 ) {
@@ -248,7 +249,7 @@ static u32 dev_next( u32 at, DEVICE *dev )
         return 0;
     }
     dev->header = next;
-    dev->attr = *(u16 *)(head + 4);
+    dev->attr = *(uint16_t *)(head + 4);
     dev->block = (dev->attr & 0x8000) == 0;
     dev->units = head[10];
     for ( index = 0; index < 8; index++ ) {
@@ -265,7 +266,7 @@ static u32 dev_next( u32 at, DEVICE *dev )
 int dev_present( const char *name )
 {
     DEVICE dev;
-    u32 at = 0;
+    uint32_t at = 0;
     int guard;
 
     for ( guard = 0; guard < 100 && (at = dev_next( at, &dev )) != 0; guard++ ) {
@@ -279,7 +280,7 @@ int dev_present( const char *name )
 void pg_device( TEXT *text )
 {
     DEVICE dev;
-    u32 at = 0;
+    uint32_t at = 0;
     int guard, bit;
     char attrs[17], units[8];
     const char *file;
@@ -315,11 +316,12 @@ void pg_device( TEXT *text )
 /* An option ROM at "addr": how many K it says it is, or 0.  55 AA, its
    length in 512s, and every byte of it summing to zero - which a 55 AA
    that is only somebody's data will not. */
-static int option_rom( u32 addr )
+static int option_rom( uint32_t addr )
 {
-    static u8 part[512];
-    u8 head[3], sum = 0;
-    u32 blocks, index, pos;
+    static uint8_t part[512];
+    uint8_t head[3], sum = 0;
+    uint32_t blocks;
+    unsigned int index, pos;
 
     sys_peek( addr, head, 3 );
     if ( head[0] != 0x55 || head[1] != 0xAA || head[2] == 0 ) {
@@ -332,33 +334,34 @@ static int option_rom( u32 addr )
     for ( index = 0; index < blocks; index++ ) {
         sys_peek( addr + index * 512, part, 512 );
         for ( pos = 0; pos < 512; pos++ ) {
-            sum = (u8)(sum + part[pos]);
+            sum = (uint8_t)(sum + part[pos]);
         }
     }
     return sum == 0 ? (int)((blocks + 1) / 2) : 0;
 }
 
-static void map_fill( u8 map[MAP_ROWS][MAP_COLS], u32 addr, u32 bytes, int kind )
+static void map_fill( uint8_t map[MAP_ROWS][MAP_COLS], uint32_t addr, uint32_t bytes, int kind )
 {
-    u32 cell, cells = (bytes + 1023) / 1024;
+    unsigned int cell, cells = (bytes + 1023) / 1024;
 
     if ( addr < CONV_TOP ) {
         return;
     }
     for ( cell = (addr - CONV_TOP) / 1024; cells && cell < MAP_ROWS * MAP_COLS; cell++, cells-- ) {
-        map[cell / MAP_COLS][cell % MAP_COLS] = (u8)kind;
+        map[cell / MAP_COLS][cell % MAP_COLS] = (uint8_t)kind;
     }
 }
 
-void mem_map( u8 map[MAP_ROWS][MAP_COLS] )
+void mem_map( uint8_t map[MAP_ROWS][MAP_COLS] )
 {
-    static u8 block[1024];
-    u32 cell, addr, frame, total, avail, index, pos;
+    static uint8_t block[1024];
+    uint32_t addr, frame, total, avail;
+    unsigned int cell, index, pos;
     int rom_left = 0, arena;
     MEMBLK blk;
     /* E000h and up is the system's ROM on a Micro Channel machine;
        everywhere else it starts at F000h */
-    u32 rom_from = bus_is_mca() ? 0xE0000UL : 0xF0000UL;
+    uint32_t rom_from = bus_is_mca() ? 0xE0000UL : 0xF0000UL;
 
     for ( cell = 0; cell < MAP_ROWS * MAP_COLS; cell++ ) {
         addr = CONV_TOP + cell * 1024;
@@ -417,13 +420,13 @@ int mem_map_char( int kind, int report )
 /* ------------------------------------------------------------------ */
 
 typedef struct {
-    u32 total, avail, largest;      /* bytes */
+    uint32_t total, avail, largest; /* bytes */
 } USAGE;
 
 static void arena_usage( int arena, USAGE *use )
 {
     MEMBLK blk;
-    u32 index;
+    unsigned int index;
 
     mem_set( use, 0, sizeof( *use ) );
     for ( index = 0; sys_mem_block( arena, index, &blk ); index++ ) {
@@ -448,7 +451,7 @@ static void arena_usage( int arena, USAGE *use )
 static void memory_figures( TEXT *side )
 {
     USAGE conv, upper, kernel;
-    u32 conv_k = peek_w( 0x413 ), ext_kb, top, frame, total, avail, xms;
+    uint32_t conv_k = peek_w( 0x413 ), ext_kb, top, frame, total, avail, xms;
     int width = 20;
 
     arena_usage( ARENA_CONV, &conv );
@@ -503,11 +506,11 @@ static void memory_figures( TEXT *side )
 
 void pg_memory( TEXT *text, int report )
 {
-    u8 map[MAP_ROWS][MAP_COLS];
+    uint8_t map[MAP_ROWS][MAP_COLS];
     TEXT side;
     char row[40], label[8];
     int line, lines, cell, map_row;
-    u32 seg;
+    uint32_t seg;
 
     mem_map( map );
     tx_init( &side );
@@ -523,7 +526,7 @@ void pg_memory( TEXT *text, int report )
         if ( line < MAP_ROWS ) {
             /* the top of memory first: FC00h, and down to A000h */
             map_row = MAP_ROWS - 1 - line;
-            seg = 0xA000 + (u32)map_row * 0x400;
+            seg = 0xA000 + (uint32_t)map_row * 0x400;
             label[0] = 0;
             if ( line == 0 ) {
                 str_cpy( label, "1024K" );
@@ -545,7 +548,7 @@ void pg_memory( TEXT *text, int report )
 
 void sum_memory( char *line1, char *line2 )
 {
-    u32 ext_kb, top, frame, total, avail;
+    uint32_t ext_kb, top, frame, total, avail;
     char line[40];
 
     sys_ext_memory( &ext_kb, &top );

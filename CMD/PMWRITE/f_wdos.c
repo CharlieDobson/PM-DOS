@@ -46,15 +46,15 @@ static const char *const worddos_variants[] = { "Word 5.0", NULL };
 static const char *const write_variants[] = { "Write 3.1", NULL };
 
 /* the colors of Word 5: black is the window's own */
-static const u32 wdos_colors[8] = {
+static const uint32_t wdos_colors[8] = {
     COLOR_AUTO, 0xFF0000UL, 0x00FF00UL, 0x0000FFUL, 0x800080UL, 0xFF00FFUL, 0xFFFF00UL, 0xFFFFFFUL
 };
 
 /* what a range of Word's font numbers usually was */
 typedef struct {
-    u8   last;          /* the last number of the range */
-    u8   family;
-    u8   fixed;
+    uint8_t last;       /* the last number of the range */
+    uint8_t family;
+    uint8_t fixed;
     const char *name;
 } WDFACE;
 
@@ -68,29 +68,29 @@ static const WDFACE wdos_faces[] = {
     { 63, FAM_SYMBOL, 0, "Symbol" }
 };
 
-static void put16( u8 *ptr, u32 value )
+static void put16( uint8_t *ptr, uint32_t value )
 {
-    ptr[0] = (u8)value;
-    ptr[1] = (u8)(value >> 8);
+    ptr[0] = (uint8_t)value;
+    ptr[1] = (uint8_t)(value >> 8);
 }
 
-static void put32( u8 *ptr, u32 value )
+static void put32( uint8_t *ptr, uint32_t value )
 {
     put16( ptr, value );
     put16( ptr + 2, value >> 16 );
 }
 
-static s32 get_s16( const u8 *ptr )
+static int get_s16( const uint8_t *ptr )
 {
-    u32 value = LE16( ptr );
+    uint32_t value = LE16( ptr );
 
-    return value >= 0x8000UL ? (s32)value - 0x10000L : (s32)value;
+    return value >= 0x8000UL ? (int)value - 0x10000L : (int)value;
 }
 
 /* 0 neither, 1 a Word document, 2 a Write document */
-static int wdos_kind( const u8 *data, u32 len )
+static int wdos_kind( const uint8_t *data, uint32_t len )
 {
-    u32 ident;
+    uint32_t ident;
 
     if ( len < WD_PAGE ) {
         return 0;
@@ -107,13 +107,13 @@ static int wdos_kind( const u8 *data, u32 len )
     return LE16( data + 96 ) != 0 ? 2 : 1;
 }
 
-static int worddos_detect( const u8 *data, u32 len, const char *ext )
+static int worddos_detect( const uint8_t *data, uint32_t len, const char *ext )
 {
     (void)ext;
     return wdos_kind( data, len ) == 1 ? 100 : 0;
 }
 
-static int write_detect( const u8 *data, u32 len, const char *ext )
+static int write_detect( const uint8_t *data, uint32_t len, const char *ext )
 {
     (void)ext;
     return wdos_kind( data, len ) == 2 ? 100 : 0;
@@ -125,46 +125,46 @@ static int write_detect( const u8 *data, u32 len, const char *ext )
 
 /* a place in the character pages, or in the paragraph pages */
 typedef struct {
-    u32 pn, pn_end;     /* the page in hand, and the one after the last */
-    u32 index;          /* the next run of that page */
-    u32 lim;            /* where the run in hand ends */
-    const u8 *prop;     /* its stored properties, NULL for the standard ones */
-    u32 prop_len;
+    uint32_t     pn, pn_end;  /* the page in hand, and the one after the last */
+    unsigned int index;       /* the next run of that page */
+    uint32_t     lim;         /* where the run in hand ends */
+    const uint8_t *prop;      /* its stored properties, NULL for the standard ones */
+    uint32_t     prop_len;
 } FKPCUR;
 
 typedef struct {
-    const u8 *data;
-    u32   len;
-    WDOC *doc;
-    WBUILD wb;
-    int   write;        /* a Write file */
-    int   codepage;
-    u32   fc_mac;       /* where the text ends */
-    FKPCUR chp_cur, pap_cur;
-    CHP   base;         /* what a run with no properties of its own has */
-    int   special;      /* the run in hand is of field characters */
-    int   picture;      /* the paragraph in hand is a picture */
-    int   skip;         /* ...or a running head that is not kept */
-    int   page_pending; /* a division ended: what follows starts a page */
-    u32   rhc_was;      /* the running-head code of the paragraph before */
-    u32   rhc_top, rhc_bot;     /* ...and of the heads that were kept */
-    u16  *font_map;     /* Write: the document's font for each font code */
-    u32   nfont_map;
-    u16   font_of[64];  /* Word: the same; 0xFFFF for one not met yet */
-    const u8 *fnd;      /* the footnote table's entries */
-    u32   nnote;        /* how many notes it lists */
-    u32   ref_next;     /* the next note whose mark is to be met */
-    int  *note_obj;     /* the object made for each */
-    const u8 *sed;      /* the section table's entries */
-    u32   nsed, sed_next;
+    const uint8_t *data;
+    uint32_t     len;
+    WDOC        *doc;
+    WBUILD       wb;
+    int          write;         /* a Write file */
+    int          codepage;
+    uint32_t     fc_mac;        /* where the text ends */
+    FKPCUR       chp_cur, pap_cur;
+    CHP          base;          /* what a run with no properties of its own has */
+    int          special;       /* the run in hand is of field characters */
+    int          picture;       /* the paragraph in hand is a picture */
+    int          skip;          /* ...or a running head that is not kept */
+    int          page_pending;  /* a division ended: what follows starts a page */
+    uint32_t     rhc_was;       /* the running-head code of the paragraph before */
+    uint32_t     rhc_top, rhc_bot; /* ...and of the heads that were kept */
+    uint16_t    *font_map;      /* Write: the document's font for each font code */
+    unsigned int nfont_map;
+    uint16_t     font_of[64];   /* Word: the same; 0xFFFF for one not met yet */
+    const uint8_t *fnd;         /* the footnote table's entries */
+    unsigned int nnote;         /* how many notes it lists */
+    unsigned int ref_next;      /* the next note whose mark is to be met */
+    int         *note_obj;      /* the object made for each */
+    const uint8_t *sed;         /* the section table's entries */
+    unsigned int nsed, sed_next;
 } WDOS;
 
 /* the run that holds "fc": the pages are walked forward only, and a
    damaged page costs a run, never a step back */
-static void fkp_seek( const WDOS *wd, FKPCUR *cur, u32 fc )
+static void fkp_seek( const WDOS *wd, FKPCUR *cur, uint32_t fc )
 {
-    const u8 *page, *fod;
-    u32 count, off, cch;
+    const uint8_t *page, *fod;
+    uint32_t count, off, cch;
 
     while ( cur->lim <= fc ) {
         if ( cur->pn >= cur->pn_end ) {
@@ -201,7 +201,7 @@ static void fkp_seek( const WDOS *wd, FKPCUR *cur, u32 fc )
     }
 }
 
-static u16 wdos_font( WDOS *wd, u32 ftc )
+static uint16_t wdos_font( WDOS *wd, uint32_t ftc )
 {
     const WDFACE *face = wdos_faces;
     int font;
@@ -218,7 +218,7 @@ static u16 wdos_font( WDOS *wd, u32 ftc )
             face++;
         }
         font = wd_font( wd->doc, face->name, face->family, face->fixed );
-        wd->font_of[ftc] = (u16)(font < 0 ? 0 : font);
+        wd->font_of[ftc] = (uint16_t)(font < 0 ? 0 : font);
     }
     return wd->font_of[ftc];
 }
@@ -226,9 +226,9 @@ static u16 wdos_font( WDOS *wd, u32 ftc )
 /* the character properties of the run in hand */
 static void wdos_chp( WDOS *wd )
 {
-    u8 raw[8];
+    uint8_t raw[8];
     CHP *chp = &wd->wb.chp;
-    u32 take = wd->chp_cur.prop_len, ftc, kind;
+    uint32_t take = wd->chp_cur.prop_len, ftc, kind;
 
     mem_set( raw, 0, sizeof( raw ) );
     raw[0] = 1;
@@ -248,7 +248,7 @@ static void wdos_chp( WDOS *wd )
     }
     ftc = raw[1] >> 2;
     if ( wd->write ) {
-        ftc |= (u32)(raw[4] & 7) << 6;
+        ftc |= (uint32_t)(raw[4] & 7) << 6;
     }
     chp->font = wdos_font( wd, ftc );
     if ( raw[2] ) {
@@ -268,7 +268,7 @@ static void wdos_chp( WDOS *wd )
         chp->flags |= CF_STRIKE;
     }
     if ( raw[3] & 4 ) {
-        chp->flags = (u16)((chp->flags & ~CF_UNDER) | CF_DUNDER);
+        chp->flags = (uint16_t)((chp->flags & ~CF_UNDER) | CF_DUNDER);
     }
     if ( raw[3] & 8 ) {
         wd->doc->lost |= LOST_REVISIONS;        /* typed while changes were marked: kept */
@@ -289,14 +289,14 @@ static void wdos_chp( WDOS *wd )
    which story its text belongs to */
 static void wdos_pap( WDOS *wd, int body )
 {
-    u8 raw[WD_PAP_MAX + 4];
+    uint8_t raw[WD_PAP_MAX + 4];
     char name[16];
     WTAB tabs[20];
     PAP *pap = &wd->wb.pap;
     WDOC *doc = wd->doc;
-    const u8 *tbd;
+    const uint8_t *tbd;
     STORY *story;
-    u32 take = wd->pap_cur.prop_len, rhc, kind, pos, most, line, stc, *kept;
+    uint32_t take = wd->pap_cur.prop_len, rhc, kind, pos, most, line, stc, *kept;
     int count = 0, index, style;
 
     mem_set( raw, 0, sizeof( raw ) );
@@ -312,7 +312,7 @@ static void wdos_pap( WDOS *wd, int body )
 
     pap_free( pap );
     pap_init( pap );
-    pap->align = (u8)(raw[1] & 3);      /* left, centered, right, both: AL_*'s order */
+    pap->align = (uint8_t)(raw[1] & 3);  /* left, centered, right, both: AL_*'s order */
     if ( raw[1] & 4 ) {
         pap->flags |= PF_KEEP;
     }
@@ -324,17 +324,17 @@ static void wdos_pap( WDOS *wd, int body )
     pap->first = get_s16( raw + 8 );
     line = LE16( raw + 10 );
     if ( line == 0 || line >= 0x8000UL ) {
-        line = 240;                     /* Word's "auto" is -80 */
+        line = 240;                      /* Word's "auto" is -80 */
     } else if ( !wd->write ) {
-        pap->line_rule = LS_ATLEAST;    /* Word's is a height; Write's counts lines */
+        pap->line_rule = LS_ATLEAST;     /* Word's is a height; Write's counts lines */
     }
-    pap->line = (u16)line;
-    pap->before = (u16)LE16( raw + 12 );
-    pap->after = (u16)LE16( raw + 14 );
+    pap->line = (uint16_t)line;
+    pap->before = (uint16_t)LE16( raw + 12 );
+    pap->after = (uint16_t)LE16( raw + 14 );
 
     most = wd->write ? 14 : 20;
     mem_set( tabs, 0, sizeof( tabs ) );
-    for ( index = 0; (u32)index < most; index++ ) {
+    for ( index = 0; (uint32_t)index < most; index++ ) {
         tbd = raw + 22 + 4 * index;
         pos = LE16( tbd );
         if ( pos == 0 ) {
@@ -344,12 +344,12 @@ static void wdos_pap( WDOS *wd, int body )
         if ( kind > 3 ) {
             continue;                   /* a bar down the page is not a stop */
         }
-        tabs[count].pos = (s32)pos;
+        tabs[count].pos = (int)pos;
         if ( wd->write ) {
-            tabs[count].kind = (u8)(kind == 3 ? TAB_DECIMAL : TAB_LEFT);
+            tabs[count].kind = (uint8_t)(kind == 3 ? TAB_DECIMAL : TAB_LEFT);
         } else {
-            tabs[count].kind = (u8)kind;                /* TAB_*'s order */
-            tabs[count].lead = (u8)((tbd[2] >> 3) & 3); /* LEAD_*'s order */
+            tabs[count].kind = (uint8_t)kind;                /* TAB_*'s order */
+            tabs[count].lead = (uint8_t)((tbd[2] >> 3) & 3); /* LEAD_*'s order */
         }
         count++;
     }
@@ -392,7 +392,7 @@ static void wdos_pap( WDOS *wd, int body )
             sfmt( name, sizeof( name ), "Heading %u", stc - 87 );
             style = wd_style( doc, name, STY_HEADING1 + (int)(stc - 88) );
             if ( style > 0 ) {
-                pap->style = (u8)style;
+                pap->style = (uint8_t)style;
             }
         }
     }
@@ -445,9 +445,9 @@ static void wdos_pap( WDOS *wd, int body )
 
 /* a division's properties: the standard ones with what the file stores
    laid over them -> how many bytes the file had */
-static u32 wdos_sep( const WDOS *wd, u32 index, u8 *sep )
+static uint32_t wdos_sep( const WDOS *wd, unsigned int index, uint8_t *sep )
 {
-    u32 fc, cch;
+    uint32_t fc, cch;
 
     mem_set( sep, 0, WD_SEP_MAX );
     sep[1] = 2;
@@ -483,10 +483,10 @@ static u32 wdos_sep( const WDOS *wd, u32 index, u8 *sep )
 /* the first division's page is the document's */
 static void wdos_page( WDOS *wd )
 {
-    u8 sep[WD_SEP_MAX];
+    uint8_t sep[WD_SEP_MAX];
     PAGESETUP *page = &wd->doc->page;
-    u32 cch;
-    s32 width, height, text, columns, value;
+    uint32_t cch;
+    int width, height, text, columns, value;
 
     if ( wd->write ) {
         page->header = page->footer = 1080;
@@ -495,45 +495,45 @@ static void wdos_page( WDOS *wd )
         return;
     }
     cch = wdos_sep( wd, 0, sep );
-    height = (s32)LE16( sep + 2 );
-    width = (s32)LE16( sep + 4 );
+    height = (int)LE16( sep + 2 );
+    width = (int)LE16( sep + 4 );
     page->height = height;
     page->width = width;
-    page->landscape = (u8)(width > height);
-    page->top = (s32)LE16( sep + 8 );
-    value = height - page->top - (s32)LE16( sep + 10 );
+    page->landscape = (uint8_t)(width > height);
+    page->top = (int)LE16( sep + 8 );
+    value = height - page->top - (int)LE16( sep + 10 );
     if ( value > 0 ) {
         page->bottom = value;
     }
-    page->left = (s32)LE16( sep + 12 );
-    text = (s32)LE16( sep + 14 );
+    page->left = (int)LE16( sep + 12 );
+    text = (int)LE16( sep + 14 );
     columns = sep[17];
     if ( columns > 1 ) {
-        text = text * columns + (s32)LE16( sep + 22 ) * (columns - 1);
+        text = text * columns + (int)LE16( sep + 22 ) * (columns - 1);
         wd->doc->lost |= LOST_LAYOUT;
     }
     value = width - page->left - text;
     if ( value > 0 ) {
         page->right = value;
     }
-    page->header = (s32)LE16( sep + 18 );
+    page->header = (int)LE16( sep + 18 );
     if ( cch >= 22 ) {
-        value = height - (s32)LE16( sep + 20 );
+        value = height - (int)LE16( sep + 20 );
         if ( value > 0 ) {
             page->footer = value;
         }
     }
-    value = (s32)LE16( sep + 6 );
+    value = (int)LE16( sep + 6 );
     if ( value != 0 && value != 0xFFFF ) {
-        page->first_page = (u16)value;
+        page->first_page = (uint16_t)value;
     }
 }
 
 /* is the form feed at "pos" the end of a division?  The section table
    says where each one ends. */
-static int wdos_division( WDOS *wd, u32 pos )
+static int wdos_division( WDOS *wd, uint32_t pos )
 {
-    u32 cp = pos - WD_PAGE + 1, lim;
+    uint32_t cp = pos - WD_PAGE + 1, lim;
 
     while ( wd->sed_next < wd->nsed ) {
         lim = LE32( wd->sed + 10 * wd->sed_next );
@@ -560,14 +560,14 @@ static int wdos_open( WDOS *wd )
     return 1;
 }
 
-static void wdos_put( WDOS *wd, u32 code )
+static void wdos_put( WDOS *wd, uint32_t code )
 {
     if ( wdos_open( wd ) ) {
         wb_char( &wd->wb, code );
     }
 }
 
-static void wdos_plain( WDOS *wd, const u8 *text, u32 count )
+static void wdos_plain( WDOS *wd, const uint8_t *text, unsigned int count )
 {
     if ( count && wdos_open( wd ) ) {
         wb_bytes( &wd->wb, text, count, wd->codepage );
@@ -577,7 +577,7 @@ static void wdos_plain( WDOS *wd, const u8 *text, u32 count )
 /* C4h is Word's hyphen that no line breaks at - and the line-drawing
    set's horizontal rule.  Word takes it for the rule when a drawing
    character is beside it, and so is it taken here. */
-static int wdos_is_rule( const WDOS *wd, u32 pos )
+static int wdos_is_rule( const WDOS *wd, uint32_t pos )
 {
     int before = pos > WD_PAGE ? wd->data[pos - 1] : 0;
     int after = pos + 1 < wd->fc_mac ? wd->data[pos + 1] : 0;
@@ -586,11 +586,11 @@ static int wdos_is_rule( const WDOS *wd, u32 pos )
 }
 
 /* text with one set of character properties, in one paragraph */
-static void wdos_text( WDOS *wd, u32 fc, u32 lim, int body )
+static void wdos_text( WDOS *wd, uint32_t fc, uint32_t lim, int body )
 {
-    const u8 *data = wd->data;
-    u8 sep[WD_SEP_MAX];
-    u32 pos, start = fc, code;
+    const uint8_t *data = wd->data;
+    uint8_t sep[WD_SEP_MAX];
+    uint32_t pos, start = fc, code;
     int ch;
 
     for ( pos = fc; pos < lim; pos++ ) {
@@ -663,11 +663,11 @@ static void wdos_text( WDOS *wd, u32 fc, u32 lim, int body )
 
 /* bytes read in order, none past the end */
 typedef struct {
-    const u8 *ptr;
-    u32 left;
+    const uint8_t *ptr;
+    uint32_t left;
 } WDCUR;
 
-static int cur_u32( WDCUR *cur, u32 *value )
+static int cur_u32( WDCUR *cur, uint32_t *value )
 {
     if ( cur->left < 4 ) {
         return 0;
@@ -678,7 +678,7 @@ static int cur_u32( WDCUR *cur, u32 *value )
     return 1;
 }
 
-static int cur_skip( WDCUR *cur, u32 count )
+static int cur_skip( WDCUR *cur, uint32_t count )
 {
     if ( cur->left < count ) {
         return 0;
@@ -689,7 +689,7 @@ static int cur_skip( WDCUR *cur, u32 count )
 }
 
 /* a string with its length before it; the length counts its NUL */
-static int cur_string( WDCUR *cur, const u8 **text, u32 *len )
+static int cur_string( WDCUR *cur, const uint8_t **text, uint32_t *len )
 {
     if ( !cur_u32( cur, len ) || cur->left < *len ) {
         return 0;
@@ -698,17 +698,17 @@ static int cur_string( WDCUR *cur, const u8 **text, u32 *len )
     return cur_skip( cur, *len );
 }
 
-static int name_is( const u8 *name, u32 len, const char *want )
+static int name_is( const uint8_t *name, uint32_t len, const char *want )
 {
     return len == str_len( want ) + 1 && mem_cmp( name, want, len ) == 0;
 }
 
 /* a device-independent bitmap, which is a .BMP file without its first
    fourteen bytes: they are put back */
-static int wdos_dib( WDOS *wd, const u8 *dib, u32 size, s32 width, s32 height )
+static int wdos_dib( WDOS *wd, const uint8_t *dib, uint32_t size, int width, int height )
 {
-    u32 head, bits, colors, table;
-    u8 *file;
+    uint32_t head, bits, colors, table;
+    uint8_t *file;
     int obj;
 
     if ( size < 12 ) {
@@ -737,7 +737,7 @@ static int wdos_dib( WDOS *wd, const u8 *dib, u32 size, s32 width, s32 height )
     if ( table > size - head ) {
         return -1;
     }
-    file = (u8 *)try_alloc( size + 14 );
+    file = (uint8_t *)try_alloc( size + 14 );
     if ( file == NULL ) {
         return -1;
     }
@@ -755,11 +755,11 @@ static int wdos_dib( WDOS *wd, const u8 *dib, u32 size, s32 width, s32 height )
 /* a bitmap as Windows 3.0 held one for the screen: rows from the top,
    each a whole number of words, and no colors said.  Only one of two
    colors can be read without guessing; it becomes a .BMP file. */
-static int wdos_ddb( WDOS *wd, const u8 *bits, u32 size, u32 across, u32 down, u32 row_bytes,
-                     u32 planes, u32 depth, s32 width, s32 height )
+static int wdos_ddb( WDOS *wd, const uint8_t *bits, uint32_t size, uint32_t across, uint32_t down, uint32_t row_bytes,
+                     uint32_t planes, uint32_t depth, int width, int height )
 {
-    u32 stride, total, row, used;
-    u8 *file;
+    uint32_t stride, total, row, used;
+    uint8_t *file;
     int obj;
 
     if ( planes != 1 || depth != 1 || across == 0 || down == 0 || row_bytes == 0 ) {
@@ -771,7 +771,7 @@ static int wdos_ddb( WDOS *wd, const u8 *bits, u32 size, u32 across, u32 down, u
     }
     stride = ((across + 31) / 32) * 4;
     total = 62 + stride * down;         /* at most 8192 by 65535: it cannot wrap */
-    file = (u8 *)try_alloc( total );
+    file = (uint8_t *)try_alloc( total );
     if ( file == NULL ) {
         return -1;
     }
@@ -797,10 +797,10 @@ static int wdos_ddb( WDOS *wd, const u8 *bits, u32 size, u32 across, u32 down, u
 
 /* the picture OLE keeps to show an object by: its kind by name, eight
    bytes of size, its length, its bytes */
-static int wdos_shown( WDOS *wd, WDCUR *cur, s32 width, s32 height )
+static int wdos_shown( WDOS *wd, WDCUR *cur, int width, int height )
 {
-    const u8 *name, *body;
-    u32 name_len, size;
+    const uint8_t *name, *body;
+    uint32_t name_len, size;
 
     if ( !cur_string( cur, &name, &name_len ) || !cur_skip( cur, 8 ) || !cur_u32( cur, &size ) ||
          cur->left < size ) {
@@ -824,11 +824,11 @@ static int wdos_shown( WDOS *wd, WDCUR *cur, s32 width, s32 height )
 /* an OLE 1 object: a picture alone, or another program's data with a
    picture of it after.  Paintbrush's data is a .BMP file and is kept
    as that; anything else is kept as its picture. */
-static int wdos_ole( WDOS *wd, const u8 *data, u32 size, s32 width, s32 height )
+static int wdos_ole( WDOS *wd, const uint8_t *data, uint32_t size, int width, int height )
 {
     WDCUR cur;
-    const u8 *name, *text;
-    u32 version, kind, name_len, text_len, native;
+    const uint8_t *name, *text;
+    uint32_t version, kind, name_len, text_len, native;
     int obj;
 
     cur.ptr = data;
@@ -869,11 +869,11 @@ static int wdos_ole( WDOS *wd, const u8 *data, u32 size, s32 width, s32 height )
 
 /* a paragraph of Write's that is a picture: forty bytes that describe
    it, then a metafile, a bitmap, or an OLE object */
-static void wdos_picture( WDOS *wd, u32 fc, u32 lim )
+static void wdos_picture( WDOS *wd, uint32_t fc, uint32_t lim )
 {
-    const u8 *pic = wd->data + fc;
-    u32 size = lim - fc, mode = 0, head, count, scale;
-    s32 width, height;
+    const uint8_t *pic = wd->data + fc;
+    uint32_t size = lim - fc, mode = 0, head, count, scale;
+    int width, height;
     int obj = -1;
 
     if ( wd->skip ) {
@@ -887,9 +887,9 @@ static void wdos_picture( WDOS *wd, u32 fc, u32 lim )
         }
         /* the size it has, by the thousandths it was stretched to */
         scale = LE16( pic + 36 );
-        width = (s32)(LE16( pic + 10 ) * (scale ? scale : 1000) / 1000);
+        width = (int)(LE16( pic + 10 ) * (scale ? scale : 1000) / 1000);
         scale = LE16( pic + 38 );
-        height = (s32)(LE16( pic + 12 ) * (scale ? scale : 1000) / 1000);
+        height = (int)(LE16( pic + 12 ) * (scale ? scale : 1000) / 1000);
         if ( mode == 0xE4 ) {
             count = LE32( pic + 16 );
             if ( count > size - head ) {
@@ -910,8 +910,8 @@ static void wdos_picture( WDOS *wd, u32 fc, u32 lim )
             } else if ( count >= 18 && LE16( pic + head + 2 ) == 9 ) {
                 /* a metafile: its own header is nine words long */
                 if ( width == 0 ) {
-                    width = (s32)(LE16( pic + 2 ) * 72 / 127);  /* hundredths of a millimeter */
-                    height = (s32)(LE16( pic + 4 ) * 72 / 127);
+                    width = (int)(LE16( pic + 2 ) * 72 / 127); /* hundredths of a millimeter */
+                    height = (int)(LE16( pic + 4 ) * 72 / 127);
                 }
                 obj = wd_image_new( wd->doc, pic + head, count, IMG_WMF, width, height );
             }
@@ -927,16 +927,16 @@ static void wdos_picture( WDOS *wd, u32 fc, u32 lim )
 
 /* a CP - a count of characters from the start of the text - as a place
    in the file; the text's end for one that is past it */
-static u32 wdos_fc_of( const WDOS *wd, u32 cp )
+static uint32_t wdos_fc_of( const WDOS *wd, uint32_t cp )
 {
     return cp < wd->fc_mac - WD_PAGE ? cp + WD_PAGE : wd->fc_mac;
 }
 
 /* the text from "fc" to "end", which is the body's (running heads,
    notes' marks and divisions among it) or one note's */
-static void wdos_range( WDOS *wd, u32 fc, u32 end, int body )
+static void wdos_range( WDOS *wd, uint32_t fc, uint32_t end, int body )
 {
-    u32 lim, ref;
+    uint32_t lim, ref;
     int obj;
 
     while ( fc < end ) {
@@ -982,11 +982,12 @@ static void wdos_range( WDOS *wd, u32 fc, u32 end, int body )
 }
 
 /* Write's font names, in the order the font codes count them */
-static int wdos_fonts( WDOS *wd, u32 pn, u32 pn_end )
+static int wdos_fonts( WDOS *wd, uint32_t pn, uint32_t pn_end )
 {
-    const u8 *data = wd->data;
+    const uint8_t *data = wd->data;
     char name[FONT_NAME_LEN];
-    u32 pos = pn * WD_PAGE, end = pn_end * WD_PAGE, want, size, used, index, guard, before;
+    uint32_t pos = pn * WD_PAGE, end = pn_end * WD_PAGE, want, size;
+    unsigned int used, index, guard, before;
     int family, font;
 
     if ( pn >= pn_end || end - pos < 4 ) {
@@ -1000,7 +1001,7 @@ static int wdos_fonts( WDOS *wd, u32 pn, u32 pn_end )
     if ( want == 0 ) {
         return 1;
     }
-    wd->font_map = (u16 *)try_alloc( want * sizeof( u16 ) );
+    wd->font_map = (uint16_t *)try_alloc( want * sizeof( uint16_t ) );
     if ( wd->font_map == NULL ) {
         return 0;
     }
@@ -1035,22 +1036,23 @@ static int wdos_fonts( WDOS *wd, u32 pn, u32 pn_end )
                  family == 4 ? FAM_SCRIPT : family == 5 ? FAM_DECOR : FAM_ANY;
         before = wd->doc->nfont;
         font = wd_font( wd->doc, used ? name : "Arial", FAM_ANY, -1 );
-        if ( (u32)font == before && before < wd->doc->nfont && family != FAM_ANY &&
+        if ( (unsigned int)font == before && before < wd->doc->nfont && family != FAM_ANY &&
              wd->doc->font[font].family == FAM_ANY ) {
-            wd->doc->font[font].family = (u8)family;
-            wd->doc->font[font].fixed = (u8)(family == FAM_MODERN);
+            wd->doc->font[font].family = (uint8_t)family;
+            wd->doc->font[font].fixed = (uint8_t)(family == FAM_MODERN);
         }
-        wd->font_map[wd->nfont_map++] = (u16)(font < 0 ? 0 : font);
+        wd->font_map[wd->nfont_map++] = (uint16_t)(font < 0 ? 0 : font);
         pos += 2 + size;
     }
     return 1;
 }
 
 /* one line of Word's summary sheet */
-static void wdos_info( const WDOS *wd, u32 base, u32 end, int which, char *dst )
+static void wdos_info( const WDOS *wd, uint32_t base, uint32_t end, int which, char *dst )
 {
-    u16 wide[INFO_LEN];
-    u32 pos, used = 0;
+    uint16_t wide[INFO_LEN];
+    uint32_t pos;
+    unsigned int used = 0;
 
     pos = base + LE16( wd->data + base + 2 * which );
     while ( pos < end && wd->data[pos] != 0 && used < INFO_LEN - 1 ) {
@@ -1059,16 +1061,18 @@ static void wdos_info( const WDOS *wd, u32 base, u32 end, int which, char *dst )
     utf8_copy( dst, INFO_LEN, wide, used );
 }
 
-static u32 page_clamp( u32 pn, u32 low, u32 high )
+static uint32_t page_clamp( uint32_t pn, uint32_t low, uint32_t high )
 {
     return pn < low ? low : pn > high ? high : pn;
 }
 
-static int wdos_load( const u8 *data, u32 len, WDOC *doc, int write )
+static int wdos_load( const uint8_t *data, uint32_t len, WDOC *doc, int write )
 {
     WDOS wd;
-    u32 pages, pn_char, pn_para, pn_fntb, pn_sep, pn_setb, pn_next, pn_last, pn_mac;
-    u32 count, room, index, from, to, done, value;
+    uint32_t pages, pn_char, pn_para, pn_fntb, pn_sep, pn_setb, pn_next, pn_last, pn_mac;
+    uint32_t count, room;
+    unsigned int index;
+    uint32_t from, to, done, value;
     STORY *story;
 
     if ( wdos_kind( data, len ) != (write ? 2 : 1) ) {
@@ -1114,7 +1118,7 @@ static int wdos_load( const u8 *data, u32 len, WDOC *doc, int write )
         }
         value = LE16( data + 112 );
         if ( value ) {
-            doc->deftab = (s32)value;
+            doc->deftab = (int)value;
         }
         if ( data[30] != 0 ) {
             doc->lost |= LOST_STYLES;   /* it names a style sheet, which is another file */
@@ -1193,12 +1197,12 @@ static int wdos_load( const u8 *data, u32 len, WDOC *doc, int write )
     return wd_failed( doc ) ? WE_NOMEM : WE_OK;
 }
 
-static int worddos_load( const u8 *data, u32 len, WDOC *doc )
+static int worddos_load( const uint8_t *data, uint32_t len, WDOC *doc )
 {
     return wdos_load( data, len, doc, 0 );
 }
 
-static int write_load( const u8 *data, u32 len, WDOC *doc )
+static int write_load( const uint8_t *data, uint32_t len, WDOC *doc )
 {
     return wdos_load( data, len, doc, 1 );
 }
@@ -1209,19 +1213,19 @@ static int write_load( const u8 *data, u32 len, WDOC *doc )
 
 /* the character pages, or the paragraph pages, as they fill */
 typedef struct {
-    OUT *out;           /* the pages that are full */
-    u8   page[WD_PAGE]; /* the one being filled */
-    u32  count;         /* its runs */
-    u32  low;           /* its properties are packed down from the end: the lowest */
-    u32  fc_done;       /* where the last run ended */
-    u32  last_off;      /* the properties the last run has, to be shared */
-    u32  last_len;
-    u32  run_size;      /* a run's room in the list: 6, or 12 where Word
-                           keeps a paragraph's height beside it */
-    int  fill;          /* what unused bytes hold */
+    OUT     *out;           /* the pages that are full */
+    uint8_t  page[WD_PAGE]; /* the one being filled */
+    uint32_t count;         /* its runs */
+    uint32_t low;           /* its properties are packed down from the end: the lowest */
+    uint32_t fc_done;       /* where the last run ended */
+    uint32_t last_off;      /* the properties the last run has, to be shared */
+    uint32_t last_len;
+    uint32_t run_size;      /* a run's room in the list: 6, or 12 where Word
+                               keeps a paragraph's height beside it */
+    int      fill;          /* what unused bytes hold */
 } FKPB;
 
-static void fkpb_init( FKPB *fkp, OUT *out, u32 run_size, int fill )
+static void fkpb_init( FKPB *fkp, OUT *out, uint32_t run_size, int fill )
 {
     mem_set( fkp, 0, sizeof( FKPB ) );
     fkp->out = out;
@@ -1235,7 +1239,8 @@ static void fkpb_init( FKPB *fkp, OUT *out, u32 run_size, int fill )
 /* the page in hand is full, or is the last */
 static void fkpb_flush( FKPB *fkp )
 {
-    u32 used = 4 + 6 * fkp->count, index;
+    uint32_t used = 4 + 6 * fkp->count;
+    unsigned int index;
 
     if ( fkp->count == 0 ) {
         return;
@@ -1250,7 +1255,7 @@ static void fkpb_flush( FKPB *fkp )
     if ( fkp->low > used ) {
         mem_set( fkp->page + used, fkp->fill, fkp->low - used );
     }
-    fkp->page[WD_PAGE - 1] = (u8)fkp->count;
+    fkp->page[WD_PAGE - 1] = (uint8_t)fkp->count;
     out_put( fkp->out, fkp->page, WD_PAGE );
     mem_set( fkp->page, 0, WD_PAGE );
     put32( fkp->page, fkp->fc_done );
@@ -1261,10 +1266,10 @@ static void fkpb_flush( FKPB *fkp )
 
 /* a run that ends at "fc_lim"; "len" 0 is the standard properties,
    which take no room */
-static void fkpb_add( FKPB *fkp, u32 fc_lim, const u8 *prop, u32 len )
+static void fkpb_add( FKPB *fkp, uint32_t fc_lim, const uint8_t *prop, uint32_t len )
 {
-    u8 *fod;
-    u32 need;
+    uint8_t *fod;
+    uint32_t need;
     int share;
 
     if ( fc_lim <= fkp->fc_done ) {
@@ -1280,7 +1285,7 @@ static void fkpb_add( FKPB *fkp, u32 fc_lim, const u8 *prop, u32 len )
     }
     if ( !share ) {
         fkp->low -= need;
-        fkp->page[fkp->low] = (u8)len;
+        fkp->page[fkp->low] = (uint8_t)len;
         mem_cpy( fkp->page + fkp->low + 1, prop, len );
         fkp->last_off = fkp->low;
         fkp->last_len = len;
@@ -1294,25 +1299,25 @@ static void fkpb_add( FKPB *fkp, u32 fc_lim, const u8 *prop, u32 len )
 
 /* a note of Word's: where its mark is, and where its text starts */
 typedef struct {
-    u32 ref, text;
-    u32 obj;
+    uint32_t     ref, text;
+    unsigned int obj;
 } WSNOTE;
 
 typedef struct {
-    WDOC *doc;
-    OUT  *text;         /* the text, which starts at byte 128 of the file */
-    FKPB  chp, pap;
-    int   write;
-    int   codepage;
-    u32   fc;           /* where the next byte of text will be */
-    u32   para_from;    /* where the paragraph in hand starts */
-    u8    run[8];       /* the properties of the characters being written */
-    u32   run_len;
-    u8    last_pap[WD_PAP_MAX + 4];     /* ...and of the last paragraph ended */
-    u32   last_pap_len;
-    WSNOTE *note;
-    u32   nnote, note_cap;
-    int   failed;       /* no memory for the notes' list */
+    WDOC        *doc;
+    OUT         *text;        /* the text, which starts at byte 128 of the file */
+    FKPB         chp, pap;
+    int          write;
+    int          codepage;
+    uint32_t     fc;          /* where the next byte of text will be */
+    uint32_t     para_from;   /* where the paragraph in hand starts */
+    uint8_t      run[8];      /* the properties of the characters being written */
+    uint32_t     run_len;
+    uint8_t      last_pap[WD_PAP_MAX + 4];  /* ...and of the last paragraph ended */
+    uint32_t     last_pap_len;
+    WSNOTE      *note;
+    unsigned int nnote, note_cap;
+    int          failed;      /* no memory for the notes' list */
 } WSAVE;
 
 static void ws_byte( WSAVE *ws, int value )
@@ -1322,7 +1327,7 @@ static void ws_byte( WSAVE *ws, int value )
 }
 
 /* the bytes that follow have these character properties */
-static void ws_run( WSAVE *ws, const u8 *raw, u32 len )
+static void ws_run( WSAVE *ws, const uint8_t *raw, uint32_t len )
 {
     if ( len == ws->run_len && mem_cmp( raw, ws->run, len ) == 0 ) {
         return;
@@ -1334,7 +1339,7 @@ static void ws_run( WSAVE *ws, const u8 *raw, u32 len )
 
 /* how many bytes of "raw" must be stored: up to the last that is not
    what "standard" has */
-static u32 raw_trim( const u8 *raw, const u8 *standard, u32 len )
+static uint32_t raw_trim( const uint8_t *raw, const uint8_t *standard, uint32_t len )
 {
     while ( len > 1 && raw[len - 1] == standard[len - 1] ) {
         len--;
@@ -1342,7 +1347,7 @@ static u32 raw_trim( const u8 *raw, const u8 *standard, u32 len )
     return len;
 }
 
-static u32 ws_font_code( const WSAVE *ws, const CHP *chp )
+static uint32_t ws_font_code( const WSAVE *ws, const CHP *chp )
 {
     const WFONT *font;
 
@@ -1373,9 +1378,9 @@ static u32 ws_font_code( const WSAVE *ws, const CHP *chp )
     return 16;
 }
 
-static u32 ws_color_code( u32 color )
+static uint32_t ws_color_code( uint32_t color )
 {
-    u32 index, bits;
+    uint32_t index, bits;
 
     if ( color == COLOR_AUTO ) {
         return 0;
@@ -1408,17 +1413,17 @@ static u32 ws_color_code( u32 color )
 }
 
 /* a CHP as the file stores one -> how many bytes */
-static u32 ws_chp_raw( const WSAVE *ws, const CHP *chp, int special, u8 *raw )
+static uint32_t ws_chp_raw( const WSAVE *ws, const CHP *chp, int special, uint8_t *raw )
 {
-    static const u8 standard[8] = { 1, 0, 24, 0, 0, 0, 0, 0 };
-    u32 ftc = ws_font_code( ws, chp ), size = chp->size, len;
+    static const uint8_t standard[8] = { 1, 0, 24, 0, 0, 0, 0, 0 };
+    uint32_t ftc = ws_font_code( ws, chp ), size = chp->size, len;
 
     mem_set( raw, 0, 8 );
-    raw[1] = (u8)((chp->flags & CF_BOLD ? 1 : 0) | (chp->flags & CF_ITALIC ? 2 : 0) | ((ftc & 63) << 2));
+    raw[1] = (uint8_t)((chp->flags & CF_BOLD ? 1 : 0) | (chp->flags & CF_ITALIC ? 2 : 0) | ((ftc & 63) << 2));
     if ( size < 4 ) {
         size = 4;
     }
-    raw[2] = (u8)(size > 254 ? 254 : size);
+    raw[2] = (uint8_t)(size > 254 ? 254 : size);
     if ( chp->flags & (CF_UNDER | CF_WUNDER) ) {
         raw[3] |= 1;
     }
@@ -1431,13 +1436,13 @@ static u32 ws_chp_raw( const WSAVE *ws, const CHP *chp, int special, u8 *raw )
         raw[5] = 244;
     }
     if ( ws->write ) {
-        raw[4] = (u8)(ftc >> 6);
+        raw[4] = (uint8_t)(ftc >> 6);
     } else {
         if ( chp->flags & CF_STRIKE ) {
             raw[3] |= 2;
         }
         if ( chp->flags & CF_DUNDER ) {
-            raw[3] = (u8)((raw[3] & ~1) | 4);
+            raw[3] = (uint8_t)((raw[3] & ~1) | 4);
         }
         if ( chp->flags & CF_SMALLCAPS ) {
             raw[3] |= 0x20;
@@ -1447,7 +1452,7 @@ static u32 ws_chp_raw( const WSAVE *ws, const CHP *chp, int special, u8 *raw )
         if ( chp->flags & CF_HIDDEN ) {
             raw[3] |= 0x80;
         }
-        raw[6] = (u8)ws_color_code( chp->color );
+        raw[6] = (uint8_t)ws_color_code( chp->color );
     }
     len = raw_trim( raw, standard, 7 );
     /* text that is standard in everything has no properties stored in a
@@ -1457,13 +1462,15 @@ static u32 ws_chp_raw( const WSAVE *ws, const CHP *chp, int special, u8 *raw )
 
 /* a PAP as the file stores one -> how many bytes.  "rhc" is the
    running-head code, 0 for the body's; "extra" is Write's picture bit. */
-static u32 ws_pap_raw( const WSAVE *ws, const PAP *pap, u32 rhc, u32 extra, u8 *raw )
+static uint32_t ws_pap_raw( const WSAVE *ws, const PAP *pap, uint32_t rhc, uint32_t extra, uint8_t *raw )
 {
-    u8 standard[WD_PAP_MAX + 4];
+    uint8_t standard[WD_PAP_MAX + 4];
     const PAGESETUP *page = &ws->doc->page;
-    s32 left = pap->left, right = pap->right, first = pap->first;
-    u32 line = pap->line, most = ws->write ? 13 : 19, index, count = 0, len, kind;
-    u8 *tbd;
+    int left = pap->left, right = pap->right, first = pap->first;
+    uint32_t line = pap->line, most = ws->write ? 13 : 19;
+    unsigned int index, count = 0;
+    uint32_t len, kind;
+    uint8_t *tbd;
 
     mem_set( raw, 0, WD_PAP_MAX + 4 );
     mem_set( standard, 0, sizeof( standard ) );
@@ -1474,11 +1481,11 @@ static u32 ws_pap_raw( const WSAVE *ws, const PAP *pap, u32 rhc, u32 extra, u8 *
     if ( !ws->write && pap->style < ws->doc->nstyle ) {
         kind = ws->doc->style[pap->style].kind;
         if ( kind >= STY_HEADING1 && kind <= STY_HEADING6 ) {
-            raw[0] = (u8)((88 + kind - STY_HEADING1) << 1);     /* a heading, by its level */
+            raw[0] = (uint8_t)((88 + kind - STY_HEADING1) << 1); /* a heading, by its level */
         }
     }
     raw[2] = 30;
-    raw[1] = (u8)(pap->align & 3);
+    raw[1] = (uint8_t)(pap->align & 3);
     if ( !ws->write ) {
         if ( pap->flags & PF_KEEP ) {
             raw[1] |= 4;
@@ -1509,9 +1516,9 @@ static u32 ws_pap_raw( const WSAVE *ws, const PAP *pap, u32 rhc, u32 extra, u8 *
     if ( first > 32000 ) {
         first = 32000;
     }
-    put16( raw + 4, (u32)right );
-    put16( raw + 6, (u32)left );
-    put16( raw + 8, (u32)first & 0xFFFF );
+    put16( raw + 4, (uint32_t)right );
+    put16( raw + 6, (uint32_t)left );
+    put16( raw + 8, (uint32_t)first & 0xFFFF );
     if ( line < 120 ) {
         line = 240;
     }
@@ -1524,15 +1531,15 @@ static u32 ws_pap_raw( const WSAVE *ws, const PAP *pap, u32 rhc, u32 extra, u8 *
     put16( raw + 10, line );
     put16( raw + 12, pap->before );
     put16( raw + 14, pap->after );
-    raw[16] = (u8)(rhc | extra);
+    raw[16] = (uint8_t)(rhc | extra);
     if ( !ws->write && (pap->flags & (PF_BORDER_TOP | PF_BORDER_BOT | PF_BORDER_LEFT | PF_BORDER_RIGHT)) ) {
         if ( (pap->flags & PF_BORDER_TOP) && (pap->flags & PF_BORDER_BOT) &&
              (pap->flags & PF_BORDER_LEFT) && (pap->flags & PF_BORDER_RIGHT) ) {
             raw[16] |= 0x10;            /* a box */
         } else {
             raw[16] |= 0x20;            /* the sides named */
-            raw[17] = (u8)((pap->flags & PF_BORDER_LEFT ? 1 : 0) | (pap->flags & PF_BORDER_RIGHT ? 2 : 0) |
-                           (pap->flags & PF_BORDER_TOP ? 4 : 0) | (pap->flags & PF_BORDER_BOT ? 8 : 0));
+            raw[17] = (uint8_t)((pap->flags & PF_BORDER_LEFT ? 1 : 0) | (pap->flags & PF_BORDER_RIGHT ? 2 : 0) |
+                                (pap->flags & PF_BORDER_TOP ? 4 : 0) | (pap->flags & PF_BORDER_BOT ? 8 : 0));
         }
     }
     for ( index = 0; index < pap->ntabs && pap->tabs != NULL && count < most; index++ ) {
@@ -1540,12 +1547,12 @@ static u32 ws_pap_raw( const WSAVE *ws, const PAP *pap, u32 rhc, u32 extra, u8 *
             continue;
         }
         tbd = raw + 22 + 4 * count;
-        put16( tbd, (u32)pap->tabs[index].pos );
+        put16( tbd, (uint32_t)pap->tabs[index].pos );
         kind = pap->tabs[index].kind;
         if ( ws->write ) {
-            tbd[2] = (u8)(kind == TAB_DECIMAL ? 3 : 0);     /* Write has the two kinds */
+            tbd[2] = (uint8_t)(kind == TAB_DECIMAL ? 3 : 0); /* Write has the two kinds */
         } else {
-            tbd[2] = (u8)((kind & 3) | ((pap->tabs[index].lead & 3) << 3));
+            tbd[2] = (uint8_t)((kind & 3) | ((pap->tabs[index].lead & 3) << 3));
         }
         count++;
     }
@@ -1568,7 +1575,7 @@ static u32 ws_pap_raw( const WSAVE *ws, const PAP *pap, u32 rhc, u32 extra, u8 *
 }
 
 /* the paragraph in hand ends here */
-static void ws_par_end( WSAVE *ws, const u8 *raw, u32 len )
+static void ws_par_end( WSAVE *ws, const uint8_t *raw, uint32_t len )
 {
     ws_byte( ws, '\r' );
     ws_byte( ws, '\n' );
@@ -1580,17 +1587,17 @@ static void ws_par_end( WSAVE *ws, const u8 *raw, u32 len )
 
 /* a character that is itself only with a property set: a page number,
    a note's number */
-static void ws_special( WSAVE *ws, const CHP *chp, const u8 *raw, u32 len, int value )
+static void ws_special( WSAVE *ws, const CHP *chp, const uint8_t *raw, uint32_t len, int value )
 {
-    u8 mine[8];
-    u32 mine_len = ws_chp_raw( ws, chp, 1, mine );
+    uint8_t mine[8];
+    uint32_t mine_len = ws_chp_raw( ws, chp, 1, mine );
 
     ws_run( ws, mine, mine_len );
     ws_byte( ws, value );
     ws_run( ws, raw, len );
 }
 
-static void ws_char( WSAVE *ws, const CHP *chp, const u8 *raw, u32 len, u32 code )
+static void ws_char( WSAVE *ws, const CHP *chp, const uint8_t *raw, uint32_t len, uint32_t code )
 {
     char text[8];
     int count, index;
@@ -1640,8 +1647,8 @@ static void ws_char( WSAVE *ws, const CHP *chp, const u8 *raw, u32 len, u32 code
     }
     count = cp_put( ws->codepage, code, text );
     for ( index = 0; index < count; index++ ) {
-        if ( (u8)text[index] >= 0x20 ) {
-            ws_byte( ws, (u8)text[index] );
+        if ( (uint8_t)text[index] >= 0x20 ) {
+            ws_byte( ws, (uint8_t)text[index] );
         }
     }
 }
@@ -1650,9 +1657,9 @@ static void ws_char( WSAVE *ws, const CHP *chp, const u8 *raw, u32 len, u32 code
    kinds have no place in a Write 3.0 picture and are left out. */
 static int ws_picture( WSAVE *ws, const WOBJ *obj, const PAP *pap )
 {
-    u8 head[40], raw[WD_PAP_MAX + 4], plain[8];
-    const u8 *data = obj->data;
-    u32 size = obj->len, len, width, height;
+    uint8_t head[40], raw[WD_PAP_MAX + 4], plain[8];
+    const uint8_t *data = obj->data;
+    uint32_t size = obj->len, len, width, height;
     CHP chp;
 
     if ( !ws->write || obj->fmt != IMG_WMF || data == NULL ) {
@@ -1665,8 +1672,8 @@ static int ws_picture( WSAVE *ws, const WOBJ *obj, const PAP *pap )
     if ( size < 18 || LE16( data + 2 ) != 9 ) {
         return 0;
     }
-    width = obj->width > 0 ? (u32)obj->width : 1440;
-    height = obj->height > 0 ? (u32)obj->height : 1440;
+    width = obj->width > 0 ? (uint32_t)obj->width : 1440;
+    height = obj->height > 0 ? (uint32_t)obj->height : 1440;
     if ( width > 32000 ) {
         width = 32000;
     }
@@ -1703,7 +1710,7 @@ static int ws_picture( WSAVE *ws, const WOBJ *obj, const PAP *pap )
     return 1;
 }
 
-static void ws_note( WSAVE *ws, u32 obj )
+static void ws_note( WSAVE *ws, unsigned int obj )
 {
     WSNOTE *grown;
 
@@ -1722,15 +1729,17 @@ static void ws_note( WSAVE *ws, u32 obj )
     ws->nnote++;
 }
 
-static void ws_story( WSAVE *ws, const STORY *story, u32 rhc, int body );
+static void ws_story( WSAVE *ws, const STORY *story, uint32_t rhc, int body );
 
 /* a paragraph.  "body" says its notes and pictures can be written. */
-static void ws_para( WSAVE *ws, const WPARA *para, u32 rhc, int body )
+static void ws_para( WSAVE *ws, const WPARA *para, uint32_t rhc, int body )
 {
-    u8 raw[WD_PAP_MAX + 4], run[8];
+    uint8_t raw[WD_PAP_MAX + 4], run[8];
     const CHP *chp;
     const WOBJ *obj;
-    u32 len, run_len, off = 0, end, pos, code, index;
+    uint32_t len, run_len;
+    unsigned int off = 0, end, pos;
+    uint32_t code, index;
     int which, pictures = 0;
 
     len = ws_pap_raw( ws, &para->pap, rhc, 0, raw );
@@ -1753,7 +1762,7 @@ static void ws_para( WSAVE *ws, const WPARA *para, u32 rhc, int body )
                 continue;
             }
             which = wd_obj_at( para, pos );
-            if ( which < 0 || (u32)which >= ws->doc->nobj ) {
+            if ( which < 0 || (unsigned int)which >= ws->doc->nobj ) {
                 continue;
             }
             obj = &ws->doc->obj[which];
@@ -1768,7 +1777,7 @@ static void ws_para( WSAVE *ws, const WPARA *para, u32 rhc, int body )
                     ws_run( ws, run, run_len );
                 }
             } else if ( obj->kind == OBJ_NOTE && !ws->write && body && rhc == 0 ) {
-                ws_note( ws, (u32)which );
+                ws_note( ws, (unsigned int)which );
                 ws_special( ws, chp, run, run_len, 5 );
             }
         }
@@ -1781,7 +1790,7 @@ static void ws_para( WSAVE *ws, const WPARA *para, u32 rhc, int body )
     if ( ws->write && body ) {
         for ( index = 0; index < para->nanch; index++ ) {
             which = (int)para->anch[index].obj;
-            if ( (u32)which < ws->doc->nobj && ws->doc->obj[which].kind == OBJ_NOTE &&
+            if ( (unsigned int)which < ws->doc->nobj && ws->doc->obj[which].kind == OBJ_NOTE &&
                  ws->doc->obj[which].story != NULL ) {
                 ws_story( ws, ws->doc->obj[which].story, rhc, 0 );
             }
@@ -1789,9 +1798,9 @@ static void ws_para( WSAVE *ws, const WPARA *para, u32 rhc, int body )
     }
 }
 
-static void ws_story( WSAVE *ws, const STORY *story, u32 rhc, int body )
+static void ws_story( WSAVE *ws, const STORY *story, uint32_t rhc, int body )
 {
-    u32 index;
+    unsigned int index;
 
     for ( index = 0; index < story->count; index++ ) {
         ws_para( ws, story->para[index], rhc, body );
@@ -1800,10 +1809,10 @@ static void ws_story( WSAVE *ws, const STORY *story, u32 rhc, int body )
 
 /* a part of the file from memory to the file, filled out to whole
    pages; the OUT in memory is closed -> how many pages */
-static u32 ws_emit( OUT *out, OUT *part, int fill )
+static uint32_t ws_emit( OUT *out, OUT *part, int fill )
 {
-    u8 *data;
-    u32 len = 0, pages;
+    uint8_t *data;
+    uint32_t len = 0, pages;
 
     data = out_data( part, &len );
     if ( out_error( part ) ) {
@@ -1819,22 +1828,22 @@ static u32 ws_emit( OUT *out, OUT *part, int fill )
 }
 
 /* an ASCIIZ line of Word's summary sheet, in the document's code page */
-static void ws_info( const WSAVE *ws, OUT *part, const char *text, u32 most )
+static void ws_info( const WSAVE *ws, OUT *part, const char *text, uint32_t most )
 {
-    const u8 *cur = (const u8 *)text, *end = cur + str_len( text );
+    const uint8_t *cur = (const uint8_t *)text, *end = cur + str_len( text );
     char bytes[8];
-    u32 used = 0;
+    uint32_t used = 0;
     int count, index;
 
     while ( cur < end ) {
         count = cp_put( ws->codepage, utf8_get( &cur, end ), bytes );
-        if ( used + (u32)count > most ) {
+        if ( used + (uint32_t)count > most ) {
             break;
         }
         for ( index = 0; index < count; index++ ) {
-            out_byte( part, (u8)bytes[index] >= 0x20 ? (u8)bytes[index] : ' ' );
+            out_byte( part, (uint8_t)bytes[index] >= 0x20 ? (uint8_t)bytes[index] : ' ' );
         }
-        used += (u32)count;
+        used += (uint32_t)count;
     }
     out_byte( part, 0 );
 }
@@ -1842,15 +1851,17 @@ static void ws_info( const WSAVE *ws, OUT *part, const char *text, u32 most )
 static int wdos_save( WDOC *doc, OUT *out, int write )
 {
     WSAVE ws;
-    u8 head[WD_PAGE], sep[104], plain[8], std_pap[WD_PAP_MAX + 4];
+    uint8_t head[WD_PAGE], sep[104], plain[8], std_pap[WD_PAP_MAX + 4];
     const PAGESETUP *page = &doc->page;
     OUT *fntb = NULL, *fonts = NULL, *sumd = NULL;
     CHP chp;
     PAP std;
-    u32 plain_len, std_len;
-    u32 fc_mac, cp_body, pn, pn_para, pn_fntb, pn_sep, pn_setb, pn_last, pn_mac;
-    u32 text_pages, chp_pages, pap_pages, fntb_pages = 0, last_pages = 0, len, index, family, size;
-    u32 ptr[9], pos, sep_len;
+    uint32_t plain_len, std_len;
+    uint32_t fc_mac, cp_body, pn, pn_para, pn_fntb, pn_sep, pn_setb, pn_last, pn_mac;
+    uint32_t text_pages, chp_pages, pap_pages, fntb_pages = 0, last_pages = 0, len;
+    unsigned int index, family;
+    uint32_t size;
+    uint32_t ptr[9], pos, sep_len;
     int fill = write ? 0 : WD_FILL, result = WE_OK;
 
     mem_set( &ws, 0, sizeof( ws ) );
@@ -2027,7 +2038,7 @@ static int wdos_save( WDOC *doc, OUT *out, int write )
     } else {
         put16( head + 106, pn_mac );
         put16( head + 108, 0x40 );      /* widows and orphans are kept from page ends */
-        put16( head + 112, doc->deftab > 0 && doc->deftab < 32000 ? (u32)doc->deftab : 720 );
+        put16( head + 112, doc->deftab > 0 && doc->deftab < 32000 ? (uint32_t)doc->deftab : 720 );
         head[116] = 3;                  /* Word 5.0's format, made by another program */
         put16( head + 120, pn_sep );    /* no bookmarks: they would end where they start */
         put16( head + 126, 437 );
@@ -2046,18 +2057,18 @@ static int wdos_save( WDOC *doc, OUT *out, int write )
 
     /* the division: the page, and the table that says it covers all the text */
     mem_set( sep, 0, sizeof( sep ) );
-    sep[1] = (u8)(write ? 0x00 : 0xD2);
+    sep[1] = (uint8_t)(write ? 0x00 : 0xD2);
     sep[2] = 0x02;
-    put16( sep + 3, (u32)page->height );
-    put16( sep + 5, (u32)page->width );
+    put16( sep + 3, (uint32_t)page->height );
+    put16( sep + 5, (uint32_t)page->width );
     put16( sep + 7, write || page->first_page > 1 ? page->first_page : 0xFFFF );
-    put16( sep + 9, (u32)page->top );
-    put16( sep + 11, (u32)(page->height - page->top - page->bottom) );
-    put16( sep + 13, (u32)page->left );
-    put16( sep + 15, (u32)(page->width - page->left - page->right) );
+    put16( sep + 9, (uint32_t)page->top );
+    put16( sep + 11, (uint32_t)(page->height - page->top - page->bottom) );
+    put16( sep + 13, (uint32_t)page->left );
+    put16( sep + 15, (uint32_t)(page->width - page->left - page->right) );
     sep[18] = 1;
-    put16( sep + 19, (u32)page->header );
-    put16( sep + 21, (u32)(page->height - page->footer) );
+    put16( sep + 19, (uint32_t)page->header );
+    put16( sep + 21, (uint32_t)(page->height - page->footer) );
     if ( write ) {
         put16( sep + 23, 720 );
         put16( sep + 27, 1080 );
@@ -2066,7 +2077,7 @@ static int wdos_save( WDOC *doc, OUT *out, int write )
     } else {
         sep_len = 22;
     }
-    sep[0] = (u8)sep_len;
+    sep[0] = (uint8_t)sep_len;
     out_put( out, sep, sep_len + 1 );
     out_fill( out, fill, WD_PAGE - sep_len - 1 );
 

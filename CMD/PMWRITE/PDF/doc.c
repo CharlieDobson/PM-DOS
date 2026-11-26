@@ -29,14 +29,14 @@ OBJ *obj_resolve( OBJ *obj )
         if ( hops == 8 ) {
             return &obj_null;
         }
-        obj = pdf_load( (u32)obj->u.ival );
+        obj = pdf_load( (uint32_t)obj->u.ival );
     }
     return obj;
 }
 
 OBJ *dict_raw( DICT *dict, const char *key )
 {
-    u32 index;
+    unsigned int index;
 
     if ( dict == NULL ) {
         return NULL;
@@ -72,7 +72,7 @@ int obj_is_num( OBJ *obj )
     return obj->type == T_INT || obj->type == T_REAL;
 }
 
-s32 obj_int( OBJ *obj )
+int32_t obj_int( OBJ *obj )
 {
     if ( obj->type == T_INT || obj->type == T_BOOL ) {
         return obj->u.ival;
@@ -123,7 +123,7 @@ DICT *obj_dict( OBJ *obj )
     return obj->type == T_DICT || obj->type == T_STREAM ? obj->u.dict : NULL;
 }
 
-s32 dict_int( DICT *dict, const char *key, s32 def )
+int32_t dict_int( DICT *dict, const char *key, int32_t def )
 {
     OBJ *val = dict_get( dict, key );
 
@@ -154,7 +154,7 @@ ARR *dict_arr( DICT *dict, const char *key )
     return val->type == T_ARR ? val->u.arr : NULL;
 }
 
-OBJ *arr_get( ARR *arr, u32 index )
+OBJ *arr_get( ARR *arr, unsigned int index )
 {
     if ( arr == NULL || index >= arr->count ) {
         return &obj_null;
@@ -166,11 +166,11 @@ OBJ *arr_get( ARR *arr, u32 index )
 /* streams                                                             */
 /* ------------------------------------------------------------------ */
 
-u32 pdf_stream_length( DICT *dict )
+uint32_t pdf_stream_length( DICT *dict )
 {
-    s32 len = dict_int( dict, "Length", -1 );
+    int32_t len = dict_int( dict, "Length", -1 );
 
-    return len < 0 ? 0xFFFFFFFFUL : (u32)len;
+    return len < 0 ? 0xFFFFFFFFUL : (uint32_t)len;
 }
 
 int pdf_filter_count( OBJ *stm )
@@ -190,7 +190,7 @@ const char *pdf_filter_name( OBJ *stm, int index )
     if ( flt->type == T_NAME ) {
         return index == 0 ? (const char *)flt->u.str.ptr : "";
     }
-    return flt->type == T_ARR ? obj_name( arr_get( flt->u.arr, (u32)index ) ) : "";
+    return flt->type == T_ARR ? obj_name( arr_get( flt->u.arr, (unsigned int)index ) ) : "";
 }
 
 DICT *pdf_filter_parms( OBJ *stm, int index )
@@ -198,7 +198,7 @@ DICT *pdf_filter_parms( OBJ *stm, int index )
     OBJ *parms = dict_get2( obj_dict( stm ), "DecodeParms", "DP" );
 
     if ( parms->type == T_ARR ) {
-        parms = arr_get( parms->u.arr, (u32)index );
+        parms = arr_get( parms->u.arr, (unsigned int)index );
     } else if ( index != 0 ) {
         return NULL;
     }
@@ -215,10 +215,10 @@ const char *pdf_last_filter( OBJ *stm )
 /* The data as the file holds it: from where "stream" left off for
    /Length bytes.  A length that is missing or cannot be right is made
    good by looking for "endstream". */
-static u32 stream_span( DICT *dict )
+static uint32_t stream_span( DICT *dict )
 {
     static const char mark[] = "endstream";
-    u32 len = pdf_stream_length( dict ), pos, found = 0;
+    uint32_t len = pdf_stream_length( dict ), pos, found = 0;
     IN *in;
     int ch;
 
@@ -340,24 +340,25 @@ IN *pdf_stream_raw( OBJ *stm, int *last_filter )
     return stream_open( stm, 1, last_filter );
 }
 
-u8 *pdf_stream_all( OBJ *stm, u32 *len, u32 max )
+uint8_t *pdf_stream_all( OBJ *stm, uint32_t *len, uint32_t max )
 {
     return pdf_stream_pool( stm, doc.page_pool, len, max );
 }
 
 /* all of a stream, decoded, in a block of "pool": NULL if it cannot be
    read.  No more than "max" bytes of it. */
-u8 *pdf_stream_pool( OBJ *stm, POOL *pool, u32 *len, u32 max )
+uint8_t *pdf_stream_pool( OBJ *stm, POOL *pool, uint32_t *len, uint32_t max )
 {
     IN *in = pdf_stream( stm );
-    u8 *buf, *grown;
-    u32 cap = 4096, have = 0, got;
+    uint8_t *buf, *grown;
+    uint32_t have = 0, got;
+    unsigned int cap = 4096;
 
     *len = 0;
     if ( in == NULL ) {
         return NULL;
     }
-    buf = (u8 *)pool_big( pool, cap );
+    buf = (uint8_t *)pool_big( pool, cap );
     for ( ;; ) {
         got = in_read( in, buf + have, cap - have );
         have += got;
@@ -368,7 +369,7 @@ u8 *pdf_stream_pool( OBJ *stm, POOL *pool, u32 *len, u32 max )
         if ( cap > max ) {
             cap = max;
         }
-        grown = (u8 *)pool_big( pool, cap );
+        grown = (uint8_t *)pool_big( pool, cap );
         mem_cpy( grown, buf, have );
         pool_unbig( buf );
         buf = grown;
@@ -390,7 +391,7 @@ static int tree_count( DICT *node, int depth )
 {
     ARR *kids = dict_arr( node, "Kids" );
     DICT *kid;
-    u32 index;
+    unsigned int index;
     int total = 0;
 
     if ( ++tree_visits > 1000000L ) {
@@ -414,7 +415,7 @@ static int tree_count( DICT *node, int depth )
 /* what a node says of its pages: /Count if it is believable */
 static int node_count( DICT *node )
 {
-    s32 count;
+    int32_t count;
 
     if ( dict_arr( node, "Kids" ) == NULL ) {
         return 1;
@@ -443,7 +444,7 @@ static void box_from( OBJ *obj, REAL *box, int *have )
         return;
     }
     for ( index = 0; index < 4; index++ ) {
-        box[index] = obj_real( arr_get( obj->u.arr, (u32)index ) );
+        box[index] = obj_real( arr_get( obj->u.arr, (unsigned int)index ) );
     }
     if ( real_to_fx( box[0] ) > real_to_fx( box[2] ) ) {
         swap = box[0];
@@ -463,7 +464,7 @@ int pdf_page( int index, PAGE *page )
     DICT *node = dict_dict( doc.root, "Pages" ), *kid;
     ARR *kids;
     OBJ *val;
-    u32 at;
+    unsigned int at;
     int depth, count, have_crop = 0, have_media = 0, found;
     REAL media[4];
 

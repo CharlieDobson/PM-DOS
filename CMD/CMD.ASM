@@ -363,6 +363,17 @@ gl_console:
         mov     ah,0Dh
         int     21h
 
+        ; A PROMPT ON A SCREEN THAT CAN SHOW IT.  A DOS program that ends
+        ; in a graphics mode leaves it on, as under MS-DOS, and a batch
+        ; file's next program finds it there - which is why this is here
+        ; and not after every program.  But the console writes characters
+        ; into the text page, which no graphics mode shows: the prompt
+        ; and everything typed at it would be invisible.  21h/F0h AL=0Eh
+        ; sets the text mode the last DOS program started on when the
+        ; screen is in a graphics one, and does nothing otherwise.
+        mov     ax,0F00Eh
+        int     21h
+
         mov     byte ptr [adv_parse],1  ; the console speaks quotes
         mov     byte ptr [step_flag],0  ; /Y was for the batch file that
                                         ; ran before this prompt
@@ -1692,6 +1703,8 @@ dir_notall:
         mov     dword ptr [dir_total],0
         mov     dword ptr [dir_tbytes],0
         mov     dword ptr [dir_depth],0
+        mov     dword ptr [dir_errs],0
+        mov     dword ptr [dir_hdrdone],0
         call    dir_order               ; /O, into a list of sort keys
         call    dir_attrs               ; /A, into what the find allows
                                         ; and what the listing keeps
@@ -1875,7 +1888,9 @@ dir_plainnohdr:
 
 ;---------------------------------------------------------------------
 ; dir_list - list one directory's worth of the pattern in EDX.
-;            CF set if the find found nothing at all.
+;            CF set if the find found nothing at all; [dir_ferr] then
+;            says why - the find's own error, or 0 when it answered and
+;            /A turned every entry away (see dir_ferrmsg).
 ;
 ; Sorted first when /O asked for it, which is the only reason this is
 ; two loops instead of one: an order cannot be decided until every
@@ -1900,7 +1915,7 @@ dir_list:
         ; surely as an empty one.
         mov     ecx,[dir_allow]
         call    xfind_first
-        jc      dir_listnone
+        jc      dir_listerr
         mov     word ptr [dir_hdl],ax
         mov     dword ptr [dir_kept],0
 dir_row:
@@ -1918,7 +1933,13 @@ dir_rownext:
         je      dir_listnone
         clc
         ret
-dir_listnone:
+dir_listnone:                           ; the find answered; nothing kept
+        mov     dword ptr [dir_ferr],0
+        stc
+        ret
+dir_listerr:                            ; the find failed: AX = why
+        movzx   eax,ax
+        mov     [dir_ferr],eax
         stc
         ret
 
@@ -2276,8 +2297,61 @@ dir_fsout:
 dir_done:
         ret
 dir_none:
+        cmp     dword ptr [dir_errs],0  ; an error was said where it
+        jne     dn_out                  ; happened: nothing to add
+        ; /S that found nothing anywhere has printed no heading - each
+        ; waits for its directory's first match - so the volume line is
+        ; still without its line end.  Say where the walk looked, as DOS
+        ; does (DIR.ASM catNoFiles: DisplayHeader, then "File not
+        ; found"): the heading of the directory it started in, which
+        ; dir_dirpath is again once the walk is over.
+        cmp     dword ptr [dir_hdrdone],0
+        jne     dn_say
+        call    dir_showpath
+        call    dir_heading
+dn_say:
         mov     edx,OFFSET msg_nofiles
+        call    dir_ferrmsg             ; ...or the find's own error
         call    print
+dn_out:
+        ret
+
+;---------------------------------------------------------------------
+; dir_ferrmsg - a listing found nothing.  When that was because the find
+;               failed - no memory, no access, no find handle left, the
+;               drive failing - rather than because nothing was there,
+;               EDX -> what to say, CF clear.  CF set otherwise, EDX as
+;               it came.  A network drive that cannot hold a directory's
+;               listing answers ERR_NOMEM: "No files found" there would
+;               say the directory is empty.
+;---------------------------------------------------------------------
+dir_ferrmsg:
+        mov     eax,[dir_ferr]
+        cmp     eax,ERR_NOMEM
+        jne     dfm_denied
+        mov     edx,OFFSET msg_rwmem
+        clc
+        ret
+dfm_denied:
+        cmp     eax,ERR_ACCESS
+        jne     dfm_handles
+        mov     edx,OFFSET msg_denied
+        clc
+        ret
+dfm_handles:
+        cmp     eax,ERR_NOHANDLES
+        jne     dfm_general
+        mov     edx,OFFSET msg_toomany
+        clc
+        ret
+dfm_general:
+        cmp     eax,ERR_GENERAL
+        jne     dfm_none
+        mov     edx,OFFSET msg_genfail
+        clc
+        ret
+dfm_none:
+        stc
         ret
 
 ; dir_lfncol - two spaces and the long name, when the entry has one
@@ -2824,7 +2898,7 @@ do1_defer:                              ; it looked.  WITH /S it waits for
         jc      do1_out                 ; too deep to name: stepped over
         mov     edx,OFFSET dir_scratch
         call    dir_list
-        jc      do1_out
+        jc      do1_none
 
         inc     dword ptr [dir_found]
         call    dir_subtot
@@ -2834,6 +2908,13 @@ do1_defer:                              ; it looked.  WITH /S it waits for
         add     [dir_tbytes],eax
 do1_out:
         ret
+do1_none:                               ; nothing here; or a find that
+        call    dir_ferrmsg             ; failed, said under this
+        jc      do1_out                 ; directory's heading - under /S
+        call    dir_heading             ; it would be stepped over as if
+        call    print                   ; empty
+        inc     dword ptr [dir_errs]
+        jmp     short do1_out
 
 ;---------------------------------------------------------------------
 ; dir_descend - append the 8.3 name at ESI to dir_dirpath, walk what
@@ -3065,7 +3146,7 @@ dir_sorted:
         call    xfind_first
         jnc     ds_counting
         pop     edx
-        jmp     dir_listnone
+        jmp     dir_listerr
 ds_counting:
         mov     word ptr [dir_hdl],ax
 ds_count:
@@ -3095,7 +3176,7 @@ ds_count:
         mov     ecx,[dir_allow]
         call    xfind_first
         pop     edx
-        jc      ds_freeplain
+        jc      ds_freeerr
         mov     word ptr [dir_hdl],ax
         mov     dword ptr [dir_nfill],0
 ds_fill:
@@ -3143,6 +3224,9 @@ ds_shown:
 ds_freeplain:
         call    ds_free
         jmp     dir_listnone
+ds_freeerr:                             ; the second pass's find failed:
+        call    ds_free                 ; AX = why (ds_free keeps it)
+        jmp     dir_listerr
 
 ; ds_free - the records' block back, and off the ^C list.  All
 ;           registers preserved.
@@ -7410,6 +7494,8 @@ msg_full    db  'Insufficient disk space',13,10,'$'
 msg_dup     db  'Duplicate file name',13,10,'$'
 msg_badparam db 'Invalid parameter',13,10,'$'
 msg_rwmem   db  'Insufficient memory',13,10,'$'
+msg_toomany db  'Too many open files',13,10,'$'
+msg_genfail db  'General failure',13,10,'$'
 msg_sure    db  'All files in the directory will be deleted!',13,10
             db  'Are you sure (Y/N)? ','$'
 msg_curdate db  'Current date is ','$'
@@ -7524,6 +7610,9 @@ dir_tbytes  dd  0                       ; ...and every directory's bytes
 dir_depth   dd  0                       ; how far down the walk is
 dir_found   dd  0                       ; directories that had a match
 dir_hdrdone dd  0                       ; this one's heading is printed
+dir_ferr    dd  0                       ; why a listing found nothing: the
+                                        ; find's error, 0 if it answered
+dir_errs    dd  0                       ; such errors, said where they were
 dir_nrec    dd  0                       ; /O: entries in this directory
 dir_nfill   dd  0                       ; ...and how many are stored
 dir_recs    dd  0                       ; the block holding them

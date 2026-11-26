@@ -9,19 +9,19 @@
 /* memory and strings                                                  */
 /* ------------------------------------------------------------------ */
 
-void mem_set( void *dst, int val, u32 len )
+void mem_set( void *dst, int val, unsigned int len )
 {
-    u8 *cur = (u8 *)dst;
+    uint8_t *cur = (uint8_t *)dst;
 
     while ( len-- ) {
-        *cur++ = (u8)val;
+        *cur++ = (uint8_t)val;
     }
 }
 
-void mem_cpy( void *dst, const void *src, u32 len )
+void mem_cpy( void *dst, const void *src, unsigned int len )
 {
-    u8 *dcur = (u8 *)dst;
-    const u8 *scur = (const u8 *)src;
+    uint8_t *dcur = (uint8_t *)dst;
+    const uint8_t *scur = (const uint8_t *)src;
 
     if ( dcur < scur ) {
         while ( len-- ) {
@@ -36,9 +36,9 @@ void mem_cpy( void *dst, const void *src, u32 len )
     }
 }
 
-u32 str_len( const char *str )
+unsigned int str_len( const char *str )
 {
-    u32 len = 0;
+    unsigned int len = 0;
 
     while ( str[len] ) {
         len++;
@@ -47,9 +47,9 @@ u32 str_len( const char *str )
 }
 
 /* a copy that stops short of "max" bytes including the NUL */
-int str_cpyn( char *dst, const char *src, u32 max )
+int str_cpyn( char *dst, const char *src, unsigned int max )
 {
-    u32 len = str_len( src );
+    unsigned int len = str_len( src );
 
     if ( len + 1 > max ) {
         return 0;
@@ -58,9 +58,9 @@ int str_cpyn( char *dst, const char *src, u32 max )
     return 1;
 }
 
-int str_catn( char *dst, const char *src, u32 max )
+int str_catn( char *dst, const char *src, unsigned int max )
 {
-    u32 have = str_len( dst );
+    unsigned int have = str_len( dst );
 
     if ( have >= max ) {
         return 0;
@@ -77,7 +77,7 @@ int ch_upper( int ch )
     return ch;
 }
 
-int str_nicmp( const char *lhs, const char *rhs, u32 len )
+int str_nicmp( const char *lhs, const char *rhs, unsigned int len )
 {
     int lch, rch;
 
@@ -94,7 +94,7 @@ int str_nicmp( const char *lhs, const char *rhs, u32 len )
     return 0;
 }
 
-char *fmt_dec( u32 val, int width, char *buf )
+char *fmt_dec( unsigned int val, int width, char *buf )
 {
     char digits[12];
     int count = 0, pos = 0;
@@ -118,7 +118,7 @@ char *fmt_dec( u32 val, int width, char *buf )
 /* ------------------------------------------------------------------ */
 
 typedef struct HBLK {
-    u32          size;          /* whole block including this header */
+    unsigned int size;          /* whole block including this header */
     struct HBLK *next;          /* free list link (free blocks only) */
 } HBLK;
 
@@ -139,20 +139,20 @@ static void heap_insert( HBLK *blk )
     }
     blk->next = *link;
     *link = blk;
-    if ( blk->next && (u8 *)blk + blk->size == (u8 *)blk->next ) {
+    if ( blk->next && (uint8_t *)blk + blk->size == (uint8_t *)blk->next ) {
         blk->size += blk->next->size;
         blk->next = blk->next->next;
     }
-    if ( prev && (u8 *)prev + prev->size == (u8 *)blk ) {
+    if ( prev && (uint8_t *)prev + prev->size == (uint8_t *)blk ) {
         prev->size += blk->size;
         prev->next = blk->next;
     }
 }
 
-void *try_alloc( u32 size )
+void *try_alloc( unsigned int size )
 {
     HBLK **link, *blk, *rest;
-    u32 need, chunk;
+    unsigned int need, chunk;
     void *mem;
     int pass;
 
@@ -166,7 +166,7 @@ void *try_alloc( u32 size )
                 continue;
             }
             if ( blk->size - need >= MIN_SPLIT ) {
-                rest = (HBLK *)((u8 *)blk + need);
+                rest = (HBLK *)((uint8_t *)blk + need);
                 rest->size = blk->size - need;
                 rest->next = blk->next;
                 *link = rest;
@@ -174,7 +174,7 @@ void *try_alloc( u32 size )
             } else {
                 *link = blk->next;
             }
-            return (u8 *)blk + HDR;
+            return (uint8_t *)blk + HDR;
         }
         if ( pass ) {
             break;
@@ -198,6 +198,6 @@ void *try_alloc( u32 size )
 void xfree( void *ptr )
 {
     if ( ptr != NULL ) {
-        heap_insert( (HBLK *)((u8 *)ptr - HDR) );
+        heap_insert( (HBLK *)((uint8_t *)ptr - HDR) );
     }
 }

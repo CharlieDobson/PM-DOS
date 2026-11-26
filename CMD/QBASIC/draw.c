@@ -17,23 +17,23 @@
  */
 #include "qb.h"
 
-int  gfx_width_px( void );
-int  gfx_height_px( void );
-int  gfx_colors( void );
-u8  *gfx_page( int page );
-int  gfx_active_page( void );
-void gfx_need( void );
-void gfx_point_arg( double x, double y, int step, double *lx, double *ly );
-void gfx_set_last( double x, double y );
-void gfx_last( double *x, double *y );
-void gfx_to_screen( double x, double y, int *sx, int *sy );
-int  gfx_colour_arg( s32 c, int given );
-void gfx_plot( int x, int y, int c );
-int  gfx_get_px( int x, int y );
-void gfx_hline( int x0, int x1, int y, int c );
-void gfx_line( int x0, int y0, int x1, int y1, int c );
-void gfx_view_box( int *x1, int *y1, int *x2, int *y2 );
-int  gfx_fg( void );
+int      gfx_width_px( void );
+int      gfx_height_px( void );
+int      gfx_colors( void );
+uint8_t *gfx_page( int page );
+int      gfx_active_page( void );
+void     gfx_need( void );
+void     gfx_point_arg( double x, double y, int step, double *lx, double *ly );
+void     gfx_set_last( double x, double y );
+void     gfx_last( double *x, double *y );
+void     gfx_to_screen( double x, double y, int *sx, int *sy );
+int      gfx_colour_arg( int32_t c, int given );
+void     gfx_plot( int x, int y, int c );
+int      gfx_get_px( int x, int y );
+void     gfx_hline( int x0, int x1, int y, int c );
+void     gfx_line( int x0, int y0, int x1, int y1, int c );
+void     gfx_view_box( int *x1, int *y1, int *x2, int *y2 );
+int      gfx_fg( void );
 
 #define PI2     6.283185307179586
 
@@ -51,7 +51,7 @@ static double default_aspect( void )
     /* 4/3 of the height over the width, in 256ths: QBasic keeps it so,
        and a circle's rows (or a turned DRAW move) that fall on a half
        go the way that fraction takes them */
-    u32 num = (u32)gfx_height_px() * 4UL * 256UL, den = (u32)gfx_width_px() * 3UL;
+    unsigned int num = (unsigned int)gfx_height_px() * 4UL * 256UL, den = (unsigned int)gfx_width_px() * 3UL;
 
     return (double)((num + den / 2) / den) / 256.0;
 }
@@ -87,7 +87,7 @@ void rtf_CIRCLE( void )
 {
     int flags = (int)POP_L();
     double aspect = POP_D(), end = POP_D(), start = POP_D();
-    s32 c = POP_L();
+    int32_t c = POP_L();
     double r = POP_D(), y = POP_D(), x = POP_D();
     int cx, cy, colour, arc, line_start = 0, line_end = 0, big, a, b, d;
     double rx, ry, sx_scale, sy_scale, ex, ey;
@@ -194,17 +194,17 @@ void rtf_CIRCLE( void )
 /* ------------------------------------------------------------------ */
 
 typedef struct {
-    s16 x0, x1, y;
+    int16_t x0, x1, y;
 } SPAN;
 
-static u8   *tile;
-static int   tile_rows;
-static int   tile_mode;
+static uint8_t *tile;
+static int      tile_rows;
+static int      tile_mode;
 
 /* the colour a tile gives a pixel */
 static int tile_colour( int x, int y )
 {
-    const u8 *row = tile + (y % tile_rows) * (tile_mode == 3 ? 4 : tile_mode == 4 ? 2 : 1);
+    const uint8_t *row = tile + (y % tile_rows) * (tile_mode == 3 ? 4 : tile_mode == 4 ? 2 : 1);
     int bit;
 
     switch ( tile_mode ) {
@@ -230,10 +230,10 @@ void rtf_PAINT( void )
 {
     int flags;
     STR *bgs, *tiles;
-    s32 border, c;
+    int32_t border, c;
     double y, x;
     int w, h, sx, sy, fill, stop, vx1, vy1, vx2, vy2, nspans = 0, cap = 1024;
-    u8 *seen;
+    uint8_t *seen;
     SPAN *spans;
 
     gfx_need();                                 /* first: its error leaves the strings on the stack, released */
@@ -258,13 +258,13 @@ void rtf_PAINT( void )
             qs_release( tiles );
             vm_error( E_ILLEGAL_CALL );
         }
-        tile_rows = (int)((QS_LEN( tiles ) + (u32)per - 1) / (u32)per);
-        tile = (u8 *)try_alloc( (u32)(tile_rows * per) );
+        tile_rows = (int)((QS_LEN( tiles ) + (unsigned int)per - 1) / (unsigned int)per);
+        tile = (uint8_t *)try_alloc( (unsigned int)(tile_rows * per) );
         if ( tile == NULL ) {
             qs_release( tiles );
             vm_error( E_OUT_OF_MEMORY );
         }
-        mem_set( tile, 0, (u32)(tile_rows * per) );
+        mem_set( tile, 0, (unsigned int)(tile_rows * per) );
         mem_cpy( tile, tiles->text, tiles->len );
     }
     qs_release( tiles );
@@ -276,21 +276,21 @@ void rtf_PAINT( void )
         xfree( tile );
         return;
     }
-    seen = (u8 *)try_alloc( (u32)w * (u32)h / 8 + 1 );
-    spans = (SPAN *)try_alloc( (u32)cap * sizeof( SPAN ) );
+    seen = (uint8_t *)try_alloc( (unsigned int)w * (unsigned int)h / 8 + 1 );
+    spans = (SPAN *)try_alloc( (unsigned int)cap * sizeof( SPAN ) );
     if ( seen == NULL || spans == NULL ) {
         xfree( seen );
         xfree( spans );
         xfree( tile );
         vm_error( E_OUT_OF_MEMORY );
     }
-    mem_set( seen, 0, (u32)w * (u32)h / 8 + 1 );
-    spans[nspans].x0 = (s16)sx;
-    spans[nspans].x1 = (s16)sx;
-    spans[nspans].y = (s16)sy;
+    mem_set( seen, 0, (unsigned int)w * (unsigned int)h / 8 + 1 );
+    spans[nspans].x0 = (int16_t)sx;
+    spans[nspans].x1 = (int16_t)sx;
+    spans[nspans].y = (int16_t)sy;
     nspans++;
-#define SEEN( px, py )  (seen[((u32)(py) * (u32)w + (u32)(px)) >> 3] & (1 << (((u32)(py) * (u32)w + (u32)(px)) & 7)))
-#define SETSEEN( px, py ) (seen[((u32)(py) * (u32)w + (u32)(px)) >> 3] |= (u8)(1 << (((u32)(py) * (u32)w + (u32)(px)) & 7)))
+#define SEEN( px, py )  (seen[((unsigned int)(py) * (unsigned int)w + (unsigned int)(px)) >> 3] & (1 << (((unsigned int)(py) * (unsigned int)w + (unsigned int)(px)) & 7)))
+#define SETSEEN( px, py ) (seen[((unsigned int)(py) * (unsigned int)w + (unsigned int)(px)) >> 3] |= (uint8_t)(1 << (((unsigned int)(py) * (unsigned int)w + (unsigned int)(px)) & 7)))
     while ( nspans > 0 ) {
         SPAN s = spans[--nspans];
         int left, right, px, ny, dir;
@@ -327,7 +327,7 @@ void rtf_PAINT( void )
                 if ( nspans == cap ) {
                     SPAN *grown;
                     cap *= 2;
-                    grown = (SPAN *)try_realloc( spans, (u32)cap * sizeof( SPAN ) );
+                    grown = (SPAN *)try_realloc( spans, (unsigned int)cap * sizeof( SPAN ) );
                     if ( grown == NULL ) {
                         xfree( seen );
                         xfree( spans );
@@ -336,9 +336,9 @@ void rtf_PAINT( void )
                     }
                     spans = grown;
                 }
-                spans[nspans].x0 = (s16)px;
-                spans[nspans].x1 = (s16)px;
-                spans[nspans].y = (s16)ny;
+                spans[nspans].x0 = (int16_t)px;
+                spans[nspans].x1 = (int16_t)px;
+                spans[nspans].y = (int16_t)ny;
                 nspans++;
                 while ( px <= right && !SEEN( px, ny ) && gfx_get_px( px, ny ) != stop ) {
                     px++;
@@ -358,7 +358,7 @@ void rtf_PAINT( void )
 /* DRAW                                                                */
 /* ------------------------------------------------------------------ */
 
-STR **mem_varptr_string( const u8 *bytes, QTYPE *type, void **addr );
+STR **mem_varptr_string( const uint8_t *bytes, QTYPE *type, void **addr );
 
 static int draw_colour;
 static int draw_angle;          /* A: 0-3 */
@@ -394,11 +394,11 @@ int macro_number( MACRO *cur, double *val, int allow_sign )
         if ( cur->pos + 3 > cur->len ) {
             vm_error( E_ILLEGAL_CALL );
         }
-        mem_varptr_string( (const u8 *)cur->text + cur->pos, &type, &addr );
+        mem_varptr_string( (const uint8_t *)cur->text + cur->pos, &type, &addr );
         cur->pos += 3;
         switch ( TKIND( type ) ) {
-        case TY_INT:    *val = *(s16 *)addr; break;
-        case TY_LONG:   *val = *(s32 *)addr; break;
+        case TY_INT:    *val = *(int16_t *)addr; break;
+        case TY_LONG:   *val = *(int32_t *)addr; break;
         case TY_SINGLE: *val = *(float *)addr; break;
         case TY_DOUBLE: *val = *(double *)addr; break;
         default:        vm_error( E_ILLEGAL_CALL );
@@ -460,7 +460,7 @@ static void draw_move( double dx, double dy, int blank, int back, int relative, 
     }
 }
 
-static void draw_string( const char *text, u32 len, int depth )
+static void draw_string( const char *text, unsigned int len, int depth )
 {
     MACRO cur;
     int ch, blank = 0, back = 0;
@@ -546,7 +546,7 @@ static void draw_string( const char *text, u32 len, int depth )
             if ( !macro_number( &cur, &n, 0 ) ) {
                 vm_error( E_ILLEGAL_CALL );
             }
-            draw_colour = gfx_colour_arg( (s32)n, 1 );
+            draw_colour = gfx_colour_arg( (int32_t)n, 1 );
             break;
         case 'S':
             if ( !macro_number( &cur, &n, 0 ) || n < 1 || n > 255 ) {
@@ -570,9 +570,9 @@ static void draw_string( const char *text, u32 len, int depth )
             gfx_last( &lx, &ly );
             PUSH_D( lx );
             PUSH_D( ly );
-            PUSH_L( (s32)n );
+            PUSH_L( (int32_t)n );
             PUSH_STR( NULL );
-            PUSH_L( (s32)n2 );
+            PUSH_L( (int32_t)n2 );
             PUSH_STR( NULL );
             PUSH_L( 2 | 8 );
             rtf_PAINT();
@@ -586,7 +586,7 @@ static void draw_string( const char *text, u32 len, int depth )
             if ( cur.pos + 3 > cur.len ) {
                 vm_error( E_ILLEGAL_CALL );
             }
-            slot = mem_varptr_string( (const u8 *)cur.text + cur.pos, &type, &addr );
+            slot = mem_varptr_string( (const uint8_t *)cur.text + cur.pos, &type, &addr );
             cur.pos += 3;
             if ( slot == NULL ) {
                 vm_error( E_ILLEGAL_CALL );
@@ -639,23 +639,23 @@ static void layout( int *bpp, int *planes )
 }
 
 /* the bytes from "elem" to the end of the array */
-static u32 room_in( ARR *arr, u8 *elem )
+static unsigned int room_in( ARR *arr, uint8_t *elem )
 {
-    u8 *end = arr->data + arr->count * arr->esize;
+    uint8_t *end = arr->data + arr->count * arr->esize;
 
-    return elem >= arr->data && elem <= end ? (u32)(end - elem) : 0;
+    return elem >= arr->data && elem <= end ? (unsigned int)(end - elem) : 0;
 }
 
 /* GET (x1,y1)-(x2,y2), array(i): flags 1 STEP first, 2 STEP second */
 void rtf_GGET( void )
 {
     int flags = (int)POP_L();
-    u8 *elem = (u8 *)POP_A();
+    uint8_t *elem = (uint8_t *)POP_A();
     ARR *arr = *(ARR **)POP_A();
     double y2 = POP_D(), x2 = POP_D(), y1 = POP_D(), x1 = POP_D();
     int sx1, sy1, sx2, sy2, t, w, h, bpp, planes, rowbytes, x, y, p;
-    u32 need;
-    u8 *out, *pic;
+    unsigned int need;
+    uint8_t *out, *pic;
 
     gfx_need();
     if ( arr == NULL ) {
@@ -684,29 +684,29 @@ void rtf_GGET( void )
     h = sy2 - sy1 + 1;
     layout( &bpp, &planes );
     rowbytes = (w * bpp + 7) / 8;
-    need = 4 + (u32)rowbytes * (u32)planes * (u32)h;
+    need = 4 + (unsigned int)rowbytes * (unsigned int)planes * (unsigned int)h;
     if ( need > room_in( arr, elem ) ) {
         vm_error( E_ILLEGAL_CALL );
     }
-    ((u16 *)elem)[0] = (u16)(w * bpp);
-    ((u16 *)elem)[1] = (u16)h;
+    ((uint16_t *)elem)[0] = (uint16_t)(w * bpp);
+    ((uint16_t *)elem)[1] = (uint16_t)h;
     out = elem + 4;
     pic = gfx_page( gfx_active_page() );
     for ( y = 0; y < h; y++ ) {
-        const u8 *row = pic + (u32)(sy1 + y) * (u32)gfx_width_px() + (u32)sx1;
+        const uint8_t *row = pic + (unsigned int)(sy1 + y) * (unsigned int)gfx_width_px() + (unsigned int)sx1;
         for ( p = 0; p < planes; p++ ) {
-            mem_set( out, 0, (u32)rowbytes );
+            mem_set( out, 0, (unsigned int)rowbytes );
             for ( x = 0; x < w; x++ ) {
                 int c = row[x];
                 if ( bpp == 8 ) {
-                    out[x] = (u8)c;
+                    out[x] = (uint8_t)c;
                 } else if ( planes > 1 ) {
                     if ( (c >> p) & 1 ) {
-                        out[x >> 3] |= (u8)(0x80 >> (x & 7));
+                        out[x >> 3] |= (uint8_t)(0x80 >> (x & 7));
                     }
                 } else {
                     int bit = x * bpp;
-                    out[bit >> 3] |= (u8)((c & ((1 << bpp) - 1)) << (8 - bpp - (bit & 7)));
+                    out[bit >> 3] |= (uint8_t)((c & ((1 << bpp) - 1)) << (8 - bpp - (bit & 7)));
                 }
             }
             out += rowbytes;
@@ -718,12 +718,12 @@ void rtf_GGET( void )
 void rtf_GPUT( void )
 {
     int flags = (int)POP_L(), action = (int)POP_L();
-    u8 *elem = (u8 *)POP_A();
+    uint8_t *elem = (uint8_t *)POP_A();
     ARR *arr = *(ARR **)POP_A();
     double y = POP_D(), x = POP_D();
     int sx, sy, w, h, bpp, planes, rowbytes, px, py, p, mask, c, old;
-    const u8 *in;
-    u32 need;
+    const uint8_t *in;
+    unsigned int need;
 
     gfx_need();
     if ( arr == NULL ) {
@@ -740,10 +740,10 @@ void rtf_GPUT( void )
     }
     layout( &bpp, &planes );
     mask = bpp == 8 ? 255 : planes > 1 ? (1 << planes) - 1 : (1 << bpp) - 1;
-    w = ((u16 *)elem)[0] / bpp;
-    h = ((u16 *)elem)[1];
+    w = ((uint16_t *)elem)[0] / bpp;
+    h = ((uint16_t *)elem)[1];
     rowbytes = (w * bpp + 7) / 8;
-    need = 4 + (u32)rowbytes * (u32)planes * (u32)h;
+    need = 4 + (unsigned int)rowbytes * (unsigned int)planes * (unsigned int)h;
     if ( w <= 0 || h <= 0 || need > room_in( arr, elem ) ) {
         vm_error( E_ILLEGAL_CALL );
     }

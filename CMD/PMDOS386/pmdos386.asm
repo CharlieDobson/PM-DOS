@@ -105,7 +105,7 @@ S_VPICD_PHYS_UNMASK     EQU     00030009h
 ; the BIOS can no longer read 81h - WfW's boot-sector probe of it gets
 ; zeroes and divides CHS by a zero geometry.  Hook_V86_Int_Chain puts the
 ; VxD in front of every V86 INT 13h; for a USB disk it answers out of the
-; kernel's own USB stack (blk_bridge) and eats the call with Simulate_Iret,
+; kernel's own USB stack (blk_bridge) and eats the call (carry clear),
 ; so the BIOS is never asked.  Ordinals from the DDK VMM.INC (386/INT13
 ; is the model), the same way the services above were counted.
 S_HOOK_V86_INT_CHAIN    EQU     00010041h
@@ -233,7 +233,9 @@ BR_STATUS               EQU     16              ; out: 0, or an INT 13h status b
 BR_RESULT               EQU     20              ; out: sectors moved
 BR_DATA                 EQU     32              ; the sector payload
 BR_SIZE                 EQU     32 + 512
-PD_USBDRIVE             EQU     82h             ; USB_DRV0: the first USB stick's unit
+PD_USBDRIVE             EQU     88h             ; USB_DRV0: the first USB stick's unit
+                                                ; (82h until the kernel had numbers
+                                                ; for eight hard disks, 80h-87h)
 
 ;---------------------------------------------------------------------
 ; Stage D - the WfW 3.11 NDIS 3.0 wrapper (NDIS.386, device 0028h).  This
@@ -485,7 +487,7 @@ pd_msgscrit     db      13, 10, 'PMDOS.386: V86 INT 13h hooked at Sys_Critical_I
 
 ; USB-over-bridge self-test (step 7, Stage B USB): read the parked kernel's
 ; USB stick's sector 0 through the bridge, once, and show it.  A healthy
-; read of drive 82h LBA 0 (the stick's MBR) answers status=0, first4=
+; read of drive 88h LBA 0 (the stick's MBR) answers status=0, first4=
 ; 8EC033FA (bytes FA 33 C0 8E) and sig510=0000AA55 - proof the controller
 ; and the enumerated device survived the park and the bridge read them.
 pd_usbhdr       db      13, 10, 'PMDOS.386: USB sector0 read status=', 0
@@ -721,7 +723,9 @@ pc_devinit:
 ; drive's sector 0: too late (at Device_Init) and WfW has already read it
 ; off a BIOS that cannot reach the controller, got zeroes, and wedged on
 ; the zero-geometry divide.  The mask starts covering the USB BIOS range
-; (81h..85h) and Device_Init narrows it to what usbm_owns actually claims;
+; (81h..85h) and Device_Init narrows it to what usbm_owns actually claims
+; (the kernel's own unit numbers are 88h up now, outside the mask, so
+; only a BIOS number a stick was adopted under stays in it);
 ; until the bridge is up the hook answers those drives "not ready" (a
 ; clean error, not a zero sector), which is enough to keep WfW off the
 ; divide.  The stick is still reached as D: through RMDOS, not INT 13h.
@@ -1052,7 +1056,7 @@ pt_b2ffail:
 ;---------------------------------------------------------------------
 ; pt_usb - the USB-over-bridge self-test, run ONCE after the network
 ; settled.  Read sector 0 of the parked kernel's USB stick (block drive
-; 82h) through the bridge - EAX = NDTF_BLOCK routes brg_entry straight to
+; 88h) through the bridge - EAX = NDTF_BLOCK routes brg_entry straight to
 ; blk_bridge, which masks the PICs and calls the kernel's own block layer.
 ; A healthy read answers status=0, first4=8EC033FA (the MBR's FA 33 C0 8E)
 ; and sig510=0000AA55, which proves the controller and the enumerated
@@ -1814,11 +1818,20 @@ prc_done:
 ; at interrupt time, interrupts off, EBX = the current VM, EBP -> the
 ; Client_Reg_Struc.  For a USB disk this kernel serves (a bit set in
 ; pd_usbmask) the call is answered here, out of the kernel's own USB stack
-; through the bridge, and EATEN with Simulate_Iret - so WfW never reflects
-; it to the BIOS, which can no longer reach the controller and would hang
-; or hand back a zero sector WfW then divides a CHS geometry by.  Any other
-; drive is left to the chain (carry set).  The DDK's 386\INT13 is the model:
-; not ours -> stc; ours -> Simulate_Iret, set the client regs + carry, clc.
+; through the bridge, and EATEN - so WfW never reflects it to the BIOS,
+; which can no longer reach the controller and would hang or hand back a
+; zero sector WfW then divides a CHS geometry by.  Any other drive is left
+; to the chain (carry set).  Ours: set the client's registers and carry,
+; and clc.
+;
+; NO Simulate_Iret.  This hook is on the V86 chain, and nothing has been
+; pushed for the INT when the chain runs - the end of the chain does that
+; if no hook takes the call.  Simulate_Iret here popped three words of the
+; caller's own stack into CS:IP and flags.  WfW's own probes did not show
+; it, because they come by Exec_Int from a VxD that restores the client
+; afterwards; a DOS program reading the stick by INT 13h went somewhere
+; at random (2026-11-19).  The DDK's INT13 calls Simulate_Iret only in a
+; service reached from a BIOS breakpoint, where a frame does exist.
 ; A fixed 63-sector, 16-head geometry, which matches the stick's own MBR and
 ; BPB, so CHS<->LBA is self-consistent; reads loop one sector a bridge call.
 ;---------------------------------------------------------------------
@@ -1870,7 +1883,6 @@ pdi_t2:
         add     al,'0'
         out     dx,al
 
-        VXDCALL S_SIMULATE_IRET                  ; eat the int: the VM returns past it
         movzx   eax,byte ptr [ebp+C_EAX+1]       ; AH = the function
         cmp     al,02h
         je      pdi_read

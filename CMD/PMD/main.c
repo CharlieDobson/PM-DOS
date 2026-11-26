@@ -128,7 +128,7 @@ void app_status( const char *text )
 void app_draw( void )
 {
     int index, row, col, len;
-    u8 attr;
+    uint8_t attr;
 
     for ( row = 1; row < scr_rows - 1; row++ ) {
         scr_fill( row, 0, scr_cols, ' ', pal.desk );
@@ -316,9 +316,9 @@ static const char help_text[] =
     "  /S   Writes the summary report to specified file.  If no filename\r\n"
     "       is specified, output will be to the screen.\r\n";
 
-static const char *switch_name( const char *tail, char *name, u32 max )
+static const char *switch_name( const char *tail, char *name, unsigned int max )
 {
-    u32 len = 0;
+    unsigned int len = 0;
 
     while ( *tail == ' ' || *tail == '\t' ) {
         tail++;
@@ -365,7 +365,7 @@ static void show_summary( void )
 
 void pmd_main( void )
 {
-    static u8 items[RPT_ITEMS];
+    static uint8_t items[RPT_ITEMS];
     static CUSTOMER who;
     const char *tail;
     char name[PATH_MAX];

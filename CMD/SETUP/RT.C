@@ -10,29 +10,29 @@
 #include "setup.h"
 #include "text.h"
 
-void mem_set( void *dst, int val, u16 len )
+void mem_set( void *dst, int val, uint16_t len )
 {
-    u8 *ptr = (u8 *)dst;
+    uint8_t *ptr = (uint8_t *)dst;
 
     while ( len-- ) {
-        *ptr++ = (u8)val;
+        *ptr++ = (uint8_t)val;
     }
 }
 
-void mem_cpy( void *dst, const void *src, u16 len )
+void mem_cpy( void *dst, const void *src, uint16_t len )
 {
-    u8 *out = (u8 *)dst;
-    const u8 *in = (const u8 *)src;
+    uint8_t *out = (uint8_t *)dst;
+    const uint8_t *in = (const uint8_t *)src;
 
     while ( len-- ) {
         *out++ = *in++;
     }
 }
 
-int mem_cmp( const void *lhs, const void *rhs, u16 len )
+int mem_cmp( const void *lhs, const void *rhs, uint16_t len )
 {
-    const u8 *one = (const u8 *)lhs;
-    const u8 *two = (const u8 *)rhs;
+    const uint8_t *one = (const uint8_t *)lhs;
+    const uint8_t *two = (const uint8_t *)rhs;
 
     while ( len-- ) {
         if ( *one != *two ) {
@@ -86,8 +86,8 @@ int str_icmp( const char *lhs, const char *rhs )
     int one, two;
 
     do {
-        one = ch_upper( (u8)*lhs++ );
-        two = ch_upper( (u8)*rhs++ );
+        one = ch_upper( (uint8_t)*lhs++ );
+        two = ch_upper( (uint8_t)*rhs++ );
         if ( one != two ) {
             return one < two ? -1 : 1;
         }
@@ -100,8 +100,8 @@ int str_nicmp( const char *lhs, const char *rhs, int len )
     int one, two;
 
     while ( len-- > 0 ) {
-        one = ch_upper( (u8)*lhs++ );
-        two = ch_upper( (u8)*rhs++ );
+        one = ch_upper( (uint8_t)*lhs++ );
+        two = ch_upper( (uint8_t)*rhs++ );
         if ( one != two ) {
             return one < two ? -1 : 1;
         }
@@ -137,16 +137,16 @@ char *str_rchr( const char *str, int ch )
 char *str_dup( const char *str )
 {
     int len = str_len( str );
-    char *copy = (char *)xalloc( (u32)len + 1 );
+    char *copy = (char *)xalloc( (uint32_t)len + 1 );
 
-    mem_cpy( copy, str, (u16)(len + 1) );
+    mem_cpy( copy, str, (uint16_t)(len + 1) );
     return copy;
 }
 
 void str_upper( char *str )
 {
     for ( ; *str; str++ ) {
-        *str = (char)ch_upper( (u8)*str );
+        *str = (char)ch_upper( (uint8_t)*str );
     }
 }
 
@@ -207,7 +207,7 @@ int path_valid( const char *path )
                     return 0;
                 }
                 dot = 1;
-            } else if ( !name_char( (u8)*path ) ) {
+            } else if ( !name_char( (uint8_t)*path ) ) {
                 return 0;
             } else if ( dot ) {
                 if ( ++ext > 3 ) {
@@ -231,7 +231,7 @@ int path_valid( const char *path )
     return 1;
 }
 
-void *xalloc( u32 size )
+void *xalloc( uint32_t size )
 {
     void *ptr = plat_alloc( size ? size : 1 );
 
@@ -248,12 +248,12 @@ void xfree( void *ptr )
     }
 }
 
-u32 parse_u32( const char *str, const char **end )
+uint32_t parse_u32( const char *str, const char **end )
 {
-    u32 val = 0;
+    uint32_t val = 0;
 
     while ( *str >= '0' && *str <= '9' ) {
-        val = val * 10 + (u32)(*str - '0');
+        val = val * 10 + (uint32_t)(*str - '0');
         str++;
     }
     if ( end ) {
@@ -283,7 +283,7 @@ int __cdecl sfmt( char *buf, int max, const char *fmt, ... )
     va_list args;
     char num[24], *str;
     int pos = 0, width, left, zero, islong, group, len, i, neg, digits;
-    u32 val;
+    uint32_t val;
     unsigned base;
 
     va_start( args, fmt );
@@ -329,15 +329,15 @@ int __cdecl sfmt( char *buf, int max, const char *fmt, ... )
             break;
         case 'd': case 'u': case 'x': case 'X':
             if ( islong ) {
-                val = va_arg( args, u32 );
+                val = va_arg( args, uint32_t );
             } else if ( *fmt == 'd' ) {
-                val = (u32)(s32)va_arg( args, int );
+                val = (uint32_t)(int32_t)va_arg( args, int );
             } else {
-                val = (u32)va_arg( args, unsigned );
+                val = (uint32_t)va_arg( args, unsigned );
             }
-            if ( *fmt == 'd' && (s32)val < 0 ) {
+            if ( *fmt == 'd' && (int32_t)val < 0 ) {
                 neg = 1;
-                val = (u32)(-(s32)val);
+                val = (uint32_t)(-(int32_t)val);
             }
             base = (*fmt == 'x' || *fmt == 'X') ? 16 : 10;
             len = 0;

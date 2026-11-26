@@ -10,30 +10,30 @@
 #include <string.h>
 
 /* one-bit left shift of a 16-byte big-endian value */
-static void shift_left_1( const unsigned char *in, unsigned char *out )
+static void shift_left_1( const uint8_t *in, uint8_t *out )
 {
     int           i;
-    unsigned char carry = 0;
+    uint8_t       carry = 0;
     for ( i = 15; i >= 0; i-- ) {
-        out[i] = (unsigned char)( ( in[i] << 1 ) | carry );
-        carry = (unsigned char)( ( in[i] >> 7 ) & 1 );
+        out[i] = (uint8_t)( ( in[i] << 1 ) | carry );
+        carry = (uint8_t)( ( in[i] >> 7 ) & 1 );
     }
 }
 
-static void xor16( const unsigned char *a, const unsigned char *b, unsigned char *out )
+static void xor16( const uint8_t *a, const uint8_t *b, uint8_t *out )
 {
     int i;
-    for ( i = 0; i < 16; i++ ) out[i] = (unsigned char)( a[i] ^ b[i] );
+    for ( i = 0; i < 16; i++ ) out[i] = (uint8_t)( a[i] ^ b[i] );
 }
 
-void aes_cmac( const unsigned char key[16], const unsigned char *msg, int len,
-               unsigned char mac[16] )
+void aes_cmac( const uint8_t key[16], const uint8_t *msg, int len,
+               uint8_t mac[16] )
 {
-    unsigned char rk[AES128_RK_BYTES];
-    unsigned char zero[16], ltab[16], k1[16], k2[16];
-    unsigned char block[16], last[16], x[16], y[16];
+    uint8_t       rk[AES128_RK_BYTES];
+    uint8_t       zero[16], ltab[16], k1[16], k2[16];
+    uint8_t       block[16], last[16], x[16], y[16];
     int           complete, blocks, i, off;
-    const unsigned char rb = 0x87;
+    const uint8_t rb = 0x87;
 
     aes128_expand_key( key, rk );
 
@@ -41,9 +41,9 @@ void aes_cmac( const unsigned char key[16], const unsigned char *msg, int len,
     memset( zero, 0, 16 );
     aes128_encrypt( rk, zero, ltab );
     shift_left_1( ltab, k1 );
-    if ( ltab[0] & 0x80 ) k1[15] = (unsigned char)( k1[15] ^ rb );
+    if ( ltab[0] & 0x80 ) k1[15] = (uint8_t)( k1[15] ^ rb );
     shift_left_1( k1, k2 );
-    if ( k1[0] & 0x80 ) k2[15] = (unsigned char)( k2[15] ^ rb );
+    if ( k1[0] & 0x80 ) k2[15] = (uint8_t)( k2[15] ^ rb );
 
     /* number of blocks; a message of 0 bytes counts as one (incomplete) block */
     complete = ( len > 0 && ( len % 16 ) == 0 );
@@ -72,13 +72,13 @@ void aes_cmac( const unsigned char key[16], const unsigned char *msg, int len,
     aes128_encrypt( rk, y, mac );
 }
 
-void smb3_kdf( const unsigned char key[16],
-               const unsigned char *label, int labellen,
-               const unsigned char *context, int contextlen,
-               unsigned char out[16] )
+void smb3_kdf( const uint8_t key[16],
+               const uint8_t *label, int labellen,
+               const uint8_t *context, int contextlen,
+               uint8_t out[16] )
 {
-    unsigned char input[256];
-    unsigned char mac[32];
+    uint8_t input[256];
+    uint8_t mac[32];
     int pos = 0;
 
     input[pos++] = 0; input[pos++] = 0; input[pos++] = 0; input[pos++] = 1;   /* i = 1 */

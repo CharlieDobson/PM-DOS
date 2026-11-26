@@ -14,7 +14,7 @@
 #include <stdlib.h>
 
 /* Expand the AES key by size and record the round count. */
-static void install_key(tls_keys *k, const unsigned char *enc_key, int keylen)
+static void install_key(tls_keys *k, const uint8_t *enc_key, int keylen)
 {
     memcpy(k->enc_key, enc_key, keylen);
     if (keylen == 32) { aes256_expand_key(enc_key, k->rk); k->nr = 14; }
@@ -22,8 +22,8 @@ static void install_key(tls_keys *k, const unsigned char *enc_key, int keylen)
 }
 
 void tls_keys_init(tls_keys *k,
-                   const unsigned char mac_key[20],
-                   const unsigned char *enc_key, int keylen)
+                   const uint8_t mac_key[20],
+                   const uint8_t *enc_key, int keylen)
 {
     memcpy(k->mac_key, mac_key, TLS_MAC_LEN);
     install_key(k, enc_key, keylen);
@@ -32,8 +32,8 @@ void tls_keys_init(tls_keys *k,
 }
 
 void tls_keys_init_gcm(tls_keys *k,
-                       const unsigned char *enc_key, int keylen,
-                       const unsigned char iv4[4])
+                       const uint8_t *enc_key, int keylen,
+                       const uint8_t iv4[4])
 {
     install_key(k, enc_key, keylen);
     gcm_calc_h(k->rk, k->nr, k->H);
@@ -43,8 +43,8 @@ void tls_keys_init_gcm(tls_keys *k,
 }
 
 void tls_keys_init13(tls_keys *k,
-                     const unsigned char *enc_key, int keylen,
-                     const unsigned char iv12[12])
+                     const uint8_t *enc_key, int keylen,
+                     const uint8_t iv12[12])
 {
     install_key( k, enc_key, keylen );
     gcm_calc_h( k->rk, k->nr, k->H );
@@ -53,7 +53,7 @@ void tls_keys_init13(tls_keys *k,
     k->is_gcm = 2;
 }
 
-static void seq_inc(unsigned char seq[8])
+static void seq_inc(uint8_t seq[8])
 {
     int i;
     for (i = 7; i >= 0; i--)
@@ -62,21 +62,21 @@ static void seq_inc(unsigned char seq[8])
 }
 
 /* HMAC-SHA1 over seq || type || ver || len(frag) || frag. */
-static void record_mac(const tls_keys *k, int type, const unsigned char *frag,
-                       int flen, unsigned char mac[20])
+static void record_mac(const tls_keys *k, int type, const uint8_t *frag,
+                       int flen, uint8_t mac[20])
 {
-    unsigned char hdr[13];      /* seq(8) + type(1) + ver(2) + len(2) */
-    unsigned char *m;
+    uint8_t hdr[13];            /* seq(8) + type(1) + ver(2) + len(2) */
+    uint8_t *m;
     int mlen = 13 + flen;
 
     memcpy(hdr, k->seq, 8);
-    hdr[8]  = (unsigned char)type;
+    hdr[8]  = (uint8_t)type;
     hdr[9]  = TLS_VER_HI;
     hdr[10] = TLS_VER_LO;
-    hdr[11] = (unsigned char)((flen >> 8) & 0xFF);
-    hdr[12] = (unsigned char)(flen & 0xFF);
+    hdr[11] = (uint8_t)((flen >> 8) & 0xFF);
+    hdr[12] = (uint8_t)(flen & 0xFF);
 
-    m = (unsigned char *)malloc(mlen);
+    m = (uint8_t *)malloc(mlen);
     if (m == NULL) { memset(mac, 0, 20); return; }
     memcpy(m, hdr, 13);
     if (flen > 0)
@@ -85,28 +85,28 @@ static void record_mac(const tls_keys *k, int type, const unsigned char *frag,
     free(m);
 }
 
-int tls_plain_record(int content_type, const unsigned char *data, int len,
-                     unsigned char *out, int outcap)
+int tls_plain_record(int content_type, const uint8_t *data, int len,
+                     uint8_t *out, int outcap)
 {
     if (len < 0 || TLS_REC_HDR + len > outcap)
         return -1;
-    out[0] = (unsigned char)content_type;
+    out[0] = (uint8_t)content_type;
     out[1] = TLS_VER_HI;
     out[2] = TLS_VER_LO;
-    out[3] = (unsigned char)((len >> 8) & 0xFF);
-    out[4] = (unsigned char)(len & 0xFF);
+    out[3] = (uint8_t)((len >> 8) & 0xFF);
+    out[4] = (uint8_t)(len & 0xFF);
     if (len > 0)
         memcpy(out + TLS_REC_HDR, data, len);
     return TLS_REC_HDR + len;
 }
 
 int tls_protect_iv(tls_keys *k, int content_type,
-                   const unsigned char *plain, int plen,
-                   const unsigned char iv[16],
-                   unsigned char *out, int outcap)
+                   const uint8_t *plain, int plen,
+                   const uint8_t iv[16],
+                   uint8_t *out, int outcap)
 {
-    unsigned char mac[20];
-    unsigned char *padded;
+    uint8_t mac[20];
+    uint8_t *padded;
     int L, padval, plen_pad, reclen, i;
 
     if (plen < 0)
@@ -121,21 +121,21 @@ int tls_protect_iv(tls_keys *k, int content_type,
     if (reclen > outcap)
         return -1;
 
-    padded = (unsigned char *)malloc(plen_pad);
+    padded = (uint8_t *)malloc(plen_pad);
     if (padded == NULL)
         return -1;
     if (plen > 0)
         memcpy(padded, plain, plen);
     memcpy(padded + plen, mac, TLS_MAC_LEN);
     for (i = 0; i <= padval; i++)
-        padded[L + i] = (unsigned char)padval;
+        padded[L + i] = (uint8_t)padval;
 
     /* header */
-    out[0] = (unsigned char)content_type;
+    out[0] = (uint8_t)content_type;
     out[1] = TLS_VER_HI;
     out[2] = TLS_VER_LO;
-    out[3] = (unsigned char)(((TLS_IV_LEN + plen_pad) >> 8) & 0xFF);
-    out[4] = (unsigned char)((TLS_IV_LEN + plen_pad) & 0xFF);
+    out[3] = (uint8_t)(((TLS_IV_LEN + plen_pad) >> 8) & 0xFF);
+    out[4] = (uint8_t)((TLS_IV_LEN + plen_pad) & 0xFF);
     /* explicit IV then CBC ciphertext */
     memcpy(out + TLS_REC_HDR, iv, TLS_IV_LEN);
     aes_cbc_encrypt(k->rk, k->nr, iv, padded, out + TLS_REC_HDR + TLS_IV_LEN, plen_pad);
@@ -148,10 +148,10 @@ int tls_protect_iv(tls_keys *k, int content_type,
 /* AES-128-GCM record: header || explicit_nonce(8=seq) || ciphertext || tag(16).
    nonce = implicit_iv(4) || explicit_nonce(8); AAD = seq||type||ver||plen. */
 static int tls_protect_gcm(tls_keys *k, int content_type,
-                           const unsigned char *plain, int plen,
-                           unsigned char *out, int outcap)
+                           const uint8_t *plain, int plen,
+                           uint8_t *out, int outcap)
 {
-    unsigned char nonce[12], aad[13], tag[16];
+    uint8_t nonce[12], aad[13], tag[16];
     int reclen = TLS_REC_HDR + 8 + plen + 16;
     int rl = 8 + plen + 16;
 
@@ -161,15 +161,15 @@ static int tls_protect_gcm(tls_keys *k, int content_type,
     memcpy(nonce + 4, k->seq, 8);
 
     memcpy(aad, k->seq, 8);
-    aad[8]  = (unsigned char)content_type;
+    aad[8]  = (uint8_t)content_type;
     aad[9]  = TLS_VER_HI; aad[10] = TLS_VER_LO;
-    aad[11] = (unsigned char)((plen >> 8) & 0xFF);
-    aad[12] = (unsigned char)(plen & 0xFF);
+    aad[11] = (uint8_t)((plen >> 8) & 0xFF);
+    aad[12] = (uint8_t)(plen & 0xFF);
 
-    out[0] = (unsigned char)content_type;
+    out[0] = (uint8_t)content_type;
     out[1] = TLS_VER_HI; out[2] = TLS_VER_LO;
-    out[3] = (unsigned char)((rl >> 8) & 0xFF);
-    out[4] = (unsigned char)(rl & 0xFF);
+    out[3] = (uint8_t)((rl >> 8) & 0xFF);
+    out[4] = (uint8_t)(rl & 0xFF);
     memcpy(out + TLS_REC_HDR, k->seq, 8);           /* explicit nonce */
 
     gcm_encrypt(k->rk, k->nr, k->H, nonce, aad, 13, plain, plen,
@@ -180,11 +180,11 @@ static int tls_protect_gcm(tls_keys *k, int content_type,
     return reclen;
 }
 
-static int tls_unprotect_gcm(tls_keys *k, const unsigned char *rec, int reclen,
-                             int *content_type, unsigned char *out, int outcap)
+static int tls_unprotect_gcm(tls_keys *k, const uint8_t *rec, int reclen,
+                             int *content_type, uint8_t *out, int outcap)
 {
-    unsigned char nonce[12], aad[13];
-    const unsigned char *expl, *cipher, *tag;
+    uint8_t nonce[12], aad[13];
+    const uint8_t *expl, *cipher, *tag;
     int type, len, clen;
 
     if (reclen < TLS_REC_HDR + 8 + 16) return -1;
@@ -202,10 +202,10 @@ static int tls_unprotect_gcm(tls_keys *k, const unsigned char *rec, int reclen,
     memcpy(nonce + 4, expl, 8);                     /* peer's explicit nonce */
 
     memcpy(aad, k->seq, 8);
-    aad[8]  = (unsigned char)type;
+    aad[8]  = (uint8_t)type;
     aad[9]  = TLS_VER_HI; aad[10] = TLS_VER_LO;
-    aad[11] = (unsigned char)((clen >> 8) & 0xFF);
-    aad[12] = (unsigned char)(clen & 0xFF);
+    aad[11] = (uint8_t)((clen >> 8) & 0xFF);
+    aad[12] = (uint8_t)(clen & 0xFF);
 
     if (gcm_decrypt(k->rk, k->nr, k->H, nonce, aad, 13, cipher, clen, tag, out) != 0)
         return -1;
@@ -220,7 +220,7 @@ static int tls_unprotect_gcm(tls_keys *k, const unsigned char *rec, int reclen,
      record = 17 03 03 len(2) || AES-GCM(data || type) || tag(16)
    nonce = iv XOR (0000 || seq), AAD = the 5-byte record header.  No
    padding is sent. */
-static void nonce13(const tls_keys *k, unsigned char nonce[12])
+static void nonce13(const tls_keys *k, uint8_t nonce[12])
 {
     int i;
     memcpy( nonce, k->iv, 12 );
@@ -230,10 +230,10 @@ static void nonce13(const tls_keys *k, unsigned char nonce[12])
 }
 
 static int tls_protect13(tls_keys *k, int content_type,
-                         const unsigned char *plain, int plen,
-                         unsigned char *out, int outcap)
+                         const uint8_t *plain, int plen,
+                         uint8_t *out, int outcap)
 {
-    unsigned char nonce[12], tag[16];
+    uint8_t nonce[12], tag[16];
     int rl = plen + 1 + 16;                     /* inner plaintext + tag */
     int reclen = TLS_REC_HDR + rl;
 
@@ -241,10 +241,10 @@ static int tls_protect13(tls_keys *k, int content_type,
 
     out[0] = TLS_CT_APPLICATION_DATA;
     out[1] = TLS_VER_HI; out[2] = TLS_VER_LO;
-    out[3] = (unsigned char)( ( rl >> 8 ) & 0xFF );
-    out[4] = (unsigned char)( rl & 0xFF );
+    out[3] = (uint8_t)( ( rl >> 8 ) & 0xFF );
+    out[4] = (uint8_t)( rl & 0xFF );
     if ( plen > 0 ) memmove( out + TLS_REC_HDR, plain, plen );
-    out[TLS_REC_HDR + plen] = (unsigned char)content_type;
+    out[TLS_REC_HDR + plen] = (uint8_t)content_type;
 
     nonce13( k, nonce );
     /* in place: GCM counter mode reads each byte before writing it */
@@ -256,10 +256,10 @@ static int tls_protect13(tls_keys *k, int content_type,
     return reclen;
 }
 
-static int tls_unprotect13(tls_keys *k, const unsigned char *rec, int reclen,
-                           int *content_type, unsigned char *out, int outcap)
+static int tls_unprotect13(tls_keys *k, const uint8_t *rec, int reclen,
+                           int *content_type, uint8_t *out, int outcap)
 {
-    unsigned char nonce[12];
+    uint8_t nonce[12];
     int len, clen;
 
     if ( reclen < TLS_REC_HDR + 1 + 16 ) return -1;
@@ -285,10 +285,10 @@ static int tls_unprotect13(tls_keys *k, const unsigned char *rec, int reclen,
 }
 
 int tls_protect(tls_keys *k, int content_type,
-                const unsigned char *plain, int plen,
-                nst_rng *rng, unsigned char *out, int outcap)
+                const uint8_t *plain, int plen,
+                nst_rng *rng, uint8_t *out, int outcap)
 {
-    unsigned char iv[16];
+    uint8_t iv[16];
     if (k->is_gcm == 2)
         return tls_protect13(k, content_type, plain, plen, out, outcap);
     if (k->is_gcm)
@@ -297,11 +297,11 @@ int tls_protect(tls_keys *k, int content_type,
     return tls_protect_iv(k, content_type, plain, plen, iv, out, outcap);
 }
 
-int tls_unprotect(tls_keys *k, const unsigned char *rec, int reclen,
-                  int *content_type, unsigned char *out, int outcap)
+int tls_unprotect(tls_keys *k, const uint8_t *rec, int reclen,
+                  int *content_type, uint8_t *out, int outcap)
 {
-    const unsigned char *iv, *cipher;
-    unsigned char *padded, mac[20], mac2[20];
+    const uint8_t *iv, *cipher;
+    uint8_t *padded, mac[20], mac2[20];
     int type, len, clen, padval, i, contentlen, plen, bad;
 
     if (k->is_gcm == 2)
@@ -322,7 +322,7 @@ int tls_unprotect(tls_keys *k, const unsigned char *rec, int reclen,
     cipher = iv + TLS_IV_LEN;
     clen = len - TLS_IV_LEN;
 
-    padded = (unsigned char *)malloc(clen);
+    padded = (uint8_t *)malloc(clen);
     if (padded == NULL)
         return -1;
     aes_cbc_decrypt(k->rk, k->nr, iv, cipher, padded, clen);
@@ -334,7 +334,7 @@ int tls_unprotect(tls_keys *k, const unsigned char *rec, int reclen,
         bad = 1;
     else
         for (i = 0; i <= padval; i++)
-            if (padded[clen - 1 - i] != (unsigned char)padval)
+            if (padded[clen - 1 - i] != (uint8_t)padval)
                 bad = 1;
     if (bad) { free(padded); return -1; }
 

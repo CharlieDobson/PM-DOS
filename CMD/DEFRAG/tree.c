@@ -26,23 +26,24 @@
  */
 #include "defrag.h"
 
-NODE     *nodes;
-u32       nnodes;
-DIRINFO  *dirs;
-u32       ndirs;
-u32      *own;
-u32      *prev;
-DRIVESTAT dst;
-BLOCK    *blocks;
-u32       nblocks, per_block = 1;
+NODE         *nodes;
+unsigned int  nnodes;
+DIRINFO      *dirs;
+unsigned int  ndirs;
+unsigned int *own;
+uint32_t     *prev;
+DRIVESTAT     dst;
+BLOCK        *blocks;
+unsigned int  nblocks;
+uint32_t      per_block = 1;
 
-static u32 node_cap, dir_cap;
+static unsigned int node_cap, dir_cap;
 
 /* ------------------------------------------------------------------ */
 /* the tables                                                          */
 /* ------------------------------------------------------------------ */
 
-static u32 node_new( void )
+static unsigned int node_new( void )
 {
     NODE *grown;
 
@@ -59,7 +60,7 @@ static u32 node_new( void )
     return nnodes++;
 }
 
-static u32 dir_new( u32 node )
+static unsigned int dir_new( unsigned int node )
 {
     DIRINFO *grown;
 
@@ -80,7 +81,7 @@ static u32 dir_new( u32 node )
 
 void tree_free( void )
 {
-    u32 index;
+    unsigned int index;
 
     for ( index = 0; index < ndirs; index++ ) {
         dir_free( &dirs[index].buf );
@@ -108,9 +109,10 @@ void tree_free( void )
 /* Follow the chain that starts at "first", giving each cluster to
    "node"; the clusters go into "list" when one is wanted.  It stops at
    the first thing wrong and says so in dst.errors. */
-static void chain_claim( u32 node, u32 first, U32LIST *list )
+static void chain_claim( unsigned int node, uint32_t first, U32LIST *list )
 {
-    u32 clus = first, before = 0, val, count = 0, runs = 0;
+    uint32_t     clus = first, before = 0, val, count = 0;
+    unsigned int runs = 0;
 
     for ( ;; ) {
         if ( !CLUS_OK( clus ) ) {
@@ -153,16 +155,16 @@ static void chain_claim( u32 node, u32 first, U32LIST *list )
 /* a directory                                                         */
 /* ------------------------------------------------------------------ */
 
-static int is_dot( const u8 *ent, int dots )
+static int is_dot( const uint8_t *ent, int dots )
 {
     static const char names[2][12] = { ".          ", "..         " };
 
     return mem_cmp( ent, names[dots - 1], 11 ) == 0 && (ent[DE_ATTR] & A_DIR);
 }
 
-const char *node_name( u32 node, char *buf )
+const char *node_name( unsigned int node, char *buf )
 {
-    const u8 *ent;
+    const uint8_t *ent;
     int pos, len = 0;
 
     if ( node == N_ROOT || node == N_NONE ) {
@@ -181,7 +183,7 @@ const char *node_name( u32 node, char *buf )
         }
     }
     buf[len] = 0;
-    if ( (u8)buf[0] == 0x05 ) {
+    if ( (uint8_t)buf[0] == 0x05 ) {
         buf[0] = (char)0xE5;                /* how a name that starts E5h is kept */
     }
     return buf;
@@ -190,17 +192,17 @@ const char *node_name( u32 node, char *buf )
 /* One directory, already in memory: a node for everything in it, and a
    DIRINFO for each directory.  0, or DFE_READ when one of those would
    not read. */
-static int dir_scan( u32 dirno )
+static int dir_scan( unsigned int dirno )
 {
-    u32 nent = dirs[dirno].buf.nent, me = dirs[dirno].node, idx, node, first, size, want, sub;
-    u32 parent_first;
+    unsigned int nent = dirs[dirno].buf.nent, me = dirs[dirno].node, idx, node, sub;
+    uint32_t     first, size, want, parent_first;
     U32LIST chain;
-    const u8 *ent;
+    const uint8_t *ent;
     char name[13];
-    u8 attr;
+    uint8_t attr;
     int rc;
 
-    dirs[dirno].who = (u32 *)xzalloc( (nent ? nent : 1) * sizeof( u32 ) );
+    dirs[dirno].who = (unsigned int *)xzalloc( (nent ? nent : 1) * sizeof( unsigned int ) );
     fe_reading( node_name( me, name ) );
 
     /* a directory that is not the root starts with itself and its parent */
@@ -286,17 +288,18 @@ static int dir_scan( u32 dirno )
 int tree_read( void )
 {
     U32LIST chain;
-    u32 clus, val, dirno;
+    uint32_t     clus, val;
+    unsigned int dirno;
     int rc;
 
     tree_free();
-    own = (u32 *)try_alloc( (vol.maxclus + 1) * sizeof( u32 ) );
-    prev = (u32 *)try_alloc( (vol.maxclus + 1) * sizeof( u32 ) );
+    own = (unsigned int *)try_alloc( (vol.maxclus + 1) * sizeof( unsigned int ) );
+    prev = (uint32_t *)try_alloc( (vol.maxclus + 1) * sizeof( uint32_t ) );
     if ( own == NULL || prev == NULL ) {
         return DFE_NOMEM;
     }
-    mem_set( own, 0, (vol.maxclus + 1) * sizeof( u32 ) );
-    mem_set( prev, 0, (vol.maxclus + 1) * sizeof( u32 ) );
+    mem_set( own, 0, (vol.maxclus + 1) * sizeof( unsigned int ) );
+    mem_set( prev, 0, (vol.maxclus + 1) * sizeof( uint32_t ) );
 
     node_new();                             /* N_NONE: nobody */
     node_new();                             /* N_ROOT */
@@ -355,7 +358,8 @@ int tree_read( void )
    run is not as they were read. */
 void tree_stats( void )
 {
-    u32 clus, val, node, before, runs;
+    uint32_t     clus, val, before;
+    unsigned int node, runs;
 
     dst.used = dst.free = dst.bad = dst.fixed = dst.movable = 0;
     dst.frag_items = dst.gaps = 0;
@@ -410,7 +414,7 @@ void tree_stats( void )
    that have clusters and may be moved, the share that are in one piece. */
 int tree_percent( void )
 {
-    u32 node, items = 0;
+    unsigned int node, items = 0;
 
     for ( node = N_ROOT + 1; node < nnodes; node++ ) {
         if ( nodes[node].nclus && !(nodes[node].flags & NF_FIXED) ) {
@@ -443,9 +447,10 @@ int tree_recommend( void )
 /* the map                                                             */
 /* ------------------------------------------------------------------ */
 
-void map_build( u32 cells )
+void map_build( unsigned int cells )
 {
-    u32 clus, val, blk;
+    uint32_t     clus, val;
+    unsigned int blk;
 
     xfree( blocks );
     if ( cells == 0 ) {
@@ -474,7 +479,7 @@ void map_build( u32 cells )
     }
 }
 
-void map_count( u32 clus, int used, int fixed, int done )
+void map_count( uint32_t clus, int used, int fixed, int done )
 {
     BLOCK *blk;
 
@@ -482,16 +487,16 @@ void map_count( u32 clus, int used, int fixed, int done )
         return;
     }
     blk = &blocks[BLOCK_OF( clus )];
-    blk->used += (u32)used;
-    blk->fixed += (u32)fixed;
-    blk->done += (u32)done;
+    blk->used += (uint32_t)used;
+    blk->fixed += (uint32_t)fixed;
+    blk->done += (uint32_t)done;
 }
 
 /* A run is starting: whatever an earlier run of this drive put in its
    final place is only where it happens to be. */
 void tree_unplace( void )
 {
-    u32 index;
+    unsigned int index;
 
     for ( index = 0; index < nnodes; index++ ) {
         nodes[index].flags &= ~NF_PLACED;

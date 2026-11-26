@@ -25,22 +25,22 @@
 #define MODE_NAT        1
 
 typedef struct {
-    u16 seg;
-    u32 off;
+    uint16_t seg;
+    uint32_t off;
 } ADDR;
 
 /* MAIN.C - the command loop and the parser */
-extern int   mode;
-extern DRX   cpu;               /* the registers, in either mode */
-extern u16   work_seg;          /* MODE_16: where the work area starts */
-extern u32   work_len;          /* ...and how long it is */
-extern u8   *work_buf;
-extern int   prog_held;         /* MODE_NAT: the kernel holds a program */
-extern char  file_name[128];    /* N's name, for L and W */
-extern int   file_kind;         /* KIND_* of file_name */
-extern ADDR  next_dump;         /* where a bare D, U and A carry on */
-extern ADDR  next_unasm;
-extern ADDR  next_asm;
+extern int      mode;
+extern DRX      cpu;             /* the registers, in either mode */
+extern uint16_t work_seg;        /* MODE_16: where the work area starts */
+extern uint32_t work_len;        /* ...and how long it is */
+extern uint8_t *work_buf;
+extern int      prog_held;       /* MODE_NAT: the kernel holds a program */
+extern char     file_name[128];  /* N's name, for L and W */
+extern int      file_kind;       /* KIND_* of file_name */
+extern ADDR     next_dump;       /* where a bare D, U and A carry on */
+extern ADDR     next_unasm;
+extern ADDR     next_asm;
 
 #define KIND_DATA       0
 #define KIND_COM        1
@@ -51,38 +51,38 @@ extern const char *line;        /* the command being read */
 extern const char *lp;          /* where in it */
 extern int   prompt_len;        /* columns in front of it on the screen */
 
-void  __cdecl cmd_abort( void );        /* back to the prompt (DOSINT.ASM) */
-int   __cdecl dbg_setjmp( u32 *buf );   /* buf: three dwords */
-void  __cdecl dbg_longjmp( u32 *buf, int value );
-extern u32 *error_jmp;          /* non-NULL: syntax_error longjmps here */
-void  syntax_error( void );     /* "^ Error" under lp, and back */
-void  coded_error( const char *code );  /* "bf Error" and the like */
-void  skip_blanks( void );
-int   at_end( void );
-void  need_end( void );
-int   peek_upper( void );
-u32   get_hex( int max_digits );
-int   try_hex( u32 *val, int max_digits );
-int   off_digits( void );       /* 4 in MODE_16, 8 in MODE_NAT */
-void  get_addr( ADDR *addr, u16 def_seg );
-int   try_addr( ADDR *addr, u16 def_seg );
-void  get_range( ADDR *addr, u32 *len, u16 def_seg, u32 def_len, int need );
-u32   get_list( u8 *buf, u32 max );
-int   reg_seg_value( const char *name, u16 *val );
-void  new_work( void );
-void  positions_at_ip( void );
-void  set_file_name( const char *text );
+void  __cdecl cmd_abort( void );            /* back to the prompt (DOSINT.ASM) */
+int   __cdecl dbg_setjmp( uint32_t *buf );  /* buf: three dwords */
+void  __cdecl dbg_longjmp( uint32_t *buf, int value );
+extern uint32_t *error_jmp;     /* non-NULL: syntax_error longjmps here */
+void     syntax_error( void );  /* "^ Error" under lp, and back */
+void     coded_error( const char *code );   /* "bf Error" and the like */
+void     skip_blanks( void );
+int      at_end( void );
+void     need_end( void );
+int      peek_upper( void );
+uint32_t get_hex( int max_digits );
+int      try_hex( uint32_t *val, int max_digits );
+int      off_digits( void );    /* 4 in MODE_16, 8 in MODE_NAT */
+void     get_addr( ADDR *addr, uint16_t def_seg );
+int      try_addr( ADDR *addr, uint16_t def_seg );
+void     get_range( ADDR *addr, uint32_t *len, uint16_t def_seg, uint32_t def_len, int need );
+uint32_t get_list( uint8_t *buf, uint32_t max );
+int      reg_seg_value( const char *name, uint16_t *val );
+void     new_work( void );
+void     positions_at_ip( void );
+void     set_file_name( const char *text );
 
 /* MEM.C - one address space or the other */
-int   mem_get( ADDR addr, u8 *buf, u32 len, u8 *ok );
-int   mem_read( ADDR addr, u8 *buf, u32 len );
-int   mem_write( ADDR addr, const u8 *buf, u32 len );
-int   mem_is_low( ADDR addr );
-u32   mem_seg_end( ADDR addr );     /* the first offset past the segment */
-void  addr_add( ADDR *addr, u32 n );  /* wraps at 64K in the first megabyte */
-void  out_addr( ADDR addr );
-int   addr_width( ADDR addr );
-void  work_reset( void );
+int      mem_get( ADDR addr, uint8_t *buf, uint32_t len, uint8_t *ok );
+int      mem_read( ADDR addr, uint8_t *buf, uint32_t len );
+int      mem_write( ADDR addr, const uint8_t *buf, uint32_t len );
+int      mem_is_low( ADDR addr );
+uint32_t mem_seg_end( ADDR addr );  /* the first offset past the segment */
+void     addr_add( ADDR *addr, uint32_t n ); /* wraps at 64K in the first megabyte */
+void     out_addr( ADDR addr );
+int      addr_width( ADDR addr );
+void     work_reset( void );
 
 /* CMDS.C */
 void  cmd_compare( void );
@@ -115,13 +115,13 @@ void  prog_release( void );
 /* DIS.C - the disassembler */
 #define DIS_MAX         16          /* the longest instruction there is */
 typedef struct {
-    u32   len;              /* bytes it takes */
-    char  text[80];         /* mnemonic, padded, and operands */
-    int   mem_seg;          /* a memory operand: its segment register, -1 none */
-    u32   mem_off;          /* ...its effective offset */
-    int   mem_size;         /* ...and its size in bytes */
-    int   kind;             /* DK_* for T and P */
-    u32   target;           /* DK_CALL, DK_JUMP: where it goes, if known */
+    uint32_t len;           /* bytes it takes */
+    char     text[80];      /* mnemonic, padded, and operands */
+    int      mem_seg;       /* a memory operand: its segment register, -1 none */
+    uint32_t mem_off;       /* ...its effective offset */
+    int      mem_size;      /* ...and its size in bytes */
+    int      kind;          /* DK_* for T and P */
+    uint32_t target;        /* DK_CALL, DK_JUMP: where it goes, if known */
 } DISASM;
 
 #define DK_OTHER        0
@@ -134,7 +134,7 @@ typedef struct {
 #define DK_JUMP         7
 #define DK_PREFIX       8   /* 16-bit: a prefix on a line of its own */
 
-void  disasm( ADDR addr, const u8 *code, int use32, DISASM *dis );
+void  disasm( ADDR addr, const uint8_t *code, int use32, DISASM *dis );
 void  cmd_unassemble( void );
 void  show_insn( ADDR addr, int with_mem );
 

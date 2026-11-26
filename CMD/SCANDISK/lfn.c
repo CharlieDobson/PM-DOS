@@ -9,17 +9,17 @@
 #include "scandisk.h"
 
 /* byte offsets of the 13 UCS-2 characters inside an LFN entry */
-static const u8 lfn_off[13] = { 1, 3, 5, 7, 9, 14, 16, 18, 20, 22, 24, 28, 30 };
+static const uint8_t lfn_off[13] = { 1, 3, 5, 7, 9, 14, 16, 18, 20, 22, 24, 28, 30 };
 
 #define LFN_ENTRIES_MAX 20      /* 20 * 13 = 260 >= 255 characters */
 
-u8 lfn_checksum( const u8 *sfn )
+uint8_t lfn_checksum( const uint8_t *sfn )
 {
-    u8 sum = 0;
+    uint8_t sum = 0;
     int i;
 
     for ( i = 0; i < 11; i++ ) {
-        sum = (u8)(((sum & 1) << 7) + (sum >> 1) + sfn[i]);
+        sum = (uint8_t)(((sum & 1) << 7) + (sum >> 1) + sfn[i]);
     }
     return sum;
 }
@@ -32,10 +32,10 @@ void lfn_begin( LFNRUN *run )
     run->expect = 0;
 }
 
-static void lfn_store( LFNRUN *run, const u8 *ent, int seq )
+static void lfn_store( LFNRUN *run, const uint8_t *ent, int seq )
 {
     int i;
-    u16 *dst = run->name + (seq - 1) * 13;
+    uint16_t *dst = run->name + (seq - 1) * 13;
 
     for ( i = 0; i < 13; i++ ) {
         dst[i] = RD16( ent + lfn_off[i] );
@@ -47,7 +47,7 @@ static void lfn_store( LFNRUN *run, const u8 *ent, int seq )
  * an earlier run was still open (the caller reports the earlier run
  * first, then calls again), 1 otherwise.
  */
-int lfn_add( LFNRUN *run, const u8 *ent, u32 idx )
+int lfn_add( LFNRUN *run, const uint8_t *ent, unsigned int idx )
 {
     int seq = ent[0] & 0x1F;
 
@@ -82,7 +82,7 @@ int lfn_add( LFNRUN *run, const u8 *ent, u32 idx )
 }
 
 /* the open run is a complete, valid long name for this 8.3 entry */
-int lfn_match( LFNRUN *run, const u8 *sfn )
+int lfn_match( LFNRUN *run, const uint8_t *sfn )
 {
     int i;
 
@@ -100,7 +100,7 @@ int lfn_match( LFNRUN *run, const u8 *sfn )
 }
 
 /* Unicode U+00A0..U+00FF to code page 437; 0 = no equivalent */
-static const u8 latin1_437[96] = {
+static const uint8_t latin1_437[96] = {
     0xFF, 0xAD, 0x9B, 0x9C, 0x00, 0x9D, 0x00, 0x00,   /* A0 */
     0x00, 0x00, 0xA6, 0xAE, 0xAA, 0x00, 0x00, 0x00,   /* A8 */
     0xF8, 0xF1, 0xFD, 0x00, 0x00, 0xE6, 0x00, 0xFA,   /* B0 */
@@ -118,7 +118,7 @@ static const u8 latin1_437[96] = {
 void lfn_oem( const LFNRUN *run, char *out )
 {
     int i;
-    u16 ch;
+    uint16_t ch;
 
     for ( i = 0; i < run->len; i++ ) {
         ch = run->name[i];
@@ -134,7 +134,7 @@ void lfn_oem( const LFNRUN *run, char *out )
 }
 
 /* 8.3 entry name as DOS displays it: "NAME.EXT", trailing blanks gone */
-void sfn_name( const u8 *ent, char *out )
+void sfn_name( const uint8_t *ent, char *out )
 {
     int i;
     char *dst = out;
@@ -160,7 +160,7 @@ void sfn_name( const u8 *ent, char *out )
     *dst = 0;
 }
 
-int sfn_is_dot( const u8 *ent )
+int sfn_is_dot( const uint8_t *ent )
 {
     static const char dot[] = ".          ";
     static const char dotdot[] = "..         ";
@@ -214,16 +214,16 @@ int wild_match( const char *pat, const char *name )
  * rest of its field with "?", a missing extension means a blank one.
  * Patterns that are not valid 8.3 names never match here.
  */
-int fcb_match( const char *pat, const u8 *sfn )
+int fcb_match( const char *pat, const uint8_t *sfn )
 {
     char fcb[11];
     int pos = 0, field = 0, max = 8, star = 0;
     const char *cur = pat;
-    u8 ch;
+    uint8_t ch;
 
     mem_set( fcb, ' ', 11 );
     for ( ; *cur; cur++ ) {
-        ch = (u8)*cur;
+        ch = (uint8_t)*cur;
         if ( ch == '.' ) {
             if ( field ) {
                 return 0;
@@ -256,8 +256,8 @@ int fcb_match( const char *pat, const u8 *sfn )
     }
     for ( pos = 0; pos < 11; pos++ ) {
         if ( fcb[pos] != '?' &&
-             (u8)fcb[pos] != (pos == 0 && sfn[0] == 0x05 ?
-                              DEL_MARK : sfn[pos]) ) {
+             (uint8_t)fcb[pos] != (pos == 0 && sfn[0] == 0x05 ?
+                                   DEL_MARK : sfn[pos]) ) {
             return 0;
         }
     }

@@ -8,18 +8,18 @@
 /* memory and strings                                                  */
 /* ------------------------------------------------------------------ */
 
-void mem_set( void *dst, int val, u32 len )
+void mem_set( void *dst, int val, unsigned int len )
 {
-    u8 *cur = (u8 *)dst;
+    uint8_t *cur = (uint8_t *)dst;
     while ( len-- ) {
-        *cur++ = (u8)val;
+        *cur++ = (uint8_t)val;
     }
 }
 
-void mem_cpy( void *dst, const void *src, u32 len )
+void mem_cpy( void *dst, const void *src, unsigned int len )
 {
-    u8 *dcur = (u8 *)dst;
-    const u8 *scur = (const u8 *)src;
+    uint8_t *dcur = (uint8_t *)dst;
+    const uint8_t *scur = (const uint8_t *)src;
 
     if ( dcur < scur ) {
         while ( len-- ) {
@@ -34,10 +34,10 @@ void mem_cpy( void *dst, const void *src, u32 len )
     }
 }
 
-int mem_cmp( const void *lhs, const void *rhs, u32 len )
+int mem_cmp( const void *lhs, const void *rhs, unsigned int len )
 {
-    const u8 *lcur = (const u8 *)lhs;
-    const u8 *rcur = (const u8 *)rhs;
+    const uint8_t *lcur = (const uint8_t *)lhs;
+    const uint8_t *rcur = (const uint8_t *)rhs;
 
     for ( ; len; len--, lcur++, rcur++ ) {
         if ( *lcur != *rcur ) {
@@ -47,9 +47,9 @@ int mem_cmp( const void *lhs, const void *rhs, u32 len )
     return 0;
 }
 
-u32 str_len( const char *str )
+unsigned int str_len( const char *str )
 {
-    u32 len = 0;
+    unsigned int len = 0;
     while ( str[len] ) {
         len++;
     }
@@ -103,7 +103,7 @@ char *str_dup( const char *str )
 /* "C:\" + "X" -> "C:\X",  "C:\A" + "X" -> "C:\A\X" */
 char *path_join( const char *dir, const char *name )
 {
-    u32 len = str_len( dir );
+    unsigned int len = str_len( dir );
     char *path = (char *)xalloc( len + str_len( name ) + 2 );
 
     str_cpy( path, dir );
@@ -119,7 +119,7 @@ char *path_join( const char *dir, const char *name )
 /* ------------------------------------------------------------------ */
 
 typedef struct HBLK {
-    u32          size;          /* whole block including this header */
+    unsigned int size;          /* whole block including this header */
     struct HBLK *next;          /* free list link (free blocks only) */
 } HBLK;
 
@@ -141,21 +141,21 @@ static void heap_insert( HBLK *blk )
     blk->next = *pp;
     *pp = blk;
     /* coalesce with the following block */
-    if ( blk->next && (u8 *)blk + blk->size == (u8 *)blk->next ) {
+    if ( blk->next && (uint8_t *)blk + blk->size == (uint8_t *)blk->next ) {
         blk->size += blk->next->size;
         blk->next = blk->next->next;
     }
     /* coalesce with the preceding block */
-    if ( prev && (u8 *)prev + prev->size == (u8 *)blk ) {
+    if ( prev && (uint8_t *)prev + prev->size == (uint8_t *)blk ) {
         prev->size += blk->size;
         prev->next = blk->next;
     }
 }
 
-void *try_alloc( u32 size )
+void *try_alloc( unsigned int size )
 {
     HBLK **pp, *blk, *rest;
-    u32 need, chunk;
+    unsigned int need, chunk;
     void *mem;
     int pass;
 
@@ -169,7 +169,7 @@ void *try_alloc( u32 size )
                 continue;
             }
             if ( blk->size - need >= MIN_SPLIT ) {
-                rest = (HBLK *)((u8 *)blk + need);
+                rest = (HBLK *)((uint8_t *)blk + need);
                 rest->size = blk->size - need;
                 rest->next = blk->next;
                 *pp = rest;
@@ -177,7 +177,7 @@ void *try_alloc( u32 size )
             } else {
                 *pp = blk->next;
             }
-            return (u8 *)blk + HDR;
+            return (uint8_t *)blk + HDR;
         }
         if ( pass ) {
             break;
@@ -198,7 +198,7 @@ void *try_alloc( u32 size )
     return NULL;
 }
 
-void *xalloc( u32 size )
+void *xalloc( unsigned int size )
 {
     void *ptr = try_alloc( size );
     if ( ptr == NULL ) {
@@ -207,7 +207,7 @@ void *xalloc( u32 size )
     return ptr;
 }
 
-void *xzalloc( u32 size )
+void *xzalloc( unsigned int size )
 {
     void *ptr = xalloc( size );
     mem_set( ptr, 0, size );
@@ -217,19 +217,19 @@ void *xzalloc( u32 size )
 void xfree( void *ptr )
 {
     if ( ptr != NULL ) {
-        heap_insert( (HBLK *)((u8 *)ptr - HDR) );
+        heap_insert( (HBLK *)((uint8_t *)ptr - HDR) );
     }
 }
 
-void list_add( U32LIST *list, u32 val )
+void list_add( U32LIST *list, uint32_t val )
 {
-    u32 *nv;
+    uint32_t *nv;
 
     if ( list->count == list->cap ) {
         list->cap = list->cap ? list->cap * 2 : 16;
-        nv = (u32 *)xalloc( list->cap * sizeof( u32 ) );
+        nv = (uint32_t *)xalloc( list->cap * sizeof( uint32_t ) );
         if ( list->count ) {
-            mem_cpy( nv, list->items, list->count * sizeof( u32 ) );
+            mem_cpy( nv, list->items, list->count * sizeof( uint32_t ) );
         }
         xfree( list->items );
         list->items = nv;
@@ -248,26 +248,26 @@ void list_free( U32LIST *list )
 /* 64-bit helpers                                                      */
 /* ------------------------------------------------------------------ */
 
-u64 mul32( u32 lhs, u32 rhs )
+uint64_t mul32( uint32_t lhs, uint32_t rhs )
 {
     U64 prod;
-    u32 al = lhs & 0xFFFFu, ah = lhs >> 16;
-    u32 bl = rhs & 0xFFFFu, bh = rhs >> 16;
-    u32 p0 = al * bl, p1 = al * bh, p2 = ah * bl, p3 = ah * bh;
-    u32 mid = p1 + p2;
-    u32 cmid = (mid < p1) ? 0x10000u : 0;
-    u32 lo = p0 + (mid << 16);
-    u32 clo = (lo < p0) ? 1u : 0;
+    uint32_t al = lhs & 0xFFFFu, ah = lhs >> 16;
+    uint32_t bl = rhs & 0xFFFFu, bh = rhs >> 16;
+    uint32_t p0 = al * bl, p1 = al * bh, p2 = ah * bl, p3 = ah * bh;
+    uint32_t mid = p1 + p2;
+    uint32_t cmid = (mid < p1) ? 0x10000u : 0;
+    uint32_t lo = p0 + (mid << 16);
+    uint32_t clo = (lo < p0) ? 1u : 0;
 
     prod.parts.lo = lo;
     prod.parts.hi = p3 + (mid >> 16) + cmid + clo;
     return prod.whole;
 }
 
-u32 div64( u64 *num, u32 divisor )
+uint32_t div64( uint64_t *num, uint32_t divisor )
 {
     U64 split;
-    u32 rem, part, qh, ql;
+    uint32_t rem, part, qh, ql;
 
     split.whole = *num;
     qh = split.parts.hi / divisor;
@@ -284,14 +284,14 @@ u32 div64( u64 *num, u32 divisor )
     return rem;
 }
 
-u32 lo32( u64 val )
+uint32_t lo32( uint64_t val )
 {
     U64 split;
     split.whole = val;
     return split.parts.lo;
 }
 
-u32 hi32( u64 val )
+uint32_t hi32( uint64_t val )
 {
     U64 split;
     split.whole = val;

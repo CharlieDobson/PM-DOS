@@ -41,28 +41,28 @@
 #define SH_KEYS         0x0F
 
 typedef struct {
-    u8   attr;
-    u32  size;
-    char name[PATH_MAX];        /* the long name - the 8.3 when there is none */
-    char alias[14];
+    uint8_t  attr;
+    uint32_t size;
+    char     name[PATH_MAX];    /* the long name - the 8.3 when there is none */
+    char     alias[14];
 } FINDREC;
 
-int   sys_init( void );
+int          sys_init( void );
 const char *sys_cmdline( void );
 const char *sys_getenv( const char *name );
 const char *sys_program_path( void );       /* the path this program was run from */
-void  sys_exit( int code );
-void *sys_mem_alloc( u32 size );
-u32   sys_mem_largest( void );
-void  sys_break_install( void );
-void  sys_stdout( const char *buf, u32 len );
-int   sys_stdin_is_console( void );
-int   sys_stdin_byte( void );               /* -1 at the end */
+void         sys_exit( int code );
+void        *sys_mem_alloc( unsigned int size );
+unsigned int sys_mem_largest( void );
+void         sys_break_install( void );
+void         sys_stdout( const char *buf, unsigned int len );
+int          sys_stdin_is_console( void );
+int          sys_stdin_byte( void );            /* -1 at the end */
 
 /* the screen */
 void  sys_screen_size( int *rows, int *cols );
-void  sys_put_cells( u32 first, const u16 *cells, u32 count );
-void  sys_get_cells( u32 first, u16 *cells, u32 count );
+void  sys_put_cells( unsigned int first, const uint16_t *cells, unsigned int count );
+void  sys_get_cells( unsigned int first, uint16_t *cells, unsigned int count );
 void  sys_cursor( int row, int col );
 void  sys_get_cursor( int *row, int *col );
 #define CUR_HIDE        0
@@ -72,13 +72,13 @@ void  sys_cursor_shape( int kind );
 int   sys_set_lines( int lines );               /* -> rows now */
 
 /* the keyboard: a key is AL = ASCII, AH = scan code */
-#define KW_NOWAIT       0x01    /* sys_key_wait: look, and come back */
-#define KW_MOUSE        0x02    /* ...and the mouse wakes it too */
-int   sys_key_wait( int shift_seen, int *shift_now, int flags );
-                                /* 1 = key waiting, 2 = the mouse moved */
-int   sys_key_read( int *shift_now );
-int   sys_shift( void );
-u32   sys_hundredths( void );   /* the time of day, for double clicks */
+#define KW_NOWAIT       0x01      /* sys_key_wait: look, and come back */
+#define KW_MOUSE        0x02      /* ...and the mouse wakes it too */
+int      sys_key_wait( int shift_seen, int *shift_now, int flags );
+                                  /* 1 = key waiting, 2 = the mouse moved */
+int      sys_key_read( int *shift_now );
+int      sys_shift( void );
+uint32_t sys_hundredths( void );  /* the time of day, for double clicks */
 
 /* the mouse: INT 33h, positions in the driver's virtual pixels */
 int   sys_mouse_reset( void );  /* -> buttons, 0 for no mouse; hides it */
@@ -91,18 +91,18 @@ void  sys_mouse_inject( int buttons );  /* test mode: buttons as if pressed */
 
 /* files and directories */
 int   sys_lfn( void );
-int   sys_open_read( const char *path, u32 *handle );
-int   sys_open_write( const char *path, u32 *handle );    /* devices too */
-int   sys_create( const char *path, u32 *handle );
-int   sys_read( u32 handle, void *buf, u32 len, u32 *done );
-int   sys_write( u32 handle, const void *buf, u32 len, u32 *done );
-int   sys_close( u32 handle );
-int   sys_file_size( u32 handle, u32 *size );   /* and back to the start */
-int   sys_rewind( u32 handle );
-int   sys_get_attr( const char *path, u16 *attr );
-int   sys_find_first( const char *pattern, u16 attrs, FINDREC *rec, u32 *handle );
-int   sys_find_next( u32 handle, FINDREC *rec );
-void  sys_find_close( u32 handle );
+int   sys_open_read( const char *path, uint32_t *handle );
+int   sys_open_write( const char *path, uint32_t *handle ); /* devices too */
+int   sys_create( const char *path, uint32_t *handle );
+int   sys_read( uint32_t handle, void *buf, unsigned int len, unsigned int *done );
+int   sys_write( uint32_t handle, const void *buf, unsigned int len, unsigned int *done );
+int   sys_close( uint32_t handle );
+int   sys_file_size( uint32_t handle, uint32_t *size ); /* and back to the start */
+int   sys_rewind( uint32_t handle );
+int   sys_get_attr( const char *path, uint16_t *attr );
+int   sys_find_first( const char *pattern, uint16_t attrs, FINDREC *rec, uint32_t *handle );
+int   sys_find_next( uint32_t handle, FINDREC *rec );
+void  sys_find_close( uint32_t handle );
 int   sys_get_drive( void );
 void  sys_set_drive( int drv );
 int   sys_drive_valid( int drv );

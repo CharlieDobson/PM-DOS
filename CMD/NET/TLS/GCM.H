@@ -9,25 +9,27 @@
 #ifndef NETSPLOR_GCM_H
 #define NETSPLOR_GCM_H
 
+#include <stdint.h>
+
 /* 'nr' is the AES round count (10 = AES-128, 14 = AES-256); 'rk' is the
  * matching expanded schedule, so GCM works with either key size. */
 
 /* Precompute the GHASH subkey H = AES-encrypt(rk, all-zero block). */
-void gcm_calc_h(const unsigned char *rk, int nr, unsigned char H[16]);
+void gcm_calc_h(const uint8_t *rk, int nr, uint8_t H[16]);
 
 /* Authenticated encryption.  cipher[] gets plen bytes; tag[] gets 16. */
-void gcm_encrypt(const unsigned char *rk, int nr, const unsigned char H[16],
-                 const unsigned char iv[12],
-                 const unsigned char *aad, int aadlen,
-                 const unsigned char *plain, int plen,
-                 unsigned char *cipher, unsigned char tag[16]);
+void gcm_encrypt(const uint8_t *rk, int nr, const uint8_t H[16],
+                 const uint8_t iv[12],
+                 const uint8_t *aad, int aadlen,
+                 const uint8_t *plain, int plen,
+                 uint8_t *cipher, uint8_t tag[16]);
 
 /* Authenticated decryption.  Returns 0 and writes plain[] if the tag verifies,
    -1 (and leaves plain[] undefined) if authentication fails. */
-int  gcm_decrypt(const unsigned char *rk, int nr, const unsigned char H[16],
-                 const unsigned char iv[12],
-                 const unsigned char *aad, int aadlen,
-                 const unsigned char *cipher, int clen,
-                 const unsigned char tag[16], unsigned char *plain);
+int  gcm_decrypt(const uint8_t *rk, int nr, const uint8_t H[16],
+                 const uint8_t iv[12],
+                 const uint8_t *aad, int aadlen,
+                 const uint8_t *cipher, int clen,
+                 const uint8_t tag[16], uint8_t *plain);
 
 #endif /* NETSPLOR_GCM_H */

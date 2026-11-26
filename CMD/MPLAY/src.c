@@ -22,9 +22,9 @@
 
 /* Fill the buffer starting at file position "at".  0, or -1 when DOS
    could not read (the error flag is set) */
-static int src_fill( SRC *src, u32 at )
+static int src_fill( SRC *src, uint32_t at )
 {
-    u32 done = 0;
+    uint32_t done = 0;
 
     src->have = 0;
     src->buf_pos = at;
@@ -51,7 +51,7 @@ int src_open( SRC *src, const char *path )
     int rc;
 
     mem_set( src, 0, sizeof( SRC ) );
-    src->buf = (u8 *)try_alloc( SRC_BUFSIZE );
+    src->buf = (uint8_t *)try_alloc( SRC_BUFSIZE );
     if ( src->buf == NULL ) {
         return ERR_NOMEM;
     }
@@ -85,10 +85,10 @@ void src_close( SRC *src )
     src->have = 0;
 }
 
-u32 src_read( SRC *src, void *dst, u32 len )
+unsigned int src_read( SRC *src, void *dst, unsigned int len )
 {
-    u8 *out = (u8 *)dst;
-    u32 got = 0, avail, off;
+    uint8_t *out = (uint8_t *)dst;
+    unsigned int got = 0, avail, off;
 
     if ( !src->is_open ) {
         return 0;
@@ -114,7 +114,7 @@ u32 src_read( SRC *src, void *dst, u32 len )
     return got;
 }
 
-int src_seek( SRC *src, u32 pos )
+int src_seek( SRC *src, uint32_t pos )
 {
     if ( pos > src->size ) {
         src->pos = src->size;
@@ -124,7 +124,7 @@ int src_seek( SRC *src, u32 pos )
     return 0;
 }
 
-int src_skip( SRC *src, u32 len )
+int src_skip( SRC *src, uint32_t len )
 {
     if ( len > src->size - src->pos ) {
         src->pos = src->size;
@@ -147,19 +147,20 @@ int src_byte( SRC *src )
     return src->buf[src->pos++ - src->buf_pos];
 }
 
-u32 src_tell( const SRC *src )
+uint32_t src_tell( const SRC *src )
 {
     return src->pos;
 }
 
-u32 src_left( const SRC *src )
+uint32_t src_left( const SRC *src )
 {
     return src->size - src->pos;
 }
 
-const u8 *src_peek( SRC *src, u32 len )
+const uint8_t *src_peek( SRC *src, unsigned int len )
 {
-    u32 off, keep, done = 0;
+    unsigned int off, keep;
+    uint32_t done = 0;
 
     if ( !src->is_open || len > SRC_PEEK || len > src->size - src->pos ) {
         return NULL;

@@ -40,36 +40,36 @@ typedef struct {
 
 /* the card, as the engine sees it */
 typedef struct {
-    int  present;               /* a sound driver was found */
-    char name[40];              /* "Sound Blaster 16", or "No sound card" */
-    char line[80];              /* "220h, IRQ 5, DMA 1 and 5" */
-    u16  flags;                 /* AUDF_* (INC\AUDIO.H) */
-    u32  rate_max, rate_max2;
-    u8   bits;
-    u8   irq;                   /* the card's line, or 0xFF */
+    int      present;           /* a sound driver was found */
+    char     name[40];          /* "Sound Blaster 16", or "No sound card" */
+    char     line[80];          /* "220h, IRQ 5, DMA 1 and 5" */
+    uint16_t flags;             /* AUDF_* (INC\AUDIO.H) */
+    uint32_t rate_max, rate_max2;
+    uint8_t  bits;
+    uint8_t  irq;               /* the card's line, or 0xFF */
 } PLCARD;
 
 /* what the engine is playing now */
 typedef struct {
-    int  state;                 /* PS_* */
-    u32  pos_ms;                /* heard now */
-    u32  len_ms;                /* 0 when not known */
-    u32  out_rate;              /* the card's */
-    u8   out_bits, out_ch;
-    int  load;                  /* per cent of the processor the decoding takes */
-    int  down, mono;            /* what the codec was asked for */
-    int  synth;                 /* MIDI: SYN_* in use */
-    u32  underruns;
-    u32  irqs;                  /* the card's interrupts so far (for testing) */
-    u8   drv_state;             /* the driver's AUDST_* (for testing) */
-    char quality[48];           /* "Half rate, stereo" */
+    int      state;             /* PS_* */
+    uint32_t pos_ms;            /* heard now */
+    uint32_t len_ms;            /* 0 when not known */
+    uint32_t out_rate;          /* the card's */
+    uint8_t  out_bits, out_ch;
+    int      load;              /* per cent of the processor the decoding takes */
+    int      down, mono;        /* what the codec was asked for */
+    int      synth;             /* MIDI: SYN_* in use */
+    uint32_t underruns;
+    uint32_t irqs;              /* the card's interrupts so far (for testing) */
+    uint8_t  drv_state;         /* the driver's AUDST_* (for testing) */
+    char     quality[48];       /* "Half rate, stereo" */
 } PLSTAT;
 
-int   pl_init( void );                  /* once: the driver, the processor's speed */
-void  pl_done( void );
+int      pl_init( void );               /* once: the driver, the processor's speed */
+void     pl_done( void );
 const PLCARD *pl_card( void );
-int   pl_cpu_class( void );             /* 0 386, 1 slow 486, 2 fast 486, 3 Pentium and up */
-u32   pl_cpu_speed( void );             /* the benchmark: multiplies a millisecond */
+int      pl_cpu_class( void );          /* 0 386, 1 slow 486, 2 fast 486, 3 Pentium and up */
+uint32_t pl_cpu_speed( void );          /* the benchmark: multiplies a millisecond */
 const char *pl_cpu_name( void );
 
 void  pl_settings( const PLSET *set );  /* applied at the next pl_open */
@@ -84,17 +84,17 @@ void  pl_close( void );
 void  pl_play( void );
 void  pl_pause( void );                 /* and pl_play goes on */
 void  pl_stop( void );                  /* back to the start */
-int   pl_seek( u32 ms );                /* -> 1 if it moved */
+int   pl_seek( uint32_t ms );           /* -> 1 if it moved */
 
 /* Keep the sound going; call it at least ten times a second.  ->
    PS_* now.  It spends at most "budget_ms" decoding (0: the engine's
    own choice). */
-int   pl_pump( u32 budget_ms );
+int   pl_pump( uint32_t budget_ms );
 
 void  pl_status( PLSTAT *st );
 
 /* how much decoded sound is waiting for the card, in milliseconds */
-u32   pl_ahead_ms( void );
+uint32_t pl_ahead_ms( void );
 
 /* the equalizer: the engine keeps its own copy and its serial number */
 void  pl_set_eq( const EQSET *eq );
@@ -103,9 +103,9 @@ void  pl_set_eq( const EQSET *eq );
 void  pl_set_volume( int volume, int balance );
 
 /* what is being heard: "count" bars from low to high, 0..255 */
-void  pl_levels( u8 *bars, int count );
+void  pl_levels( uint8_t *bars, int count );
 
 /* ...and the wave itself: "count" samples, mono */
-void  pl_wave( s16 *out, int count );
+void  pl_wave( int16_t *out, int count );
 
 #endif

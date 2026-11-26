@@ -27,9 +27,10 @@
  * runs into another chain's head absorbs it.  With "cut" the FAT is
  * made to say so; without, the chains are only counted.
  */
-static u32 find_chains( int cut )
+static unsigned int find_chains( int cut )
 {
-    u32 clus, cur, next, chains = 0;
+    uint32_t     clus, cur, next;
+    unsigned int chains = 0;
 
     for ( clus = 2; clus <= vol.maxclus; clus++ ) {
         vol.map[clus] &= ~(MF_SEEN | MF_HEAD);
@@ -65,9 +66,9 @@ static u32 find_chains( int cut )
     return chains;
 }
 
-static u32 chain_length( u32 clus )
+static uint32_t chain_length( uint32_t clus )
 {
-    u32 len = 0;
+    uint32_t len = 0;
 
     while ( CLUS_OK( clus ) && len <= vol.nclus ) {
         len++;
@@ -77,19 +78,19 @@ static u32 chain_length( u32 clus )
 }
 
 /* next FILEnnnn.CHK name not already present in the root */
-static int next_name( DIRBUF *root, u8 *name, u32 *seq )
+static int next_name( DIRBUF *root, uint8_t *name, unsigned int *seq )
 {
-    u32 idx, num;
-    const u8 *ent;
+    unsigned int idx, num;
+    const uint8_t *ent;
     int used;
 
     for ( ; *seq < 10000; (*seq)++ ) {
         mem_cpy( name, "FILE0000CHK", 11 );
         num = *seq;
-        name[7] = (u8)('0' + num % 10);  num /= 10;
-        name[6] = (u8)('0' + num % 10);  num /= 10;
-        name[5] = (u8)('0' + num % 10);  num /= 10;
-        name[4] = (u8)('0' + num % 10);
+        name[7] = (uint8_t)('0' + num % 10);  num /= 10;
+        name[6] = (uint8_t)('0' + num % 10);  num /= 10;
+        name[5] = (uint8_t)('0' + num % 10);  num /= 10;
+        name[4] = (uint8_t)('0' + num % 10);
         used = 0;
         for ( idx = 0; idx < root->nent; idx++ ) {
             ent = root->data + idx * DE_LEN;
@@ -110,10 +111,10 @@ static int next_name( DIRBUF *root, u8 *name, u32 *seq )
 }
 
 /* a free slot in the root: a deleted entry, or the end marker */
-static u32 free_slot( DIRBUF *root, u32 *pos )
+static unsigned int free_slot( DIRBUF *root, unsigned int *pos )
 {
-    u32 idx;
-    u8 first;
+    unsigned int idx;
+    uint8_t first;
 
     for ( ;; ) {
         for ( idx = *pos; idx < root->nent; idx++ ) {
@@ -136,12 +137,14 @@ static u32 free_slot( DIRBUF *root, u32 *pos )
 }
 
 /* each chain a file in the root; -> how many were made */
-static u32 recover( u32 chains )
+static unsigned int recover( unsigned int chains )
 {
     DIRBUF root;
-    u32 clus, slot, pos = 0, seq = 0, made = 0, len, walk;
-    u64 size;
-    u8 *ent, name[11];
+    uint32_t     clus;
+    unsigned int slot, pos = 0, seq = 0, made = 0;
+    uint32_t     len, walk;
+    uint64_t size;
+    uint8_t *ent, name[11];
     int bad = 0;
 
     if ( dir_load_root( &root ) != 0 ) {
@@ -172,7 +175,7 @@ static u32 recover( u32 chains )
             break;
         }
         for ( walk = clus; CLUS_OK( walk ) && len; len-- ) {
-            vol.map[walk] = (u8)((vol.map[walk] & ~(MF_LOST | MF_HEAD)) | MF_USED);
+            vol.map[walk] = (uint8_t)((vol.map[walk] & ~(MF_LOST | MF_HEAD)) | MF_USED);
             walk = fat_get( walk );
         }
         st.orph_clus += chain_length( clus );
@@ -186,7 +189,8 @@ static u32 recover( u32 chains )
 
 static void lost_clusters( void )
 {
-    u32 clus, val, lost = 0, chains, made;
+    uint32_t     clus, val, lost = 0;
+    unsigned int chains, made;
     char bytes[40];
     int act;
 
@@ -268,7 +272,7 @@ static void lost_clusters( void )
    cluster the same way */
 static int cross_stands( const CROSSREC *cr, DIRBUF *dir )
 {
-    const u8 *ent;
+    const uint8_t *ent;
 
     if ( dir_load_first( dir, cr->dir_first ) != 0 || cr->idx >= dir->nent ) {
         return 0;
@@ -292,10 +296,12 @@ static int cross_stands( const CROSSREC *cr, DIRBUF *dir )
 static const char *cross_copy( const CROSSREC *cr, DIRBUF *dir )
 {
     U32LIST src, dst;
-    u32 clus, index, fresh = 1, own = 0, need, take, size, right;
-    u8 *buf, *ent = dir->data + cr->idx * DE_LEN;
+    uint32_t     clus;
+    unsigned int index;
+    uint32_t     fresh = 1, own = 0, need, take, size, right;
+    uint8_t *buf, *ent = dir->data + cr->idx * DE_LEN;
     const char *why = NULL;
-    u64 bytes;
+    uint64_t bytes;
 
     mem_set( &src, 0, sizeof( src ) );
     mem_set( &dst, 0, sizeof( dst ) );
@@ -332,7 +338,7 @@ static const char *cross_copy( const CROSSREC *cr, DIRBUF *dir )
         vol.map[fresh] |= MF_USED;              /* not to be handed out twice */
         list_add( &dst, fresh );
     }
-    buf = (u8 *)try_alloc( vol.bpc );
+    buf = (uint8_t *)try_alloc( vol.bpc );
     if ( buf == NULL ) {
         out_of_memory();
     }
@@ -357,7 +363,7 @@ static const char *cross_copy( const CROSSREC *cr, DIRBUF *dir )
         }
         /* and its size, should the clusters it has now not bear it out */
         bytes = mul32( own + dst.count, vol.bpc );
-        if ( (u64)size > bytes || bytes - size >= (u64)vol.bpc ) {
+        if ( (uint64_t)size > bytes || bytes - size >= (uint64_t)vol.bpc ) {
             right = hi32( bytes ) ? 0xFFFFFFFFul : lo32( bytes );
             WR32( ent + DE_SIZE, right );
         }
@@ -380,7 +386,7 @@ static void cross_links( void )
     DIRBUF dir;
     OWNER own;
     const char *why;
-    u32 index;
+    unsigned int index;
 
     for ( index = 0; index < cross_count; index++ ) {
         cr = &cross_list[index];

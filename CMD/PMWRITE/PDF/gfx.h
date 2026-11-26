@@ -50,14 +50,14 @@
 /* ------------------------------------------------------------------ */
 
 typedef struct {
-    u8  *pix;
-    int  width, height;
-    int  bpp;                   /* 1: grey; 3: blue, green, red */
-    u32  stride;
-    int  org_x, org_y;          /* the page pixel at its top left corner */
+    uint8_t     *pix;
+    int          width, height;
+    int          bpp;           /* 1: grey; 3: blue, green, red */
+    unsigned int stride;
+    int          org_x, org_y;  /* the page pixel at its top left corner */
 } CANVAS;
 
-void canvas_clear( CANVAS *cv, u32 rgb );
+void canvas_clear( CANVAS *cv, uint32_t rgb );
 
 /* how a page lies on the screen */
 typedef struct {
@@ -83,12 +83,12 @@ void view_setup( VIEW *view, PAGE *page, fx zoom, int turn );
    asked of "row" (a shading) */
 typedef struct PAINT PAINT;
 struct PAINT {
-    u32   rgb;                  /* 00RRGGBB */
-    u8    alpha;                /* 255 is opaque */
-    u8    blend;                /* BM_* */
-    u8    none;                 /* paints nothing: a /None separation */
-    u8    spare;
-    void (*row)( const PAINT *paint, int ypos, int xpos, int count, u8 *bgr );
+    uint32_t rgb;               /* 00RRGGBB */
+    uint8_t  alpha;             /* 255 is opaque */
+    uint8_t  blend;             /* BM_* */
+    uint8_t  none;              /* paints nothing: a /None separation */
+    uint8_t  spare;
+    void (*row)( const PAINT *paint, int ypos, int xpos, int count, uint8_t *bgr );
     void *ctx;
 };
 
@@ -99,7 +99,7 @@ typedef struct {
     MASK *mask;                 /* and within it, a shape - or NULL */
 } CLIP;
 
-typedef void (*ROWFN)( void *ctx, int ypos, int x0, int x1, const u8 *cov );
+typedef void (*ROWFN)( void *ctx, int ypos, int x0, int x1, const uint8_t *cov );
 
 void  ras_begin( void );
 void  ras_line( fx x0, fx y0, fx x1, fx y1 );
@@ -107,17 +107,17 @@ int   ras_empty( void );
 void  ras_scan( int cx0, int cy0, int cx1, int cy1, int evenodd, ROWFN fn, void *ctx );
 void  ras_fill( CANVAS *cv, const CLIP *clip, int evenodd, const PAINT *paint );
 void  paint_row( CANVAS *cv, const CLIP *clip, const PAINT *paint, int ypos, int x0, int x1,
-                 const u8 *cov );
+                 const uint8_t *cov );
 void  paint_rect( CANVAS *cv, const CLIP *clip, const PAINT *paint, int x0, int y0, int x1, int y1 );
-void  paint_pixels( CANVAS *cv, const CLIP *clip, int ypos, int x0, int count, const u8 *bgr,
-                    const u8 *alpha, int blend );
-MASK *mask_make( const CLIP *clip, int evenodd );       /* from the edges given to ras_line */
-MASK *mask_keep( MASK *mask );                          /* one more owner */
-void  mask_drop( MASK *mask );                          /* one fewer */
-void  mask_box( const MASK *mask, int *x0, int *y0, int *x1, int *y1 );
-void  mask_row( const MASK *mask, int ypos, int x0, int x1, u8 *cov );
-int   raster_reclaim( void );
-u32   rgb_grey( u32 rgb );
+void  paint_pixels( CANVAS *cv, const CLIP *clip, int ypos, int x0, int count, const uint8_t *bgr,
+                    const uint8_t *alpha, int blend );
+MASK    *mask_make( const CLIP *clip, int evenodd );    /* from the edges given to ras_line */
+MASK    *mask_keep( MASK *mask );                       /* one more owner */
+void     mask_drop( MASK *mask );                       /* one fewer */
+void     mask_box( const MASK *mask, int *x0, int *y0, int *x1, int *y1 );
+void     mask_row( const MASK *mask, int ypos, int x0, int x1, uint8_t *cov );
+int      raster_reclaim( void );
+uint32_t rgb_grey( uint32_t rgb );
 
 /* ------------------------------------------------------------------ */
 /* paths                                                               */
@@ -131,12 +131,12 @@ typedef struct {
 #define PF_CLOSED   2           /* ...which was closed */
 
 typedef struct {
-    PT  *pts;
-    u8  *flags;
-    u32  count, cap;
-    u32  sub;                   /* where the subpath being built starts */
-    fx   cur_x, cur_y;
-    int  has_cur;
+    PT          *pts;
+    uint8_t     *flags;
+    unsigned int count, cap;
+    unsigned int sub;           /* where the subpath being built starts */
+    fx           cur_x, cur_y;
+    int          has_cur;
 } PATH;
 
 typedef struct {
@@ -177,26 +177,26 @@ typedef struct FUNC   FUNC;
 typedef struct CSPACE CSPACE;
 
 struct CSPACE {
-    u8      kind;               /* CS_* */
-    u8      ncomp;
-    u8      none;               /* a separation called /None: paints nothing */
-    u8      spare;
-    CSPACE *base;               /* Indexed: what the table was in; Separation:
+    uint8_t   kind;             /* CS_* */
+    uint8_t   ncomp;
+    uint8_t   none;             /* a separation called /None: paints nothing */
+    uint8_t   spare;
+    CSPACE   *base;             /* Indexed: what the table was in; Separation:
                                    the alternate; Pattern: the colour's space */
-    u32    *table;              /* Indexed: finished colours, 00RRGGBB */
-    int     hival;
-    FUNC   *tint;
-    fx      range[4];           /* Lab: a and b */
+    uint32_t *table;            /* Indexed: finished colours, 00RRGGBB */
+    int       hival;
+    FUNC     *tint;
+    fx        range[4];         /* Lab: a and b */
 };
 
 extern CSPACE cs_devgray, cs_devrgb, cs_devcmyk, cs_pattern;
 
-CSPACE *cs_load( OBJ *obj, DICT *res );
-u32   cs_rgb( CSPACE *cs, const fx *comps );
-void  cs_initial( CSPACE *cs, fx *comps );
-FUNC *func_load( OBJ *obj );
-int   func_outputs( FUNC *fn );
-void  func_eval( FUNC *fn, const fx *in, fx *out );
+CSPACE  *cs_load( OBJ *obj, DICT *res );
+uint32_t cs_rgb( CSPACE *cs, const fx *comps );
+void     cs_initial( CSPACE *cs, fx *comps );
+FUNC    *func_load( OBJ *obj );
+int      func_outputs( FUNC *fn );
+void     func_eval( FUNC *fn, const fx *in, fx *out );
 
 /* ------------------------------------------------------------------ */
 /* names and encodings                                                 */
@@ -209,11 +209,11 @@ void  func_eval( FUNC *fn, const fx *in, fx *out );
 #define ENC_BUILTIN 4           /* whatever the font program says */
 
 const char *name_std( int sid );
-u16   name_to_uni( const char *name );
-const char *uni_to_name( u16 uni );
-void  enc_base( int which, u16 *uni );
+uint16_t name_to_uni( const char *name );
+const char *uni_to_name( uint16_t uni );
+void  enc_base( int which, uint16_t *uni );
 const char *enc_std_name( int code );
-int   uni_to_cp437( u16 uni, char *out );
+int   uni_to_cp437( uint16_t uni, char *out );
 
 /* ------------------------------------------------------------------ */
 /* fonts                                                               */
@@ -236,80 +236,80 @@ int   uni_to_cp437( u16 uni, char *out );
 
 /* a character map: codes to character IDs, or codes to Unicode */
 typedef struct {
-    u32 lo, hi;
-    u32 val;                    /* what "lo" maps to; the rest follow on */
-    u16 more[3];                /* Unicode: the characters after the first */
-    u16 spare;
+    uint32_t lo, hi;
+    uint32_t val;               /* what "lo" maps to; the rest follow on */
+    uint16_t more[3];           /* Unicode: the characters after the first */
+    uint16_t spare;
 } CMRANGE;
 
 typedef struct {
-    CMRANGE *ranges;
-    u32      count, cap;
+    CMRANGE     *ranges;
+    unsigned int count, cap;
     struct {
-        u32 lo, hi;
+        uint32_t lo, hi;
         int len;
     } space[8];                 /* which codes are how many bytes */
-    int      nspace;
+    int          nspace;
 } CMAP;
 
 typedef struct {
-    u16  first, last;
-    s16  width;                 /* of every one, or... */
-    s16 *widths;                /* ...of each */
+    uint16_t first, last;
+    int16_t  width;             /* of every one, or... */
+    int16_t *widths;            /* ...of each */
 } WRANGE;
 
 typedef struct FONT FONT;
 struct FONT {
-    FONT  *next;
-    u32    key;                 /* the font dictionary's object number; 0 for one
+    FONT        *next;
+    uint32_t     key;           /* the font dictionary's object number; 0 for one
                                    that lasts only as long as the page */
-    u32    stamp;               /* when it was last used */
-    POOL  *pool;
-    u8     kind;                /* FT_* */
-    u8     composite;           /* a Type 0 font: codes of more than a byte */
-    u8     flags;               /* FF_* */
-    u8     symbolic;
-    void  *prog;                /* the font program, as its reader keeps it */
-    int    units;               /* to an em */
+    uint32_t     stamp;         /* when it was last used */
+    POOL        *pool;
+    uint8_t      kind;          /* FT_* */
+    uint8_t      composite;     /* a Type 0 font: codes of more than a byte */
+    uint8_t      flags;         /* FF_* */
+    uint8_t      symbolic;
+    void        *prog;          /* the font program, as its reader keeps it */
+    int          units;         /* to an em */
     /* a simple font */
-    u16    uni[256];
-    const char *gname[256];
-    s16    width[256];
-    u16    gid[256];
+    uint16_t     uni[256];
+    const char  *gname[256];
+    int16_t      width[256];
+    uint16_t     gid[256];
     /* a composite one */
-    int    dw;
-    WRANGE *wr;
-    u32    nwr;
-    u8    *cid2gid;
-    u32    cid2gid_len;
-    CMAP  *enc;                 /* its encoding, unless that is Identity */
-    int    cff_cid;             /* its CFF program is keyed by character ID */
-    CMAP  *tou;                 /* ToUnicode */
+    int          dw;
+    WRANGE      *wr;
+    unsigned int nwr;
+    uint8_t     *cid2gid;
+    uint32_t     cid2gid_len;
+    CMAP        *enc;           /* its encoding, unless that is Identity */
+    int          cff_cid;       /* its CFF program is keyed by character ID */
+    CMAP        *tou;           /* ToUnicode */
     /* Type 3 */
-    DICT  *t3_procs, *t3_res;
-    RMAT   t3_matrix;
-    DICT  *ident;               /* a page's own font: the dictionary it came from */
-    const char *name;           /* its BaseFont, without a subset's six letters and
+    DICT        *t3_procs, *t3_res;
+    RMAT         t3_matrix;
+    DICT        *ident;         /* a page's own font: the dictionary it came from */
+    const char  *name;          /* its BaseFont, without a subset's six letters and
                                    plus sign; NULL for a font made by hand */
 };
 
-FONT *font_get( OBJ *ref );
-u32   font_next_code( FONT *font, const u8 **str, u32 *left );
-int   font_width( FONT *font, u32 code );           /* thousandths of the size */
-int   font_unicode( FONT *font, u32 code, u16 *out );
-int   font_outline( FONT *font, u32 code, fx *pen );
-void  font_stamp( void );                          /* a new page */
-int   font_reclaim( int all );                     /* 1 if any were given back */
+FONT    *font_get( OBJ *ref );
+uint32_t font_next_code( FONT *font, const uint8_t **str, unsigned int *left );
+int      font_width( FONT *font, uint32_t code );   /* thousandths of the size */
+int      font_unicode( FONT *font, uint32_t code, uint16_t *out );
+int      font_outline( FONT *font, uint32_t code, fx *pen );
+void     font_stamp( void );                       /* a new page */
+int      font_reclaim( int all );                  /* 1 if any were given back */
 
 CMAP *cmap_parse( OBJ *stm, POOL *pool );
-int   cmap_find( const CMAP *cmap, u32 code, CMRANGE **range );
+int   cmap_find( const CMAP *cmap, uint32_t code, CMRANGE **range );
 
 /* where a glyph's outline goes: font units in, pixels out */
 typedef struct {
-    s32   ma, mb, mc, md;       /* pixels to a font unit, 8.24 */
-    fx    ox, oy;
-    PATH *path;
-    fx    last_x, last_y;       /* in font units */
+    int32_t ma, mb, mc, md;     /* pixels to a font unit, 8.24 */
+    fx      ox, oy;
+    PATH   *path;
+    fx      last_x, last_y;     /* in font units */
 } GLYPHOUT;
 
 extern GLYPHOUT gout;
@@ -320,66 +320,66 @@ void  gl_curve( fx x1, fx y1, fx x2, fx y2, fx x3, fx y3 );
 void  gl_quad( fx cx, fx cy, fx ux, fx uy );
 void  gl_close( void );
 
-void  glyph_draw( FONT *font, u32 code, fx xpos, fx ypos, const s32 *mat, CANVAS *cv,
+void  glyph_draw( FONT *font, uint32_t code, fx xpos, fx ypos, const int32_t *mat, CANVAS *cv,
                   const CLIP *clip, const PAINT *paint );
 /* the same glyph, from the same cache, as coverage and not as paint:
    "fn" is handed each row of it that lies inside x0, y0 to x1, y1.
    For a caller that keeps its own kind of picture (TF.C). */
-void  glyph_cover( FONT *font, u32 code, fx xpos, fx ypos, const s32 *mat, int x0, int y0,
+void  glyph_cover( FONT *font, uint32_t code, fx xpos, fx ypos, const int32_t *mat, int x0, int y0,
                    int x1, int y1, ROWFN fn, void *ctx );
 int   glyph_reclaim( void );
 void  glyph_page_begin( void );
 
 /* the font programs */
-void *ttf_open( POOL *pool, u8 *data, u32 len );
-int   ttf_units( void *prog );
-int   ttf_cmap( void *prog, int platform, int encoding, u32 code );     /* a glyph, or 0 */
-int   ttf_has_cmap( void *prog, int platform, int encoding );
-int   ttf_outline( void *prog, u32 gid );
-int   ttf_cff( void *prog, u8 **data, u32 *len );                       /* OpenType with CFF */
-u16   ttf_unicode_of( void *prog, u32 gid );
+void    *ttf_open( POOL *pool, uint8_t *data, uint32_t len );
+int      ttf_units( void *prog );
+int      ttf_cmap( void *prog, int platform, int encoding, uint32_t code );  /* a glyph, or 0 */
+int      ttf_has_cmap( void *prog, int platform, int encoding );
+int      ttf_outline( void *prog, uint32_t gid );
+int      ttf_cff( void *prog, uint8_t **data, uint32_t *len );               /* OpenType with CFF */
+uint16_t ttf_unicode_of( void *prog, uint32_t gid );
 
 /* a font file of the user's, whole and in memory (TF.C): TTF.C says
    what each of these is */
 typedef struct {
-    int  units;                 /* to an em */
-    int  glyphs;
-    s32  box[4];                /* left, bottom, right, top: these and the rest in units */
-    s32  ascent, descent, gap;  /* a line's, as Windows spaces lines */
-    s32  cap;                   /* how tall a capital is */
-    s32  angle;                 /* degrees its uprights lean, anticlockwise */
-    u16  fstype;                /* what its maker allows: the OS/2 table's fsType */
-    u8   fixed;                 /* every character as wide as every other */
-    u8   whole;                 /* every table a subset is made from is there */
-    char name[64];              /* what PostScript knows it by; "" if it does not say */
+    int      units;                 /* to an em */
+    int      glyphs;
+    int32_t  box[4];                /* left, bottom, right, top: these and the rest in units */
+    int32_t  ascent, descent, gap;  /* a line's, as Windows spaces lines */
+    int32_t  cap;                   /* how tall a capital is */
+    int32_t  angle;                 /* degrees its uprights lean, anticlockwise */
+    uint16_t fstype;                /* what its maker allows: the OS/2 table's fsType */
+    uint8_t  fixed;                 /* every character as wide as every other */
+    uint8_t  whole;                 /* every table a subset is made from is there */
+    char     name[64];              /* what PostScript knows it by; "" if it does not say */
 } TTFACTS;
 
-void *ttf_open_heap( u8 *data, u32 len );
-int   ttf_glyph_count( void *prog );
-u32   ttf_glyph_of( void *prog, u32 code );
-int   ttf_advance( void *prog, u32 gid );
-int   ttf_name( const u8 *table, u32 len, int id, char *out, u32 max );
-void  ttf_facts( void *prog, TTFACTS *facts );
-u8   *ttf_subset( void *prog, const u8 *keep, u32 count, u32 *out_len );
+void    *ttf_open_heap( uint8_t *data, uint32_t len );
+int      ttf_glyph_count( void *prog );
+uint32_t ttf_glyph_of( void *prog, uint32_t code );
+int      ttf_advance( void *prog, uint32_t gid );
+int      ttf_name( const uint8_t *table, uint32_t len, int id, char *out, unsigned int max );
+void     ttf_facts( void *prog, TTFACTS *facts );
+uint8_t *ttf_subset( void *prog, const uint8_t *keep, unsigned int count, uint32_t *out_len );
 
-void *cff_open( POOL *pool, u8 *data, u32 len );
+void *cff_open( POOL *pool, uint8_t *data, uint32_t len );
 int   cff_is_cid( void *prog );
 int   cff_units( void *prog );
 int   cff_glyph_named( void *prog, const char *name );      /* -1 if it has none */
-int   cff_glyph_of_cid( void *prog, u32 cid );
+int   cff_glyph_of_cid( void *prog, uint32_t cid );
 const char *cff_builtin_name( void *prog, int code );
-int   cff_outline( void *prog, u32 gid );
+int   cff_outline( void *prog, uint32_t gid );
 
-void *t1_open( POOL *pool, u8 *data, u32 len );
+void *t1_open( POOL *pool, uint8_t *data, uint32_t len );
 int   t1_glyph_named( void *prog, const char *name );
 const char *t1_builtin_name( void *prog, int code );
 int   t1_units( void *prog );
-int   t1_outline( void *prog, u32 gid );
+int   t1_outline( void *prog, uint32_t gid );
 
-int   sfont_outline( u16 uni, int flags, int advance, fx *pen );
-int   sfont_width( u16 uni, int flags );
-u16   sfont_like( u16 uni );                    /* SFONT.C says what these are */
-extern void (*sfont_sink)( void *ctx, int move, fx ux, fx uy );
+int      sfont_outline( uint16_t uni, int flags, int advance, fx *pen );
+int      sfont_width( uint16_t uni, int flags );
+uint16_t sfont_like( uint16_t uni );            /* SFONT.C says what these are */
+extern   void (*sfont_sink)( void *ctx, int move, fx ux, fx uy );
 extern void  *sfont_sink_ctx;
 /* 1, as it starts: a PDF's fonts get the drawings ACROREAD gave them,
    which for the accents, the dashes, the bullet and the quotation marks
@@ -428,7 +428,7 @@ TEXTPAGE *text_extract( int index );
 /* what INTERP.C hands each character of a page to, when it is reading
    and not drawing: where it is in points from the page's top left
    corner, how far it advances and how tall its font is */
-extern void (*text_sink)( u16 uni, fx xpos, fx ypos, fx advance, fx size );
+extern void (*text_sink)( uint16_t uni, fx xpos, fx ypos, fx advance, fx size );
 void  page_text( PAGE *page, VIEW *view );
 
 /* ...and a second sink, for a reader that keeps the look of the text
@@ -436,13 +436,13 @@ void  page_text( PAGE *page, VIEW *view );
    is the font's own string and goes when the font does: it is good
    until the page ends, and whoever wants it longer copies it. */
 typedef struct {
-    u16   uni;
-    u8    flags;                /* FF_* of its font */
-    u8    render;               /* the text rendering mode: 3 does not show */
-    fx    xpos, ypos;           /* as text_sink's */
-    fx    advance, size;
-    fx    dir_x, dir_y;         /* which way the line runs: (FX_ONE, 0) is across */
-    u32   rgb;                  /* the color it is drawn in, 00RRGGBB */
+    uint16_t uni;
+    uint8_t  flags;             /* FF_* of its font */
+    uint8_t  render;            /* the text rendering mode: 3 does not show */
+    fx       xpos, ypos;        /* as text_sink's */
+    fx       advance, size;
+    fx       dir_x, dir_y;      /* which way the line runs: (FX_ONE, 0) is across */
+    uint32_t rgb;               /* the color it is drawn in, 00RRGGBB */
     const char *name;           /* its font's BaseFont without a subset's prefix; ""
                                    when the file gives it none */
 } TEXTCH;

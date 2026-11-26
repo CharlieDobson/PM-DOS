@@ -20,7 +20,7 @@
 
 typedef struct {
     int n;                      /* pieces in use; 0 is zero */
-    u16 d[LIMBS];
+    uint16_t d[LIMBS];
 } BIG;
 
 static void big_trim( BIG *b )
@@ -30,51 +30,51 @@ static void big_trim( BIG *b )
     }
 }
 
-static void big_set( BIG *b, u32 lo, u32 hi )
+static void big_set( BIG *b, uint32_t lo, uint32_t hi )
 {
-    b->d[0] = (u16)lo;
-    b->d[1] = (u16)(lo >> 16);
-    b->d[2] = (u16)hi;
-    b->d[3] = (u16)(hi >> 16);
+    b->d[0] = (uint16_t)lo;
+    b->d[1] = (uint16_t)(lo >> 16);
+    b->d[2] = (uint16_t)hi;
+    b->d[3] = (uint16_t)(hi >> 16);
     b->n = 4;
     big_trim( b );
 }
 
 /* b *= m, m below 65536 */
-static void big_mul( BIG *b, u32 m )
+static void big_mul( BIG *b, uint32_t m )
 {
-    u32 carry = 0, t;
+    uint32_t carry = 0, t;
     int i;
 
     for ( i = 0; i < b->n; i++ ) {
-        t = (u32)b->d[i] * m + carry;
-        b->d[i] = (u16)t;
+        t = (uint32_t)b->d[i] * m + carry;
+        b->d[i] = (uint16_t)t;
         carry = t >> 16;
     }
     if ( carry && b->n < LIMBS ) {
-        b->d[b->n++] = (u16)carry;
+        b->d[b->n++] = (uint16_t)carry;
     }
 }
 
 /* b /= div, div below 65536: -> the remainder */
-static u32 big_div( BIG *b, u32 div )
+static uint32_t big_div( BIG *b, uint32_t div )
 {
-    u32 rem = 0, t;
+    uint32_t rem = 0, t;
     int i;
 
     for ( i = b->n - 1; i >= 0; i-- ) {
         t = (rem << 16) | b->d[i];
-        b->d[i] = (u16)(t / div);
+        b->d[i] = (uint16_t)(t / div);
         rem = t % div;
     }
     big_trim( b );
     return rem;
 }
 
-static void big_mul_pow( BIG *b, u32 base, int count )
+static void big_mul_pow( BIG *b, uint32_t base, int count )
 {
     /* 5^6 and 10^4 are the largest powers below 65536 */
-    u32 step = base == 5 ? 15625UL : 10000UL;
+    uint32_t step = base == 5 ? 15625UL : 10000UL;
     int per = base == 5 ? 6 : 4;
 
     while ( count >= per ) {
@@ -89,7 +89,7 @@ static void big_mul_pow( BIG *b, u32 base, int count )
 static int big_bits( const BIG *b )
 {
     int bits;
-    u16 top;
+    uint16_t top;
 
     if ( b->n == 0 ) {
         return 0;
@@ -144,14 +144,14 @@ static void big_shl( BIG *b, int bits )
     }
     b->n += whole;
     if ( part ) {
-        u32 carry = 0, t;
+        uint32_t carry = 0, t;
         for ( i = whole; i < b->n; i++ ) {
-            t = ((u32)b->d[i] << part) | carry;
-            b->d[i] = (u16)t;
+            t = ((uint32_t)b->d[i] << part) | carry;
+            b->d[i] = (uint16_t)t;
             carry = t >> 16;
         }
         if ( carry ) {
-            b->d[b->n++] = (u16)carry;
+            b->d[b->n++] = (uint16_t)carry;
         }
     }
 }
@@ -171,7 +171,7 @@ static void big_shr( BIG *b, int bits )
     b->n -= whole;
     if ( part ) {
         for ( i = 0; i < b->n; i++ ) {
-            b->d[i] = (u16)((b->d[i] >> part) | (i + 1 < b->n ? (u16)(b->d[i + 1] << (16 - part)) : 0));
+            b->d[i] = (uint16_t)((b->d[i] >> part) | (i + 1 < b->n ? (uint16_t)(b->d[i + 1] << (16 - part)) : 0));
         }
     }
     big_trim( b );
@@ -182,7 +182,7 @@ static void big_shr1( BIG *b )
     int i;
 
     for ( i = 0; i < b->n; i++ ) {
-        b->d[i] = (u16)((b->d[i] >> 1) | (i + 1 < b->n ? (u16)(b->d[i + 1] << 15) : 0));
+        b->d[i] = (uint16_t)((b->d[i] >> 1) | (i + 1 < b->n ? (uint16_t)(b->d[i + 1] << 15) : 0));
     }
     big_trim( b );
 }
@@ -205,12 +205,12 @@ static int big_cmp( const BIG *a, const BIG *b )
 /* a -= b, a not below b */
 static void big_sub( BIG *a, const BIG *b )
 {
-    u32 borrow = 0, t;
+    uint32_t borrow = 0, t;
     int i;
 
     for ( i = 0; i < a->n; i++ ) {
-        t = (u32)a->d[i] - (i < b->n ? b->d[i] : 0) - borrow;
-        a->d[i] = (u16)t;
+        t = (uint32_t)a->d[i] - (i < b->n ? b->d[i] : 0) - borrow;
+        a->d[i] = (uint16_t)t;
         borrow = (t >> 16) & 1;
     }
     big_trim( a );
@@ -221,8 +221,8 @@ static void big_sub( BIG *a, const BIG *b )
 /* ------------------------------------------------------------------ */
 
 typedef union {
-    double v;
-    u32    w[2];
+    double   v;
+    uint32_t w[2];
 } DBITS;
 
 static BIG work, other;
@@ -234,9 +234,9 @@ static char text[800];          /* 5^1074's digits are about 750 */
 int dec_digits( double v, int prec, char *digits, int *exp10 )
 {
     DBITS bits;
-    u32 hi, lo;
+    uint32_t hi, lo;
     int field, e2, len, i, up, count;
-    u32 rem;
+    uint32_t rem;
 
     bits.v = v;
     hi = bits.w[1] & 0x7FFFFFFFUL;
@@ -321,7 +321,7 @@ static double make_double( BIG *q, int shift, int sticky )
 {
     DBITS out;
     int bits = big_bits( q ), drop, e, top_bit, half, below, i;
-    u32 mant_hi, mant_lo;
+    uint32_t mant_hi, mant_lo;
 
     if ( bits == 0 ) {
         return 0.0;
@@ -362,25 +362,25 @@ static double make_double( BIG *q, int shift, int sticky )
         return out.v;
     }
     /* q is 53 bits now, or fewer for a subnormal */
-    mant_lo = (u32)q->d[0] | ((u32)(q->n > 1 ? q->d[1] : 0) << 16);
-    mant_hi = (u32)(q->n > 2 ? q->d[2] : 0) | ((u32)(q->n > 3 ? q->d[3] : 0) << 16);
+    mant_lo = (uint32_t)q->d[0] | ((uint32_t)(q->n > 1 ? q->d[1] : 0) << 16);
+    mant_hi = (uint32_t)(q->n > 2 ? q->d[2] : 0) | ((uint32_t)(q->n > 3 ? q->d[3] : 0) << 16);
     if ( e < -1022 || bits < 53 ) {
         out.w[1] = mant_hi & 0x000FFFFFUL;  /* the exponent field 0 */
         out.w[0] = mant_lo;
         return out.v;
     }
     top_bit = e + 1023;
-    out.w[1] = ((u32)top_bit << 20) | (mant_hi & 0x000FFFFFUL);
+    out.w[1] = ((uint32_t)top_bit << 20) | (mant_hi & 0x000FFFFFUL);
     out.w[0] = mant_lo;
     return out.v;
 }
 
 /* the whole number hi:lo (below 2^63) times 10^scale, to the nearest
    DOUBLE; too big for one is the infinity DBL_BAD looks for */
-double dec_build( u32 lo, u32 hi, int scale )
+double dec_build( uint32_t lo, uint32_t hi, int scale )
 {
     int digits, shift, qbits, bit;
-    u32 t;
+    uint32_t t;
     BIG *n = &work, *d = &other;
     static BIG q;
 
@@ -427,7 +427,7 @@ double dec_build( u32 lo, u32 hi, int scale )
                 while ( q.n <= bit / 16 ) {
                     q.d[q.n++] = 0;
                 }
-                q.d[bit / 16] |= (u16)(1u << (bit % 16));
+                q.d[bit / 16] |= (uint16_t)(1u << (bit % 16));
             }
             big_shr1( d );
         }

@@ -35,8 +35,8 @@
 #define QT_LATER_SHIFTS  50      /* and between later ones            */
 
 typedef struct {
-    UInt16 sym;
-    UInt16 cumfreq;
+    uint16_t sym;
+    uint16_t cumfreq;
 } QtSym;
 
 typedef struct {
@@ -46,10 +46,10 @@ typedef struct {
 } QtModel;
 
 struct QtmDec {
-    Byte   *window;
-    UInt32  wsize, wmask;
-    UInt32  wpos;                /* next write position                   */
-    UInt32  total;               /* bytes out since the folder began      */
+    uint8_t *window;
+    uint32_t wsize, wmask;
+    uint32_t wpos;               /* next write position                   */
+    uint32_t total;              /* bytes out since the folder began      */
 
     QtModel select;              /* what comes next: literal or match     */
     QtModel lit[4];              /* literals, a quarter of the bytes each */
@@ -64,24 +64,24 @@ struct QtmDec {
 
 /* Position slots: each a base offset and a count of raw bits after it.  The
  * bits go 0,0,0,0,1,1,2,2 ... 19,19 and each base is the last plus its span. */
-static const UInt32 s_posBase[42] = {
+static const uint32_t s_posBase[42] = {
     0, 1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64, 96, 128, 192,
     256, 384, 512, 768, 1024, 1536, 2048, 3072, 4096, 6144, 8192, 12288,
     16384, 24576, 32768, 49152, 65536, 98304, 131072, 196608,
     262144, 393216, 524288, 786432, 1048576, 1572864
 };
-static const Byte s_posBits[42] = {
+static const uint8_t s_posBits[42] = {
     0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6,
     7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13,
     14, 14, 15, 15, 16, 16, 17, 17, 18, 18, 19, 19
 };
 
 /* Length slots for selector 6, before its minimum of 5 is added. */
-static const Byte s_lenBase[27] = {
+static const uint8_t s_lenBase[27] = {
     0, 1, 2, 3, 4, 5, 6, 8, 10, 12, 14, 18, 22, 26,
     30, 38, 46, 54, 62, 78, 94, 110, 126, 158, 190, 222, 254
 };
-static const Byte s_lenBits[27] = {
+static const uint8_t s_lenBits[27] = {
     0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2,
     3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0
 };
@@ -92,22 +92,22 @@ static const Byte s_lenBits[27] = {
  * ahead and the encoder need not have flushed all of them.
  *--------------------------------------------------------------------------- */
 typedef struct {
-    const Byte *in;
-    UInt32      inLen, inPos;
-    UInt32      buf;             /* the next bit is bit 31 */
-    int         cnt;
-    UInt32      fake;            /* zero bytes supplied past the end */
-    UInt32      high, low, code; /* the coder's registers, 16 bits each */
+    const uint8_t *in;
+    uint32_t       inLen, inPos;
+    uint32_t       buf;             /* the next bit is bit 31 */
+    int            cnt;
+    uint32_t       fake;            /* zero bytes supplied past the end */
+    uint32_t       high, low, code; /* the coder's registers, 16 bits each */
 } QtCoder;
 
-static UInt32 QtGetBits( QtCoder *qc, int n )       /* n <= 19 */
+static uint32_t QtGetBits( QtCoder *qc, int n )     /* n <= 19 */
 {
-    UInt32 val;
+    uint32_t val;
 
     if ( n == 0 ) return 0;
     while ( qc->cnt < n )
     {
-        UInt32 byte = 0;
+        uint32_t byte = 0;
 
         if ( qc->inPos < qc->inLen ) byte = qc->in[qc->inPos++];
         else                         qc->fake++;
@@ -130,8 +130,8 @@ static void QtInit( QtModel *model, QtSym *syms, int start, int count )
     model->syms       = syms;
     for ( i = 0; i <= count; i++ )
     {
-        syms[i].sym     = (UInt16)( start + i );
-        syms[i].cumfreq = (UInt16)( count - i );
+        syms[i].sym     = (uint16_t)( start + i );
+        syms[i].cumfreq = (uint16_t)( count - i );
     }
 }
 
@@ -148,7 +148,7 @@ static void QtRescale( QtModel *model )
         {
             list[i].cumfreq >>= 1;
             if ( list[i].cumfreq <= list[i + 1].cumfreq )
-                list[i].cumfreq = (UInt16)( list[i + 1].cumfreq + 1 );
+                list[i].cumfreq = (uint16_t)( list[i + 1].cumfreq + 1 );
         }
         return;
     }
@@ -159,8 +159,8 @@ static void QtRescale( QtModel *model )
      * still cumulative when list[i] is converted, which is what is wanted. */
     for ( i = 0; i < model->entries; i++ )
     {
-        list[i].cumfreq = (UInt16)( list[i].cumfreq - list[i + 1].cumfreq );
-        list[i].cumfreq = (UInt16)( ( list[i].cumfreq + 1 ) >> 1 );
+        list[i].cumfreq = (uint16_t)( list[i].cumfreq - list[i + 1].cumfreq );
+        list[i].cumfreq = (uint16_t)( ( list[i].cumfreq + 1 ) >> 1 );
     }
 
     /* Most frequent first.  This must be exactly this exchange sort: equal
@@ -178,14 +178,14 @@ static void QtRescale( QtModel *model )
 
     /* And back to cumulative, onto the zero sentinel. */
     for ( i = model->entries - 1; i >= 0; i-- )
-        list[i].cumfreq = (UInt16)( list[i].cumfreq + list[i + 1].cumfreq );
+        list[i].cumfreq = (uint16_t)( list[i].cumfreq + list[i + 1].cumfreq );
 }
 
 static int QtSymbol( QtCoder *qc, QtModel *model )
 {
-    QtSym *list = model->syms;
-    UInt32 range, total, target;
-    int    i, sym;
+    QtSym   *list = model->syms;
+    uint32_t range, total, target;
+    int      i, sym;
 
     range  = ( ( qc->high - qc->low ) & 0xFFFF ) + 1;
     total  = list[0].cumfreq;
@@ -242,7 +242,7 @@ int QtmCreate( int windowBits, QtmDec **out )
     if ( !dec ) return SZ_ERR_MEMORY;
     dec->wsize  = 1UL << windowBits;
     dec->wmask  = dec->wsize - 1;
-    dec->window = (Byte *)calloc( 1, dec->wsize );
+    dec->window = (uint8_t *)calloc( 1, dec->wsize );
     if ( !dec->window )
     {
         free( dec );
@@ -269,11 +269,11 @@ void QtmFree( QtmDec *dec )
     free( dec );
 }
 
-int QtmDecodeFrame( QtmDec *dec, const Byte *in, UInt32 inLen,
-                    Byte *out, UInt32 outLen )
+int QtmDecodeFrame( QtmDec *dec, const uint8_t *in, uint32_t inLen,
+                    uint8_t *out, uint32_t outLen )
 {
-    QtCoder qc;
-    UInt32  done = 0;
+    QtCoder  qc;
+    uint32_t done = 0;
 
     if ( outLen > QTM_FRAME_SIZE ) return SZ_ERR_DATA;
 
@@ -291,8 +291,8 @@ int QtmDecodeFrame( QtmDec *dec, const Byte *in, UInt32 inLen,
 
     while ( done < outLen )
     {
-        int    sel, slot;
-        UInt32 len, offset, src;
+        int      sel, slot;
+        uint32_t len, offset, src;
 
         /* A runaway guard: no frame legitimately needs this much past its
          * end, and garbage could otherwise decode zeroes to the frame end. */
@@ -301,7 +301,7 @@ int QtmDecodeFrame( QtmDec *dec, const Byte *in, UInt32 inLen,
         sel = QtSymbol( &qc, &dec->select );
         if ( sel < 4 )
         {
-            Byte val = (Byte)QtSymbol( &qc, &dec->lit[sel] );
+            uint8_t val = (uint8_t)QtSymbol( &qc, &dec->lit[sel] );
 
             dec->window[dec->wpos] = val;
             dec->wpos = ( dec->wpos + 1 ) & dec->wmask;
@@ -341,7 +341,7 @@ int QtmDecodeFrame( QtmDec *dec, const Byte *in, UInt32 inLen,
         dec->total += len;
         while ( len-- )
         {
-            Byte val = dec->window[src];
+            uint8_t val = dec->window[src];
 
             src = ( src + 1 ) & dec->wmask;
             dec->window[dec->wpos] = val;
@@ -352,14 +352,14 @@ int QtmDecodeFrame( QtmDec *dec, const Byte *in, UInt32 inLen,
 
     /* More than four bytes of made-up input consumed is a frame that was cut
      * short, not an encoder that flushed lightly. */
-    if ( ( qc.inPos + qc.fake ) * 8 - (UInt32)qc.cnt > ( qc.inLen + 4 ) * 8 )
+    if ( ( qc.inPos + qc.fake ) * 8 - (uint32_t)qc.cnt > ( qc.inLen + 4 ) * 8 )
         return SZ_ERR_DATA;
     return SZ_OK;
 }
 
-UInt32 QtmMemNeeded( int windowBits )
+uint32_t QtmMemNeeded( int windowBits )
 {
     if ( windowBits < QTM_MIN_WINDOW ) windowBits = QTM_MIN_WINDOW;
     if ( windowBits > QTM_MAX_WINDOW ) windowBits = QTM_MAX_WINDOW;
-    return (UInt32)sizeof( QtmDec ) + ( 1UL << windowBits );
+    return (uint32_t)sizeof( QtmDec ) + ( 1UL << windowBits );
 }

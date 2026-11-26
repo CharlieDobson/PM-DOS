@@ -104,11 +104,11 @@ COUNTRY country;
 /* buffered console output                                             */
 /* ------------------------------------------------------------------ */
 
-static char obuf[2048];
-static u32  olen;
-static int  ohandle = H_OUT;
-static int  col;                /* characters on the current line          */
-static int  blank_run;          /* empty lines written since the last text */
+static char         obuf[2048];
+static unsigned int olen;
+static int          ohandle = H_OUT;
+static int          col;        /* characters on the current line          */
+static int          blank_run;  /* empty lines written since the last text */
 
 void msg_init( void )
 {
@@ -128,7 +128,7 @@ void out_flush( void )
     }
 }
 
-static void raw( int handle, const char *src, u32 len )
+static void raw( int handle, const char *src, unsigned int len )
 {
     if ( handle != ohandle ) {
         out_flush();
@@ -206,7 +206,7 @@ void out_input_done( void )
 /* number and date formatting                                          */
 /* ------------------------------------------------------------------ */
 
-char *fmt_num( u64 val, char *buf )
+char *fmt_num( uint64_t val, char *buf )
 {
     char tmp[40];
     int len = 0, digits = 0;
@@ -226,7 +226,7 @@ char *fmt_num( u64 val, char *buf )
     return buf;
 }
 
-char *fmt_dec( u32 val, char *buf )
+char *fmt_dec( uint32_t val, char *buf )
 {
     char tmp[12];
     int len = 0;
@@ -243,7 +243,7 @@ char *fmt_dec( u32 val, char *buf )
     return buf;
 }
 
-char *fmt_hex4( u32 val, char *buf )
+char *fmt_hex4( uint32_t val, char *buf )
 {
     static const char hex[] = "0123456789ABCDEF";
     int i;
@@ -266,16 +266,16 @@ char *fmt_right( const char *str, int width, char *buf )
     return buf;
 }
 
-static char *two( u32 val, char *cur )
+static char *two( unsigned int val, char *cur )
 {
     cur[0] = (char)('0' + (val / 10) % 10);
     cur[1] = (char)('0' + val % 10);
     return cur + 2;
 }
 
-char *fmt_date( u16 dos_date, char *buf )
+char *fmt_date( uint16_t dos_date, char *buf )
 {
-    u32 day = dos_date & 31, mon = (dos_date >> 5) & 15,
+    unsigned int day = dos_date & 31, mon = (dos_date >> 5) & 15,
         year = 1980 + (dos_date >> 9);
     char *cur = buf;
     char year_buf[8];
@@ -302,9 +302,9 @@ char *fmt_date( u16 dos_date, char *buf )
     return buf;
 }
 
-char *fmt_time( u16 dos_time, char *buf )
+char *fmt_time( uint16_t dos_time, char *buf )
 {
-    u32 hour = dos_time >> 11, min = (dos_time >> 5) & 63;
+    unsigned int hour = dos_time >> 11, min = (dos_time >> 5) & 63;
     char *cur = buf;
     char ampm = 'a';
 

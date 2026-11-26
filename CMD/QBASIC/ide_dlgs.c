@@ -38,12 +38,12 @@ static int sl_add( STRLIST *list, const char *text )
 
     if ( list->count == list->cap ) {
         int cap = list->cap ? list->cap * 2 : 32;
-        grown = (char **)try_alloc( (u32)cap * sizeof( char * ) );
+        grown = (char **)try_alloc( (unsigned int)cap * sizeof( char * ) );
         if ( grown == NULL ) {
             return 0;
         }
         if ( list->count ) {
-            mem_cpy( grown, list->item, (u32)list->count * sizeof( char * ) );
+            mem_cpy( grown, list->item, (unsigned int)list->count * sizeof( char * ) );
         }
         xfree( list->item );
         list->item = grown;
@@ -160,7 +160,7 @@ static int make_path( const char *name, char *out )
 static void fill_lists( FDATA *fd, int with_files )
 {
     FINDREC rec;
-    u32 handle;
+    uint32_t handle;
     char spec[PATH_MAX], drive[8];
     int drv;
 
@@ -231,7 +231,7 @@ static void refresh( DLG *dlg, int with_files )
 static int change_to( const char *where )
 {
     char path[PATH_MAX];
-    u32 len;
+    unsigned int len;
 
     if ( where[0] == '[' && where[1] == '-' ) {
         sys_set_drive( ch_upper( where[2] ) - 'A' );
@@ -272,7 +272,7 @@ static int has_wild( const char *name )
 static int file_activate( DLG *dlg, int ctl )
 {
     FDATA *fd = (FDATA *)dlg->data;
-    u16 attr;
+    uint16_t attr;
     char *last;
     int with_files = fd->files_ctl >= 0;
 
@@ -452,9 +452,9 @@ int dlg_saveas( char *path )
 
 static int print_what = 3;
 
-static int print_lines( u32 handle, DOC *doc, POS from, POS to )
+static int print_lines( uint32_t handle, DOC *doc, POS from, POS to )
 {
-    u32 line, start, end, done;
+    unsigned int line, start, end, done;
     LINE *text;
     int rc = 0;
 
@@ -481,7 +481,8 @@ void dlg_print( void )
     DLG dlg;
     VIEW *view = app_view();
     POS from, to;
-    u32 handle, done;
+    uint32_t handle;
+    unsigned int done;
     int rc = 0, t;
 
     mem_set( &dlg, 0, sizeof( dlg ) );
@@ -747,17 +748,17 @@ static int word_ch( int ch )
            || ch == '_' || ch == '.';
 }
 
-static int match_at( LINE *line, u32 at, u32 len )
+static int match_at( LINE *line, unsigned int at, unsigned int len )
 {
-    u32 pos;
+    unsigned int pos;
     int lhs, rhs;
 
     if ( at + len > line->len ) {
         return 0;
     }
     for ( pos = 0; pos < len; pos++ ) {
-        lhs = (u8)line->text[at + pos];
-        rhs = (u8)find_text[pos];
+        lhs = (uint8_t)line->text[at + pos];
+        rhs = (uint8_t)find_text[pos];
         if ( !match_case ) {
             lhs = ch_upper( lhs );
             rhs = ch_upper( rhs );
@@ -767,10 +768,10 @@ static int match_at( LINE *line, u32 at, u32 len )
         }
     }
     if ( whole_word ) {
-        if ( at > 0 && word_ch( (u8)line->text[at - 1] ) ) {
+        if ( at > 0 && word_ch( (uint8_t)line->text[at - 1] ) ) {
             return 0;
         }
-        if ( at + len < line->len && word_ch( (u8)line->text[at + len] ) ) {
+        if ( at + len < line->len && word_ch( (uint8_t)line->text[at + len] ) ) {
             return 0;
         }
     }
@@ -780,7 +781,7 @@ static int match_at( LINE *line, u32 at, u32 len )
 /* the next match in a text at or after "from"; 1 = found */
 static int search_text( DOC *doc, POS from, POS *found )
 {
-    u32 len = str_len( find_text ), line, at;
+    unsigned int len = str_len( find_text ), line, at;
     LINE *text;
 
     if ( len == 0 ) {
@@ -843,7 +844,7 @@ static void select_match( VIEW *view, int text, POS at )
     view->col = doc_col_of( view->doc, line, at.col + str_len( find_text ) );
     view->want = view->col;
     /* the match a few lines from the top, as QBasic shows it */
-    if ( view->line < view->top || view->line >= view->top + (u32)view_text_rows( view ) ) {
+    if ( view->line < view->top || view->line >= view->top + (unsigned int)view_text_rows( view ) ) {
         view->top = view->line > 3 ? view->line - 3 : 0;
     }
     view_keep_visible( view );
@@ -915,7 +916,7 @@ static void change_all( int verify )
     VIEW *view = app_view();
     int text = view->text, start_text = view->text, wrapped = 0, changes = 0, answer;
     POS at = view_pos( view ), found, end, start = at;
-    u32 find_len = str_len( find_text ), change_len = str_len( change_text );
+    unsigned int find_len = str_len( find_text ), change_len = str_len( change_text );
     DOC *doc;
 
     if ( text < 0 ) {
@@ -992,7 +993,7 @@ static int find_press( DLG *dlg, int ctl )
 }
 
 /* the word at the cursor, or the selection on one line, to offer */
-static void offer_word( char *out, u32 max )
+static void offer_word( char *out, unsigned int max )
 {
     VIEW *view = app_view();
     POS from, to;
@@ -1098,8 +1099,8 @@ static const char *colour_item( DLG *dlg, int index )
     return colour_names[index & 15];
 }
 
-static int  disp_part = 1;
-static u8   disp_attr[4];           /* [1] normal, [2] current, [3] breakpoint */
+static int     disp_part = 1;
+static uint8_t disp_attr[4];        /* [1] normal, [2] current, [3] breakpoint */
 
 static void display_pick( DLG *dlg, int ctl )
 {
@@ -1107,7 +1108,7 @@ static void display_pick( DLG *dlg, int ctl )
         dlg->ctl[8].sel = disp_attr[disp_part] & 0x0F;
         dlg->ctl[9].sel = (disp_attr[disp_part] >> 4) & 0x07;
     } else if ( ctl == 8 || ctl == 9 ) {    /* a colour chosen: the sample shows it */
-        disp_attr[disp_part] = (u8)((dlg->ctl[9].sel << 4) | dlg->ctl[8].sel);
+        disp_attr[disp_part] = (uint8_t)((dlg->ctl[9].sel << 4) | dlg->ctl[8].sel);
     }
     dlg->ctl[5].attr = disp_attr[1];
     dlg->ctl[6].attr = disp_attr[2];
@@ -1120,7 +1121,7 @@ void dlg_display( void )
     DLG dlg;
     char tabs[8];
     int bars = scroll_bars, ok;
-    u32 value;
+    unsigned int value;
 
     mem_set( &dlg, 0, sizeof( dlg ) );
     disp_attr[1] = pal.text;
@@ -1191,8 +1192,8 @@ void dlg_display( void )
     pal.frame = disp_attr[1];
     pal.current = disp_attr[2];
     pal.bkpt = disp_attr[3];
-    pal.bkpt_current = (u8)((disp_attr[3] & 0xF0) | (disp_attr[2] & 0x0F));
-    pal.select = (u8)(((disp_attr[1] & 0x07) << 4) | ((disp_attr[1] >> 4) & 0x07));
+    pal.bkpt_current = (uint8_t)((disp_attr[3] & 0xF0) | (disp_attr[2] & 0x0F));
+    pal.select = (uint8_t)(((disp_attr[1] & 0x07) << 4) | ((disp_attr[1] >> 4) & 0x07));
     pal.title = pal.select;
     app_layout();
 }

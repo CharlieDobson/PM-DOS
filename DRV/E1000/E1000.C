@@ -130,17 +130,17 @@
 #define GROUP_ICH   2
 #define GROUP_I21X  3
 
-typedef struct { u32 addr_lo, addr_hi; u16 length, csum; u8 status, errors; u16 special; } RXD;
-typedef struct { u32 addr_lo, addr_hi; u16 length; u8 cso, cmd, status, css; u16 special; } TXD;
+typedef struct { uint32_t addr_lo, addr_hi; uint16_t length, csum; uint8_t status, errors; uint16_t special; } RXD;
+typedef struct { uint32_t addr_lo, addr_hi; uint16_t length; uint8_t cso, cmd, status, css; uint16_t special; } TXD;
 
-static u32  membase;
-static int  group;
+static uint32_t membase;
+static int      group;
 static volatile RXD *rxd;
 static volatile TXD *txd;
-static u8  *rxbuf[RXN];
-static u8  *txbuf[TXN];
-static int  rx_cur, tx_cur;
-static char base_name[24];
+static uint8_t *rxbuf[RXN];
+static uint8_t *txbuf[TXN];
+static int      rx_cur, tx_cur;
+static char     base_name[24];
 
 /* 82540/1/4/5/6/7 */
 static const PCI_ID ids_8254x[] = {
@@ -201,9 +201,9 @@ static const PCI_ID ids_i21x[] = {
     { 0, 0 }
 };
 
-static u32 align16( u32 p ) { return ( p + 15 ) & ~15L; }
-static u32 reg_rd( u32 off ) { return MMIO32( membase, off ); }
-static void reg_wr( u32 off, u32 value ) { MMIO32( membase, off ) = value; }
+static uint32_t align16( uint32_t p ) { return ( p + 15 ) & ~15L; }
+static uint32_t reg_rd( uint32_t off ) { return MMIO32( membase, off ); }
+static void reg_wr( uint32_t off, uint32_t value ) { MMIO32( membase, off ) = value; }
 
 static void name_add( const char *text )
 {
@@ -218,9 +218,9 @@ static void name_add( const char *text )
 /* the PHY out of its ultra-low-power state, through the ME.  The I217
    and the first I218s have no ULP; a machine with no ME firmware is
    left as it is (see the top of the file) */
-static void ulp_off( u32 device )
+static void ulp_off( uint32_t device )
 {
-    u32 h2me;
+    uint32_t h2me;
     int i;
 
     if ( device == 0x153A || device == 0x153B || device == 0x15A0 || device == 0x15A1 ) return;
@@ -236,8 +236,9 @@ int card_find( void )
 {
     const PCI_ID *which;
     int isio, i;
-    u32 at, need, bar, ral, rah;
-    u8 *pool;
+    uint32_t at, bar, ral, rah;
+    unsigned int need;
+    uint8_t *pool;
 
     if ( net_pci_find( ids_8254x, &which ) ) {
         group = GROUP_8254X; net_strcpy( base_name, "Intel PRO/1000 8254x" );
@@ -258,7 +259,7 @@ int card_find( void )
     membase = net_pci_map( bar, 0x20000 );
     if ( membase == 0 ) return 1;
     net_mem = membase;
-    net_irq = (u8)net_pci_irqline( net_pciaddr );
+    net_irq = (uint8_t)net_pci_irqline( net_pciaddr );
     net_bus = NICB_PCI;
     net_flags = NICF_WORD;
 
@@ -288,27 +289,27 @@ int card_find( void )
     ral = reg_rd( REG_RAL );
     rah = reg_rd( REG_RAH );
     if ( !( rah & RAH_AV ) ) { net_print( "Intel PRO/1000: no station address loaded\r\n" ); return 1; }
-    net_mac[0] = (u8)ral;        net_mac[1] = (u8)( ral >> 8 );
-    net_mac[2] = (u8)( ral >> 16 ); net_mac[3] = (u8)( ral >> 24 );
-    net_mac[4] = (u8)rah;        net_mac[5] = (u8)( rah >> 8 );
+    net_mac[0] = (uint8_t)ral;        net_mac[1] = (uint8_t)( ral >> 8 );
+    net_mac[2] = (uint8_t)( ral >> 16 ); net_mac[3] = (uint8_t)( ral >> 24 );
+    net_mac[4] = (uint8_t)rah;        net_mac[5] = (uint8_t)( rah >> 8 );
     if ( !net_mac_ok( net_mac ) ) { net_print( "Intel PRO/1000: the station address is not usable\r\n" ); return 1; }
 
     if ( rxd == 0 ) {
         need = RXN * 16 + TXN * 16 + ( RXN + TXN ) * BUFSZ + 16;
         pool = net_alloc( need );
         if ( pool == 0 ) return 1;
-        at = align16( (u32)pool );
+        at = align16( (uint32_t)pool );
         rxd = (volatile RXD *)at;   at += RXN * 16;
         txd = (volatile TXD *)at;   at += TXN * 16;
-        for ( i = 0; i < RXN; i++ ) { rxbuf[i] = (u8 *)at; at += BUFSZ; }
-        for ( i = 0; i < TXN; i++ ) { txbuf[i] = (u8 *)at; at += BUFSZ; }
+        for ( i = 0; i < RXN; i++ ) { rxbuf[i] = (uint8_t *)at; at += BUFSZ; }
+        for ( i = 0; i < TXN; i++ ) { txbuf[i] = (uint8_t *)at; at += BUFSZ; }
     }
     return 0;
 }
 
 int card_setup( void )
 {
-    u32 status;
+    uint32_t status;
     int i;
 
     reg_wr( REG_IMC, 0xFFFFFFFFL );
@@ -320,11 +321,11 @@ int card_setup( void )
     for ( i = 0; i < 128; i++ ) reg_wr( REG_MTA + i * 4, 0 );
 
     for ( i = 0; i < RXN; i++ ) {
-        rxd[i].addr_lo = (u32)rxbuf[i];
+        rxd[i].addr_lo = (uint32_t)rxbuf[i];
         rxd[i].addr_hi = 0;
         rxd[i].status = 0;
     }
-    reg_wr( REG_RDBAL, (u32)rxd );
+    reg_wr( REG_RDBAL, (uint32_t)rxd );
     reg_wr( REG_RDBAH, 0 );
     reg_wr( REG_RDLEN, RXN * 16 );
     reg_wr( REG_RDH, 0 );
@@ -335,12 +336,12 @@ int card_setup( void )
     reg_wr( REG_RCTL, RCTL_EN | RCTL_MPE | RCTL_BAM | RCTL_SECRC | RCTL_BSIZE );
 
     for ( i = 0; i < TXN; i++ ) {
-        txd[i].addr_lo = (u32)txbuf[i];
+        txd[i].addr_lo = (uint32_t)txbuf[i];
         txd[i].addr_hi = 0;
         txd[i].cmd = 0;
         txd[i].status = XD_DD;                   /* free */
     }
-    reg_wr( REG_TDBAL, (u32)txd );
+    reg_wr( REG_TDBAL, (uint32_t)txd );
     reg_wr( REG_TDBAH, 0 );
     reg_wr( REG_TDLEN, TXN * 16 );
     reg_wr( REG_TDH, 0 );
@@ -376,10 +377,10 @@ void card_stop( void )
     reg_wr( REG_TCTL, TCTL_PSP );
 }
 
-int card_send( const u8 *frame, u32 len )
+int card_send( const uint8_t *frame, unsigned int len )
 {
     int entry = tx_cur;
-    u32 n;
+    unsigned int n;
 
     if ( !( txd[entry].status & XD_DD ) ) {
         for ( n = 0; n < 400000L; n++ ) {
@@ -388,9 +389,9 @@ int card_send( const u8 *frame, u32 len )
         if ( !( txd[entry].status & XD_DD ) ) { net_stats.txerrors++; return 0; }
     }
     net_memcpy( txbuf[entry], frame, len );
-    txd[entry].addr_lo = (u32)txbuf[entry];
+    txd[entry].addr_lo = (uint32_t)txbuf[entry];
     txd[entry].addr_hi = 0;
-    txd[entry].length = (u16)len;
+    txd[entry].length = (uint16_t)len;
     txd[entry].cso = 0;
     txd[entry].cmd = TXD_EOP | TXD_IFCS | TXD_RS;
     txd[entry].status = 0;
@@ -402,9 +403,9 @@ int card_send( const u8 *frame, u32 len )
 /* the frames the chip has finished, handed over; how many */
 static int rx_drain( void )
 {
-    u32 len, n;
+    unsigned int len, n;
     int last = -1, got = 0;
-    u8 *slot;
+    uint8_t *slot;
 
     for ( n = 0; n < RXN; n++ ) {
         if ( !( rxd[rx_cur].status & XD_DD ) ) break;
@@ -421,7 +422,7 @@ static int rx_drain( void )
         rx_cur = ( rx_cur + 1 ) % RXN;
         got++;
     }
-    if ( last >= 0 ) reg_wr( REG_RDT, (u32)last );
+    if ( last >= 0 ) reg_wr( REG_RDT, (uint32_t)last );
     return got;
 }
 
@@ -429,7 +430,7 @@ static int rx_drain( void )
    polled card) some of the PCI Express parts do not latch the causes */
 int card_service( void )
 {
-    u32 icr;
+    uint32_t icr;
     int got;
 
     icr = reg_rd( REG_ICR );                     /* reading it clears it */

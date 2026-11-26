@@ -19,11 +19,11 @@ typedef struct CFB CFB;
 typedef struct CFBW CFBW;
 
 /* 1 if the bytes start with a compound file's signature */
-int   cfb_is( const u8 *data, u32 len );
+int   cfb_is( const uint8_t *data, uint32_t len );
 
 /* the file opened: NULL if it is not one, is damaged past use, or
    there is no memory.  "data" must stay until cfb_close. */
-CFB  *cfb_open( const u8 *data, u32 len );
+CFB  *cfb_open( const uint8_t *data, uint32_t len );
 void  cfb_close( CFB *cfb );
 
 /* a stream by its name, in ASCII, letters in either case: its number,
@@ -31,20 +31,20 @@ void  cfb_close( CFB *cfb );
 int   cfb_find( CFB *cfb, const char *name );
 
 /* how many bytes a stream says it has (0 for what is not a stream) */
-u32   cfb_size( CFB *cfb, int entry );
+uint32_t cfb_size( CFB *cfb, int entry );
 
 /* a stream's bytes in a heap block the caller xfrees, and *len how
    many; NULL on damage or no memory */
-u8   *cfb_read( CFB *cfb, int entry, u32 *len );
+uint8_t *cfb_read( CFB *cfb, int entry, uint32_t *len );
 
 /* a file to be written: NULL if there is no memory */
 CFBW *cfbw_new( void );
 /* a stream for it.  The bytes are NOT copied: they must stay until
    cfbw_write is done.  0 if the name is too long (31 characters) or
    there are too many streams (16). */
-int   cfbw_add( CFBW *w, const char *name, const u8 *data, u32 len );
+int   cfbw_add( CFBW *w, const char *name, const uint8_t *data, uint32_t len );
 /* the class the root says the file is of: 16 bytes */
-void  cfbw_clsid( CFBW *w, const u8 *clsid );
+void  cfbw_clsid( CFBW *w, const uint8_t *clsid );
 /* the file: 1, or 0 if it is too big to be one or the OUT failed */
 int   cfbw_write( CFBW *w, OUT *out );
 void  cfbw_free( CFBW *w );

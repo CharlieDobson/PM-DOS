@@ -83,8 +83,9 @@ CLUSBUF_SIZE    EQU     32768           ; one cluster, up to 64 sectors
 ; ceiling, and that ceiling is the caller's own.
 MAX_DEPTH       EQU     32              ; nested directories supported
 MAX_DRIVES      EQU     LASTDRIVE       ; shared with COMMAND.COM
-MAX_PHYS        EQU     2               ; hard disks the block layer has
-                                        ; slots for: BIOS 80h and 81h
+                                        ; (MAX_PHYS, the hard disks the
+                                        ; block layer has numbers for, is
+                                        ; in PMDOS.INC beside USB_DRV0)
 
 ; Size of the swappable per-volume state block.  wasm cannot divide by
 ; a forward-referenced label difference, so this is stated by hand and

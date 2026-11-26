@@ -25,16 +25,16 @@ VIEW  views[3];
 int   nviews = 1;
 int   active;                   /* 0, 1 the editor's windows, 2 Immediate, 3 help */
 
-static char       *clip;
-static u32         clip_len;
-static const char *status_hint;
-static int         status_wide;
-static int         opt_lines, opt_run, opt_editor;
-static int         maximized;   /* Ctrl+F10: the active window has the screen */
-static int         ui_ready;
-static DOC        *imm_doc;     /* the Immediate window's lines */
-static int         trace_on;
-static int         grow[3];     /* Alt+Plus and Alt+Minus: rows taken from the default */
+static char        *clip;
+static unsigned int clip_len;
+static const char  *status_hint;
+static int          status_wide;
+static int          opt_lines, opt_run, opt_editor;
+static int          maximized;  /* Ctrl+F10: the active window has the screen */
+static int          ui_ready;
+static DOC         *imm_doc;    /* the Immediate window's lines */
+static int          trace_on;
+static int          grow[3];    /* Alt+Plus and Alt+Minus: rows taken from the default */
 
 /* the program run or stopped */
 static PROGRAM    *prog;
@@ -100,14 +100,14 @@ int clip_has( void )
     return clip != NULL && clip_len > 0;
 }
 
-void clip_set( char *text, u32 len )
+void clip_set( char *text, unsigned int len )
 {
     xfree( clip );
     clip = text;
     clip_len = len;
 }
 
-const char *clip_get( u32 *len )
+const char *clip_get( unsigned int *len )
 {
     *len = clip_len;
     return clip;
@@ -119,7 +119,7 @@ int app_running( void )
 }
 
 /* the title of a text's window: the program's name, and a procedure's */
-const char *app_title( int text, char *buf, u32 max )
+const char *app_title( int text, char *buf, unsigned int max )
 {
     str_cpyt( buf, ptext.name, max );           /* a long name: as much as fits */
     if ( text > 0 && text < ptext.ntexts ) {
@@ -139,7 +139,7 @@ static STMTLOC *stop_loc( void )
     return &prog->locs[vm.stmt];
 }
 
-int app_current( int text, u32 line, int *col, int *len )
+int app_current( int text, unsigned int line, int *col, int *len )
 {
     STMTLOC *loc;
 
@@ -264,14 +264,14 @@ static void draw_status( void )
     scr_fill( row, 63, scr_cols - 63, ' ', pal.status_right );
     view = active < 3 ? &views[active] : &views[0];
     /* "00001:001": the line in five digits, the column in three */
-    num_fmt_l( (s32)(view->line + 1), num );
+    num_fmt_l( (int32_t)(view->line + 1), num );
     len = (int)str_len( num );
     for ( pad = 0; pad < 5 - len; pad++ ) {
         right[pad] = '0';
     }
     str_cpy( right + pad, num );
     str_catn( right, ":", sizeof( right ) );
-    num_fmt_l( (s32)(view->col + 1), num );
+    num_fmt_l( (int32_t)(view->col + 1), num );
     len = (int)str_len( num );
     for ( pad = 0; pad < 3 - len; pad++ ) {
         str_catn( right, "0", sizeof( right ) );
@@ -360,7 +360,7 @@ static int save_program( int ask_name )
 {
     char path[PATH_MAX];
     int rc;
-    u32 count;
+    unsigned int count;
 
     str_cpy( path, ptext.path );
     if ( ask_name || path[0] == 0 ) {
@@ -374,7 +374,7 @@ static int save_program( int ask_name )
         /* DECLARE lines went in at the top of the module: its windows
            keep their places in the text, and a stopped program's lines
            are not the ones it was compiled from */
-        u32 added = ptext.texts[0]->count - count;
+        unsigned int added = ptext.texts[0]->count - count;
         int i;
         for ( i = 0; i < 2; i++ ) {
             if ( views[i].text == 0 ) {
@@ -481,13 +481,13 @@ void app_edited( void )
    the statements that start on it */
 static void sync_breakpoints( void )
 {
-    u32 index;
+    unsigned int index;
     STMTLOC *loc;
     LINE *line;
 
     for ( index = 0; index < prog->nlocs; index++ ) {
         loc = &prog->locs[index];
-        loc->flags &= (u16)~SL_BREAK;
+        loc->flags &= (uint16_t)~SL_BREAK;
         if ( loc->text < ptext.ntexts && loc->line < ptext.texts[loc->text]->count ) {
             line = doc_line( ptext.texts[loc->text], loc->line );
             if ( line->flags & LF_BREAK ) {
@@ -498,7 +498,7 @@ static void sync_breakpoints( void )
 }
 
 /* the window onto the text, line and column given, a token selected */
-static void show_place( int text, u32 line, int col, int len, int select )
+static void show_place( int text, unsigned int line, int col, int len, int select )
 {
     VIEW *view;
     LINE *ln;
@@ -521,10 +521,10 @@ static void show_place( int text, u32 line, int col, int len, int select )
     if ( select && len > 0 ) {
         view->sel = 1;
         view->sel_line = line;
-        view->sel_col = doc_col_of( view->doc, ln, (u32)col );
-        view_goto( view, line, doc_col_of( view->doc, ln, (u32)(col + len) ), 1 );
+        view->sel_col = doc_col_of( view->doc, ln, (unsigned int)col );
+        view_goto( view, line, doc_col_of( view->doc, ln, (unsigned int)(col + len) ), 1 );
     } else {
-        view_goto( view, line, doc_col_of( view->doc, ln, (u32)col ), 0 );
+        view_goto( view, line, doc_col_of( view->doc, ln, (unsigned int)col ), 0 );
     }
     view->want = view->col;
 }
@@ -599,12 +599,12 @@ static void show_stop( void )
 }
 
 /* how: GO_RUN, GO_STEP, GO_PSTEP.  From a stop, or from the top */
-static u32 run_at;                      /* RUN n from the Immediate window */
+static unsigned int run_at;             /* RUN n from the Immediate window */
 
 /* RUN n: the new run starts at the line's code, not the top */
-static void run_from( u32 at )
+static void run_from( unsigned int at )
 {
-    u32 i;
+    unsigned int i;
 
     if ( at == 0 || prog == NULL ) {
         return;
@@ -676,7 +676,7 @@ static void run_program( int how, int fresh )
         if ( why == RUN_CHAIN ) {
             char next[PATH_MAX];
             int named = vm.chain_to[0] != 0;
-            u32 at = vm.chain_at;
+            unsigned int at = vm.chain_at;
             str_cpy( next, vm.chain_to );
             file_flush_all();
             if ( vm.chain_keep ) {
@@ -742,7 +742,7 @@ static void run_program( int how, int fresh )
 static void run_to_cursor( void )
 {
     VIEW *view = &views[active < 2 ? active : 0];
-    u32 index;
+    unsigned int index;
 
     if ( !settle() ) {
         return;
@@ -764,7 +764,7 @@ static void run_to_cursor( void )
     run_program( GO_RUN, 0 );
     if ( prog != NULL ) {
         for ( index = 0; index < prog->nlocs; index++ ) {
-            prog->locs[index].flags &= (u16)~SL_HERE;
+            prog->locs[index].flags &= (uint16_t)~SL_HERE;
         }
     }
 }
@@ -774,7 +774,7 @@ static void run_to_cursor( void )
 static void set_next( void )
 {
     VIEW *view = &views[active < 2 ? active : 0];
-    u32 index;
+    unsigned int index;
     STMTLOC *loc, *now;
 
     if ( !stopped || need_restart ) {
@@ -844,9 +844,9 @@ static int immediate( void )
 {
     VIEW *view = &views[2];
     LINE *ln = doc_line( view->doc, view->line );
-    u32 code_len, nlocs, narrinit, clears;
+    unsigned int code_len, nlocs, narrinit, clears;
     int proc = -1, why, shown;
-    s32 entry;
+    int entry;
     CERR err;
 
     if ( ln->len == 0 ) {
@@ -870,7 +870,7 @@ static int immediate( void )
     /* the output screen comes up only if the line writes on it */
     mouse_hide( 1 );
     con_show_on_output();
-    why = vm_immediate( (u32)entry, narrinit );
+    why = vm_immediate( (unsigned int)entry, narrinit );
     file_flush_all();
     con_flush();
     comp_immediate_done( prog, code_len, nlocs );
@@ -949,9 +949,9 @@ static int immediate( void )
 /* ------------------------------------------------------------------ */
 
 /* QBRUN.EXE in that directory -> its path in "out", 1 if it is there */
-static int runtime_in( const char *dir, u32 dlen, char *out )
+static int runtime_in( const char *dir, unsigned int dlen, char *out )
 {
-    u32 handle;
+    uint32_t handle;
 
     if ( dlen + 12 >= PATH_MAX ) {
         return 0;
@@ -981,7 +981,7 @@ static int find_runtime( char *out )
             last = scan;
         }
     }
-    if ( last != NULL && runtime_in( shell, (u32)(last - shell + 1), out ) ) {
+    if ( last != NULL && runtime_in( shell, (unsigned int)(last - shell + 1), out ) ) {
         return 1;
     }
     if ( help_path[0] && runtime_in( help_path, str_len( help_path ), out ) ) {
@@ -994,7 +994,7 @@ static int find_runtime( char *out )
     while ( path && *path ) {
         for ( end = path; *end && *end != ';'; end++ ) {
         }
-        if ( end > path && runtime_in( path, (u32)(end - path), out ) ) {
+        if ( end > path && runtime_in( path, (unsigned int)(end - path), out ) ) {
             return 1;
         }
         path = *end ? end + 1 : end;
@@ -1003,10 +1003,11 @@ static int find_runtime( char *out )
 }
 
 /* a whole file into memory -> it (xfree it), or NULL and *rc */
-static u8 *read_file( const char *path, u32 *len, int *rc )
+static uint8_t *read_file( const char *path, unsigned int *len, int *rc )
 {
-    u32 handle, size, done;
-    u8 *buf = NULL;
+    uint32_t handle, size;
+    unsigned int done;
+    uint8_t *buf = NULL;
 
     *rc = sys_open_read( path, &handle );
     if ( *rc != 0 ) {
@@ -1014,7 +1015,7 @@ static u8 *read_file( const char *path, u32 *len, int *rc )
     }
     *rc = sys_file_size( handle, &size );
     if ( *rc == 0 ) {
-        buf = (u8 *)try_alloc( size ? size : 1 );
+        buf = (uint8_t *)try_alloc( size ? size : 1 );
         if ( buf == NULL ) {
             *rc = ERR_NOMEM;
         }
@@ -1035,9 +1036,10 @@ static u8 *read_file( const char *path, u32 *len, int *rc )
 }
 
 /* the runtime, then the program: a file that is not whole is deleted */
-static int write_exe( const char *path, const u8 *runtime, u32 rlen, const u8 *blob, u32 blen )
+static int write_exe( const char *path, const uint8_t *runtime, unsigned int rlen, const uint8_t *blob, unsigned int blen )
 {
-    u32 handle, done;
+    uint32_t handle;
+    unsigned int done;
     int rc, closed;
 
     rc = sys_create( path, &handle );
@@ -1059,7 +1061,7 @@ static int write_exe( const char *path, const u8 *runtime, u32 rlen, const u8 *b
 }
 
 /* "name" without its directory or its extension */
-static void base_name( const char *path, char *out, u32 max )
+static void base_name( const char *path, char *out, unsigned int max )
 {
     const char *scan, *start = path;
     char *dot;
@@ -1082,8 +1084,8 @@ static void make_exe( void )
     const char *last;
     char *dot;
     int answer, debug, rc;
-    u32 blen, rlen, at, from;
-    u8 *blob, *body;
+    unsigned int blen, rlen, at, from;
+    uint8_t *blob, *body;
     PROGRAM *made;
     CERR err;
 
@@ -1198,7 +1200,7 @@ static void copy_sel( int cut )
     VIEW *view = app_view();
     POS from, to;
     char *text;
-    u32 len;
+    unsigned int len;
 
     if ( !view_has_sel( view ) ) {
         return;
@@ -1263,7 +1265,7 @@ static void new_procedure( int kind )
     view_show_text( view, text );
     /* the cursor at the end of the heading, as QBasic leaves it */
     {
-        u32 line;
+        unsigned int line;
         for ( line = 0; line < view->doc->count; line++ ) {
             LINE *ln = doc_line( view->doc, line );
             if ( ln->len && (ch_upper( ln->text[0] ) == 'S' || ch_upper( ln->text[0] ) == 'F') ) {
@@ -1298,11 +1300,11 @@ static void toggle_breakpoint( void )
 static void clear_breakpoints( void )
 {
     int t;
-    u32 line;
+    unsigned int line;
 
     for ( t = 0; t < ptext.ntexts; t++ ) {
         for ( line = 0; line < ptext.texts[t]->count; line++ ) {
-            doc_line( ptext.texts[t], line )->flags &= (u8)~LF_BREAK;
+            doc_line( ptext.texts[t], line )->flags &= (uint8_t)~LF_BREAK;
         }
     }
 }
@@ -1330,7 +1332,7 @@ void app_command( int cmd )
 {
     VIEW *view = app_view();
     char path[PATH_MAX];
-    u32 len;
+    unsigned int len;
     const char *text;
     int pick;
 
@@ -1415,7 +1417,7 @@ void app_command( int cmd )
         end_run();
         if ( start_run() ) {
             /* lit: the module's first statement; with none, nothing runs */
-            u32 first;
+            unsigned int first;
             for ( first = 0; first < prog->nlocs && prog->locs[first].proc != 0; first++ ) {
             }
             if ( first == prog->nlocs ) {
@@ -1522,7 +1524,7 @@ static void text_drag( VIEW *view )
             if ( row < first && view->top > 0 ) {
                 view->top--;
                 view_mouse_to( view, first, col, 1 );
-            } else if ( row >= first + rows && view->top + (u32)rows < view->doc->count ) {
+            } else if ( row >= first + rows && view->top + (unsigned int)rows < view->doc->count ) {
                 view->top++;
                 view_mouse_to( view, first + rows - 1, col, 1 );
             }
@@ -1568,7 +1570,7 @@ static int status_click( int col )
     };
     char line[100];
     int index, at, filled;
-    u32 len;
+    unsigned int len;
 
     for ( at = 0; at < scr_cols && at < (int)sizeof( line ) - 1; at++ ) {
         line[at] = (char)(scr_cell( scr_rows - 1, at ) & 0xFF);
@@ -1630,7 +1632,7 @@ static void app_mouse( void )
             continue;
         }
         if ( index != active || (view->dirty && view_hit( view, mouse.row, mouse.col ) == VH_TEXT
-                                 && view->top + (u32)(mouse.row - view->row - 1) != view->line) ) {
+                                 && view->top + (unsigned int)(mouse.row - view->row - 1) != view->line) ) {
             if ( !settle() ) {
                 return;
             }
@@ -1853,9 +1855,9 @@ static int blank( int ch )
     return ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n';
 }
 
-static int is_switch( const char *start, u32 len, const char *name, u32 least )
+static int is_switch( const char *start, unsigned int len, const char *name, unsigned int least )
 {
-    u32 nlen = str_len( name );
+    unsigned int nlen = str_len( name );
 
     return len >= least && len <= nlen && str_nicmp( start, name, len ) == 0;
 }
@@ -1863,7 +1865,7 @@ static int is_switch( const char *start, u32 len, const char *name, u32 least )
 static void parse_line( const char *line, char *file )
 {
     const char *start;
-    u32 len, used;
+    unsigned int len, used;
     int quoted;
 
     file[0] = 0;
@@ -1879,7 +1881,7 @@ static void parse_line( const char *line, char *file )
             while ( *line && !blank( *line ) && *line != '/' ) {
                 line++;
             }
-            len = (u32)(line - start);
+            len = (unsigned int)(line - start);
             if ( len == 1 && *start == '?' ) {
                 usage();
             } else if ( is_switch( start, len, "RUN", 3 ) ) {

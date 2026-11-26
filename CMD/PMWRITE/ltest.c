@@ -34,7 +34,7 @@ void out_of_memory( void )
 static char row[512];
 static int  as_type;
 
-static void put_unit( int col, u32 code )
+static void put_unit( int col, uint32_t code )
 {
     char near_buf[8];
 
@@ -47,7 +47,7 @@ static void put_unit( int col, u32 code )
 
 static void seg_print( void *ctx, const LSEG *seg )
 {
-    u32 index;
+    unsigned int index;
     int col = (int)(seg->x / GRID_W);
 
     (void)ctx;
@@ -69,11 +69,11 @@ static void seg_print( void *ctx, const LSEG *seg )
     case SEG_MADE:
         for ( index = 0; index < seg->count; index++ ) {
             put_unit( col + (int)index, seg->upper && seg->text[index] >= 'a' && seg->text[index] <= 'z' ?
-                      (u32)seg->text[index] - 0x20 : seg->text[index] );
+                      (uint32_t)seg->text[index] - 0x20 : seg->text[index] );
         }
         break;
     case SEG_TAB:
-        for ( index = 0; index < (u32)(seg->width / GRID_W); index++ ) {
+        for ( index = 0; index < (unsigned int)(seg->width / GRID_W); index++ ) {
             put_unit( col + (int)index, seg->lead == LEAD_DOTS ? '.' : seg->lead ? '_' : ' ' );
         }
         break;
@@ -84,11 +84,11 @@ static void seg_print( void *ctx, const LSEG *seg )
 }
 
 /* every place on a line: the caret's x, clicked, must give the place */
-static void check_line( LAY *lay, u32 pi, u32 li, const LINFO *info )
+static void check_line( LAY *lay, unsigned int pi, unsigned int li, const LINFO *info )
 {
     WPOS pos, back;
-    s32 x, y, height;
-    u32 off;
+    int x, y, height;
+    unsigned int off;
 
     for ( off = info->start; off < info->start + info->len; off++ ) {
         pos.para = pi;
@@ -115,9 +115,9 @@ int main( int argc, char **argv )
     WDOC *doc;
     LAY *lay;
     LINFO info;
-    u8 *data;
+    uint8_t *data;
     long size;
-    u32 pi, li, page = 0, lines;
+    unsigned int pi, li, page = 0, lines;
     int id, cols = 0, last;
 
     if ( argc < 2 ) {
@@ -137,12 +137,12 @@ int main( int argc, char **argv )
     fseek( file, 0, SEEK_END );
     size = ftell( file );
     fseek( file, 0, SEEK_SET );
-    data = (u8 *)malloc( (size_t)size + 1 );
+    data = (uint8_t *)malloc( (size_t)size + 1 );
     fread( data, 1, (size_t)size, file );
     fclose( file );
-    id = fmt_detect( data, (u32)size, argv[1] );
+    id = fmt_detect( data, (uint32_t)size, argv[1] );
     doc = wd_new();
-    if ( id == FMT_NONE || formats[id]->load( data, (u32)size, doc ) != WE_OK || wd_failed( doc ) ) {
+    if ( id == FMT_NONE || formats[id]->load( data, (uint32_t)size, doc ) != WE_OK || wd_failed( doc ) ) {
         fprintf( stderr, "LTEST: cannot read %s\n", argv[1] );
         return 2;
     }

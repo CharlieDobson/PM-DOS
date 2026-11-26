@@ -60,46 +60,46 @@
 #define LZX_PRE_FAST        6
 
 /* Code length above a 10-bit symbol; 0 means "longer than the table". */
-#define LX_FAST_ENTRY( len, sym )  (UInt16)( ( (len) << 10 ) | (sym) )
+#define LX_FAST_ENTRY( len, sym )  (uint16_t)( ( (len) << 10 ) | (sym) )
 
 typedef struct {
-    UInt16  count[LZX_MAXBITS + 1];      /* how many codes of each length     */
-    UInt32  first[LZX_MAXBITS + 1];      /* the lowest code of each length    */
-    UInt16  start[LZX_MAXBITS + 2];      /* where that length's symbols begin */
-    UInt16 *symbol;                      /* symbols in canonical order        */
-    UInt16 *fast;                        /* 2^fastBits entries                */
-    int     fastBits;
+    uint16_t  count[LZX_MAXBITS + 1];    /* how many codes of each length     */
+    uint32_t  first[LZX_MAXBITS + 1];    /* the lowest code of each length    */
+    uint16_t  start[LZX_MAXBITS + 2];    /* where that length's symbols begin */
+    uint16_t *symbol;                    /* symbols in canonical order        */
+    uint16_t *fast;                      /* 2^fastBits entries                */
+    int       fastBits;
 } LxHuff;
 
 struct LzxDec {
-    Byte   *window;
-    UInt32  wsize, wmask;
-    UInt32  wpos;                        /* next write position               */
-    UInt32  total;                       /* bytes out since the folder began  */
-    UInt32  framePos;                    /* where the current frame began     */
-    UInt32  frames;                      /* frames finished                   */
-    int     numSlots, mainSyms;
+    uint8_t *window;
+    uint32_t wsize, wmask;
+    uint32_t wpos;                       /* next write position               */
+    uint32_t total;                      /* bytes out since the folder began  */
+    uint32_t framePos;                   /* where the current frame began     */
+    uint32_t frames;                     /* frames finished                   */
+    int      numSlots, mainSyms;
 
-    UInt32  r0, r1, r2;                  /* the three repeated offsets        */
-    int     headerDone;
-    Int32   e8Size;                      /* 0 = no E8 translation             */
+    uint32_t r0, r1, r2;                 /* the three repeated offsets        */
+    int      headerDone;
+    int32_t  e8Size;                     /* 0 = no E8 translation             */
 
-    int     blockType;
-    UInt32  blockLen, blockLeft;
-    int     padPending;                  /* a stored block's pad byte is owed */
+    int      blockType;
+    uint32_t blockLen, blockLeft;
+    int      padPending;                 /* a stored block's pad byte is owed */
 
-    Byte    mainLen[LZX_MAIN_MAX + LZX_LEN_SLACK];
-    Byte    lengthLen[LZX_LENGTH_SYMS + LZX_LEN_SLACK];
-    Byte    alignedLen[LZX_ALIGNED_SYMS];
+    uint8_t mainLen[LZX_MAIN_MAX + LZX_LEN_SLACK];
+    uint8_t lengthLen[LZX_LENGTH_SYMS + LZX_LEN_SLACK];
+    uint8_t alignedLen[LZX_ALIGNED_SYMS];
 
-    LxHuff  mainTree, lengthTree, alignedTree, preTree;
-    UInt16  mainSym[LZX_MAIN_MAX],      mainFast[1 << LZX_MAIN_FAST];
-    UInt16  lengthSym[LZX_LENGTH_SYMS], lengthFast[1 << LZX_LENGTH_FAST];
-    UInt16  alignedSym[LZX_ALIGNED_SYMS], alignedFast[1 << LZX_ALIGNED_FAST];
-    UInt16  preSym[LZX_PRETREE_SYMS],   preFast[1 << LZX_PRE_FAST];
+    LxHuff   mainTree, lengthTree, alignedTree, preTree;
+    uint16_t mainSym[LZX_MAIN_MAX],      mainFast[1 << LZX_MAIN_FAST];
+    uint16_t lengthSym[LZX_LENGTH_SYMS], lengthFast[1 << LZX_LENGTH_FAST];
+    uint16_t alignedSym[LZX_ALIGNED_SYMS], alignedFast[1 << LZX_ALIGNED_FAST];
+    uint16_t preSym[LZX_PRETREE_SYMS],   preFast[1 << LZX_PRE_FAST];
 
-    UInt32  slotBase[LZX_MAX_SLOTS];
-    Byte    slotBits[LZX_MAX_SLOTS];
+    uint32_t slotBase[LZX_MAX_SLOTS];
+    uint8_t  slotBits[LZX_MAX_SLOTS];
 };
 
 /*---- Bits ------------------------------------------------------------------ *
@@ -108,22 +108,22 @@ struct LzxDec {
  * Whether any made-up bit was CONSUMED is what LxOverran answers at the end.
  *--------------------------------------------------------------------------- */
 typedef struct {
-    const Byte *in;
-    UInt32      inLen, inPos;
-    UInt32      buf;                     /* the next bit is bit 31            */
-    int         cnt;
-    UInt32      fake;                    /* zero bytes supplied past the end  */
+    const uint8_t *in;
+    uint32_t       inLen, inPos;
+    uint32_t       buf;                  /* the next bit is bit 31            */
+    int            cnt;
+    uint32_t       fake;                 /* zero bytes supplied past the end  */
 } LxBits;
 
 static void LxNeed( LxBits *br, int n )             /* n <= 17 */
 {
     while ( br->cnt < n )
     {
-        UInt32 word;
+        uint32_t word;
 
         if ( br->inPos + 2 <= br->inLen )
         {
-            word = br->in[br->inPos] | ( (UInt32)br->in[br->inPos + 1] << 8 );
+            word = br->in[br->inPos] | ( (uint32_t)br->in[br->inPos + 1] << 8 );
             br->inPos += 2;
         }
         else if ( br->inPos < br->inLen )           /* an odd last byte */
@@ -149,9 +149,9 @@ static void LxDrop( LxBits *br, int n )
     br->cnt -= n;
 }
 
-static UInt32 LxGetBits( LxBits *br, int n )
+static uint32_t LxGetBits( LxBits *br, int n )
 {
-    UInt32 val;
+    uint32_t val;
 
     if ( n == 0 ) return 0;
     LxNeed( br, n );
@@ -162,7 +162,7 @@ static UInt32 LxGetBits( LxBits *br, int n )
 
 static int LxOverran( const LxBits *br )
 {
-    return ( br->inPos + br->fake ) * 8 - (UInt32)br->cnt > br->inLen * 8;
+    return ( br->inPos + br->fake ) * 8 - (uint32_t)br->cnt > br->inLen * 8;
 }
 
 /* A stored block starts on the next word boundary, and LZX always spends 1 to
@@ -170,8 +170,8 @@ static int LxOverran( const LxBits *br )
  * whole word.  From then on the block is read as bytes. */
 static int LxAlignStored( LxBits *br )
 {
-    int    pad  = ( br->cnt & 15 ) ? ( br->cnt & 15 ) : 16;
-    UInt32 bits = ( br->inPos + br->fake ) * 8 - (UInt32)br->cnt + (UInt32)pad;
+    int      pad  = ( br->cnt & 15 ) ? ( br->cnt & 15 ) : 16;
+    uint32_t bits = ( br->inPos + br->fake ) * 8 - (uint32_t)br->cnt + (uint32_t)pad;
 
     br->buf   = 0;
     br->cnt   = 0;
@@ -180,10 +180,10 @@ static int LxAlignStored( LxBits *br )
     return ( br->inPos <= br->inLen ) ? SZ_OK : SZ_ERR_DATA;
 }
 
-static UInt32 LxLe32( const Byte *ptr )
+static uint32_t LxLe32( const uint8_t *ptr )
 {
-    return ptr[0] | ( (UInt32)ptr[1] << 8 ) |
-           ( (UInt32)ptr[2] << 16 ) | ( (UInt32)ptr[3] << 24 );
+    return ptr[0] | ( (uint32_t)ptr[1] << 8 ) |
+           ( (uint32_t)ptr[2] << 16 ) | ( (uint32_t)ptr[3] << 24 );
 }
 
 /*---- Huffman trees ---------------------------------------------------------
@@ -192,13 +192,13 @@ static UInt32 LxLe32( const Byte *ptr )
  * legitimately EMPTY in a block with no long matches, and an unused bit
  * pattern is caught when something tries to decode it.
  *--------------------------------------------------------------------------- */
-static int LxBuild( LxHuff *tree, const Byte *lens, int n )
+static int LxBuild( LxHuff *tree, const uint8_t *lens, int n )
 {
-    UInt32 next[LZX_MAXBITS + 1];
-    UInt16 fill[LZX_MAXBITS + 1];
-    UInt32 code;
-    int    len, sym, left;
-    UInt32 tableSize = 1UL << tree->fastBits;
+    uint32_t next[LZX_MAXBITS + 1];
+    uint16_t fill[LZX_MAXBITS + 1];
+    uint32_t code;
+    int      len, sym, left;
+    uint32_t tableSize = 1UL << tree->fastBits;
 
     memset( tree->count, 0, sizeof( tree->count ) );
     for ( sym = 0; sym < n; sym++ )
@@ -220,16 +220,16 @@ static int LxBuild( LxHuff *tree, const Byte *lens, int n )
         code = ( code + tree->count[len - 1] ) << 1;
         tree->first[len]     = code;
         next[len]         = code;
-        tree->start[len + 1] = (UInt16)( tree->start[len] + tree->count[len] );
+        tree->start[len + 1] = (uint16_t)( tree->start[len] + tree->count[len] );
         fill[len]         = tree->start[len];
     }
     for ( sym = 0; sym < n; sym++ )
-        if ( lens[sym] ) tree->symbol[fill[lens[sym]]++] = (UInt16)sym;
+        if ( lens[sym] ) tree->symbol[fill[lens[sym]]++] = (uint16_t)sym;
 
-    memset( tree->fast, 0, tableSize * sizeof( UInt16 ) );
+    memset( tree->fast, 0, tableSize * sizeof( uint16_t ) );
     for ( sym = 0; sym < n; sym++ )
     {
-        UInt32 base, span, i;
+        unsigned base, span, i;
 
         len = lens[sym];
         if ( !len || len > tree->fastBits ) continue;
@@ -243,9 +243,9 @@ static int LxBuild( LxHuff *tree, const Byte *lens, int n )
 
 static int LxDecode( LxBits *br, const LxHuff *tree )
 {
-    UInt16 entry;
-    UInt32 code;
-    int    len;
+    uint16_t entry;
+    uint32_t code;
+    int      len;
 
     LxNeed( br, LZX_MAXBITS );
     entry = tree->fast[LX_PEEK( br, tree->fastBits )];
@@ -278,14 +278,14 @@ static int LxDecode( LxBits *br, const LxHuff *tree )
  *   18    20..51 zeroes
  *   19    4..5 copies of one delta-coded length, worked out once from the
  *         first position of the run */
-static int LxReadLens( LzxDec *dec, LxBits *br, Byte *lens, int cap,
+static int LxReadLens( LzxDec *dec, LxBits *br, uint8_t *lens, int cap,
                        int first, int last )
 {
-    Byte pre[LZX_PRETREE_SYMS];
-    int  i, pos, sym, run, val;
+    uint8_t pre[LZX_PRETREE_SYMS];
+    int     i, pos, sym, run, val;
 
     for ( i = 0; i < LZX_PRETREE_SYMS; i++ )
-        pre[i] = (Byte)LxGetBits( br, 4 );
+        pre[i] = (uint8_t)LxGetBits( br, 4 );
     if ( LxBuild( &dec->preTree, pre, LZX_PRETREE_SYMS ) ) return SZ_ERR_DATA;
 
     pos = first;
@@ -309,13 +309,13 @@ static int LxReadLens( LzxDec *dec, LxBits *br, Byte *lens, int cap,
             val = lens[pos] - sym;
             if ( val < 0 ) val += 17;
             if ( pos + run > cap ) return SZ_ERR_DATA;
-            while ( run-- ) lens[pos++] = (Byte)val;
+            while ( run-- ) lens[pos++] = (uint8_t)val;
         }
         else
         {
             val = lens[pos] - sym;
             if ( val < 0 ) val += 17;
-            lens[pos++] = (Byte)val;
+            lens[pos++] = (uint8_t)val;
         }
     }
     return SZ_OK;
@@ -323,8 +323,8 @@ static int LxReadLens( LzxDec *dec, LxBits *br, Byte *lens, int cap,
 
 static int LxBlockHeader( LzxDec *dec, LxBits *br )
 {
-    UInt32 hi, lo;
-    int    i, rc;
+    uint32_t hi, lo;
+    int      i, rc;
 
     dec->blockType = (int)LxGetBits( br, 3 );
     hi = LxGetBits( br, 16 );
@@ -336,7 +336,7 @@ static int LxBlockHeader( LzxDec *dec, LxBits *br )
     {
     case LZX_BLOCK_ALIGNED:
         for ( i = 0; i < LZX_ALIGNED_SYMS; i++ )
-            dec->alignedLen[i] = (Byte)LxGetBits( br, 3 );
+            dec->alignedLen[i] = (uint8_t)LxGetBits( br, 3 );
         if ( LxBuild( &dec->alignedTree, dec->alignedLen, LZX_ALIGNED_SYMS ) )
             return SZ_ERR_DATA;
         /* and the rest is a verbatim block's header */
@@ -377,7 +377,7 @@ static int LxBlockHeader( LzxDec *dec, LxBits *br )
  * Both decode exactly 'run' bytes.  A match that would run past that crosses
  * the end of the block or of the frame, which no LZX stream does.
  *--------------------------------------------------------------------------- */
-static int LxStored( LzxDec *dec, LxBits *br, UInt32 run )
+static int LxStored( LzxDec *dec, LxBits *br, uint32_t run )
 {
     if ( br->inPos > br->inLen || br->inLen - br->inPos < run )
         return SZ_ERR_DATA;
@@ -390,21 +390,21 @@ static int LxStored( LzxDec *dec, LxBits *br, UInt32 run )
     return SZ_OK;
 }
 
-static int LxCompressed( LzxDec *dec, LxBits *br, UInt32 run )
+static int LxCompressed( LzxDec *dec, LxBits *br, uint32_t run )
 {
-    Byte  *win  = dec->window;
-    UInt32 mask = dec->wmask;
+    uint8_t *win  = dec->window;
+    uint32_t mask = dec->wmask;
 
     while ( run > 0 )
     {
-        int    sym = LxDecode( br, &dec->mainTree );
-        UInt32 len, offset, slot, src, left;
+        int      sym = LxDecode( br, &dec->mainTree );
+        uint32_t len, offset, slot, src, left;
 
         if ( sym < 0 || br->fake > 8 ) return SZ_ERR_DATA;
 
         if ( sym < LZX_NUM_CHARS )
         {
-            win[dec->wpos] = (Byte)sym;
+            win[dec->wpos] = (uint8_t)sym;
             dec->wpos = ( dec->wpos + 1 ) & mask;
             dec->total++;
             run--;
@@ -412,20 +412,20 @@ static int LxCompressed( LzxDec *dec, LxBits *br, UInt32 run )
         }
 
         sym -= LZX_NUM_CHARS;
-        len = (UInt32)( sym & LZX_PRIMARY_LENS );
+        len = (uint32_t)( sym & LZX_PRIMARY_LENS );
         if ( len == LZX_PRIMARY_LENS )
         {
             int more = LxDecode( br, &dec->lengthTree );
 
             if ( more < 0 ) return SZ_ERR_DATA;
-            len += (UInt32)more;
+            len += (uint32_t)more;
         }
         len += LZX_MIN_MATCH;
 
-        slot = (UInt32)sym >> 3;
+        slot = (uint32_t)sym >> 3;
         if ( slot > 2 )
         {
-            UInt32 extra = dec->slotBits[slot];
+            uint32_t extra = dec->slotBits[slot];
 
             offset = dec->slotBase[slot] - 2;
             if ( dec->blockType == LZX_BLOCK_ALIGNED && extra >= 3 )
@@ -435,7 +435,7 @@ static int LxCompressed( LzxDec *dec, LxBits *br, UInt32 run )
                 offset += LxGetBits( br, (int)extra - 3 ) << 3;
                 aligned = LxDecode( br, &dec->alignedTree );
                 if ( aligned < 0 ) return SZ_ERR_DATA;
-                offset += (UInt32)aligned;
+                offset += (uint32_t)aligned;
             }
             else
                 offset += LxGetBits( br, (int)extra );
@@ -485,29 +485,29 @@ static int LxCompressed( LzxDec *dec, LxBits *br, UInt32 run )
  * because later matches refer to that.  The last ten bytes of a frame are
  * never translated, and nothing is after the first 32768 frames (1 GB).
  *--------------------------------------------------------------------------- */
-static void LxUndoE8( Byte *data, UInt32 len, UInt32 framePos, Int32 fileSize )
+static void LxUndoE8( uint8_t *data, uint32_t len, uint32_t framePos, int32_t fileSize )
 {
-    Byte *ptr = data;
-    Byte *end = data + len - 10;
-    Int32 cur = (Int32)framePos;
+    uint8_t *ptr = data;
+    uint8_t *end = data + len - 10;
+    int32_t cur = (int32_t)framePos;
 
     while ( ptr < end )
     {
-        Int32 absolute, rel;
+        int32_t absolute, rel;
 
         if ( *ptr++ != 0xE8 )
         {
             cur++;
             continue;
         }
-        absolute = (Int32)LxLe32( ptr );
+        absolute = (int32_t)LxLe32( ptr );
         if ( absolute >= -cur && absolute < fileSize )
         {
             rel = ( absolute >= 0 ) ? absolute - cur : absolute + fileSize;
-            ptr[0] = (Byte)rel;
-            ptr[1] = (Byte)( rel >> 8 );
-            ptr[2] = (Byte)( rel >> 16 );
-            ptr[3] = (Byte)( rel >> 24 );
+            ptr[0] = (uint8_t)rel;
+            ptr[1] = (uint8_t)( rel >> 8 );
+            ptr[2] = (uint8_t)( rel >> 16 );
+            ptr[3] = (uint8_t)( rel >> 24 );
         }
         ptr += 4;
         cur += 5;
@@ -530,7 +530,7 @@ int LzxCreate( int windowBits, LzxDec **out )
     if ( !dec ) return SZ_ERR_MEMORY;
     dec->wsize  = 1UL << windowBits;
     dec->wmask  = dec->wsize - 1;
-    dec->window = (Byte *)calloc( 1, dec->wsize );
+    dec->window = (uint8_t *)calloc( 1, dec->wsize );
     if ( !dec->window )
     {
         free( dec );
@@ -547,7 +547,7 @@ int LzxCreate( int windowBits, LzxDec **out )
     {
         int bits = ( slot < 4 ) ? 0 : ( slot - 2 ) >> 1;
 
-        dec->slotBits[slot] = (Byte)( ( bits > 17 ) ? 17 : bits );
+        dec->slotBits[slot] = (uint8_t)( ( bits > 17 ) ? 17 : bits );
         dec->slotBase[slot] = ( slot == 0 ) ? 0
                          : dec->slotBase[slot - 1] + ( 1UL << dec->slotBits[slot - 1] );
     }
@@ -576,13 +576,13 @@ void LzxFree( LzxDec *dec )
     free( dec );
 }
 
-int LzxDecodeFrame( LzxDec *dec, const Byte *in, UInt32 inLen,
-                    Byte *out, UInt32 outLen )
+int LzxDecodeFrame( LzxDec *dec, const uint8_t *in, uint32_t inLen,
+                    uint8_t *out, uint32_t outLen )
 {
-    LxBits br;
-    UInt32 frameStart = dec->wpos;
-    UInt32 done       = 0;
-    int    rc;
+    LxBits   br;
+    uint32_t frameStart = dec->wpos;
+    uint32_t done       = 0;
+    int      rc;
 
     if ( outLen > LZX_FRAME_SIZE ) return SZ_ERR_DATA;
 
@@ -606,17 +606,17 @@ int LzxDecodeFrame( LzxDec *dec, const Byte *in, UInt32 inLen,
     {
         if ( LxGetBits( &br, 1 ) )
         {
-            UInt32 hi = LxGetBits( &br, 16 );
-            UInt32 lo = LxGetBits( &br, 16 );
+            uint32_t hi = LxGetBits( &br, 16 );
+            uint32_t lo = LxGetBits( &br, 16 );
 
-            dec->e8Size = (Int32)( ( hi << 16 ) | lo );
+            dec->e8Size = (int32_t)( ( hi << 16 ) | lo );
         }
         dec->headerDone = 1;
     }
 
     while ( done < outLen )
     {
-        UInt32 run;
+        uint32_t run;
 
         if ( dec->blockLeft == 0 )
         {
@@ -652,7 +652,7 @@ int LzxDecodeFrame( LzxDec *dec, const Byte *in, UInt32 inLen,
 
     /* Out of the window, which the frame may have wrapped around. */
     {
-        UInt32 first = dec->wsize - frameStart;
+        uint32_t first = dec->wsize - frameStart;
 
         if ( first >= outLen )
             memcpy( out, dec->window + frameStart, outLen );
@@ -671,9 +671,9 @@ int LzxDecodeFrame( LzxDec *dec, const Byte *in, UInt32 inLen,
     return SZ_OK;
 }
 
-UInt32 LzxMemNeeded( int windowBits )
+uint32_t LzxMemNeeded( int windowBits )
 {
     if ( windowBits < LZX_MIN_WINDOW ) windowBits = LZX_MIN_WINDOW;
     if ( windowBits > LZX_MAX_WINDOW ) windowBits = LZX_MAX_WINDOW;
-    return (UInt32)sizeof( LzxDec ) + ( 1UL << windowBits );
+    return (uint32_t)sizeof( LzxDec ) + ( 1UL << windowBits );
 }

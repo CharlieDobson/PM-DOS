@@ -23,11 +23,11 @@ const char *kw_name( int kw )
 }
 
 /* the reserved word spelled name[0..len), in either case, or -1 */
-int kw_lookup( const char *name, u32 len )
+int kw_lookup( const char *name, unsigned int len )
 {
     char upper[NAME_MAX + 2];
     int lo = 0, hi = KW_COUNT - 1, mid, cmp;
-    u32 i;
+    unsigned int i;
 
     if ( len == 0 || len > NAME_MAX + 1 ) {
         return -1;
@@ -86,9 +86,9 @@ static int is_space( int ch )
 /* the end of a number written in decimal, from "pos": digits, a point,
    digits, an exponent if the E or D has digits (or a sign) after it,
    and a suffix */
-static u32 number_end( const char *text, u32 len, u32 pos )
+static unsigned int number_end( const char *text, unsigned int len, unsigned int pos )
 {
-    u32 save;
+    unsigned int save;
 
     while ( pos < len && is_digit( text[pos] ) ) {
         pos++;
@@ -119,7 +119,7 @@ static u32 number_end( const char *text, u32 len, u32 pos )
     return pos;
 }
 
-static u32 radix_end( const char *text, u32 len, u32 pos )
+static unsigned int radix_end( const char *text, unsigned int len, unsigned int pos )
 {
     int hex = 0;
 
@@ -146,10 +146,10 @@ static u32 radix_end( const char *text, u32 len, u32 pos )
     return pos;
 }
 
-int lex_line( const char *text, u32 len, TOKEN *toks, int max, int *err_col,
+int lex_line( const char *text, unsigned int len, TOKEN *toks, int max, int *err_col,
               const char **err_msg )
 {
-    u32 pos = 0, start, end, used;
+    unsigned int pos = 0, start, end, used;
     int count = 0, kw, type, first = 1, label_ok = 1, may_label, ch;
     double val;
     TOKEN *tok;
@@ -165,13 +165,13 @@ int lex_line( const char *text, u32 len, TOKEN *toks, int max, int *err_col,
         }
         tok = &toks[count];
         mem_set( tok, 0, sizeof( *tok ) );
-        tok->col = (u16)pos;
+        tok->col = (uint16_t)pos;
         if ( pos >= len ) {
             tok->kind = TK_EOL;
             return count + 1;
         }
         start = pos;
-        ch = (u8)text[pos];
+        ch = (uint8_t)text[pos];
         may_label = label_ok;                   /* only the first token, or one after a line number */
         label_ok = 0;
 
@@ -181,7 +181,7 @@ int lex_line( const char *text, u32 len, TOKEN *toks, int max, int *err_col,
                 pos++;
             }
             tok->kind = TK_LINENUM;
-            tok->len = (u16)(pos - start);
+            tok->len = (uint16_t)(pos - start);
             tok->num = num_parse( text + start, pos - start, &used );
             if ( tok->num > 65529.0 ) {
                 FAIL( start, "Invalid line number" );
@@ -201,18 +201,18 @@ int lex_line( const char *text, u32 len, TOKEN *toks, int max, int *err_col,
             if ( pos < len && text[pos] == '$' && (kw = kw_lookup( text + start, pos + 1 - start )) >= 0 ) {
                 pos++;
                 tok->kind = TK_KW;
-                tok->kw = (u16)kw;
-                tok->len = (u16)(pos - start);
+                tok->kw = (uint16_t)kw;
+                tok->len = (uint16_t)(pos - start);
             } else if ( !(pos < len && text[pos] == '$') && (kw = kw_lookup( text + start, end - start )) >= 0 ) {
                 /* (a reserved word with a $ that its spelling has not - LEN$,
                    PRINT$ - is a string variable, as QBasic takes it) */
                 tok->kind = TK_KW;
-                tok->kw = (u16)kw;
-                tok->len = (u16)(end - start);
+                tok->kw = (uint16_t)kw;
+                tok->len = (uint16_t)(end - start);
                 if ( kw == KW_REM ) {
                     /* the rest is the remark, as it is */
                     tok->kind = TK_REM;
-                    tok->len = (u16)(len - start);
+                    tok->len = (uint16_t)(len - start);
                     pos = len;
                 } else if ( kw == KW_DATA ) {
                     count++;
@@ -225,7 +225,7 @@ int lex_line( const char *text, u32 len, TOKEN *toks, int max, int *err_col,
                     tok = &toks[count];
                     mem_set( tok, 0, sizeof( *tok ) );
                     tok->kind = TK_DATA;
-                    tok->col = (u16)pos;
+                    tok->col = (uint16_t)pos;
                     start = pos;
                     {
                         int quoted = 0;
@@ -240,7 +240,7 @@ int lex_line( const char *text, u32 len, TOKEN *toks, int max, int *err_col,
                     while ( end > start && is_space( text[end - 1] ) ) {
                         end--;
                     }
-                    tok->len = (u16)(end - start);
+                    tok->len = (uint16_t)(end - start);
                 }
             } else {
                 if ( end - start > NAME_MAX ) {
@@ -248,23 +248,23 @@ int lex_line( const char *text, u32 len, TOKEN *toks, int max, int *err_col,
                 }
                 tok->kind = TK_ID;
                 if ( pos < len && lex_suffix_type( text[pos] ) != TY_NONE ) {
-                    tok->kw = (u16)(u8)text[pos];
-                    tok->ntype = (u8)lex_suffix_type( text[pos] );
+                    tok->kw = (uint16_t)(uint8_t)text[pos];
+                    tok->ntype = (uint8_t)lex_suffix_type( text[pos] );
                     pos++;
                 }
-                tok->len = (u16)(pos - start);
+                tok->len = (uint16_t)(pos - start);
                 if ( (end - start) >= 2 && ch_upper( text[start] ) == 'F' && ch_upper( text[start + 1] ) == 'N' ) {
                     tok->flags |= TF_FN;
                 }
                 /* a label: a name and a colon, first on the line */
                 if ( may_label && tok->kw == 0 ) {
-                    u32 look = pos;
+                    unsigned int look = pos;
                     while ( look < len && is_space( text[look] ) ) {
                         look++;
                     }
                     if ( look < len && text[look] == ':' ) {
                         tok->kind = TK_LABEL;
-                        tok->len = (u16)(end - start);
+                        tok->len = (uint16_t)(end - start);
                         pos = look + 1;
                     }
                 }
@@ -277,7 +277,7 @@ int lex_line( const char *text, u32 len, TOKEN *toks, int max, int *err_col,
         if ( is_digit( ch ) || (ch == '.' && pos + 1 < len && is_digit( text[pos + 1] )) ) {
             pos = number_end( text, len, pos );
             tok->kind = TK_NUM;
-            tok->len = (u16)(pos - start);
+            tok->len = (uint16_t)(pos - start);
             if ( !num_scan( text + start, pos - start, &val, &type ) || DBL_BAD( val ) ) {
                 FAIL( start, "Overflow" );
             }
@@ -287,7 +287,7 @@ int lex_line( const char *text, u32 len, TOKEN *toks, int max, int *err_col,
                 FAIL( start, "Overflow" );
             }
             tok->num = val;
-            tok->ntype = (u8)type;
+            tok->ntype = (uint8_t)type;
             first = 0;
             count++;
             continue;
@@ -296,12 +296,12 @@ int lex_line( const char *text, u32 len, TOKEN *toks, int max, int *err_col,
         if ( ch == '&' ) {
             pos = radix_end( text, len, pos );
             tok->kind = TK_NUM;
-            tok->len = (u16)(pos - start);
+            tok->len = (uint16_t)(pos - start);
             if ( !num_scan( text + start, pos - start, &val, &type ) ) {
                 FAIL( start, type < 0 ? "Overflow" : "Syntax error" );
             }
             tok->num = val;
-            tok->ntype = (u8)type;
+            tok->ntype = (uint8_t)type;
             tok->flags |= (start + 1 < len && ch_upper( text[start + 1] ) == 'H') ? TF_HEX : TF_OCT;
             first = 0;
             count++;
@@ -322,12 +322,12 @@ int lex_line( const char *text, u32 len, TOKEN *toks, int max, int *err_col,
             } else {
                 tok->flags |= TF_UNTERM;
             }
-            tok->len = (u16)(pos - start);
+            tok->len = (uint16_t)(pos - start);
             break;
         case '\'':
             tok->kind = TK_REM;
             tok->flags |= TF_APOS;
-            tok->len = (u16)(len - start);
+            tok->len = (uint16_t)(len - start);
             pos = len;
             break;
         case '?':
@@ -382,7 +382,7 @@ int lex_line( const char *text, u32 len, TOKEN *toks, int max, int *err_col,
             tok->kind = TK_BAD;
             break;
         }
-        tok->len = (u16)(pos - start);
+        tok->len = (uint16_t)(pos - start);
         count++;
     }
 #undef FAIL

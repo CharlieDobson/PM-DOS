@@ -93,27 +93,27 @@ int   mouse_held( void );       /* the left button is down now */
 /* the screen                                                          */
 /* ------------------------------------------------------------------ */
 typedef struct {
-    u8 desk;            /* the main screen behind the buttons */
-    u8 summary;         /* the text beside a button */
-    u8 push;            /* a button on the main screen */
-    u8 push_hot;        /* its access key */
-    u8 push_focus;      /* the one Enter would press */
-    u8 push_shadow;
-    u8 menu;            /* the menu bar and menus */
-    u8 menu_hot;        /* an access key in them */
-    u8 menu_sel;        /* the highlighted item */
-    u8 menu_sel_hot;
-    u8 menu_off;        /* an item that cannot be chosen now */
-    u8 status;          /* the status bar */
-    u8 dlg;             /* a dialog box or a page */
-    u8 dlg_hot;
-    u8 field;           /* an entry field in it */
-    u8 field_sel;
-    u8 button;
-    u8 button_focus;
-    u8 shadow;
-    u8 map;             /* the memory map's cells */
-    u8 map_sel;         /* the block picked out in it */
+    uint8_t desk;        /* the main screen behind the buttons */
+    uint8_t summary;     /* the text beside a button */
+    uint8_t push;        /* a button on the main screen */
+    uint8_t push_hot;    /* its access key */
+    uint8_t push_focus;  /* the one Enter would press */
+    uint8_t push_shadow;
+    uint8_t menu;        /* the menu bar and menus */
+    uint8_t menu_hot;    /* an access key in them */
+    uint8_t menu_sel;    /* the highlighted item */
+    uint8_t menu_sel_hot;
+    uint8_t menu_off;    /* an item that cannot be chosen now */
+    uint8_t status;      /* the status bar */
+    uint8_t dlg;         /* a dialog box or a page */
+    uint8_t dlg_hot;
+    uint8_t field;       /* an entry field in it */
+    uint8_t field_sel;
+    uint8_t button;
+    uint8_t button_focus;
+    uint8_t shadow;
+    uint8_t map;         /* the memory map's cells */
+    uint8_t map_sel;     /* the block picked out in it */
 } PALETTE;
 
 extern PALETTE pal;
@@ -121,15 +121,15 @@ extern int scr_rows, scr_cols;
 
 void  scr_init( void );
 void  scr_done( void );
-void  scr_ch( int row, int col, int ch, u8 attr );
-void  scr_putn( int row, int col, const char *text, int len, u8 attr );
-void  scr_put( int row, int col, const char *text, u8 attr );
-void  scr_hot( int row, int col, const char *text, u8 attr, u8 hot_attr );
+void  scr_ch( int row, int col, int ch, uint8_t attr );
+void  scr_putn( int row, int col, const char *text, int len, uint8_t attr );
+void  scr_put( int row, int col, const char *text, uint8_t attr );
+void  scr_hot( int row, int col, const char *text, uint8_t attr, uint8_t hot_attr );
 int   scr_hotlen( const char *text );
 int   scr_hotkey( const char *text );
-void  scr_fill( int row, int col, int len, int ch, u8 attr );
-void  scr_recolor( int row, int col, int len, u8 attr );
-void  scr_box( int top, int left, int bottom, int right, u8 attr );
+void  scr_fill( int row, int col, int len, int ch, uint8_t attr );
+void  scr_recolor( int row, int col, int len, uint8_t attr );
+void  scr_box( int top, int left, int bottom, int right, uint8_t attr );
 void  scr_shadow( int top, int left, int bottom, int right );
 void  scr_cursor( int row, int col, int kind );
 void  scr_flush( void );
@@ -154,12 +154,12 @@ void  tx_field( TEXT *text, int label_width, const char *label, const char *valu
 void  __cdecl tx_fieldf( TEXT *text, int label_width, const char *label, const char *fmt, ... );
 
 /* the ROMs, through sys_peek */
-u8   *rom_load( u32 addr, u32 len );            /* xfree it; NULL = no memory */
-int   rom_find_name( const u8 *rom, u32 len, const char *const *names );  /* index, or -1 */
-int   rom_versions( const u8 *rom, u32 len, char found[3][64] );
-int   rom_date( const u8 *rom, u32 len, char *date );       /* "mm/dd/yy" */
+uint8_t     *rom_load( uint32_t addr, unsigned int len ); /* xfree it; NULL = no memory */
+int          rom_find_name( const uint8_t *rom, unsigned int len, const char *const *names ); /* index, or -1 */
+int          rom_versions( const uint8_t *rom, unsigned int len, char found[3][64] );
+int          rom_date( const uint8_t *rom, unsigned int len, char *date ); /* "mm/dd/yy" */
 /* the readable text round rom[at]: its start and length, lines and all */
-u32   rom_string( const u8 *rom, u32 len, u32 at, u32 *length );
+unsigned int rom_string( const uint8_t *rom, unsigned int len, unsigned int at, unsigned int *length );
 
 /* ------------------------------------------------------------------ */
 /* the pages                                                           */
@@ -213,22 +213,22 @@ int   game_port( int stick[4], int *switches );     /* 1 = there is one */
 enum { MC_EMPTY, MC_RAM, MC_ROM, MC_MAYBE, MC_FRAME, MC_UMB_USED, MC_UMB_FREE };
 
 typedef struct {
-    char name[20];
-    u32  seg;                   /* the block's header */
-    u32  size;                  /* bytes */
-    char params[34];
-    int  sub;                   /* a part of the block above it */
-    int  free;
+    char     name[20];
+    uint32_t seg;               /* the block's header */
+    uint32_t size;              /* bytes */
+    char     params[34];
+    int      sub;               /* a part of the block above it */
+    int      free;
 } MEMITEM;
 
 void  pg_memory( TEXT *text, int report );
 void  pg_tsr( TEXT *text );
 void  pg_device( TEXT *text );
 void  sum_memory( char *line1, char *line2 );
-void  mem_map( u8 map[MAP_ROWS][MAP_COLS] );    /* what is at each K above 640K */
+void  mem_map( uint8_t map[MAP_ROWS][MAP_COLS] );  /* what is at each K above 640K */
 int   mem_map_char( int kind, int report );
-int   mem_items( MEMITEM **items );             /* the blocks below 1MB; xfree it */
-const char *mem_owner_name( u32 seg );          /* who owns an address below 1MB */
+int   mem_items( MEMITEM **items );                /* the blocks below 1MB; xfree it */
+const char *mem_owner_name( uint32_t seg );        /* who owns an address below 1MB */
 int   dev_present( const char *name );           /* a character device of that name is loaded */
 
 /* PGPORT.C */
@@ -325,9 +325,9 @@ void  ui_redraw( void );            /* the whole screen, dialogs and all */
    "mark" picks out a block of it in another colour - the memory map -
    or is NULL */
 typedef struct {
-    int first, lines;               /* which lines of the text */
-    int col, width;                 /* and which columns of them */
-    u8  attr;
+    int     first, lines;           /* which lines of the text */
+    int     col, width;             /* and which columns of them */
+    uint8_t attr;
 } TEXTMARK;
 
 void  text_window( const char *title, const TEXT *text, const TEXTMARK *mark );
@@ -347,7 +347,7 @@ typedef struct {
 
 extern const char *const customer_labels[8];
 
-int   report_write( const char *path, const u8 *items, const CUSTOMER *who );  /* DOS error */
+int   report_write( const char *path, const uint8_t *items, const CUSTOMER *who ); /* DOS error */
 void  report_summary_text( TEXT *text );
 void  cmd_report( void );           /* File, Print Report... */
 

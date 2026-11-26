@@ -38,30 +38,30 @@
 #define LABEL_LEN       11      /* a volume label, as the directory holds it */
 
 typedef struct {
-    u8   attr;
-    char name[PATH_MAX];        /* the long name - the 8.3 when there is none */
+    uint8_t attr;
+    char    name[PATH_MAX];     /* the long name - the 8.3 when there is none */
 } FINDREC;
 
 int   sys_init( void );
 const char *sys_cmdline( void );
 const char *sys_getenv( const char *name );
-void  sys_write( int handle, const char *buf, u32 len );
+void  sys_write( int handle, const char *buf, unsigned int len );
 void  sys_exit( int code );
 void  sys_break_install( void );
 int   sys_break_hit( void );
 
 int   sys_get_drive( void );
 int   sys_drive_valid( int drv );
-int   sys_get_cwd( int drv, char *buf );    /* "DIR\SUB", no drive, no lead '\' */
-int   sys_get_attr( const char *path, u16 *attr );
+int   sys_get_cwd( int drv, char *buf );     /* "DIR\SUB", no drive, no lead '\' */
+int   sys_get_attr( const char *path, uint16_t *attr );
 int   sys_volume_label( int drv, char *label );     /* LABEL_LEN + 1 bytes */
-int   sys_volume_serial( int drv, u32 *serial );
-void  sys_upper( char *str, u32 len );      /* the country's capitals */
+int   sys_volume_serial( int drv, uint32_t *serial );
+void  sys_upper( char *str, unsigned int len );  /* the country's capitals */
 
-int   sys_find_first( const char *pattern, u16 attrs, FINDREC *rec, u32 *handle );
-int   sys_find_next( u32 handle, FINDREC *rec );
-void  sys_find_close( u32 handle );
+int   sys_find_first( const char *pattern, uint16_t attrs, FINDREC *rec, uint32_t *handle );
+int   sys_find_next( uint32_t handle, FINDREC *rec );
+void  sys_find_close( uint32_t handle );
 
-void *sys_mem_alloc( u32 size );
+void *sys_mem_alloc( unsigned int size );
 
 #endif

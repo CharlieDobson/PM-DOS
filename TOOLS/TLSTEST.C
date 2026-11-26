@@ -36,33 +36,33 @@ void __cdecl int21( REGS *regs );
                                   TCP takes about 30 s to give up on a server */
 #define WAIT_DATA  1000
 
-static u8   out_buf[OUT_BUF];
-static u32  out_len;
-static u32  failures;
+static uint8_t  out_buf[OUT_BUF];
+static unsigned int out_len;
+static unsigned int failures;
 
-static u8   io[2048];          /* a SOCK_IO header and its data */
-static char host[128] = "example.com";      /* or the first word of the tail */
-static u16  port = 443;                     /* or the :port after the host */
-static u32  fail_err, fail_why;             /* SOCK_STATE's, when it was SS_ERROR */
+static uint8_t  io[2048];      /* a SOCK_IO header and its data */
+static char     host[128] = "example.com";  /* or the first word of the tail */
+static uint16_t port = 443;                 /* or the :port after the host */
+static unsigned int fail_err, fail_why;     /* SOCK_STATE's, when it was SS_ERROR */
 
-static void mem_zero( void *to, u32 len )
+static void mem_zero( void *to, unsigned int len )
 {
-    u8 *dst = (u8 *)to;
+    uint8_t *dst = (uint8_t *)to;
     while ( len-- ) *dst++ = 0;
 }
 
-static void str_set( char *to, const char *from, u32 max )
+static void str_set( char *to, const char *from, unsigned int max )
 {
-    u32 i;
+    unsigned int i;
     for ( i = 0; i + 1 < max && from[i]; i++ ) to[i] = from[i];
     to[i] = 0;
 }
 
-static int has_text( const u8 *buf, u32 len, const char *want )
+static int has_text( const uint8_t *buf, unsigned int len, const char *want )
 {
-    u32 i, j;
+    unsigned int i, j;
     for ( i = 0; i < len; i++ ) {
-        for ( j = 0; want[j] && i + j < len && buf[i + j] == (u8)want[j]; j++ ) ;
+        for ( j = 0; want[j] && i + j < len && buf[i + j] == (uint8_t)want[j]; j++ ) ;
         if ( !want[j] ) return TRUE;
     }
     return FALSE;
@@ -82,7 +82,7 @@ static void out_flush( void )
         regs.eax = 0x4000;
         regs.ebx = 1;
         regs.ecx = out_len;
-        regs.edx = (u32)out_buf;
+        regs.edx = (uint32_t)out_buf;
         int21( &regs );
         out_len = 0;
     }
@@ -100,13 +100,13 @@ static void test_exit( int code )
 static void out_ch( char ch )
 {
     if ( out_len == OUT_BUF ) out_flush();
-    out_buf[out_len++] = (u8)ch;
+    out_buf[out_len++] = (uint8_t)ch;
 }
 
 static void out_str( const char *str ) { while ( *str ) out_ch( *str++ ); }
 static void out_nl( void ) { out_str( "\r\n" ); }
 
-static void out_dec( u32 value )
+static void out_dec( unsigned int value )
 {
     char digits[12];
     int  n = 0;
@@ -114,7 +114,7 @@ static void out_dec( u32 value )
     while ( n ) out_ch( digits[--n] );
 }
 
-static void out_ip( u32 ip )
+static void out_ip( uint32_t ip )
 {
     out_dec( IP_A( ip ) ); out_ch( '.' );
     out_dec( IP_B( ip ) ); out_ch( '.' );
@@ -123,9 +123,9 @@ static void out_ip( u32 ip )
 }
 
 /* print up to 'max' bytes as text, control codes shown as dots */
-static void out_text( const u8 *buf, u32 len, u32 max )
+static void out_text( const uint8_t *buf, unsigned int len, unsigned int max )
 {
-    u32 i;
+    unsigned int i;
     if ( len > max ) len = max;
     for ( i = 0; i < len; i++ ) {
         char ch = (char)buf[i];
@@ -138,10 +138,10 @@ static void out_text( const u8 *buf, u32 len, u32 max )
 /* the clock, in hundredths (21h/2Ch counts ticks on PM-DOS)         */
 /* ---------------------------------------------------------------- */
 
-static u32 now_cs( void )
+static unsigned int now_cs( void )
 {
-    REGS regs;
-    u32  h, m, s, cs;
+    REGS     regs;
+    unsigned int h, m, s, cs;
     clear( &regs );
     regs.eax = 0x2C00;
     int21( &regs );
@@ -152,9 +152,9 @@ static u32 now_cs( void )
     return ( ( h * 60 + m ) * 60 + s ) * 100 + cs;
 }
 
-static u32 since( u32 start )
+static unsigned int since( unsigned int start )
 {
-    u32 now = now_cs();
+    unsigned int now = now_cs();
     if ( now < start ) now += 24UL * 60 * 60 * 100;
     return now - start;
 }
@@ -163,13 +163,13 @@ static u32 since( u32 start )
 /* the socket call (21h/F1h AL=26h)                                  */
 /* ---------------------------------------------------------------- */
 
-static u32 sk( u32 fn, void *buf, u32 len, int *err )
+static uint32_t sk( unsigned int fn, void *buf, unsigned int len, int *err )
 {
     REGS regs;
     clear( &regs );
     regs.eax = ( fn << 16 ) | 0xF126;
     regs.ecx = len;
-    regs.edi = (u32)buf;
+    regs.edi = (uint32_t)buf;
     int21( &regs );
     if ( CF( regs ) ) { if ( err ) *err = (int)( regs.eax & 0xFFFF ); return 0; }
     if ( err ) *err = 0;
@@ -191,7 +191,7 @@ static int stack_here( void )
 
 static int wait_up( void )
 {
-    u32 start = now_cs();
+    unsigned int start = now_cs();
     int err;
     for ( ;; ) {
         sk( SOCK_IFSTAT, &ifs, SOCKIF_LEN, &err );
@@ -200,10 +200,10 @@ static int wait_up( void )
     }
 }
 
-static u32 resolve( const char *name )
+static uint32_t resolve( const char *name )
 {
     SOCK_RES req;
-    u32 start, state;
+    unsigned int start, state;
     int err;
 
     mem_zero( &req, sizeof( req ) );
@@ -219,7 +219,7 @@ static u32 resolve( const char *name )
 
 /* a socket that will not be used: closed, so the stack lets it go - the
    stack does not know when a program ends */
-static int give_up( u32 handle, u32 *why, u32 code )
+static int give_up( uint32_t handle, unsigned int *why, unsigned int code )
 {
     SOCK_HANDLE hreq;
     int err;
@@ -232,13 +232,14 @@ static int give_up( u32 handle, u32 *why, u32 code )
 
 /* open a TLS socket to host/ip:port, naming the server for SNI and the
    certificate, and wait for the handshake to finish */
-static int tls_connect( u32 ip, u16 port, const char *host, u32 *why )
+static int tls_connect( uint32_t ip, uint16_t port, const char *host, unsigned int *why )
 {
     SOCK_OPENREQ oreq;
     SOCK_TLSHOSTREQ hreq;
     SOCK_CONNREQ creq;
     SOCK_STAT st;
-    u32 start, state, handle;
+    unsigned int start, state;
+    uint32_t handle;
     int err;
 
     *why = 0;
@@ -299,13 +300,14 @@ static void out_failure( void )
 
 /* an address written a.b.c.d, so a failure can be had without DNS; 0 if
    the host is a name */
-static u32 dotted( const char *text )
+static uint32_t dotted( const char *text )
 {
-    u32 ip = 0, part, i;
+    uint32_t ip = 0;
+    unsigned int part, i;
 
     for ( i = 0; i < 4; i++ ) {
         if ( *text < '0' || *text > '9' ) return 0;
-        for ( part = 0; *text >= '0' && *text <= '9'; text++ ) part = part * 10 + (u32)( *text - '0' );
+        for ( part = 0; *text >= '0' && *text <= '9'; text++ ) part = part * 10 + (unsigned int)( *text - '0' );
         if ( part > 255 ) return 0;
         ip = ( ip << 8 ) | part;
         if ( i < 3 && *text++ != '.' ) return 0;
@@ -318,13 +320,13 @@ static u32 dotted( const char *text )
 static void take_host( void )
 {
     REGS regs;
-    const u8 *psp;
-    u32 len, i = 0, n = 0, num = 0;
+    const uint8_t *psp;
+    unsigned int len, i = 0, n = 0, num = 0;
 
     clear( &regs );
     regs.eax = 0x6200;
     int21( &regs );
-    psp = (const u8 *)regs.ebx;
+    psp = (const uint8_t *)regs.ebx;
     len = psp[0x80];
     if ( len > 127 ) len = 127;
     while ( i < len && psp[0x81 + i] == ' ' ) i++;
@@ -336,9 +338,9 @@ static void take_host( void )
     if ( i < len && psp[0x81 + i] == ':' ) {
         i++;
         while ( i < len && psp[0x81 + i] >= '0' && psp[0x81 + i] <= '9' && num <= 65535 ) {
-            num = num * 10 + (u32)( psp[0x81 + i++] - '0' );
+            num = num * 10 + (unsigned int)( psp[0x81 + i++] - '0' );
         }
-        if ( num > 0 && num <= 65535 ) port = (u16)num;
+        if ( num > 0 && num <= 65535 ) port = (uint16_t)num;
     }
 }
 
@@ -348,9 +350,11 @@ static void test_tls( void )
     SOCK_IO *msg = (SOCK_IO *)io;
     SOCK_HANDLE hreq;
     SOCK_STAT st;
-    u32 start, got, total = 0, state, ip, why, reqlen;
+    unsigned int start, got, total = 0, state;
+    uint32_t ip;
+    unsigned int why, reqlen;
     int handle, err, i;
-    static u8 reply[4096];
+    static uint8_t reply[4096];
 
     str_set( request, "GET / HTTP/1.0\r\nHost: ", sizeof( request ) );
     for ( reqlen = 0; request[reqlen]; reqlen++ ) ;
@@ -379,7 +383,7 @@ static void test_tls( void )
     mem_zero( msg, SOCK_IO_HDR );
     msg->handle = handle;
     msg->len = reqlen;
-    for ( i = 0; i < (int)msg->len; i++ ) io[SOCK_IO_HDR + i] = (u8)request[i];
+    for ( i = 0; i < (int)msg->len; i++ ) io[SOCK_IO_HDR + i] = (uint8_t)request[i];
     sk( SOCK_SEND, io, SOCK_IO_HDR + msg->len, &err );
     if ( err ) { out_str( "  send failed" ); out_nl(); failures++; }
 

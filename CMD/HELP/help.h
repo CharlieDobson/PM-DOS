@@ -91,28 +91,28 @@ void  mouse_where( int *row, int *col );    /* the pointer, now */
 /* the screen                                                          */
 /* ------------------------------------------------------------------ */
 typedef struct {
-    u8 text;            /* the topic's text */
-    u8 bold;            /* \b text */
-    u8 italic;          /* \i text, and the brackets round a link */
-    u8 under;           /* \u text */
-    u8 frame;           /* the window's frame */
-    u8 title;           /* the window's title */
-    u8 scroll;          /* the scroll bar */
-    u8 thumb;           /* the scroll box in it */
-    u8 menu;            /* the menu bar and menus */
-    u8 menu_hot;        /* an access key in them */
-    u8 menu_sel;        /* the highlighted item */
-    u8 menu_sel_hot;
-    u8 menu_off;        /* an item that cannot be chosen now */
-    u8 status;          /* the status bar */
-    u8 status_hot;
-    u8 dlg;             /* a dialog box */
-    u8 dlg_hot;
-    u8 field;           /* an entry field or list in it */
-    u8 field_sel;       /* the selected entry of a list */
-    u8 button;
-    u8 button_focus;
-    u8 shadow;
+    uint8_t text;       /* the topic's text */
+    uint8_t bold;       /* \b text */
+    uint8_t italic;     /* \i text, and the brackets round a link */
+    uint8_t under;      /* \u text */
+    uint8_t frame;      /* the window's frame */
+    uint8_t title;      /* the window's title */
+    uint8_t scroll;     /* the scroll bar */
+    uint8_t thumb;      /* the scroll box in it */
+    uint8_t menu;       /* the menu bar and menus */
+    uint8_t menu_hot;   /* an access key in them */
+    uint8_t menu_sel;   /* the highlighted item */
+    uint8_t menu_sel_hot;
+    uint8_t menu_off;   /* an item that cannot be chosen now */
+    uint8_t status;     /* the status bar */
+    uint8_t status_hot;
+    uint8_t dlg;        /* a dialog box */
+    uint8_t dlg_hot;
+    uint8_t field;      /* an entry field or list in it */
+    uint8_t field_sel;  /* the selected entry of a list */
+    uint8_t button;
+    uint8_t button_focus;
+    uint8_t shadow;
 } PALETTE;
 
 extern PALETTE pal;
@@ -121,16 +121,16 @@ extern int scr_rows, scr_cols;
 void  scr_init( int mono, int lines );
 void  scr_done( void );
 void  scr_palette( int mono );
-void  scr_ch( int row, int col, int ch, u8 attr );
-void  scr_putn( int row, int col, const char *text, int len, u8 attr );
-void  scr_put( int row, int col, const char *text, u8 attr );
-void  scr_hot( int row, int col, const char *text, u8 attr, u8 hot_attr );
+void  scr_ch( int row, int col, int ch, uint8_t attr );
+void  scr_putn( int row, int col, const char *text, int len, uint8_t attr );
+void  scr_put( int row, int col, const char *text, uint8_t attr );
+void  scr_hot( int row, int col, const char *text, uint8_t attr, uint8_t hot_attr );
 int   scr_hotlen( const char *text );
 int   scr_hotkey( const char *text );
-void  scr_fill( int row, int col, int len, int ch, u8 attr );
-void  scr_recolor( int row, int col, int len, u8 attr );
-void  scr_box( int top, int left, int bottom, int right, u8 attr );
-void  scr_box2( int top, int left, int bottom, int right, u8 attr );   /* double lines */
+void  scr_fill( int row, int col, int len, int ch, uint8_t attr );
+void  scr_recolor( int row, int col, int len, uint8_t attr );
+void  scr_box( int top, int left, int bottom, int right, uint8_t attr );
+void  scr_box2( int top, int left, int bottom, int right, uint8_t attr ); /* double lines */
 void  scr_shadow( int top, int left, int bottom, int right );
 void  scr_cursor( int row, int col, int kind );
 void  scr_flush( void );
@@ -145,23 +145,23 @@ typedef struct {
 } CONTEXT;
 
 typedef struct {
-    const char *title;      /* .topic's text, or its first context */
-    u32   first;            /* its first line in hlines */
-    u32   count;            /* how many lines */
-    int   freeze;           /* .freeze: lines kept at the top */
+    const char *title;          /* .topic's text, or its first context */
+    unsigned int first;         /* its first line in hlines */
+    unsigned int count;         /* how many lines */
+    int          freeze;        /* .freeze: lines kept at the top */
 } TOPIC;
 
 typedef struct {
     const char *text;       /* the line as written, escapes and all */
-    u16   len;
+    uint16_t len;
 } HLINE;
 
-extern TOPIC   *topics;
-extern int      ntopics;
-extern CONTEXT *contexts;
-extern int      ncontexts;
-extern HLINE   *hlines;
-extern u32      nhlines;
+extern TOPIC       *topics;
+extern int          ntopics;
+extern CONTEXT     *contexts;
+extern int          ncontexts;
+extern HLINE       *hlines;
+extern unsigned int nhlines;
 
 #define RL_MAX      256     /* columns a rendered line can have */
 #define RL_LINKS    40      /* links on one line */
@@ -173,45 +173,45 @@ typedef struct {
 } HLINK;
 
 typedef struct {
-    u8    ch[RL_MAX];
-    u8    attr[RL_MAX];
-    int   len;
-    HLINK links[RL_LINKS];
-    int   nlinks;
+    uint8_t ch[RL_MAX];
+    uint8_t attr[RL_MAX];
+    int     len;
+    HLINK   links[RL_LINKS];
+    int     nlinks;
 } RLINE;
 
-int   hlp_load( const char *path );         /* a DOS error, -1 no memory, -2 not a help file */
-int   hlp_find( const char *context );      /* a topic, or -1 */
+int   hlp_load( const char *path );                 /* a DOS error, -1 no memory, -2 not a help file */
+int   hlp_find( const char *context );              /* a topic, or -1 */
 int   hlp_find_n( const char *context, int len );
-void  hlp_render( u32 line, RLINE *out );   /* a line of hlines, as it is shown */
-void  hlp_plain( u32 line, char *out, int max );    /* ...as text alone, for printing and finding */
-const HLINE *hlp_line( int topic, u32 line );   /* a topic's line */
+void  hlp_render( unsigned int line, RLINE *out );  /* a line of hlines, as it is shown */
+void  hlp_plain( unsigned int line, char *out, int max ); /* ...as text alone, for printing and finding */
+const HLINE *hlp_line( int topic, unsigned int line ); /* a topic's line */
 
 /* ------------------------------------------------------------------ */
 /* the help window                                                     */
 /* ------------------------------------------------------------------ */
 typedef struct {
-    int topic;              /* -1: nothing shown */
-    u32 top;                /* the first scrolled line shown (after the frozen ones) */
-    u32 line, col;          /* the cursor */
-    u32 want;               /* the column Up and Down try to keep */
+    int          topic;         /* -1: nothing shown */
+    unsigned int top;           /* the first scrolled line shown (after the frozen ones) */
+    unsigned int line, col;     /* the cursor */
+    unsigned int want;          /* the column Up and Down try to keep */
 } HVIEW;
 
 extern HVIEW view;
 
-int   view_rows( void );                    /* text rows in the window */
+int   view_rows( void );                                 /* text rows in the window */
 int   view_cols( void );
-void  view_show( int topic );               /* a topic, cursor at its first link */
+void  view_show( int topic );                            /* a topic, cursor at its first link */
 void  view_draw( void );
 void  view_place_cursor( void );
-int   view_key( int key );                  /* 1 = the window took it */
+int   view_key( int key );                               /* 1 = the window took it */
 void  view_keep_visible( void );
-void  view_goto( u32 line, u32 col );       /* the cursor, and scroll to it */
-int   view_link_at_cursor( HLINK *link );   /* 1 = the cursor is on a link */
-int   view_next_link( int step, int letter );   /* Tab, Shift+Tab, a letter: moves the cursor */
+void  view_goto( unsigned int line, unsigned int col );  /* the cursor, and scroll to it */
+int   view_link_at_cursor( HLINK *link );                /* 1 = the cursor is on a link */
+int   view_next_link( int step, int letter );            /* Tab, Shift+Tab, a letter: moves the cursor */
 void  view_scroll( int lines );
-int   view_lines( void );                   /* lines in the topic shown */
-void  view_dump( char *buf, u32 max );      /* test mode: the window's numbers */
+int   view_lines( void );                                /* lines in the topic shown */
+void  view_dump( char *buf, unsigned int max );          /* test mode: the window's numbers */
 
 /* the parts of the window a mouse can press */
 enum { VH_NONE, VH_TEXT, VH_UP, VH_DOWN, VH_PGUP, VH_PGDN, VH_VTHUMB };

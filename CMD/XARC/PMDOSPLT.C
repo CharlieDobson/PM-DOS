@@ -70,7 +70,7 @@ int MultiByteToWideChar( unsigned cp, DWORD flags, const char *src, int srcLen,
 
     (void)cp; (void)flags;
     for ( at = 0; at < len && at < wdstChars; at++ ) {
-        wdst[at] = (WCHAR)(u8)src[at];
+        wdst[at] = (WCHAR)(unsigned char)src[at];
     }
     return at;
 }
@@ -81,13 +81,13 @@ int MultiByteToWideChar( unsigned cp, DWORD flags, const char *src, int srcLen,
 BOOL SystemTimeToFileTime( const SYSTEMTIME *st, FILETIME *ft )
 {
     long days = xa_days_from_civil( st->wYear, st->wMonth, st->wDay );
-    u32 tod = (u32)st->wHour * 3600UL + (u32)st->wMinute * 60UL + st->wSecond;
-    u64 secs, ticks, upper;
+    uint32_t tod = (uint32_t)st->wHour * 3600UL + (uint32_t)st->wMinute * 60UL + st->wSecond;
+    uint64_t secs, ticks, upper;
 
     if ( days + (long)DAYS_1601_TO_1970 < 0 ) {
         return FALSE;                       /* before 1601 */
     }
-    secs = xa_mul32( (u32)(days + (long)DAYS_1601_TO_1970), 86400UL ) + tod;
+    secs = xa_mul32( (uint32_t)(days + (long)DAYS_1601_TO_1970), 86400UL ) + tod;
     /* seconds times ten million, the high half and the low half apart */
     ticks = xa_mul32( xa_lo32( secs ), TICKS_PER_SEC );
     upper = xa_mul32( xa_hi32( secs ), TICKS_PER_SEC );
@@ -99,8 +99,8 @@ BOOL SystemTimeToFileTime( const SYSTEMTIME *st, FILETIME *ft )
 
 BOOL FileTimeToSystemTime( const FILETIME *ft, SYSTEMTIME *st )
 {
-    u64 ticks = xa_make64( ft->dwHighDateTime, ft->dwLowDateTime );
-    u32 tod;
+    uint64_t ticks = xa_make64( ft->dwHighDateTime, ft->dwLowDateTime );
+    uint32_t tod;
     long days;
     int year, month, day;
 
@@ -133,14 +133,14 @@ BOOL FileTimeToLocalFileTime( const FILETIME *ft, FILETIME *lft )
 /* 716Ch or 3Dh, for reading - which is enough for 5701h, and works on a
    file that is already read-only; a folder cannot be opened and keeps
    the time it has, as under DOS */
-static int open_read( const char *path, u32 *handle )
+static int open_read( const char *path, uint32_t *handle )
 {
     REGS regs;
     int rc = -1;
 
     if ( xa_lfn ) {
         xa_clear( &regs );
-        regs.esi = (u32)path;
+        regs.esi = (uint32_t)path;
         regs.edx = 0x01;
         regs.flags = 1;
         rc = xa_dos( &regs, 0x716C );
@@ -150,17 +150,17 @@ static int open_read( const char *path, u32 *handle )
     }
     if ( rc < 0 ) {
         xa_clear( &regs );
-        regs.edx = (u32)path;
+        regs.edx = (uint32_t)path;
         rc = xa_dos( &regs, 0x3D00 );
     }
     *handle = AX( regs );
     return rc;
 }
 
-static void apply_stamp( const char *path, unsigned date, unsigned clock )
+static void apply_stamp( const char *path, uint16_t date, uint16_t clock )
 {
     REGS regs;
-    u32 handle;
+    uint32_t handle;
 
     if ( open_read( path, &handle ) != 0 ) {
         return;
@@ -190,20 +190,20 @@ void SetFileMTime( const char *path, const FILETIME *ft )
     if ( !FileTimeToSystemTime( ft, &st ) || st.wYear < 1980 || st.wYear > 2107 ) {
         return;                             /* outside the DOS epoch */
     }
-    apply_stamp( path, (unsigned)(((st.wYear - 1980) << 9) | (st.wMonth << 5) | st.wDay),
-                 (unsigned)((st.wHour << 11) | (st.wMinute << 5) | (st.wSecond >> 1)) );
+    apply_stamp( path, (uint16_t)(((st.wYear - 1980) << 9) | (st.wMonth << 5) | st.wDay),
+                 (uint16_t)((st.wHour << 11) | (st.wMinute << 5) | (st.wSecond >> 1)) );
 }
 
 /* 7143h, or 43h: BL / AL 0 to read into CX, 1 to set from CX */
-static int attr_call( const char *path, int set, unsigned *attr )
+static int attr_call( const char *path, int set, uint16_t *attr )
 {
     REGS regs;
     int rc = -1;
 
     if ( xa_lfn ) {
         xa_clear( &regs );
-        regs.edx = (u32)path;
-        regs.ebx = (u32)set;
+        regs.edx = (uint32_t)path;
+        regs.ebx = (uint32_t)set;
         regs.ecx = *attr;
         regs.flags = 1;
         rc = xa_dos( &regs, 0x7143 );
@@ -213,12 +213,12 @@ static int attr_call( const char *path, int set, unsigned *attr )
     }
     if ( rc < 0 ) {
         xa_clear( &regs );
-        regs.edx = (u32)path;
+        regs.edx = (uint32_t)path;
         regs.ecx = *attr;
-        rc = xa_dos( &regs, 0x4300 | (u32)set );
+        rc = xa_dos( &regs, 0x4300 | (uint32_t)set );
     }
     if ( rc == 0 && !set ) {
-        *attr = (unsigned)(regs.ecx & 0xFFFF);
+        *attr = (uint16_t)(regs.ecx & 0xFFFF);
     }
     return rc;
 }
@@ -227,7 +227,7 @@ static int attr_call( const char *path, int set, unsigned *attr )
    and one with neither is left alone (see PLATFORM.H) */
 void SetFileDosAttr( const char *path, DWORD attr, int isDir )
 {
-    unsigned now = 0, want;
+    uint16_t now = 0, want;
 
     if ( isDir ) {
         attr &= 0x02 | 0x04;
@@ -238,13 +238,13 @@ void SetFileDosAttr( const char *path, DWORD attr, int isDir )
     } else {
         attr &= 0x01 | 0x02 | 0x04 | 0x20;
     }
-    want = (unsigned)attr;
+    want = (uint16_t)attr;
     attr_call( path, 1, &want );
 }
 
 void ClearFileAttr( const char *path )
 {
-    unsigned attr = 0;
+    uint16_t attr = 0;
 
     if ( attr_call( path, 0, &attr ) != 0 || !(attr & (0x01 | 0x02 | 0x04)) ) {
         return;
@@ -255,7 +255,7 @@ void ClearFileAttr( const char *path )
 
 void ClearArchiveBit( const char *path )
 {
-    unsigned attr = 0;
+    uint16_t attr = 0;
 
     if ( attr_call( path, 0, &attr ) != 0 || !(attr & 0x20) ) {
         return;
@@ -279,16 +279,16 @@ DWORD PlatPhysFree( void ) { return 0; }
 #define FIND_ALL    0x37        /* all but the volume label */
 
 typedef struct {
-    int lfn;                    /* 714Eh's handle in "handle", or the DTA's */
-    u32 handle;
-    u8  rec[320];               /* 714Eh's record, or the DTA */
+    int      lfn;               /* 714Eh's handle in "handle", or the DTA's */
+    uint32_t handle;
+    uint8_t  rec[320];          /* 714Eh's record, or the DTA */
 } PLATSEARCH;
 
 static void plat_fill( const PLATSEARCH *search, PlatFind *find )
 {
     SYSTEMTIME st;
     const char *name;
-    u32 stamp;
+    uint32_t stamp;
 
     if ( search->lfn ) {
         name = (const char *)search->rec + 0x2C;
@@ -298,7 +298,7 @@ static void plat_fill( const PLATSEARCH *search, PlatFind *find )
     } else {
         name = (const char *)search->rec + 0x1E;
         find->attr = search->rec[0x15] & 0x3F;
-        stamp = ((u32)RD16( search->rec + 0x18 ) << 16) | RD16( search->rec + 0x16 );
+        stamp = ((uint32_t)RD16( search->rec + 0x18 ) << 16) | RD16( search->rec + 0x16 );
         find->size = RD32( search->rec + 0x1A );
     }
     strncpy( find->name, name, PLAT_NAME_MAX - 1 );
@@ -334,11 +334,11 @@ static int classic_find( PLATSEARCH *search, const char *pattern )
     REGS regs;
 
     xa_clear( &regs );
-    regs.edx = (u32)search->rec;
+    regs.edx = (uint32_t)search->rec;
     xa_dos( &regs, 0x1A00 );
     xa_clear( &regs );
     if ( pattern ) {
-        regs.edx = (u32)pattern;
+        regs.edx = (uint32_t)pattern;
         regs.ecx = FIND_ALL;
         return xa_dos( &regs, 0x4E00 );
     }
@@ -357,8 +357,8 @@ void *PlatFindFirst( const char *pattern, PlatFind *f )
     search->lfn = 0;
     if ( xa_lfn ) {
         xa_clear( &regs );
-        regs.edx = (u32)pattern;
-        regs.edi = (u32)search->rec;
+        regs.edx = (uint32_t)pattern;
+        regs.edi = (uint32_t)search->rec;
         regs.ecx = FIND_ALL;
         regs.esi = 1;                       /* DOS date and time */
         regs.flags = 1;
@@ -395,7 +395,7 @@ int PlatFindNext( void *h, PlatFind *f )
     if ( search->lfn ) {
         xa_clear( &regs );
         regs.ebx = search->handle;
-        regs.edi = (u32)search->rec;
+        regs.edi = (uint32_t)search->rec;
         regs.esi = 1;
         rc = xa_dos( &regs, 0x714F );
     } else {
@@ -464,8 +464,8 @@ int PmNamesNeed83( const char *path )
         root[1] = 0;
     }
     xa_clear( &regs );
-    regs.edx = (u32)root;
-    regs.edi = (u32)fs;
+    regs.edx = (uint32_t)root;
+    regs.edi = (uint32_t)fs;
     regs.ecx = sizeof( fs );
     regs.flags = 1;
     rc = xa_dos( &regs, 0x71A0 );
@@ -482,12 +482,12 @@ int PmNamesNeed83( const char *path )
 int PmThousandsSep( char *buf, int size )
 {
     REGS regs;
-    u8 block[64];
+    uint8_t block[64];
     int len;
 
     memset( block, 0, sizeof( block ) );
     xa_clear( &regs );
-    regs.edx = (u32)block;
+    regs.edx = (uint32_t)block;
     if ( xa_dos( &regs, 0x3800 ) != 0 ) {
         return 0;
     }

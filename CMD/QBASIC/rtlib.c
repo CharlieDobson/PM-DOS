@@ -26,7 +26,7 @@ static float to_single( double v )
 {
     volatile float f = (float)v;
 
-    if ( (*(volatile u32 *)&f & 0x7F800000UL) == 0x7F800000UL ) {
+    if ( (*(volatile uint32_t *)&f & 0x7F800000UL) == 0x7F800000UL ) {
         vm_error( E_OVERFLOW );
     }
     return f;
@@ -34,9 +34,9 @@ static float to_single( double v )
 
 void rtf_ABSL( void )
 {
-    s32 v = POP_L();
+    int32_t v = POP_L();
 
-    if ( v == (s32)0x80000000UL ) {
+    if ( v == (int32_t)0x80000000UL ) {
         vm_error( E_OVERFLOW );
     }
     PUSH_L( v < 0 ? -v : v );
@@ -58,7 +58,7 @@ void rtf_ABSD( void )
 
 void rtf_SGNL( void )
 {
-    s32 v = POP_L();
+    int32_t v = POP_L();
 
     PUSH_L( v < 0 ? -1 : v > 0 ? 1 : 0 );
 }
@@ -170,7 +170,7 @@ void rtf_EXPD( void )
 /* RND, RANDOMIZE, TIMER                                               */
 /* ------------------------------------------------------------------ */
 
-static u32 rnd_seed;
+static uint32_t rnd_seed;
 
 void rnd_reset( void )
 {
@@ -191,14 +191,14 @@ void rtf_RND0( void )
 void rtf_RND1( void )
 {
     float n = POP_S();
-    u32 bits;
+    uint32_t bits;
 
     if ( n == 0 ) {
         PUSH_S( (float)((double)rnd_seed / 16777216.0) );
         return;
     }
     if ( n < 0 ) {
-        bits = *(u32 *)&n;
+        bits = *(uint32_t *)&n;
         rnd_seed = (bits & 0xFFFFFFUL) + ((bits >> 24) & 0xFFUL);
     }
     PUSH_S( rnd_next() );
@@ -206,7 +206,7 @@ void rtf_RND1( void )
 
 void randomize( double seed )
 {
-    u32 high = ((u32 *)&seed)[1];
+    uint32_t high = ((uint32_t *)&seed)[1];
 
     high ^= high >> 16;
     high &= 0xFFFFUL;
@@ -243,7 +243,7 @@ static DATAITEM *next_item( void )
 static double item_number( DATAITEM *item, int *type )
 {
     double val;
-    u32 i;
+    unsigned int i;
 
     for ( i = 0; i < item->len && (item->text[i] == ' ' || item->text[i] == '\t'); i++ ) {
     }
@@ -257,7 +257,7 @@ static double item_number( DATAITEM *item, int *type )
     return val;
 }
 
-static s32 item_whole( int to_int )
+static int32_t item_whole( int to_int )
 {
     int type;
     double v = fp_round( item_number( next_item(), &type ) );
@@ -265,20 +265,20 @@ static s32 item_whole( int to_int )
     if ( to_int ? (v < -32768.0 || v > 32767.0) : (v < -2147483648.0 || v > 2147483647.0) ) {
         vm_error( E_OVERFLOW );
     }
-    return (s32)v;
+    return (int32_t)v;
 }
 
 void rtf_READI( void )
 {
-    s16 *var = (s16 *)POP_A();
+    int16_t *var = (int16_t *)POP_A();
 
-    *var = (s16)item_whole( 1 );
+    *var = (int16_t)item_whole( 1 );
     vm.data_next++;
 }
 
 void rtf_READL( void )
 {
-    s32 *var = (s32 *)POP_A();
+    int32_t *var = (int32_t *)POP_A();
 
     *var = item_whole( 0 );
     vm.data_next++;
@@ -315,10 +315,10 @@ void rtf_READSTR( void )
 
 void rtf_READFS( void )
 {
-    u32 width = (u32)POP_L();
+    unsigned int width = (unsigned int)POP_L();
     char *field = (char *)POP_A();
     DATAITEM *item = next_item();
-    u32 n = item->len < width ? item->len : width;
+    unsigned int n = item->len < width ? item->len : width;
 
     mem_cpy( field, item->text, n );
     mem_set( field + n, ' ', width - n );
@@ -327,14 +327,14 @@ void rtf_READFS( void )
 
 void rtf_RESTORE( void )
 {
-    vm.data_next = (u32)POP_L();
+    vm.data_next = (unsigned int)POP_L();
 }
 
 /* ------------------------------------------------------------------ */
 /* arrays                                                              */
 /* ------------------------------------------------------------------ */
 
-u32 type_bytes( QTYPE type )
+unsigned int type_bytes( QTYPE type )
 {
     switch ( TKIND( type ) ) {
     case TY_INT:    return 2;
@@ -350,11 +350,11 @@ u32 type_bytes( QTYPE type )
 /* An array with these bounds (lo, hi pairs): NULL if the bounds are bad
    or there is no memory - never an error, because vm_begin makes arrays
    before there is anywhere for an error to go. */
-ARR *arr_make( QTYPE type, u32 esize, int ndims, const s32 *bounds, int flags )
+ARR *arr_make( QTYPE type, unsigned int esize, int ndims, const int32_t *bounds, int flags )
 {
     ARR *arr;
     double total = 1;
-    u32 count = 1, bytes;
+    unsigned int count = 1, bytes;
     int d;
 
     if ( esize == 0 ) {
@@ -369,13 +369,13 @@ ARR *arr_make( QTYPE type, u32 esize, int ndims, const s32 *bounds, int flags )
     if ( total * esize > 256.0 * 1024 * 1024 ) {
         return NULL;
     }
-    count = (u32)total;
+    count = (unsigned int)total;
     bytes = count * esize;
-    arr = (ARR *)try_alloc( sizeof( ARR ) + (u32)(2 * ndims) * sizeof( s32 ) );
+    arr = (ARR *)try_alloc( sizeof( ARR ) + (unsigned int)(2 * ndims) * sizeof( int32_t ) );
     if ( arr == NULL ) {
         return NULL;
     }
-    arr->data = (u8 *)try_alloc( bytes ? bytes : 4 );
+    arr->data = (uint8_t *)try_alloc( bytes ? bytes : 4 );
     if ( arr->data == NULL ) {
         xfree( arr );
         return NULL;
@@ -384,8 +384,8 @@ ARR *arr_make( QTYPE type, u32 esize, int ndims, const s32 *bounds, int flags )
     arr->type = type;
     arr->esize = esize;
     arr->count = count;
-    arr->ndims = (u8)ndims;
-    arr->flags = (u8)flags;
+    arr->ndims = (uint8_t)ndims;
+    arr->flags = (uint8_t)flags;
     arr->vseg = 0;
     for ( d = 0; d < ndims; d++ ) {
         arr->lb[d] = bounds[d * 2];
@@ -396,7 +396,7 @@ ARR *arr_make( QTYPE type, u32 esize, int ndims, const s32 *bounds, int flags )
 
 static void arr_clear( ARR *arr )
 {
-    u32 i;
+    unsigned int i;
 
     if ( TKIND( arr->type ) == TY_STR ) {
         for ( i = 0; i < arr->count; i++ ) {
@@ -424,25 +424,25 @@ void arr_free( ARR *arr )
    waiting on the stack (a(i) = f(x), where f does the REDIM): kept, empty,
    until the run ends, so that the store lands in memory that is still
    theirs.  QBasic stores into the new array; the value is lost here. */
-static ARR **parked;
-static u32   nparked, parked_cap;
+static ARR        **parked;
+static unsigned int nparked, parked_cap;
 
 static int arr_in_use( ARR *arr )
 {
-    u8 *lo = arr->data, *hi = arr->data + arr->count * arr->esize;
+    uint8_t *lo = arr->data, *hi = arr->data + arr->count * arr->esize;
     CELL *cell;
-    u32 k;
+    unsigned int k;
     int i;
 
     for ( cell = vm.stack; cell < vm.sp; cell++ ) {
-        if ( (u8 *)cell->ptr >= lo && (u8 *)cell->ptr < hi ) {
+        if ( (uint8_t *)cell->ptr >= lo && (uint8_t *)cell->ptr < hi ) {
             return 1;
         }
     }
     for ( k = 0; k < vm.nframes; k++ ) {
         void **params = (void **)vm.frames[k].mine;
         for ( i = 0; i < vm.frames[k].proc->nparams; i++ ) {
-            if ( (u8 *)params[i] >= lo && (u8 *)params[i] < hi ) {
+            if ( (uint8_t *)params[i] >= lo && (uint8_t *)params[i] < hi ) {
                 return 1;
             }
         }
@@ -457,7 +457,7 @@ static void arr_let_go( ARR *arr )
         return;
     }
     if ( nparked == parked_cap ) {
-        u32 cap = parked_cap ? parked_cap * 2 : 8;
+        unsigned int cap = parked_cap ? parked_cap * 2 : 8;
         ARR **grown = (ARR **)try_realloc( parked, cap * sizeof( ARR * ) );
         if ( grown == NULL ) {
             vm_error( E_OUT_OF_MEMORY );
@@ -481,9 +481,9 @@ void arr_unpark( void )
 void rtf_DIM( void )
 {
     int ndims = (int)POP_L(), flags = (int)POP_L(), d;
-    u32 esize = (u32)POP_L();
+    unsigned int esize = (unsigned int)POP_L();
     QTYPE type = (QTYPE)POP_L();
-    s32 bounds[MAX_DIMS * 2];
+    int32_t bounds[MAX_DIMS * 2];
     ARR **slot;
 
     if ( ndims < 1 || ndims > MAX_DIMS ) {
@@ -567,7 +567,7 @@ void rtf_UBOUND( void )
 
 void rtf_ERROR( void )
 {
-    s32 code = POP_L();
+    int32_t code = POP_L();
 
     if ( code < 1 || code > 255 ) {
         vm_error( E_ILLEGAL_CALL );
@@ -601,28 +601,28 @@ void rtf_TRON( void )
    else: string space, which QBasic counts in a 64K segment */
 /* The string space as QBasic has it: 64K at most, less the text the
    program holds.  Strings here can go past that; FRE only reports. */
-static s32 string_space( void )
+static int32_t string_space( void )
 {
-    u32 avail = mem_avail(), used = qs_bytes();
+    unsigned int avail = mem_avail(), used = qs_bytes();
 
     if ( avail > 65535UL ) {
         avail = 65535UL;
     }
-    return used >= avail ? 0 : (s32)(avail - used);
+    return used >= avail ? 0 : (int32_t)(avail - used);
 }
 
 void rtf_FRE( void )
 {
-    s32 which = POP_L();
-    u32 avail;
+    int32_t which = POP_L();
+    unsigned int avail;
 
     if ( which == -2 ) {
-        PUSH_L( (s32)((vm.stack_end - vm.sp) * sizeof( CELL )) );
+        PUSH_L( (int32_t)((vm.stack_end - vm.sp) * sizeof( CELL )) );
         return;
     }
     if ( which == -1 ) {
         avail = mem_avail();
-        PUSH_L( avail > 0x7FFFFFFFUL ? 0x7FFFFFFFL : (s32)avail );
+        PUSH_L( avail > 0x7FFFFFFFUL ? 0x7FFFFFFFL : (int32_t)avail );
         return;
     }
     PUSH_L( string_space() );
@@ -651,10 +651,10 @@ void rtf_FRESTR( void )
 #define ES_STOP     2
 
 typedef struct {
-    u8 *handler;
-    u8  state;
-    u8  pending;                /* happened while STOPped */
-    u8  busy;                   /* its handler is running */
+    uint8_t *handler;
+    uint8_t  state;
+    uint8_t  pending;           /* happened while STOPped */
+    uint8_t  busy;              /* its handler is running */
 } EVENT;
 
 static EVENT ev_timer, ev_play, ev_keys[NKEYS];
@@ -664,11 +664,11 @@ int event_key_armed( int n )
 {
     return n > 0 && n < NKEYS && ev_keys[n].handler != NULL && ev_keys[n].state != ES_OFF;
 }
-static u32 timer_every, timer_last;   /* hundredths; the clock goes round at midnight */
+static uint32_t timer_every, timer_last; /* hundredths; the clock goes round at midnight */
 static int play_below;
 
 int  snd_queued( void );
-int  con_take_trapped_key( int *which, const u8 *armed );
+int  con_take_trapped_key( int *which, const uint8_t *armed );
 
 void events_reset( void )
 {
@@ -696,16 +696,16 @@ static EVENT *event_of( int kind, int which )
 /* ON event GOSUB: which, kind, handler */
 void rtf_EVSET( void )
 {
-    u32 handler = (u32)POP_L();
+    unsigned int handler = (unsigned int)POP_L();
     int kind = (int)POP_L();
-    s32 which = POP_L();
+    int32_t which = POP_L();
     EVENT *ev;
 
     if ( kind == EV_TIMER ) {
         if ( which < 1 || which > 86400L ) {
             vm_error( E_ILLEGAL_CALL );
         }
-        timer_every = (u32)which * 100UL;
+        timer_every = (uint32_t)which * 100UL;
         timer_last = sys_hundredths();
     } else if ( kind == EV_PLAY ) {
         if ( which < 1 || which > 32 ) {
@@ -723,12 +723,12 @@ void rtf_EVSET( void )
 void rtf_EVCTL( void )
 {
     int state = (int)POP_L(), kind = (int)POP_L(), i;
-    s32 which = POP_L();
+    int32_t which = POP_L();
     EVENT *ev;
 
     if ( kind == EV_KEY && which == 0 ) {
         for ( i = 1; i < NKEYS; i++ ) {
-            ev_keys[i].state = (u8)state;
+            ev_keys[i].state = (uint8_t)state;
             if ( state == ES_OFF ) {
                 ev_keys[i].pending = 0;
             }
@@ -739,7 +739,7 @@ void rtf_EVCTL( void )
     if ( ev == NULL ) {
         return;
     }
-    ev->state = (u8)state;
+    ev->state = (uint8_t)state;
     if ( state == ES_OFF ) {
         ev->pending = 0;
     }
@@ -750,7 +750,7 @@ void rtf_EVCTL( void )
 }
 
 /* one event that is due, ON and not busy: its handler; the caller GOSUBs */
-static int fire( EVENT *ev, u8 **handler )
+static int fire( EVENT *ev, uint8_t **handler )
 {
     if ( ev->handler == NULL || ev->state == ES_OFF ) {
         ev->pending = 0;
@@ -766,10 +766,10 @@ static int fire( EVENT *ev, u8 **handler )
     return 1;
 }
 
-int events_check( u8 **handler, int *kind, int *which )
+int events_check( uint8_t **handler, int *kind, int *which )
 {
-    u32 now;
-    u8 armed[NKEYS];
+    uint32_t now;
+    uint8_t armed[NKEYS];
     int i, key;
 
     if ( vm.in_handler ) {
@@ -778,7 +778,7 @@ int events_check( u8 **handler, int *kind, int *which )
     if ( timer_every && ev_timer.handler ) {
         /* the time since the last one, across midnight too (a whole day,
            86400 seconds, comes a hundredth early) */
-        u32 since;
+        uint32_t since;
         now = sys_hundredths();
         since = (now + 8640000UL - timer_last) % 8640000UL;
         if ( since >= timer_every || since == 8639999UL || ev_timer.pending ) {
@@ -806,7 +806,7 @@ int events_check( u8 **handler, int *kind, int *which )
         }
     }
     for ( i = 0; i < NKEYS; i++ ) {
-        armed[i] = (u8)(ev_keys[i].handler != NULL && ev_keys[i].state != ES_OFF);
+        armed[i] = (uint8_t)(ev_keys[i].handler != NULL && ev_keys[i].state != ES_OFF);
         if ( armed[i] && ev_keys[i].pending && fire( &ev_keys[i], handler ) ) {
             *kind = EV_KEY;
             *which = i;
@@ -884,7 +884,7 @@ void rtf_TIME( void )
 /* up to "max" numbers separated by any of "seps"; -> how many */
 static int parse_fields( STR *s, int *out, int max, const char *seps )
 {
-    u32 pos = 0, len = QS_LEN( s );
+    unsigned int pos = 0, len = QS_LEN( s );
     const char *text = QS_TEXT( s );
     int count = 0, val, digits;
 
@@ -957,7 +957,7 @@ void rtf_TIMESET( void )
 static int event_due( void )
 {
     if ( timer_every && ev_timer.handler && ev_timer.state == ES_ON ) {
-        u32 since = (sys_hundredths() + 8640000UL - timer_last) % 8640000UL;
+        uint32_t since = (sys_hundredths() + 8640000UL - timer_last) % 8640000UL;
         if ( since >= timer_every || ev_timer.pending ) {
             return 1;
         }
@@ -967,16 +967,16 @@ static int event_due( void )
 
 void rtf_SLEEP( void )
 {
-    s32 seconds = POP_L();
+    int32_t seconds = POP_L();
     int given = (int)POP_L();
-    u32 start, now, until = 0;
+    uint32_t start, now, until = 0;
     int keys_before;
 
     con_flush();
     gfx_flush();
     start = sys_hundredths();
     if ( given && seconds > 0 ) {
-        until = (u32)seconds * 100UL;
+        until = (uint32_t)seconds * 100UL;
     }
     con_poll_keys();
     keys_before = con_key_waiting();
@@ -1007,7 +1007,8 @@ static int stick_val[4];
 
 static void read_sticks( void )
 {
-    u32 count, bits, done = 0;
+    unsigned int count;
+    uint32_t bits, done = 0;
     int i;
 
     for ( i = 0; i < 4; i++ ) {
@@ -1027,7 +1028,7 @@ static void read_sticks( void )
 
 void rtf_STICK( void )
 {
-    s32 which = POP_L();
+    int32_t which = POP_L();
 
     if ( which < 0 || which > 3 ) {
         vm_error( E_ILLEGAL_CALL );
@@ -1040,11 +1041,11 @@ void rtf_STICK( void )
 
 void rtf_STRIG( void )
 {
-    s32 which = POP_L();
-    u32 bits;
+    int32_t which = POP_L();
+    uint32_t bits;
     /* QBasic's order: A's first button, B's first, A's second, B's second
        (port 201h: 10h A1, 20h A2, 40h B1, 80h B2) */
-    static const u8 button[8] = { 0x10, 0x10, 0x40, 0x40, 0x20, 0x20, 0x80, 0x80 };
+    static const uint8_t button[8] = { 0x10, 0x10, 0x40, 0x40, 0x20, 0x20, 0x80, 0x80 };
 
     if ( which < 0 || which > 7 ) {
         vm_error( E_ILLEGAL_CALL );
@@ -1055,7 +1056,7 @@ void rtf_STRIG( void )
 
 void rtf_PEN( void )
 {
-    s32 which = POP_L();
+    int32_t which = POP_L();
 
     if ( which < 0 || which > 9 ) {
         vm_error( E_ILLEGAL_CALL );

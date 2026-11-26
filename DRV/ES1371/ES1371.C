@@ -54,7 +54,7 @@
 #define C_DAC2_EN       0x00000020UL
 #define C_BREQ          0x00000080UL
 #define C_1371_SYNC_RES 0x00004000UL
-#define C_1370_PCLKDIV( div )   (((u32)(div) & 0x1FFF) << 16)
+#define C_1370_PCLKDIV( div )   (((uint32_t)(div) & 0x1FFF) << 16)
 
 /* STATUS */
 #define S_INTR          0x80000000UL
@@ -67,10 +67,10 @@
 #define SR_P2_PAUSE     0x00001000UL
 #define SR_P2_LOOP_SEL  0x00004000UL
 #define SR_P2_DAC_SEN   0x00000040UL
-#define SR_P2_MODE( m ) ((u32)(m) << 2)
+#define SR_P2_MODE( m ) ((uint32_t)(m) << 2)
 #define SR_P2_MODEMASK  0x0000000CUL
-#define SR_P2_END_INC( n )      ((u32)(n) << 19)
-#define SR_P2_ST_INC( n )       ((u32)(n) << 16)
+#define SR_P2_END_INC( n )      ((uint32_t)(n) << 19)
+#define SR_P2_ST_INC( n )       ((uint32_t)(n) << 16)
 #define SR_P2_INCMASK   0x003F0000UL
 
 /* the sample-rate converter's register (ES1371) */
@@ -81,7 +81,7 @@
 #define SRC_DIS_P2      0x00100000UL
 #define SRC_DIS_R1      0x00080000UL
 #define SRC_KEEP        (SRC_DISABLE | SRC_DIS_P1 | SRC_DIS_P2 | SRC_DIS_R1)
-#define SRC_ADDR( a )   (((u32)(a) & 0x7F) << 25)
+#define SRC_ADDR( a )   (((uint32_t)(a) & 0x7F) << 25)
 
 /* ...and its memory */
 #define SM_DAC1         0x70
@@ -98,7 +98,7 @@
 #define CD_RDY          0x80000000UL
 #define CD_WIP          0x40000000UL
 #define CD_PIRD         0x00800000UL
-#define CD_WRITE( r, v )        ((((u32)(r) & 0x7F) << 16) | ((u32)(v) & 0xFFFF))
+#define CD_WRITE( r, v )        ((((uint32_t)(r) & 0x7F) << 16) | ((uint32_t)(v) & 0xFFFF))
 
 #define AC97_RESET      0x00
 #define AC97_MASTER     0x02
@@ -109,34 +109,34 @@
 
 enum { CHIP_1370, CHIP_1371 };
 
-static u16 io;
-static u8  irq = AUD_NONE;
-static u8  chip;
-static u32 pciaddr;
-static u32 ctrl;                        /* CONTROL as last written */
-static u32 sctrl;                       /* SERIAL as last written */
-static u8  play_mode;                   /* 0 8-bit mono .. 3 16-bit stereo */
-static u32 play_rate;
-static u32 play_div;                    /* the ES1370's clock divider for play_rate */
-static u8  playing;
-static u8  is_open;                     /* between card_open and card_close */
-static u8  vol_l = 255, vol_r = 255;    /* the volume as last set */
-static u16 old_master = 0xFFFF, old_pcm = 0xFFFF;
-static u8  saved_1370[4];
-static u8  ak4531[0x20];                /* the ES1370's mixer, as written (it cannot be read) */
+static uint16_t io;
+static uint8_t  irq = AUD_NONE;
+static unsigned char chip;
+static uint32_t pciaddr;
+static uint32_t ctrl;                      /* CONTROL as last written */
+static uint32_t sctrl;                     /* SERIAL as last written */
+static uint8_t  play_mode;                 /* 0 8-bit mono .. 3 16-bit stereo */
+static uint32_t play_rate;
+static uint32_t play_div;                  /* the ES1370's clock divider for play_rate */
+static unsigned char playing;
+static unsigned char is_open;              /* between card_open and card_close */
+static uint8_t  vol_l = 255, vol_r = 255;  /* the volume as last set */
+static uint16_t old_master = 0xFFFF, old_pcm = 0xFFFF;
+static uint8_t  saved_1370[4];
+static uint8_t  ak4531[0x20];              /* the ES1370's mixer, as written (it cannot be read) */
 
 /* ---------------------------------------------------------------- */
 /* PCI                                                               */
 /* ---------------------------------------------------------------- */
-static int bus_call( u32 func, REGS *r )
+static int bus_call( unsigned int func, REGS *r )
 {
     r->eax = ( r->eax & 0xFFFF ) | ( func << 8 );
     return nds_bus( r );
 }
 
 static const struct {
-    u16 vendor, device;
-    u8  chip;
+    uint16_t vendor, device;
+    unsigned char chip;
 } ids[] = {
     { 0x1274, 0x1371, CHIP_1371 },
     { 0x1274, 0x5880, CHIP_1371 },
@@ -147,24 +147,24 @@ static const struct {
 
 /* Configuration space through the kernel's calls, which reach it by
    mechanism 1 or 2, whichever the board has */
-static u32 cfg_read( u32 addr, int reg, int bytes )
+static uint32_t cfg_read( uint32_t addr, int reg, int bytes )
 {
     REGS r;
 
     mem_zero( &r, sizeof( r ) );
     r.ebx = addr;
-    r.edx = (u32)reg | ( (u32)bytes << 8 );
+    r.edx = (uint32_t)reg | ( (uint32_t)bytes << 8 );
     if ( !bus_call( BUS_PCIREAD, &r ) ) return 0xFFFFFFFFUL;
     return r.eax;
 }
 
-static void cfg_write( u32 addr, int reg, int bytes, u32 value )
+static void cfg_write( uint32_t addr, int reg, int bytes, uint32_t value )
 {
     REGS r;
 
     mem_zero( &r, sizeof( r ) );
     r.ebx = addr;
-    r.edx = (u32)reg | ( (u32)bytes << 8 );
+    r.edx = (uint32_t)reg | ( (uint32_t)bytes << 8 );
     r.ecx = value;
     bus_call( BUS_PCIWRITE, &r );
 }
@@ -172,7 +172,7 @@ static void cfg_write( u32 addr, int reg, int bytes, u32 value )
 static int find_card( void )
 {
     REGS r;
-    u32 rev, bar;
+    uint32_t rev, bar;
     int i, found = 0;
 
     for ( i = 0; ids[i].vendor && !found; i++ ) {
@@ -192,12 +192,12 @@ static int find_card( void )
        that failed (all ones) is no address at all */
     bar = cfg_read( pciaddr, 0x10, 4 );
     if ( bar == 0xFFFFFFFFUL || !( bar & 1 ) || ( bar & 0xFFFC ) == 0 || ( bar & 0xFFFC ) > 0xFFC0 ) return 0;
-    io = (u16)( bar & 0xFFFC );
+    io = (uint16_t)( bar & 0xFFFC );
     rev = cfg_read( pciaddr, 0x3C, 1 );
-    irq = rev != 0 && rev < 16 ? (u8)rev : AUD_NONE;
+    irq = rev != 0 && rev < 16 ? (uint8_t)rev : AUD_NONE;
     mem_zero( &r, sizeof( r ) );
     r.ebx = pciaddr;
-    if ( bus_call( BUS_PCIIRQ, &r ) && ( r.eax & 0xFF ) < 16 && ( r.eax & 0xFF ) != 0 ) irq = (u8)( r.eax & 0xFF );
+    if ( bus_call( BUS_PCIIRQ, &r ) && ( r.eax & 0xFF ) < 16 && ( r.eax & 0xFF ) != 0 ) irq = (uint8_t)( r.eax & 0xFF );
     /* I/O, memory and bus mastering on */
     rev = cfg_read( pciaddr, 0x04, 2 );
     if ( ( rev & 5 ) != 5 ) cfg_write( pciaddr, 0x04, 2, rev | 5 );
@@ -213,16 +213,17 @@ static int find_card( void )
     } else {
         str_cpy( aud_info.name, "Ensoniq AudioPCI (ES1371)" );
     }
-    aud_info.version_hw = (u16)rev;
+    aud_info.version_hw = (uint16_t)rev;
     return 1;
 }
 
 /* ---------------------------------------------------------------- */
 /* the sample-rate converter and the codec (ES1371)                  */
 /* ---------------------------------------------------------------- */
-static u32 src_ready( void )
+static uint32_t src_ready( void )
 {
-    u32 i, r = 0;
+    uint32_t r = 0;
+    unsigned int i;
 
     for ( i = 0; i < POLL; i++ ) {
         r = inl( io + R_1371_SRC );
@@ -231,16 +232,17 @@ static u32 src_ready( void )
     return r;
 }
 
-static void src_write( u32 reg, u32 data )
+static void src_write( uint32_t reg, uint32_t data )
 {
-    u32 r = src_ready() & SRC_KEEP;
+    uint32_t r = src_ready() & SRC_KEEP;
 
     outl( io + R_1371_SRC, r | SRC_ADDR( reg ) | ( data & 0xFFFF ) | SRC_RAM_WE );
 }
 
-static u32 src_read( u32 reg )
+static uint32_t src_read( uint32_t reg )
 {
-    u32 r, temp, i;
+    uint32_t r, temp;
+    unsigned int i;
 
     /* 10000h shows the converter's state bits, so the right moment to
        read can be waited for (as Linux's driver does) */
@@ -260,9 +262,9 @@ static u32 src_read( u32 reg )
 
 /* DAC2's rate: frequency * 2^15 / 3000, split into the integer
    register and the fraction */
-static void src_dac2_rate( u32 rate )
+static void src_dac2_rate( uint32_t rate )
 {
-    u32 freq = ( ( rate << 15 ) + 1500 ) / 3000, r;
+    uint32_t freq = ( ( rate << 15 ) + 1500 ) / 3000, r;
 
     r = ( src_ready() & ( SRC_DISABLE | SRC_DIS_P1 | SRC_DIS_R1 ) ) | SRC_DIS_P2;
     outl( io + R_1371_SRC, r );
@@ -272,9 +274,9 @@ static void src_dac2_rate( u32 rate )
     outl( io + R_1371_SRC, r );
 }
 
-static void src_dac1_rate( u32 rate )
+static void src_dac1_rate( uint32_t rate )
 {
-    u32 freq = ( ( rate << 15 ) + 1500 ) / 3000, r;
+    uint32_t freq = ( ( rate << 15 ) + 1500 ) / 3000, r;
 
     r = ( src_ready() & ( SRC_DISABLE | SRC_DIS_P2 | SRC_DIS_R1 ) ) | SRC_DIS_P1;
     outl( io + R_1371_SRC, r );
@@ -286,7 +288,7 @@ static void src_dac1_rate( u32 rate )
 
 static void src_init( void )
 {
-    u32 i;
+    unsigned int i;
 
     src_ready();
     outl( io + R_1371_SRC, SRC_DISABLE );
@@ -308,9 +310,10 @@ static void src_init( void )
 }
 
 /* a codec write, in a moment the converter is not using the bus */
-static void ac97_write( u32 reg, u32 value )
+static void ac97_write( uint32_t reg, uint32_t value )
 {
-    u32 t, saved, i;
+    uint32_t saved;
+    unsigned int t, i;
 
     for ( t = 0; t < POLL; t++ ) {
         if ( inl( io + R_1371_CODEC ) & CD_WIP ) continue;
@@ -325,9 +328,10 @@ static void ac97_write( u32 reg, u32 value )
     }
 }
 
-static u32 ac97_read( u32 reg )
+static uint32_t ac97_read( uint32_t reg )
 {
-    u32 t, saved, i, value;
+    uint32_t saved, value;
+    unsigned int t, i;
 
     for ( t = 0; t < POLL; t++ ) {
         if ( inl( io + R_1371_CODEC ) & CD_WIP ) continue;
@@ -350,15 +354,15 @@ static u32 ac97_read( u32 reg )
 /* ---------------------------------------------------------------- */
 /* the AK4531 mixer (ES1370)                                         */
 /* ---------------------------------------------------------------- */
-static void ak4531_write( u32 reg, u32 value )
+static void ak4531_write( uint32_t reg, uint32_t value )
 {
-    u32 i;
+    unsigned int i;
 
     for ( i = 0; i < POLL; i++ ) {
         if ( !( inl( io + R_STATUS ) & S_1370_CSTAT ) ) break;
     }
-    outw( io + R_1370_CODEC, (u16)( ( ( reg & 0xFF ) << 8 ) | ( value & 0xFF ) ) );
-    if ( reg < sizeof( ak4531 ) ) ak4531[reg] = (u8)value;
+    outw( io + R_1370_CODEC, (uint16_t)( ( ( reg & 0xFF ) << 8 ) | ( value & 0xFF ) ) );
+    if ( reg < sizeof( ak4531 ) ) ak4531[reg] = (uint8_t)value;
 }
 
 /* ---------------------------------------------------------------- */
@@ -366,7 +370,7 @@ static void ak4531_write( u32 reg, u32 value )
 /* ---------------------------------------------------------------- */
 static void chip_init( void )
 {
-    u32 i;
+    unsigned int i;
 
     if ( chip == CHIP_1371 ) {
         ctrl = 0;
@@ -404,7 +408,7 @@ int card_find( void )
     aud_info.port = io;
     aud_info.irq = irq;
     aud_info.pciaddr = pciaddr;
-    aud_info.mpu_port = (u16)( io + R_UART_DATA );
+    aud_info.mpu_port = (uint16_t)( io + R_UART_DATA );
     if ( chip == CHIP_1371 ) {
         aud_info.rate_min = 4000;
         aud_info.rate_max = aud_info.rate_max2 = 48000;
@@ -438,7 +442,9 @@ static void apply_open( void )
 
 int card_open( AUD_OPENBLOCK *fmt )
 {
-    u32 rate = fmt->rate, frame, want, count, div;
+    uint32_t rate = fmt->rate;
+    unsigned int frame, want, count;
+    uint32_t div;
 
     if ( dma_buf == 0 ) return ERR_GENERAL;
     if ( rate < aud_info.rate_min ) rate = aud_info.rate_min;
@@ -452,8 +458,8 @@ int card_open( AUD_OPENBLOCK *fmt )
     }
     play_rate = rate;
     fmt->rate = rate;
-    play_mode = (u8)( ( fmt->bits == 16 ? 2 : 0 ) | ( fmt->channels == 2 ? 1 : 0 ) );
-    frame = (u32)( fmt->bits / 8 ) * fmt->channels;
+    play_mode = (uint8_t)( ( fmt->bits == 16 ? 2 : 0 ) | ( fmt->channels == 2 ? 1 : 0 ) );
+    frame = (unsigned int)( fmt->bits / 8 ) * fmt->channels;
     want = fmt->block ? fmt->block : rate * frame / 50;
     if ( want < 64 ) want = 64;
     if ( want > dma_size / 2 ) want = dma_size / 2;
@@ -465,8 +471,8 @@ int card_open( AUD_OPENBLOCK *fmt )
     blk_count = count;
     /* the mixer as it is, to put back at close */
     if ( chip == CHIP_1371 ) {
-        old_master = (u16)ac97_read( AC97_MASTER );
-        old_pcm = (u16)ac97_read( AC97_PCM );
+        old_master = (uint16_t)ac97_read( AC97_MASTER );
+        old_pcm = (uint16_t)ac97_read( AC97_PCM );
     } else {
         saved_1370[0] = ak4531[0x00];
         saved_1370[1] = ak4531[0x01];
@@ -480,8 +486,8 @@ int card_open( AUD_OPENBLOCK *fmt )
 
 void card_start( void )
 {
-    static const u8 shift[4] = { 0, 1, 1, 2 };
-    u32 frames;
+    static const uint8_t shift[4] = { 0, 1, 1, 2 };
+    uint32_t frames;
 
     ctrl &= ~C_DAC2_EN;
     outl( io + R_CONTROL, ctrl );
@@ -539,9 +545,9 @@ void card_close( void )
     is_open = 0;
 }
 
-u32 card_dma_pos( void )
+unsigned int card_dma_pos( void )
 {
-    u32 pos;
+    unsigned int pos;
 
     outl( io + R_MEM_PAGE, PAGE_DAC );
     pos = ( ( inl( io + R_DAC2_SIZE ) >> 16 ) & 0xFFFF ) * 4;
@@ -551,7 +557,7 @@ u32 card_dma_pos( void )
 
 int card_irq( void )
 {
-    u32 status = inl( io + R_STATUS );
+    uint32_t status = inl( io + R_STATUS );
 
     if ( !( status & S_INTR ) ) return CARD_NOTMINE;
     if ( status & S_UART ) card_mpu_drain();
@@ -568,9 +574,9 @@ int card_irq( void )
    Out in 1.5 dB steps from 8 (0 is +12 dB, 8 is 0 dB), the AK4531's
    voice in 2 dB steps from 6 (0 is +12 dB there too); nothing at all
    is muted */
-void card_volume( u8 left, u8 right )
+void card_volume( uint8_t left, uint8_t right )
 {
-    u32 al = aud_atten( left ), ar = aud_atten( right );
+    uint32_t al = aud_atten( left ), ar = aud_atten( right );
 
     vol_l = left;
     vol_r = right;
@@ -586,7 +592,7 @@ void card_volume( u8 left, u8 right )
     }
 }
 
-void card_opl( u8 bank, u8 reg, u8 val )
+void card_opl( uint8_t bank, uint8_t reg, uint8_t val )
 {
     (void)bank;
     (void)reg;
@@ -600,7 +606,7 @@ void card_mpu_drain( void )
     for ( i = 0; i < 64 && ( inb( io + R_UART_STATUS ) & 1 ); i++ ) inb( io + R_UART_DATA );
 }
 
-int card_mpu_put( u8 byte )
+int card_mpu_put( uint8_t byte )
 {
     if ( !( inb( io + R_UART_STATUS ) & 2 ) ) return 0;
     outb( io + R_UART_DATA, byte );
@@ -623,7 +629,7 @@ void card_park( int back )
     }
 }
 
-int card_probe_irq( u32 line )
+int card_probe_irq( uint32_t line )
 {
     (void)line;
     return 0;

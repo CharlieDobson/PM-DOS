@@ -27,7 +27,7 @@ int mem_is_low( ADDR addr )
     return !is_slot( addr );
 }
 
-u32 mem_seg_end( ADDR addr )
+uint32_t mem_seg_end( ADDR addr )
 {
     if ( is_slot( addr ) ) {
         return cpu.limit;
@@ -38,7 +38,7 @@ u32 mem_seg_end( ADDR addr )
 /* ADDR moved on by N.  In the first megabyte the offset goes round at
    64K as an 8086's does, which is what an L 0 range and C's and M's
    second addresses do in 6.22; a slot has no such wrap. */
-void addr_add( ADDR *addr, u32 n )
+void addr_add( ADDR *addr, uint32_t n )
 {
     addr->off += n;
     if ( !is_slot( *addr ) ) {
@@ -48,9 +48,9 @@ void addr_add( ADDR *addr, u32 n )
 
 /* the work area's offset of LEN bytes at real-mode linear LIN, or -1
    when they are not all inside it */
-static long work_at( u32 lin, u32 len )
+static long work_at( uint32_t lin, uint32_t len )
 {
-    u32 base = (u32)work_seg * 16;
+    uint32_t base = (uint32_t)work_seg * 16;
 
     if ( mode != MODE_16 || lin < base || lin - base > work_len || len > work_len - ( lin - base ) ) {
         return -1;
@@ -72,9 +72,9 @@ void out_addr( ADDR addr )
 
 /* LEN bytes at ADDR into BUF, and OK[i] = whether byte i could be read
    (OK may be NULL).  0 if every byte could. */
-int mem_get( ADDR addr, u8 *buf, u32 len, u8 *ok )
+int mem_get( ADDR addr, uint8_t *buf, uint32_t len, uint8_t *ok )
 {
-    u32 i, lin, n, from, to;
+    uint32_t i, lin, n, from, to;
     int bad = 0;
 
     if ( is_slot( addr ) ) {
@@ -100,17 +100,17 @@ int mem_get( ADDR addr, u8 *buf, u32 len, u8 *ok )
        machine, in as few pieces as the two allow */
     i = 0;
     while ( i < len ) {
-        lin = (u32)addr.seg * 16 + ( ( addr.off + i ) & 0xFFFF );
-        if ( mode == MODE_16 && lin >= (u32)work_seg * 16 && lin < (u32)work_seg * 16 + work_len ) {
-            n = (u32)work_seg * 16 + work_len - lin;
+        lin = (uint32_t)addr.seg * 16 + ( ( addr.off + i ) & 0xFFFF );
+        if ( mode == MODE_16 && lin >= (uint32_t)work_seg * 16 && lin < (uint32_t)work_seg * 16 + work_len ) {
+            n = (uint32_t)work_seg * 16 + work_len - lin;
             if ( n > len - i ) n = len - i;
-            mem_cpy( buf + i, work_buf + ( lin - (u32)work_seg * 16 ), n );
+            mem_cpy( buf + i, work_buf + ( lin - (uint32_t)work_seg * 16 ), n );
             if ( ok ) mem_set( ok + i, 1, n );
         } else if ( lin < LOW_TOP ) {
             n = LOW_TOP - lin;
             if ( n > len - i ) n = len - i;
-            if ( mode == MODE_16 && lin < (u32)work_seg * 16 && lin + n > (u32)work_seg * 16 ) {
-                n = (u32)work_seg * 16 - lin;
+            if ( mode == MODE_16 && lin < (uint32_t)work_seg * 16 && lin + n > (uint32_t)work_seg * 16 ) {
+                n = (uint32_t)work_seg * 16 - lin;
             }
             if ( sys_low_read( lin, buf + i, n ) == 0 ) {
                 if ( ok ) mem_set( ok + i, 1, n );
@@ -130,7 +130,7 @@ int mem_get( ADDR addr, u8 *buf, u32 len, u8 *ok )
     return bad;
 }
 
-int mem_read( ADDR addr, u8 *buf, u32 len )
+int mem_read( ADDR addr, uint8_t *buf, uint32_t len )
 {
     return mem_get( addr, buf, len, NULL );
 }
@@ -138,9 +138,9 @@ int mem_read( ADDR addr, u8 *buf, u32 len )
 /* 0, or an error after nothing was written.  In the first megabyte LEN
    is 64K at most, and what runs past the segment's end goes on at its
    offset 0, as mem_get reads it. */
-int mem_write( ADDR addr, const u8 *buf, u32 len )
+int mem_write( ADDR addr, const uint8_t *buf, uint32_t len )
 {
-    u32 off, first;
+    uint32_t off, first;
     long at1, at2;
 
     if ( len == 0 ) {
@@ -160,8 +160,8 @@ int mem_write( ADDR addr, const u8 *buf, u32 len )
     if ( first > len ) {
         first = len;
     }
-    at1 = work_at( (u32)addr.seg * 16 + off, first );
-    at2 = first < len ? work_at( (u32)addr.seg * 16, len - first ) : 0;
+    at1 = work_at( (uint32_t)addr.seg * 16 + off, first );
+    at2 = first < len ? work_at( (uint32_t)addr.seg * 16, len - first ) : 0;
     if ( at1 < 0 || at2 < 0 ) {
         return ERR_ACCESS;
     }
@@ -182,25 +182,25 @@ int mem_write( ADDR addr, const u8 *buf, u32 len )
    call to DOS at 50h, two blank FCBs and an empty tail. */
 void work_reset( void )
 {
-    u8 *psp = work_buf;
-    u32 top;
+    uint8_t *psp = work_buf;
+    uint32_t top;
     int i;
 
     mem_set( work_buf, 0, work_len );
-    top = (u32)work_seg + work_len / 16;
+    top = (uint32_t)work_seg + work_len / 16;
     if ( top > 0xA000UL ) top = 0xA000UL;
     psp[0x00] = 0xCD;
     psp[0x01] = 0x20;
-    psp[0x02] = (u8)top;
-    psp[0x03] = (u8)( top >> 8 );
+    psp[0x02] = (uint8_t)top;
+    psp[0x03] = (uint8_t)( top >> 8 );
     psp[0x05] = 0x9A;                   /* CALL F01D:FEF0, as DOS writes it */
     psp[0x06] = 0xF0;
     psp[0x07] = 0xFE;
     psp[0x08] = 0x1D;
     psp[0x09] = 0xF0;
     sys_low_read( 0x22 * 4, psp + 0x0A, 12 );       /* 22h, 23h, 24h */
-    psp[0x16] = (u8)work_seg;           /* its own parent, as the shell's */
-    psp[0x17] = (u8)( work_seg >> 8 );
+    psp[0x16] = (uint8_t)work_seg;      /* its own parent, as the shell's */
+    psp[0x17] = (uint8_t)( work_seg >> 8 );
     psp[0x18] = 0x01;                   /* the handle table: CON, CON, */
     psp[0x19] = 0x01;                   /* CON, AUX, PRN, and free */
     psp[0x1A] = 0x01;
@@ -211,8 +211,8 @@ void work_reset( void )
     }
     psp[0x32] = 0x14;                   /* 20 handles, at PSP:0018 */
     psp[0x34] = 0x18;
-    psp[0x36] = (u8)work_seg;
-    psp[0x37] = (u8)( work_seg >> 8 );
+    psp[0x36] = (uint8_t)work_seg;
+    psp[0x37] = (uint8_t)( work_seg >> 8 );
     psp[0x38] = 0xFF;
     psp[0x39] = 0xFF;
     psp[0x3A] = 0xFF;

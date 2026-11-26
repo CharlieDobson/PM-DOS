@@ -45,7 +45,7 @@ FC_EBP          EQU     12
 FC_ESP          EQU     16
 
 ;=====================================================================
-; void __cdecl fib_init( u32 stacktop, void (*entry)(void) )
+; void __cdecl fib_init( uint32_t stacktop, void (*entry)(void) )
 ;
 ; Lay out the worker's initial stack so that the first fib_enter's RET
 ; lands in `entry` with a clean frame.  `stacktop` is one past the top

@@ -23,30 +23,30 @@
 #define K_ALPHA     2           /* a soft mask: how much */
 
 typedef struct {
-    IN     *in;
-    int     width, height, bpc, ncomp, kind;
-    CSPACE *cs;
-    int     invert;
-    int     has_key;
-    int     key[MAX_COMPS * 2];
-    fx      dec[MAX_COMPS * 2];
-    u32    *lut;                /* one component: each value's colour */
-    u32     rowbytes;
-    u8     *raw, *pix;
-    int     chans;
-    int     dw, dh, col0, col1;
-    u16    *xmap;               /* source column to destination column */
-    u16    *xcount;             /* how many source columns each destination has */
-    u32    *acc;
-    u8     *done;
-    int     src_row, out_row, rows_acc, repeat;
+    IN          *in;
+    int          width, height, bpc, ncomp, kind;
+    CSPACE      *cs;
+    int          invert;
+    int          has_key;
+    int          key[MAX_COMPS * 2];
+    fx           dec[MAX_COMPS * 2];
+    uint32_t    *lut;           /* one component: each value's colour */
+    unsigned int rowbytes;
+    uint8_t     *raw, *pix;
+    int          chans;
+    int          dw, dh, col0, col1;
+    uint16_t    *xmap;          /* source column to destination column */
+    uint16_t    *xcount;        /* how many source columns each destination has */
+    uint32_t    *acc;
+    uint8_t     *done;
+    int          src_row, out_row, rows_acc, repeat;
 } SCALER;
 
 /* ------------------------------------------------------------------ */
 /* a source row into channel bytes                                     */
 /* ------------------------------------------------------------------ */
 
-static u32 sample( const u8 *raw, u32 index, int bpc )
+static uint32_t sample( const uint8_t *raw, uint32_t index, int bpc )
 {
     switch ( bpc ) {
     case 8:
@@ -58,41 +58,41 @@ static u32 sample( const u8 *raw, u32 index, int bpc )
     case 4:
         return (raw[index >> 1] >> (index & 1 ? 0 : 4)) & 15;
     }
-    return ((u32)raw[index * 2] << 8) | raw[index * 2 + 1];
+    return ((uint32_t)raw[index * 2] << 8) | raw[index * 2 + 1];
 }
 
 static void decode_row( SCALER *sc )
 {
-    const u8 *raw = sc->raw;
-    u8 *pix = sc->pix;
+    const uint8_t *raw = sc->raw;
+    uint8_t *pix = sc->pix;
     fx comps[MAX_COMPS];
-    u32 rgb, val, peak = sc->bpc == 16 ? 65535UL : (1UL << sc->bpc) - 1;
+    uint32_t rgb, val, peak = sc->bpc == 16 ? 65535UL : (1UL << sc->bpc) - 1;
     int col, comp, keep, hit, width = sc->width;
 
     if ( sc->kind == K_STENCIL ) {
         hit = sc->invert ? 1 : 0;
         for ( col = 0; col < width; col++ ) {
-            pix[col] = (u8)(((raw[col >> 3] >> (7 - (col & 7))) & 1) == hit ? 255 : 0);
+            pix[col] = (uint8_t)(((raw[col >> 3] >> (7 - (col & 7))) & 1) == hit ? 255 : 0);
         }
         return;
     }
     if ( sc->kind == K_ALPHA ) {
         for ( col = 0; col < width; col++ ) {
-            val = sample( raw, (u32)col * (u32)sc->ncomp, sc->bpc );
+            val = sample( raw, (uint32_t)col * (uint32_t)sc->ncomp, sc->bpc );
             val = sc->bpc == 16 ? val >> 8 : (val * 255) / peak;
-            pix[col] = (u8)(sc->invert ? 255 - val : val);
+            pix[col] = (uint8_t)(sc->invert ? 255 - val : val);
         }
         return;
     }
     if ( sc->lut ) {
         for ( col = 0; col < width; col++, pix += sc->chans ) {
-            val = sample( raw, (u32)col, sc->bpc );
+            val = sample( raw, (uint32_t)col, sc->bpc );
             rgb = sc->lut[sc->bpc == 16 ? val >> 8 : val];
-            pix[0] = (u8)rgb;
-            pix[1] = (u8)(rgb >> 8);
-            pix[2] = (u8)(rgb >> 16);
+            pix[0] = (uint8_t)rgb;
+            pix[1] = (uint8_t)(rgb >> 8);
+            pix[2] = (uint8_t)(rgb >> 16);
             if ( sc->has_key ) {
-                pix[3] = (u8)((int)val >= sc->key[0] && (int)val <= sc->key[1] ? 0 : 255);
+                pix[3] = (uint8_t)((int)val >= sc->key[0] && (int)val <= sc->key[1] ? 0 : 255);
             }
         }
         return;
@@ -100,9 +100,9 @@ static void decode_row( SCALER *sc )
     if ( sc->bpc == 8 && !sc->has_key && sc->ncomp == 3 && sc->cs->kind == CS_RGB ) {
         for ( col = 0; col < width; col++, pix += 3, raw += 3 ) {
             if ( sc->invert ) {
-                pix[0] = (u8)(255 - raw[2]);
-                pix[1] = (u8)(255 - raw[1]);
-                pix[2] = (u8)(255 - raw[0]);
+                pix[0] = (uint8_t)(255 - raw[2]);
+                pix[1] = (uint8_t)(255 - raw[1]);
+                pix[2] = (uint8_t)(255 - raw[0]);
             } else {
                 pix[0] = raw[2];
                 pix[1] = raw[1];
@@ -114,9 +114,9 @@ static void decode_row( SCALER *sc )
     if ( sc->bpc == 8 && !sc->has_key && sc->ncomp == 4 && sc->cs->kind == CS_CMYK ) {
         for ( col = 0; col < width; col++, pix += 3, raw += 4 ) {
             keep = sc->invert ? raw[3] : 255 - raw[3];
-            pix[2] = (u8)((sc->invert ? raw[0] : 255 - raw[0]) * keep / 255);
-            pix[1] = (u8)((sc->invert ? raw[1] : 255 - raw[1]) * keep / 255);
-            pix[0] = (u8)((sc->invert ? raw[2] : 255 - raw[2]) * keep / 255);
+            pix[2] = (uint8_t)((sc->invert ? raw[0] : 255 - raw[0]) * keep / 255);
+            pix[1] = (uint8_t)((sc->invert ? raw[1] : 255 - raw[1]) * keep / 255);
+            pix[0] = (uint8_t)((sc->invert ? raw[2] : 255 - raw[2]) * keep / 255);
         }
         return;
     }
@@ -125,19 +125,19 @@ static void decode_row( SCALER *sc )
     for ( col = 0; col < width; col++, pix += sc->chans ) {
         hit = sc->has_key;
         for ( comp = 0; comp < sc->ncomp; comp++ ) {
-            val = sample( raw, (u32)col * (u32)sc->ncomp + (u32)comp, sc->bpc );
+            val = sample( raw, (uint32_t)col * (uint32_t)sc->ncomp + (uint32_t)comp, sc->bpc );
             if ( hit && ((int)val < sc->key[comp * 2] || (int)val > sc->key[comp * 2 + 1]) ) {
                 hit = 0;
             }
             comps[comp] = sc->dec[comp * 2] +
-                          mul_div( sc->dec[comp * 2 + 1] - sc->dec[comp * 2], (s32)val, (s32)peak );
+                          mul_div( sc->dec[comp * 2 + 1] - sc->dec[comp * 2], (int32_t)val, (int32_t)peak );
         }
         rgb = cs_rgb( sc->cs, comps );
-        pix[0] = (u8)rgb;
-        pix[1] = (u8)(rgb >> 8);
-        pix[2] = (u8)(rgb >> 16);
+        pix[0] = (uint8_t)rgb;
+        pix[1] = (uint8_t)(rgb >> 8);
+        pix[2] = (uint8_t)(rgb >> 16);
         if ( sc->has_key ) {
-            pix[3] = (u8)(hit ? 0 : 255);
+            pix[3] = (uint8_t)(hit ? 0 : 255);
         }
     }
 }
@@ -150,7 +150,7 @@ static void scaler_open( SCALER *sc, IN *in, int width, int height, int bpc, CSP
                          ARR *decode, int dw, int dh )
 {
     fx comps[MAX_COMPS];
-    u32 peak, val;
+    uint32_t peak, val;
     int index, col, next;
 
     mem_set( sc, 0, sizeof( *sc ) );
@@ -171,7 +171,7 @@ static void scaler_open( SCALER *sc, IN *in, int width, int height, int bpc, CSP
     sc->dw = dw;
     sc->dh = dh;
     sc->col1 = dw;
-    sc->rowbytes = ((u32)width * (u32)sc->ncomp * (u32)bpc + 7) / 8;
+    sc->rowbytes = ((unsigned int)width * (unsigned int)sc->ncomp * (unsigned int)bpc + 7) / 8;
 
     /* the decode array: what the least and the greatest sample mean */
     for ( index = 0; index < sc->ncomp && index < MAX_COMPS; index++ ) {
@@ -188,8 +188,8 @@ static void scaler_open( SCALER *sc, IN *in, int width, int height, int bpc, CSP
         sc->dec[5] = cs->range[3];
     }
     if ( decode ) {
-        for ( index = 0; index < sc->ncomp * 2 && index < MAX_COMPS * 2 && (u32)index < decode->count; index++ ) {
-            sc->dec[index] = obj_fx( arr_get( decode, (u32)index ) );
+        for ( index = 0; index < sc->ncomp * 2 && index < MAX_COMPS * 2 && (unsigned int)index < decode->count; index++ ) {
+            sc->dec[index] = obj_fx( arr_get( decode, (unsigned int)index ) );
         }
     }
     sc->invert = sc->dec[0] > sc->dec[1];
@@ -197,20 +197,20 @@ static void scaler_open( SCALER *sc, IN *in, int width, int height, int bpc, CSP
     if ( kind == K_COLOUR && sc->ncomp == 1 ) {
         /* one component: every value it can have, worked out once */
         peak = (1UL << (bpc > 8 ? 8 : bpc)) - 1;
-        sc->lut = (u32 *)pool_big( doc.page_pool, (peak + 1) * sizeof( u32 ) );
+        sc->lut = (uint32_t *)pool_big( doc.page_pool, (peak + 1) * sizeof( uint32_t ) );
         for ( val = 0; val <= peak; val++ ) {
-            comps[0] = sc->dec[0] + mul_div( sc->dec[1] - sc->dec[0], (s32)val, (s32)peak );
+            comps[0] = sc->dec[0] + mul_div( sc->dec[1] - sc->dec[0], (int32_t)val, (int32_t)peak );
             sc->lut[val] = cs_rgb( cs, comps );
         }
     }
-    sc->raw = (u8 *)pool_big( doc.page_pool, sc->rowbytes + 8 );
-    sc->pix = (u8 *)pool_big( doc.page_pool, (u32)width * 4 + 8 );
-    sc->xmap = (u16 *)pool_big( doc.page_pool, ((u32)width + 1) * sizeof( u16 ) );
-    sc->xcount = (u16 *)pool_big( doc.page_pool, ((u32)dw + 1) * sizeof( u16 ) );
-    sc->acc = (u32 *)pool_big( doc.page_pool, ((u32)dw + 1) * 4 * sizeof( u32 ) );
-    sc->done = (u8 *)pool_big( doc.page_pool, ((u32)dw + 1) * 4 );
+    sc->raw = (uint8_t *)pool_big( doc.page_pool, sc->rowbytes + 8 );
+    sc->pix = (uint8_t *)pool_big( doc.page_pool, (uint32_t)width * 4 + 8 );
+    sc->xmap = (uint16_t *)pool_big( doc.page_pool, ((uint32_t)width + 1) * sizeof( uint16_t ) );
+    sc->xcount = (uint16_t *)pool_big( doc.page_pool, ((uint32_t)dw + 1) * sizeof( uint16_t ) );
+    sc->acc = (uint32_t *)pool_big( doc.page_pool, ((uint32_t)dw + 1) * 4 * sizeof( uint32_t ) );
+    sc->done = (uint8_t *)pool_big( doc.page_pool, ((uint32_t)dw + 1) * 4 );
     for ( col = 0; col <= width; col++ ) {
-        sc->xmap[col] = (u16)(((u32)col * (u32)dw) / (u32)width);
+        sc->xmap[col] = (uint16_t)(((uint32_t)col * (uint32_t)dw) / (uint32_t)width);
     }
     for ( col = 0; col < width; col++ ) {
         next = sc->xmap[col + 1] > sc->xmap[col] ? sc->xmap[col + 1] : sc->xmap[col] + 1;
@@ -239,8 +239,8 @@ static void scaler_close( SCALER *sc )
    run out.  "wanted" 0 reads past it without the work of making it. */
 static int scaler_next( SCALER *sc, int wanted )
 {
-    u32 *acc, got, div, last_div = 0, recip = 0;
-    const u8 *pix;
+    uint32_t *acc, got, div, last_div = 0, recip = 0;
+    const uint8_t *pix;
     int chans = sc->chans, col, dest, next, chan, row_lo, row_hi;
 
     if ( sc->repeat > 0 ) {
@@ -259,14 +259,14 @@ static int scaler_next( SCALER *sc, int wanted )
         if ( got < sc->rowbytes ) {
             mem_set( sc->raw + got, 0, sc->rowbytes - got );
         }
-        row_lo = (int)(((u32)sc->src_row * (u32)sc->dh) / (u32)sc->height);
-        row_hi = (int)((((u32)sc->src_row + 1) * (u32)sc->dh) / (u32)sc->height);
+        row_lo = (int)(((uint32_t)sc->src_row * (uint32_t)sc->dh) / (uint32_t)sc->height);
+        row_hi = (int)((((uint32_t)sc->src_row + 1) * (uint32_t)sc->dh) / (uint32_t)sc->height);
         sc->src_row++;
         if ( wanted ) {
             decode_row( sc );
             pix = sc->pix;
             if ( sc->rows_acc == 0 ) {
-                mem_set( sc->acc + sc->col0 * chans, 0, (u32)(sc->col1 - sc->col0) * (u32)chans * sizeof( u32 ) );
+                mem_set( sc->acc + sc->col0 * chans, 0, (uint32_t)(sc->col1 - sc->col0) * (uint32_t)chans * sizeof( uint32_t ) );
             }
             for ( col = 0; col < sc->width; col++, pix += chans ) {
                 dest = sc->xmap[col];
@@ -288,11 +288,11 @@ static int scaler_next( SCALER *sc, int wanted )
         }
         if ( wanted ) {
             for ( dest = sc->col0; dest < sc->col1; dest++ ) {
-                div = (u32)sc->xcount[dest] * (u32)sc->rows_acc;
+                div = (uint32_t)sc->xcount[dest] * (uint32_t)sc->rows_acc;
                 acc = sc->acc + dest * chans;
                 if ( div <= 1 ) {
                     for ( chan = 0; chan < chans; chan++ ) {
-                        sc->done[dest * chans + chan] = (u8)acc[chan];
+                        sc->done[dest * chans + chan] = (uint8_t)acc[chan];
                     }
                     continue;
                 }
@@ -302,7 +302,7 @@ static int scaler_next( SCALER *sc, int wanted )
                 }
                 for ( chan = 0; chan < chans; chan++ ) {
                     got = (acc[chan] * recip + 0x8000UL) >> 16;
-                    sc->done[dest * chans + chan] = (u8)(got > 255 ? 255 : got);
+                    sc->done[dest * chans + chan] = (uint8_t)(got > 255 ? 255 : got);
                 }
             }
         }
@@ -380,7 +380,7 @@ void image_draw( IMGREQ *req )
     IN *in, *min;
     const FMAT *fm = req->fm;
     PAINT plain;
-    u8 *bgr, *alpha, *row, hold;
+    uint8_t *bgr, *alpha, *row, hold;
     fx big;
     int width = (int)obj_int( dict_get2( dict, "Width", "W" ) );
     int height = (int)obj_int( dict_get2( dict, "Height", "H" ) );
@@ -412,7 +412,7 @@ void image_draw( IMGREQ *req )
         /* nothing will be seen of it; but an inline image's data is in
            the way of what follows, and has to be stepped over */
         if ( req->stm == NULL && !filtered ) {
-            in_skip( req->inline_in, (((u32)width * (u32)(cs ? cs->ncomp : 1) * (u32)bpc + 7) / 8) * (u32)height );
+            in_skip( req->inline_in, (((uint32_t)width * (uint32_t)(cs ? cs->ncomp : 1) * (uint32_t)bpc + 7) / 8) * (uint32_t)height );
         }
         return;
     }
@@ -437,7 +437,7 @@ void image_draw( IMGREQ *req )
         flip_y = fm->b < 0;
     } else {
         if ( req->stm == NULL && !filtered ) {
-            in_skip( req->inline_in, (((u32)width * (u32)(cs ? cs->ncomp : 1) * (u32)bpc + 7) / 8) * (u32)height );
+            in_skip( req->inline_in, (((uint32_t)width * (uint32_t)(cs ? cs->ncomp : 1) * (uint32_t)bpc + 7) / 8) * (uint32_t)height );
         }
         placeholder( req );
         return;
@@ -457,7 +457,7 @@ void image_draw( IMGREQ *req )
         in = open_data( req->stm, in, index, &bpc, &cs, stencil );
     } else {
         in = in_borrow( req->inline_in, filtered ? 0xFFFFFFFFUL :
-                        (((u32)width * (u32)(cs ? cs->ncomp : 1) * (u32)bpc + 7) / 8) * (u32)height );
+                        (((uint32_t)width * (uint32_t)(cs ? cs->ncomp : 1) * (uint32_t)bpc + 7) / 8) * (uint32_t)height );
         in = pdf_filter_chain( in, &holder, 1, &index );
         in = open_data( &holder, in, index, &bpc, &cs, stencil );
     }
@@ -509,7 +509,7 @@ void image_draw( IMGREQ *req )
         colour.has_key = 1;
         colour.chans = 4;
         for ( index = 0; index < colour.ncomp * 2 && index < MAX_COMPS * 2; index++ ) {
-            colour.key[index] = (int)obj_int( arr_get( key, (u32)index ) );
+            colour.key[index] = (int)obj_int( arr_get( key, (unsigned int)index ) );
         }
     }
 
@@ -536,8 +536,8 @@ void image_draw( IMGREQ *req )
     if ( count > 0 ) {
         colour.col0 = mask.col0 = first;
         colour.col1 = mask.col1 = last;
-        bgr = (u8 *)pool_big( doc.page_pool, (u32)dw * 3 + 8 );
-        alpha = (u8 *)pool_big( doc.page_pool, (u32)dw + 8 );
+        bgr = (uint8_t *)pool_big( doc.page_pool, (uint32_t)dw * 3 + 8 );
+        alpha = (uint8_t *)pool_big( doc.page_pool, (uint32_t)dw + 8 );
         plain = *req->fill;
         for ( dest = 0; dest < dh; dest++ ) {
             /* where this row of the image lands, and whether it shows */
@@ -576,10 +576,10 @@ void image_draw( IMGREQ *req )
                     alpha[index] = colour.has_key ? row[3] : 255;
                 }
                 if ( have_mask ) {
-                    alpha[index] = (u8)((alpha[index] * mask.done[first + index] + 127) / 255);
+                    alpha[index] = (uint8_t)((alpha[index] * mask.done[first + index] + 127) / 255);
                 }
                 if ( global != 255 && !stencil ) {
-                    alpha[index] = (u8)((alpha[index] * global + 127) / 255);
+                    alpha[index] = (uint8_t)((alpha[index] * global + 127) / 255);
                 }
             }
             if ( side == 0 ? flip_x : flip_y ) {

@@ -16,12 +16,12 @@
 
 /* the little C runtime SMBSRV.C needs (like the driver's DRVRT) */
 void *memcpy( void *to, const void *from, unsigned len )
-{ unsigned char *d = (unsigned char *)to; const unsigned char *s = (const unsigned char *)from; while ( len-- ) *d++ = *s++; return to; }
+{ uint8_t *d = (uint8_t *)to; const uint8_t *s = (const uint8_t *)from; while ( len-- ) *d++ = *s++; return to; }
 void *memset( void *to, int v, unsigned len )
-{ unsigned char *d = (unsigned char *)to; while ( len-- ) *d++ = (unsigned char)v; return to; }
+{ uint8_t *d = (uint8_t *)to; while ( len-- ) *d++ = (uint8_t)v; return to; }
 
-static unsigned int  get16( const unsigned char *p ) { return (unsigned int)p[0] | ( (unsigned int)p[1] << 8 ); }
-static unsigned long get32( const unsigned char *p ) { return (unsigned long)p[0] | ( (unsigned long)p[1] << 8 ) | ( (unsigned long)p[2] << 16 ) | ( (unsigned long)p[3] << 24 ); }
+static unsigned int  get16( const uint8_t *p ) { return (unsigned int)p[0] | ( (unsigned int)p[1] << 8 ); }
+static uint32_t      get32( const uint8_t *p ) { return (uint32_t)p[0] | ( (uint32_t)p[1] << 8 ) | ( (uint32_t)p[2] << 16 ) | ( (uint32_t)p[3] << 24 ); }
 
 /* ====================================================================== */
 /* the INT 21h filesystem back end                                        */
@@ -55,7 +55,7 @@ static int dpath( dosfs *fs, const char *rel, char *out, int cap )
     return 1;
 }
 
-static int d_open( void *ctx, const char *path, int write, int dispo, unsigned long *size, int *action )
+static int d_open( void *ctx, const char *path, int write, int dispo, uint32_t *size, int *action )
 {
     dosfs *fs = (dosfs *)ctx;
     char full[DPATH_MAX];
@@ -65,52 +65,52 @@ static int d_open( void *ctx, const char *path, int write, int dispo, unsigned l
     if ( !dpath( fs, path, full, DPATH_MAX ) ) return -1;
 
     if ( dispo == 5 ) {                                 /* create / truncate */
-        sl_memzero( &r, sizeof( r ) ); r.eax = 0x3C00; r.ecx = 0; r.edx = (u32)full; int21( &r );
+        sl_memzero( &r, sizeof( r ) ); r.eax = 0x3C00; r.ecx = 0; r.edx = (uint32_t)full; int21( &r );
         if ( CF( r ) ) return -1;
         h = (int)( r.eax & 0xFFFF ); *action = 2;
     } else if ( dispo == 3 ) {                          /* open, else create */
-        sl_memzero( &r, sizeof( r ) ); r.eax = 0x3D02; r.edx = (u32)full; int21( &r );
+        sl_memzero( &r, sizeof( r ) ); r.eax = 0x3D02; r.edx = (uint32_t)full; int21( &r );
         if ( !CF( r ) ) { h = (int)( r.eax & 0xFFFF ); *action = 1; }
         else {
-            sl_memzero( &r, sizeof( r ) ); r.eax = 0x3C00; r.ecx = 0; r.edx = (u32)full; int21( &r );
+            sl_memzero( &r, sizeof( r ) ); r.eax = 0x3C00; r.ecx = 0; r.edx = (uint32_t)full; int21( &r );
             if ( CF( r ) ) return -1;
             h = (int)( r.eax & 0xFFFF ); *action = 2;
         }
     } else {                                            /* open existing */
-        sl_memzero( &r, sizeof( r ) ); r.eax = (u32)( 0x3D00 | ( write ? 2 : 0 ) ); r.edx = (u32)full; int21( &r );
+        sl_memzero( &r, sizeof( r ) ); r.eax = (uint32_t)( 0x3D00 | ( write ? 2 : 0 ) ); r.edx = (uint32_t)full; int21( &r );
         if ( CF( r ) ) return -1;
         h = (int)( r.eax & 0xFFFF ); *action = 1;
     }
 
     /* a device name (CON, PRN, ...) opens the device: serve files only */
-    sl_memzero( &r, sizeof( r ) ); r.eax = 0x4400; r.ebx = (u32)h; int21( &r );
+    sl_memzero( &r, sizeof( r ) ); r.eax = 0x4400; r.ebx = (uint32_t)h; int21( &r );
     if ( CF( r ) || ( r.edx & 0x80 ) ) {
-        sl_memzero( &r, sizeof( r ) ); r.eax = 0x3E00; r.ebx = (u32)h; int21( &r );
+        sl_memzero( &r, sizeof( r ) ); r.eax = 0x3E00; r.ebx = (uint32_t)h; int21( &r );
         return -1;
     }
 
-    sl_memzero( &r, sizeof( r ) ); r.eax = 0x4202; r.ebx = (u32)h; r.ecx = 0; int21( &r );
+    sl_memzero( &r, sizeof( r ) ); r.eax = 0x4202; r.ebx = (uint32_t)h; r.ecx = 0; int21( &r );
     *size = CF( r ) ? 0 : r.eax;
-    sl_memzero( &r, sizeof( r ) ); r.eax = 0x4200; r.ebx = (u32)h; r.ecx = 0; int21( &r );
+    sl_memzero( &r, sizeof( r ) ); r.eax = 0x4200; r.ebx = (uint32_t)h; r.ecx = 0; int21( &r );
     return h;
 }
 
-static int d_read( void *ctx, int h, unsigned long off, void *buf, int len )
+static int d_read( void *ctx, int h, uint32_t off, void *buf, int len )
 {
     REGS r; (void)ctx;
-    sl_memzero( &r, sizeof( r ) ); r.eax = 0x4200; r.ebx = (u32)h; r.ecx = off; int21( &r );
+    sl_memzero( &r, sizeof( r ) ); r.eax = 0x4200; r.ebx = (uint32_t)h; r.ecx = off; int21( &r );
     if ( CF( r ) ) return -1;
-    sl_memzero( &r, sizeof( r ) ); r.eax = 0x3F00; r.ebx = (u32)h; r.ecx = (u32)len; r.edx = (u32)buf; int21( &r );
+    sl_memzero( &r, sizeof( r ) ); r.eax = 0x3F00; r.ebx = (uint32_t)h; r.ecx = (uint32_t)len; r.edx = (uint32_t)buf; int21( &r );
     if ( CF( r ) ) return -1;
     return (int)r.eax;
 }
 
-static int d_write( void *ctx, int h, unsigned long off, const void *buf, int len )
+static int d_write( void *ctx, int h, uint32_t off, const void *buf, int len )
 {
     REGS r; (void)ctx;
-    sl_memzero( &r, sizeof( r ) ); r.eax = 0x4200; r.ebx = (u32)h; r.ecx = off; int21( &r );
+    sl_memzero( &r, sizeof( r ) ); r.eax = 0x4200; r.ebx = (uint32_t)h; r.ecx = off; int21( &r );
     if ( CF( r ) ) return -1;
-    sl_memzero( &r, sizeof( r ) ); r.eax = 0x4000; r.ebx = (u32)h; r.ecx = (u32)len; r.edx = (u32)buf; int21( &r );
+    sl_memzero( &r, sizeof( r ) ); r.eax = 0x4000; r.ebx = (uint32_t)h; r.ecx = (uint32_t)len; r.edx = (uint32_t)buf; int21( &r );
     if ( CF( r ) ) return -1;
     return (int)r.eax;
 }
@@ -118,19 +118,19 @@ static int d_write( void *ctx, int h, unsigned long off, const void *buf, int le
 static void d_close( void *ctx, int h )
 {
     REGS r; (void)ctx;
-    sl_memzero( &r, sizeof( r ) ); r.eax = 0x3E00; r.ebx = (u32)h; int21( &r );
+    sl_memzero( &r, sizeof( r ) ); r.eax = 0x3E00; r.ebx = (uint32_t)h; int21( &r );
 }
 
 /* ---- directory enumeration via the DTA find ---- */
-static unsigned char g_dta[64];
+static uint8_t       g_dta[64];
 static int           g_pending;
 
 /* DOS date/time -> a Windows FILETIME (lo/hi), via a 32x32->64 multiply */
-static void umul32( u32 a, u32 b, u32 *hi, u32 *lo )
+static void umul32( uint32_t a, uint32_t b, uint32_t *hi, uint32_t *lo )
 {
-    u32 a0 = a & 0xFFFF, a1 = a >> 16, b0 = b & 0xFFFF, b1 = b >> 16;
-    u32 p0 = a0 * b0, p1 = a0 * b1, p2 = a1 * b0, p3 = a1 * b1;
-    u32 mid = ( p0 >> 16 ) + ( p1 & 0xFFFF ) + ( p2 & 0xFFFF );
+    uint32_t a0 = a & 0xFFFF, a1 = a >> 16, b0 = b & 0xFFFF, b1 = b >> 16;
+    uint32_t p0 = a0 * b0, p1 = a0 * b1, p2 = a1 * b0, p3 = a1 * b1;
+    uint32_t mid = ( p0 >> 16 ) + ( p1 & 0xFFFF ) + ( p2 & 0xFFFF );
     *lo = ( p0 & 0xFFFF ) | ( mid << 16 );
     *hi = p3 + ( p1 >> 16 ) + ( p2 >> 16 ) + ( mid >> 16 );
 }
@@ -144,21 +144,21 @@ static long days_from_civil( int y, int m, int d )
     doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
     return era * 146097 + (long)doe - 719468;
 }
-static void dos_filetime( unsigned date, unsigned time, u32 *lo, u32 *hi )
+static void dos_filetime( unsigned date, unsigned time, uint32_t *lo, uint32_t *hi )
 {
     int year  = 1980 + ( ( date >> 9 ) & 0x7F );
     int month = ( date >> 5 ) & 0x0F;
     int day   = date & 0x1F;
     int hour  = ( time >> 11 ) & 0x1F, min = ( time >> 5 ) & 0x3F, sec = ( time & 0x1F ) * 2;
     long days;
-    u32 shi, slo, phi, plo, add;
+    uint32_t shi, slo, phi, plo, add;
 
     if ( month < 1 ) month = 1;
     if ( day < 1 ) day = 1;
     days = days_from_civil( year, month, day ) + 134774L;       /* days since 1601 */
-    umul32( (u32)days, 86400UL, &shi, &slo );
-    add = (u32)( hour * 3600 + min * 60 + sec );
-    { u32 n = slo + add; if ( n < slo ) shi++; slo = n; }
+    umul32( (uint32_t)days, 86400UL, &shi, &slo );
+    add = (uint32_t)( hour * 3600 + min * 60 + sec );
+    { uint32_t n = slo + add; if ( n < slo ) shi++; slo = n; }
     umul32( slo, 10000000UL, &phi, &plo );
     *lo = plo;
     *hi = phi + shi * 10000000UL;
@@ -176,8 +176,8 @@ static void *d_findopen( void *ctx, const char *dir )
     if ( n == 0 || full[n - 1] != '\\' ) full[n++] = '\\';
     full[n++] = '*'; full[n++] = '.'; full[n++] = '*'; full[n] = 0;
 
-    sl_memzero( &r, sizeof( r ) ); r.eax = 0x1A00; r.edx = (u32)g_dta; int21( &r );   /* set DTA */
-    sl_memzero( &r, sizeof( r ) ); r.eax = 0x4E00; r.ecx = 0x16; r.edx = (u32)full; int21( &r );
+    sl_memzero( &r, sizeof( r ) ); r.eax = 0x1A00; r.edx = (uint32_t)g_dta; int21( &r ); /* set DTA */
+    sl_memzero( &r, sizeof( r ) ); r.eax = 0x4E00; r.ecx = 0x16; r.edx = (uint32_t)full; int21( &r );
     if ( CF( r ) ) { g_pending = 0; return (void *)0; }
     g_pending = 1;
     return (void *)1;
@@ -199,7 +199,7 @@ static int d_findnext( void *ctx, void *it, srv_dirent *de )
     de->dosdate = date;
     de->dostime = time;
 
-    sl_memzero( &r, sizeof( r ) ); r.eax = 0x1A00; r.edx = (u32)g_dta; int21( &r );
+    sl_memzero( &r, sizeof( r ) ); r.eax = 0x1A00; r.edx = (uint32_t)g_dta; int21( &r );
     sl_memzero( &r, sizeof( r ) ); r.eax = 0x4F00; int21( &r );
     if ( CF( r ) ) g_pending = 0;
     return 1;
@@ -208,15 +208,15 @@ static int d_findnext( void *ctx, void *it, srv_dirent *de )
 static void d_findclose( void *ctx, void *it ) { (void)ctx; (void)it; g_pending = 0; }
 
 static int d_mkdir( void *ctx, const char *path )
-{ char f[DPATH_MAX]; REGS r; if ( !dpath( (dosfs *)ctx, path, f, DPATH_MAX ) ) return -1; sl_memzero( &r, sizeof( r ) ); r.eax = 0x3900; r.edx = (u32)f; int21( &r ); return CF( r ) ? -1 : 0; }
+{ char f[DPATH_MAX]; REGS r; if ( !dpath( (dosfs *)ctx, path, f, DPATH_MAX ) ) return -1; sl_memzero( &r, sizeof( r ) ); r.eax = 0x3900; r.edx = (uint32_t)f; int21( &r ); return CF( r ) ? -1 : 0; }
 static int d_rmdir( void *ctx, const char *path )
-{ char f[DPATH_MAX]; REGS r; if ( !dpath( (dosfs *)ctx, path, f, DPATH_MAX ) ) return -1; sl_memzero( &r, sizeof( r ) ); r.eax = 0x3A00; r.edx = (u32)f; int21( &r ); return CF( r ) ? -1 : 0; }
+{ char f[DPATH_MAX]; REGS r; if ( !dpath( (dosfs *)ctx, path, f, DPATH_MAX ) ) return -1; sl_memzero( &r, sizeof( r ) ); r.eax = 0x3A00; r.edx = (uint32_t)f; int21( &r ); return CF( r ) ? -1 : 0; }
 static int d_unlink( void *ctx, const char *path )
-{ char f[DPATH_MAX]; REGS r; if ( !dpath( (dosfs *)ctx, path, f, DPATH_MAX ) ) return -1; sl_memzero( &r, sizeof( r ) ); r.eax = 0x4100; r.edx = (u32)f; int21( &r ); return CF( r ) ? -1 : 0; }
+{ char f[DPATH_MAX]; REGS r; if ( !dpath( (dosfs *)ctx, path, f, DPATH_MAX ) ) return -1; sl_memzero( &r, sizeof( r ) ); r.eax = 0x4100; r.edx = (uint32_t)f; int21( &r ); return CF( r ) ? -1 : 0; }
 
 /* a file or directory's entry, by a 4Eh search for its own name (the
    share root has none: it is a directory with no date) */
-static unsigned char g_sdta[64];
+static uint8_t g_sdta[64];
 static int d_stat( void *ctx, const char *path, srv_dirent *de )
 {
     char f[DPATH_MAX];
@@ -229,8 +229,8 @@ static int d_stat( void *ctx, const char *path, srv_dirent *de )
     if ( *p == 0 ) { de->attr = 0x10; return 0; }
     for ( p = path; *p; p++ ) if ( *p == '*' || *p == '?' ) return -1;
     if ( !dpath( (dosfs *)ctx, path, f, DPATH_MAX ) ) return -1;
-    sl_memzero( &r, sizeof( r ) ); r.eax = 0x1A00; r.edx = (u32)g_sdta; int21( &r );
-    sl_memzero( &r, sizeof( r ) ); r.eax = 0x4E00; r.ecx = 0x16; r.edx = (u32)f; int21( &r );
+    sl_memzero( &r, sizeof( r ) ); r.eax = 0x1A00; r.edx = (uint32_t)g_sdta; int21( &r );
+    sl_memzero( &r, sizeof( r ) ); r.eax = 0x4E00; r.ecx = 0x16; r.edx = (uint32_t)f; int21( &r );
     if ( CF( r ) ) return -1;
     de->attr = g_sdta[0x15];
     de->dostime = get16( g_sdta + 0x16 );
@@ -245,7 +245,7 @@ static int d_rename( void *ctx, const char *from, const char *to )
     char f[DPATH_MAX], t[DPATH_MAX];
     REGS r;
     if ( !dpath( (dosfs *)ctx, from, f, DPATH_MAX ) || !dpath( (dosfs *)ctx, to, t, DPATH_MAX ) ) return -1;
-    sl_memzero( &r, sizeof( r ) ); r.eax = 0x5600; r.edx = (u32)f; r.edi = (u32)t; int21( &r );
+    sl_memzero( &r, sizeof( r ) ); r.eax = 0x5600; r.edx = (uint32_t)f; r.edi = (uint32_t)t; int21( &r );
     return CF( r ) ? -1 : 0;
 }
 
@@ -254,7 +254,7 @@ static int d_setattr( void *ctx, const char *path, unsigned int attr )
     char f[DPATH_MAX];
     REGS r;
     if ( !dpath( (dosfs *)ctx, path, f, DPATH_MAX ) ) return -1;
-    sl_memzero( &r, sizeof( r ) ); r.eax = 0x4301; r.ecx = attr; r.edx = (u32)f; int21( &r );
+    sl_memzero( &r, sizeof( r ) ); r.eax = 0x4301; r.ecx = attr; r.edx = (uint32_t)f; int21( &r );
     return CF( r ) ? -1 : 0;
 }
 
@@ -264,11 +264,11 @@ static int d_fstat( void *ctx, int h, srv_dirent *de )
 {
     REGS r; (void)ctx;
     sl_memzero( de, sizeof( *de ) );
-    sl_memzero( &r, sizeof( r ) ); r.eax = 0x5700; r.ebx = (u32)h; int21( &r );
+    sl_memzero( &r, sizeof( r ) ); r.eax = 0x5700; r.ebx = (uint32_t)h; int21( &r );
     if ( CF( r ) ) return -1;
     de->dostime = (unsigned int)( r.ecx & 0xFFFF );
     de->dosdate = (unsigned int)( r.edx & 0xFFFF );
-    sl_memzero( &r, sizeof( r ) ); r.eax = 0x4202; r.ebx = (u32)h; int21( &r );
+    sl_memzero( &r, sizeof( r ) ); r.eax = 0x4202; r.ebx = (uint32_t)h; int21( &r );
     if ( CF( r ) ) return -1;
     de->size = r.eax;
     de->attr = 0x20;
@@ -279,19 +279,19 @@ static int d_fstat( void *ctx, int h, srv_dirent *de )
 static int d_settime( void *ctx, int h, unsigned int date, unsigned int time )
 {
     REGS r; (void)ctx;
-    sl_memzero( &r, sizeof( r ) ); r.eax = 0x5701; r.ebx = (u32)h; r.ecx = time; r.edx = date; int21( &r );
+    sl_memzero( &r, sizeof( r ) ); r.eax = 0x5701; r.ebx = (uint32_t)h; r.ecx = time; r.edx = date; int21( &r );
     return CF( r ) ? -1 : 0;
 }
 
 /* the served drive's size and free space, in clusters (36h) */
-static int d_disk( void *ctx, unsigned long *units, unsigned long *avail, unsigned long *unitsize )
+static int d_disk( void *ctx, uint32_t *units, uint32_t *avail, uint32_t *unitsize )
 {
     dosfs *fs = (dosfs *)ctx;
     REGS r;
     char drv = fs->root[0];
     if ( drv >= 'a' && drv <= 'z' ) drv = (char)( drv - 32 );
     if ( drv < 'A' || drv > 'Z' || fs->root[1] != ':' ) return -1;
-    sl_memzero( &r, sizeof( r ) ); r.eax = 0x3600; r.edx = (u32)( drv - 'A' + 1 ); int21( &r );
+    sl_memzero( &r, sizeof( r ) ); r.eax = 0x3600; r.edx = (uint32_t)( drv - 'A' + 1 ); int21( &r );
     if ( ( r.eax & 0xFFFF ) == 0xFFFF ) return -1;
     *units = r.edx & 0xFFFF;
     *avail = r.ebx & 0xFFFF;
@@ -314,7 +314,7 @@ static const srv_vfs DOSVFS = {
 
 /* SRVBRK.ASM: the INT 23h handler counts into srv_breaks */
 extern void __cdecl srv_brkstub( void );
-extern volatile u32 __cdecl srv_breaks;
+extern volatile uint32_t __cdecl srv_breaks;
 
 static void brk_install( void )
 {
@@ -322,7 +322,7 @@ static void brk_install( void )
 
     sl_memzero( &regs, sizeof( regs ) );
     regs.eax = 0x2523;
-    regs.edx = (u32)srv_brkstub;
+    regs.edx = (uint32_t)srv_brkstub;
     int21( &regs );
 }
 
@@ -344,18 +344,18 @@ static int stop_asked( void )
     return srv_breaks != 0;
 }
 
-static int srv_send( void *ctx, const unsigned char *buf, int len ) { return sl_send( (int)ctx, buf, (u32)len, 15000 ); }
+static int srv_send( void *ctx, const uint8_t *buf, int len ) { return sl_send( (int)ctx, buf, (uint32_t)len, 15000 ); }
 
 /* sl_recvwait's loop, with a look for Ctrl+Break: a client that is
    connected and idle is dropped at once rather than after 300 seconds */
-static int srv_recv( void *ctx, unsigned char *buf, int len )
+static int srv_recv( void *ctx, uint8_t *buf, int len )
 {
-    u32 start = sl_now();
+    uint32_t start = sl_now();
     int got;
 
     for ( ;; ) {
         if ( stop_asked() ) return 0;
-        got = sl_recv( (int)ctx, buf, (u32)len );
+        got = sl_recv( (int)ctx, buf, (uint32_t)len );
         if ( got ) return got;
         if ( sl_closed( (int)ctx ) ) return 0;
         if ( sl_since( start ) > 30000 ) return 0;
@@ -374,16 +374,16 @@ static int srv_recv( void *ctx, unsigned char *buf, int len )
 
 static int nb_row = -1;                 /* NETBEUI.SYS's row, or -1 */
 
-static u32 nbc( u32 fn, void *buf, u32 len, int *err )
+static uint32_t nbc( uint32_t fn, void *buf, uint32_t len, int *err )
 {
     REGS regs;
 
     sl_memzero( &regs, sizeof( regs ) );
-    regs.eax = ( (u32)NDF_CALL << 16 ) | 0xF125;
-    regs.edx = (u32)nb_row;
+    regs.eax = ( (uint32_t)NDF_CALL << 16 ) | 0xF125;
+    regs.edx = (uint32_t)nb_row;
     regs.ebx = fn;
     regs.ecx = len;
-    regs.edi = (u32)buf;
+    regs.edi = (uint32_t)buf;
     int21( &regs );
     *err = CF( regs ) ? (int)( regs.eax & 0xFFFF ) : 0;
     return *err ? 0 : regs.eax;
@@ -394,18 +394,18 @@ static int nb_find_row( void )
 {
     REGS regs;
     ND_ROW row;
-    u32 count, i;
+    unsigned int count, i;
 
     sl_memzero( &regs, sizeof( regs ) );
-    regs.eax = ( (u32)NDF_COUNT << 16 ) | 0xF125;
+    regs.eax = ( (uint32_t)NDF_COUNT << 16 ) | 0xF125;
     int21( &regs );
     if ( CF( regs ) ) return -1;
     count = regs.ecx;
     for ( i = 0; i < count; i++ ) {
         sl_memzero( &regs, sizeof( regs ) );
-        regs.eax = ( (u32)NDF_INFO << 16 ) | 0xF125;
+        regs.eax = ( (uint32_t)NDF_INFO << 16 ) | 0xF125;
         regs.edx = i;
-        regs.edi = (u32)&row;
+        regs.edi = (uint32_t)&row;
         regs.ecx = sizeof( row );
         int21( &regs );
         if ( !CF( regs ) && ( row.flags & NDTF_NETBIOS ) ) return (int)i;
@@ -413,7 +413,7 @@ static int nb_find_row( void )
     return -1;
 }
 
-static u32 nb_state( u32 h, NB_STAT *st )
+static unsigned int nb_state( uint32_t h, NB_STAT *st )
 {
     int err;
     sl_memzero( st, NBSTAT_LEN );
@@ -423,26 +423,27 @@ static u32 nb_state( u32 h, NB_STAT *st )
 }
 
 typedef struct {
-    u32           h;
-    unsigned char pend[4];
+    uint32_t      h;
+    uint8_t       pend[4];
     int           pendn, pendoff;
-    u32           left;
+    unsigned int  left;
 } nbconn;
 
-static int nb_send( void *ctx, const unsigned char *buf, int len )
+static int nb_send( void *ctx, const uint8_t *buf, int len )
 {
     nbconn *c = (nbconn *)ctx;
-    unsigned char out[NBIO_HDR + NB_PIECE];
+    uint8_t out[NBIO_HDR + NB_PIECE];
     NB_IO *io = (NB_IO *)out;
     NB_STAT st;
-    u32 plen, n, got, start = sl_now();
-    const unsigned char *p;
+    unsigned int plen, n, got;
+    uint32_t start = sl_now();
+    const uint8_t *p;
     int err;
 
     if ( len < 4 ) return -1;
     if ( buf[0] != 0x00 ) return len;   /* 0x82 and keepalives: not on NetBEUI */
-    plen = ( (u32)( buf[1] & 1 ) << 16 ) | ( (u32)buf[2] << 8 ) | buf[3];
-    if ( (u32)len != 4 + plen ) return -1;
+    plen = ( (unsigned int)( buf[1] & 1 ) << 16 ) | ( (unsigned int)buf[2] << 8 ) | buf[3];
+    if ( (unsigned int)len != 4 + plen ) return -1;
     p = buf + 4;
     do {
         n = plen > NB_PIECE ? NB_PIECE : plen;
@@ -461,13 +462,14 @@ static int nb_send( void *ctx, const unsigned char *buf, int len )
     return len;
 }
 
-static int nb_recv( void *ctx, unsigned char *buf, int len )
+static int nb_recv( void *ctx, uint8_t *buf, int len )
 {
     nbconn *c = (nbconn *)ctx;
-    unsigned char in[NBIO_HDR + NB_PIECE];
+    uint8_t in[NBIO_HDR + NB_PIECE];
     NB_IO *io = (NB_IO *)in;
     NB_STAT st;
-    u32 n, start = sl_now();
+    unsigned int n;
+    uint32_t start = sl_now();
     int err;
 
     if ( len <= 0 ) return 0;
@@ -480,21 +482,21 @@ static int nb_recv( void *ctx, unsigned char *buf, int len )
         }
         n = st.rxready;
         c->pend[0] = 0x00;
-        c->pend[1] = (unsigned char)( ( n >> 16 ) & 1 );
-        c->pend[2] = (unsigned char)( n >> 8 );
-        c->pend[3] = (unsigned char)n;
+        c->pend[1] = (uint8_t)( ( n >> 16 ) & 1 );
+        c->pend[2] = (uint8_t)( n >> 8 );
+        c->pend[3] = (uint8_t)n;
         c->pendn = 4;
         c->pendoff = 0;
         c->left = n;
     }
     if ( c->pendoff < c->pendn ) {
-        n = (u32)( c->pendn - c->pendoff );
-        if ( n > (u32)len ) n = (u32)len;
+        n = (unsigned int)( c->pendn - c->pendoff );
+        if ( n > (unsigned int)len ) n = (unsigned int)len;
         sl_memcpy( buf, c->pend + c->pendoff, n );
         c->pendoff += (int)n;
         return (int)n;
     }
-    n = c->left < (u32)len ? c->left : (u32)len;
+    n = c->left < (unsigned int)len ? c->left : (unsigned int)len;
     if ( n > NB_PIECE ) n = NB_PIECE;
     io->handle = c->h;
     io->len = 0;
@@ -506,11 +508,11 @@ static int nb_recv( void *ctx, unsigned char *buf, int len )
 }
 
 /* a listen on our server name, <20> */
-static u32 nb_listen( void )
+static uint32_t nb_listen( void )
 {
     NB_NAMEREQ req;
     int err;
-    u32 h;
+    uint32_t h;
 
     sl_memzero( &req, NBNAME_LEN );
     req.suffix = 0x20;
@@ -520,12 +522,12 @@ static u32 nb_listen( void )
 
 void __cdecl dos_entry( void )
 {
-    char **argv;
-    int    argc, lh = 0, nh, tcp, err;
-    dosfs  fs;
-    u32    peer_ip, nbh = 0;
-    u16    peer_port;
-    NB_STAT st;
+    char   **argv;
+    int      argc, lh = 0, nh, tcp, err;
+    dosfs    fs;
+    uint32_t peer_ip, nbh = 0;
+    uint16_t peer_port;
+    NB_STAT  st;
     NB_IF nbif;
 
     argc = sl_args( &argv );
@@ -542,9 +544,9 @@ void __cdecl dos_entry( void )
         REGS regs;
         sl_memzero( &info, SOCKIF_LEN2 );
         sl_memzero( &regs, sizeof( regs ) );
-        regs.eax = ( (u32)SOCK_IFSTAT << 16 ) | 0xF126;
+        regs.eax = ( (uint32_t)SOCK_IFSTAT << 16 ) | 0xF126;
         regs.ecx = SOCKIF_LEN2;
-        regs.edi = (u32)&info;
+        regs.edi = (uint32_t)&info;
         int21( &regs );
         if ( !CF( regs ) && info.nbname[0] ) sl_strcpy( smbsrv_name, info.nbname, sizeof( smbsrv_name ) );
     }

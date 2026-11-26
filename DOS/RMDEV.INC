@@ -665,7 +665,7 @@ rdq_go:
         mov     es,ax
         mov     bx,bp
         call    drv_call
-        jc      rdq_bad
+        jc      rdq_why
         cmp     word ptr [bp+RQ_COUNT],dx
         jne     rdq_bad
         add     sp,RQ_ROOM
@@ -674,6 +674,9 @@ rdq_go:
         popad
         clc
         ret
+rdq_why:
+        mov     al,byte ptr [bp+RQ_STATUS]      ; the driver's own reason is
+        mov     [rd_xcode],al                   ; INT 24h's code already
 rdq_bad:
         add     sp,RQ_ROOM
         pop     fs

@@ -44,7 +44,7 @@ void mp_main( void )
     PLSTAT st;
     PLSET set;
     EQSET eq;
-    u32 last = 0xFFFFFFFFUL, seek_s = 0, stop_s = 0;
+    uint32_t last = 0xFFFFFFFFUL, seek_s = 0, stop_s = 0;
     int speed = 0, fast = 0;
     int rc, shift, use_eq = 0, len = 0;
 
@@ -81,7 +81,7 @@ void mp_main( void )
         }
     }
     if ( str_icmp( path, "PCI" ) == 0 ) {
-        u32 regs[6], index, cls;
+        uint32_t regs[6], index, cls;
 
         mem_set( regs, 0, sizeof( regs ) );
         rc = sys_bus( 0, regs );
@@ -99,7 +99,7 @@ void mp_main( void )
                   regs[0] & 0xFFFF, regs[0] >> 16, cls >> 8, cls & 0xFF );
             say( line );
             {
-                u32 bar[6];
+                uint32_t bar[6];
 
                 mem_set( bar, 0, sizeof( bar ) );
                 bar[1] = regs[1];
@@ -117,7 +117,7 @@ void mp_main( void )
                     say( line );
                 }
             }
-            mem_set( regs + 1, 0, 5 * sizeof( u32 ) );
+            mem_set( regs + 1, 0, 5 * sizeof( uint32_t ) );
         }
         sys_exit( 0 );
     }
@@ -152,13 +152,13 @@ void mp_main( void )
         void *state;
         DECOPT opt;
         DECBUF buf;
-        s16 *pcm = (s16 *)try_alloc( 4608UL * 2 * sizeof( s16 ) );
-        u32 frames = 0, t0, t1, cs, audio_cs;
+        int16_t *pcm = (int16_t *)try_alloc( 4608UL * 2 * sizeof( int16_t ) );
+        uint32_t frames = 0, t0, t1, cs, audio_cs;
 
         mem_set( &opt, 0, sizeof( opt ) );
-        opt.down = (u8)(set.quality == PQ_HALF ? 1 : set.quality == PQ_QUARTER ? 2 : 0);
-        opt.mono = (u8)set.mono;
-        opt.fast = (u8)fast;
+        opt.down = (uint8_t)(set.quality == PQ_HALF ? 1 : set.quality == PQ_QUARTER ? 2 : 0);
+        opt.mono = (uint8_t)set.mono;
+        opt.fast = (uint8_t)fast;
         opt.rate = 22050;
         opt.synth = SYN_SOFT;
         if ( use_eq ) {
@@ -174,8 +174,8 @@ void mp_main( void )
             sys_exit( 1 );
         }
         sfmt( line, sizeof( line ), "%s: %u Hz %u ch out (file %u Hz %u ch), down %u mono %u fast %u eq %u\r\n",
-              info.format, info.rate, info.channels, info.file_rate, info.file_channels, (u32)opt.down,
-              (u32)opt.mono, (u32)opt.fast, (u32)use_eq );
+              info.format, info.rate, info.channels, info.file_rate, info.file_channels, (unsigned int)opt.down,
+              (unsigned int)opt.mono, (unsigned int)opt.fast, (unsigned int)use_eq );
         say( line );
         t0 = sys_hundredths();
         for ( ;; ) {

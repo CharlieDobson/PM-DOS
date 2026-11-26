@@ -47,19 +47,19 @@ static const GMODE modes[] = {
 };
 
 static const GMODE *gm;         /* NULL in SCREEN 0 */
-static u8  *gpages[8];
-static int  gapage, gvpage;
-static int  text_rows, text_font;
-static u32  vid_sel;
-static int  hw_set;             /* the hardware mode is on the screen */
+static uint8_t *gpages[8];
+static int      gapage, gvpage;
+static int      text_rows, text_font;
+static uint32_t vid_sel;
+static int      hw_set;         /* the hardware mode is on the screen */
 
 /* what changed on the page shown: a box */
 static int  dx0 = 32767, dy0 = 32767, dx1 = -1, dy1 = -1;
 
 /* colours */
-static int  draw_fg, draw_bg;
-static u8   rgb[256][3];        /* each attribute's colour, six bits a gun */
-static int  pal1;               /* SCREEN 1's palette, 0 or 1 */
+static int     draw_fg, draw_bg;
+static uint8_t rgb[256][3];     /* each attribute's colour, six bits a gun */
+static int     pal1;            /* SCREEN 1's palette, 0 or 1 */
 
 /* coordinates */
 static int    vx1, vy1, vx2, vy2;       /* the viewport, physical */
@@ -71,10 +71,10 @@ static int    win_on, win_screen;
 static double lpx, lpy;                 /* the last point, logical */
 
 /* the fonts */
-static u8  font8[8 * 256], font14[14 * 256], font16[16 * 256];
-static int have8, have14, have16;
+static uint8_t font8[8 * 256], font14[14 * 256], font16[16 * 256];
+static int     have8, have14, have16;
 
-static const u8 ega16[16][3] = {        /* red, green, blue */
+static const uint8_t ega16[16][3] = {   /* red, green, blue */
     {  0,  0,  0 }, {  0,  0, 42 }, {  0, 42,  0 }, {  0, 42, 42 },
     { 42,  0,  0 }, { 42,  0, 42 }, { 42, 21,  0 }, { 42, 42, 42 },
     { 21, 21, 21 }, { 21, 21, 63 }, { 21, 63, 21 }, { 21, 63, 63 },
@@ -83,8 +83,8 @@ static const u8 ega16[16][3] = {        /* red, green, blue */
 
 /* the DAC entries the attribute controller's defaults send a planar
    mode's sixteen attributes to */
-static const u8 ac_ega[16] = { 0, 1, 2, 3, 4, 5, 0x14, 7, 0x38, 0x39, 0x3A, 0x3B, 0x3C, 0x3D, 0x3E, 0x3F };
-static const u8 ac_cga[16] = { 0, 1, 2, 3, 4, 5, 6, 7, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17 };
+static const uint8_t ac_ega[16] = { 0, 1, 2, 3, 4, 5, 0x14, 7, 0x38, 0x39, 0x3A, 0x3B, 0x3C, 0x3D, 0x3E, 0x3F };
+static const uint8_t ac_cga[16] = { 0, 1, 2, 3, 4, 5, 6, 7, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17 };
 
 int  con_set_pages( int active, int visual );
 int  con_page_count( void );
@@ -116,7 +116,7 @@ int gfx_colors( void )
     return gm ? gm->colors : 16;
 }
 
-u8 *gfx_page( int page )
+uint8_t *gfx_page( int page )
 {
     return gm && page >= 0 && page < gm->pages ? gpages[page] : NULL;
 }
@@ -148,21 +148,21 @@ int gfx_active_page( void )
 /* ------------------------------------------------------------------ */
 
 /* an EGA colour number 0-63 (rgbRGB) as six-bit guns */
-static void ega64( int c, u8 *out )
+static void ega64( int c, uint8_t *out )
 {
-    out[0] = (u8)(((c >> 2) & 1) * 42 + ((c >> 5) & 1) * 21);
-    out[1] = (u8)(((c >> 1) & 1) * 42 + ((c >> 4) & 1) * 21);
-    out[2] = (u8)((c & 1) * 42 + ((c >> 3) & 1) * 21);
+    out[0] = (uint8_t)(((c >> 2) & 1) * 42 + ((c >> 5) & 1) * 21);
+    out[1] = (uint8_t)(((c >> 1) & 1) * 42 + ((c >> 4) & 1) * 21);
+    out[2] = (uint8_t)((c & 1) * 42 + ((c >> 3) & 1) * 21);
 }
 
 /* the standard VGA 256-colour palette, made when the DAC cannot be read */
 static void default256( void )
 {
-    static const u8 grey[16] = { 0, 5, 8, 11, 14, 17, 20, 24, 28, 32, 36, 40, 45, 50, 56, 63 };
-    static const u8 tops[3] = { 63, 28, 16 };
-    static const u8 lows[3][3] = { { 0, 31, 45 }, { 0, 14, 20 }, { 0, 8, 11 } };
+    static const uint8_t grey[16] = { 0, 5, 8, 11, 14, 17, 20, 24, 28, 32, 36, 40, 45, 50, 56, 63 };
+    static const uint8_t tops[3] = { 63, 28, 16 };
+    static const uint8_t lows[3][3] = { { 0, 31, 45 }, { 0, 14, 20 }, { 0, 8, 11 } };
     int i, band, sat, hue, at = 32;
-    u8 lo, hi, steps[5];
+    uint8_t lo, hi, steps[5];
 
     for ( i = 0; i < 16; i++ ) {
         rgb[i][0] = ega16[i][0];
@@ -175,11 +175,11 @@ static void default256( void )
             hi = tops[band];
             lo = lows[band][sat];
             for ( i = 0; i < 5; i++ ) {
-                steps[i] = (u8)(lo + (hi - lo) * i / 4);
+                steps[i] = (uint8_t)(lo + (hi - lo) * i / 4);
             }
             for ( hue = 0; hue < 24; hue++ ) {
                 int seg = hue / 4, step = hue % 4;
-                u8 r, g, b;
+                uint8_t r, g, b;
                 switch ( seg ) {
                 case 0:  r = steps[step]; g = lo; b = hi; break;           /* blue to magenta */
                 case 1:  r = hi; g = lo; b = steps[4 - step]; break;       /* magenta to red */
@@ -203,9 +203,9 @@ static void default256( void )
 /* the mode's colours as the hardware should show them */
 static void apply_palette( void )
 {
-    u8 entries[256 * 4];
+    uint8_t entries[256 * 4];
     int i, count;
-    const u8 *map = NULL;
+    const uint8_t *map = NULL;
 
     if ( gm == NULL ) {
         return;
@@ -244,7 +244,7 @@ static void default_palette( void )
     switch ( gm->mode ) {
     case 13:
         {
-            u8 entries[256 * 4];
+            uint8_t entries[256 * 4];
             if ( hw_set && sys_video_palette_get( 0, 256, entries ) ) {
                 for ( i = 0; i < 256; i++ ) {
                     rgb[i][0] = entries[i * 4 + 2];
@@ -283,7 +283,7 @@ static void default_palette( void )
 }
 
 /* PALETTE attribute, colour: the colour is the mode's own kind */
-static void set_attr_color( int attr, s32 color )
+static void set_attr_color( int attr, int32_t color )
 {
     if ( gm == NULL ) {
         /* SCREEN 0: EGA colours through the text attributes */
@@ -318,16 +318,16 @@ static void set_attr_color( int attr, s32 color )
         if ( color < 0 || color > 8 ) {
             vm_error( E_ILLEGAL_CALL );
         }
-        rgb[attr][0] = rgb[attr][1] = rgb[attr][2] = (u8)(color * 63 / 8);
+        rgb[attr][0] = rgb[attr][1] = rgb[attr][2] = (uint8_t)(color * 63 / 8);
         break;
     default:
         /* 65536 * blue + 256 * green + red, six bits each */
         if ( color < 0 || (color & 0xC0C0C0L) != 0 ) {
             vm_error( E_ILLEGAL_CALL );
         }
-        rgb[attr][0] = (u8)(color & 63);
-        rgb[attr][1] = (u8)((color >> 8) & 63);
-        rgb[attr][2] = (u8)((color >> 16) & 63);
+        rgb[attr][0] = (uint8_t)(color & 63);
+        rgb[attr][1] = (uint8_t)((color >> 8) & 63);
+        rgb[attr][2] = (uint8_t)((color >> 16) & 63);
         break;
     }
 }
@@ -336,7 +336,7 @@ static void set_attr_color( int attr, s32 color )
 void rtf_PALETTE( void )
 {
     int given = (int)POP_L();
-    s32 color = POP_L(), attr = POP_L();
+    int32_t color = POP_L(), attr = POP_L();
 
     if ( !given ) {
         if ( gm != NULL ) {
@@ -354,10 +354,10 @@ void rtf_PALETTE( void )
 /* PALETTE USING array(i): the array's slot and element (or 0) */
 void rtf_PALUSING( void )
 {
-    u8 *elem = (u8 *)POP_A();
+    uint8_t *elem = (uint8_t *)POP_A();
     ARR *arr = *(ARR **)POP_A();
     int i, count = gm ? gm->colors : 16;
-    u8 *end;
+    uint8_t *end;
 
     if ( arr == NULL ) {
         vm_error( E_SUBSCRIPT );
@@ -370,11 +370,11 @@ void rtf_PALUSING( void )
         count = 256;
     }
     for ( i = 0; i < count; i++ ) {
-        s32 color;
+        int32_t color;
         if ( elem + arr->esize > end ) {
             vm_error( E_ILLEGAL_CALL );
         }
-        color = arr->esize == 2 ? *(s16 *)elem : *(s32 *)elem;
+        color = arr->esize == 2 ? *(int16_t *)elem : *(int32_t *)elem;
         set_attr_color( i, color );
         elem += arr->esize;
     }
@@ -449,7 +449,7 @@ int gfx_text_attr( int fgc, int bgc )
 
 /* a colour number as the mode takes it: SCREEN 13 wraps, the CGA modes
    go no higher than they can show, the rest wrap at 16 */
-static int colour_of( s32 c )
+static int colour_of( int32_t c )
 {
     switch ( gm->mode ) {
     case 13:
@@ -496,7 +496,7 @@ static void mark_all( void )
 /* the planar modes' picture goes out in bands of rows, a plane at a
    time: the band's bytes for each plane are made here first */
 #define BAND        60
-static u8 *band_buf;            /* 4 planes x BAND rows x 80 bytes */
+static uint8_t *band_buf;       /* 4 planes x BAND rows x 80 bytes */
 
 /* anything drawn since the last flush? */
 int gfx_dirty( void )
@@ -507,9 +507,9 @@ int gfx_dirty( void )
 /* the changed box of the page shown, onto the screen */
 void gfx_flush( void )
 {
-    u8 *pic, *planes[4];
+    uint8_t *pic, *planes[4];
     int y, x, p, bx0, bx1, nb, top, bottom;
-    u32 off;
+    uint32_t off;
 
     if ( gm == NULL || !hw_set || dx1 < dx0 || dy1 < dy0 ) {
         dx0 = dy0 = 32767;
@@ -531,18 +531,18 @@ void gfx_flush( void )
     pic = gpages[gvpage];
     if ( gm->hw == 0x13 ) {
         for ( y = dy0; y <= dy1; y++ ) {
-            off = (u32)y * 320 + (u32)dx0;
-            vid_put( vid_sel, off, pic + off, (u32)(dx1 - dx0 + 1) );
+            off = (uint32_t)y * 320 + (uint32_t)dx0;
+            vid_put( vid_sel, off, pic + off, (unsigned int)(dx1 - dx0 + 1) );
         }
     } else {
         if ( band_buf == NULL ) {
-            band_buf = (u8 *)try_alloc( 4UL * BAND * 80 );
+            band_buf = (uint8_t *)try_alloc( 4UL * BAND * 80 );
             if ( band_buf == NULL ) {
                 return;                         /* shown at the next flush */
             }
         }
         for ( p = 0; p < 4; p++ ) {
-            planes[p] = band_buf + (u32)p * BAND * 80;
+            planes[p] = band_buf + (unsigned int)p * BAND * 80;
         }
         bx0 = dx0 >> 3;
         bx1 = dx1 >> 3;
@@ -550,16 +550,16 @@ void gfx_flush( void )
         for ( top = dy0; top <= dy1; top += BAND ) {
             bottom = top + BAND - 1 < dy1 ? top + BAND - 1 : dy1;
             for ( y = top; y <= bottom; y++ ) {
-                const u8 *row = pic + (u32)y * (u32)gm->w + (u32)bx0 * 8;
-                u8 *dst0 = planes[0] + (y - top) * nb;
-                u8 *dst1 = planes[1] + (y - top) * nb;
-                u8 *dst2 = planes[2] + (y - top) * nb;
-                u8 *dst3 = planes[3] + (y - top) * nb;
+                const uint8_t *row = pic + (unsigned int)y * (unsigned int)gm->w + (unsigned int)bx0 * 8;
+                uint8_t *dst0 = planes[0] + (y - top) * nb;
+                uint8_t *dst1 = planes[1] + (y - top) * nb;
+                uint8_t *dst2 = planes[2] + (y - top) * nb;
+                uint8_t *dst3 = planes[3] + (y - top) * nb;
                 for ( x = 0; x < nb; x++ ) {
-                    u8 b0 = 0, b1 = 0, b2 = 0, b3 = 0, bit;
+                    uint8_t b0 = 0, b1 = 0, b2 = 0, b3 = 0, bit;
                     int i;
                     for ( i = 0, bit = 0x80; i < 8; i++, bit >>= 1 ) {
-                        u8 c = row[x * 8 + i];
+                        uint8_t c = row[x * 8 + i];
                         if ( c & 1 ) {
                             b0 |= bit;
                         }
@@ -583,7 +583,7 @@ void gfx_flush( void )
                 port_out( 0x3C4, 2 );
                 port_out( 0x3C5, 1u << p );
                 for ( y = top; y <= bottom; y++ ) {
-                    vid_put( vid_sel, (u32)y * 80 + (u32)bx0, planes[p] + (y - top) * nb, (u32)nb );
+                    vid_put( vid_sel, (uint32_t)y * 80 + (uint32_t)bx0, planes[p] + (y - top) * nb, (unsigned int)nb );
                 }
             }
         }
@@ -600,10 +600,10 @@ static void need_font8( void );
 /* the hardware mode on, the palette, the whole picture */
 static int hw_on( void )
 {
-    u32 bytes, pitch;
+    uint32_t bytes, pitch;
     int rc;
 
-    rc = sys_video_set( (u32)gm->hw, &vid_sel, &bytes, &pitch );
+    rc = sys_video_set( (uint32_t)gm->hw, &vid_sel, &bytes, &pitch );
     if ( !rc ) {
         hw_set = 0;
         return 0;
@@ -676,7 +676,7 @@ static void text_mode( void )
 static int set_mode( int mode )
 {
     int i;
-    u32 size;
+    unsigned int size;
 
     for ( i = 0; i < (int)(sizeof( modes ) / sizeof( modes[0] )); i++ ) {
         if ( modes[i].mode == mode ) {
@@ -688,9 +688,9 @@ static int set_mode( int mode )
     }
     free_pages();
     gm = &modes[i];
-    size = (u32)gm->w * (u32)gm->h;
+    size = (unsigned int)gm->w * (unsigned int)gm->h;
     for ( i = 0; i < gm->pages; i++ ) {
-        gpages[i] = (u8 *)try_alloc( size );
+        gpages[i] = (uint8_t *)try_alloc( size );
         if ( gpages[i] == NULL ) {
             text_mode();                        /* not left in the old mode's state */
             vm_error( E_OUT_OF_MEMORY );
@@ -768,7 +768,7 @@ int gfx_set( int mode, int apage, int vpage, int sw, int mask )
 void rtf_SCREENS( void )
 {
     int mask = (int)POP_L();
-    s32 vpage = POP_L(), apage = POP_L(), sw = POP_L(), mode = POP_L();
+    int32_t vpage = POP_L(), apage = POP_L(), sw = POP_L(), mode = POP_L();
 
     if ( !gfx_set( (int)mode, (int)apage, (int)vpage, (int)sw, mask ) ) {
         vm_error( E_ILLEGAL_CALL );
@@ -808,7 +808,7 @@ int gfx_width( int new_cols, int new_rows )
         int page;
         /* another number of lines clears the screen, as in QBasic */
         for ( page = 0; page < gm->pages; page++ ) {
-            mem_set( gpages[page], 0, (u32)gm->w * (u32)gm->h );
+            mem_set( gpages[page], 0, (unsigned int)gm->w * (unsigned int)gm->h );
         }
         mark_all();
     }
@@ -838,7 +838,7 @@ void gfx_pcopy( int from, int to )
     if ( from < 0 || from >= gm->pages || to < 0 || to >= gm->pages ) {
         vm_error( E_ILLEGAL_CALL );
     }
-    mem_cpy( gpages[to], gpages[from], (u32)gm->w * (u32)gm->h );
+    mem_cpy( gpages[to], gpages[from], (unsigned int)gm->w * (unsigned int)gm->h );
     if ( to == gvpage ) {
         mark_all();
     }
@@ -846,7 +846,7 @@ void gfx_pcopy( int from, int to )
 
 void rtf_PCOPY( void )
 {
-    s32 to = POP_L(), from = POP_L();
+    int32_t to = POP_L(), from = POP_L();
 
     gfx_pcopy( (int)from, (int)to );
 }
@@ -856,10 +856,10 @@ void rtf_PCOPY( void )
 /* ------------------------------------------------------------------ */
 
 #define BDA_POINTS      0x485
-#define VEC( n )        ((u32)(n) * 4)
+#define VEC( n )        ((uint32_t)(n) * 4)
 
 /* a font table that is what it says: the space has nothing in it */
-static int font_sane( const u8 *table, int height )
+static int font_sane( const uint8_t *table, int height )
 {
     int i;
 
@@ -875,14 +875,14 @@ static int font_sane( const u8 *table, int height )
    character height, and the height at 0040:0085. */
 static void read_fonts( void )
 {
-    u16 vec[2], points;
-    u32 addr;
+    uint16_t vec[2], points;
+    uint32_t addr;
     int i;
 
     if ( !sys_peek( BDA_POINTS, &points, 2 ) || !sys_peek( VEC( 0x43 ), vec, 4 ) ) {
         return;
     }
-    addr = ((u32)vec[1] << 4) + vec[0];
+    addr = ((uint32_t)vec[1] << 4) + vec[0];
     if ( points == 8 && !have8 ) {
         if ( sys_peek( addr, font8, 8 * 256 ) && font_sane( font8, 8 ) ) {
             have8 = 1;
@@ -912,30 +912,30 @@ static void read_fonts( void )
 
 static void need_font8( void )
 {
-    u16 vec[2];
+    uint16_t vec[2];
     int i, line;
 
     if ( have8 ) {
         return;
     }
     if ( sys_peek( ROM_FONT8, font8, 8 * 128 ) && sys_peek( VEC( 0x1F ), vec, 4 ) && (vec[0] | vec[1]) != 0
-      && sys_peek( ((u32)vec[1] << 4) + vec[0], font8 + 8 * 128, 8 * 128 ) && font_sane( font8, 8 ) ) {
+      && sys_peek( ((uint32_t)vec[1] << 4) + vec[0], font8 + 8 * 128, 8 * 128 ) && font_sane( font8, 8 ) ) {
         have8 = 1;
         return;
     }
     if ( have16 ) {
         for ( i = 0; i < 256; i++ ) {
             for ( line = 0; line < 8; line++ ) {
-                font8[i * 8 + line] = (u8)(font16[i * 16 + line * 2] | font16[i * 16 + line * 2 + 1]);
+                font8[i * 8 + line] = (uint8_t)(font16[i * 16 + line * 2] | font16[i * 16 + line * 2 + 1]);
             }
         }
         have8 = 1;
     }
 }
 
-static const u8 *glyph( int ch, int height )
+static const uint8_t *glyph( int ch, int height )
 {
-    static const u8 blank[16];
+    static const uint8_t blank[16];
 
     switch ( height ) {
     case 8:     return have8 ? font8 + ch * 8 : blank;
@@ -950,17 +950,17 @@ static const u8 *glyph( int ch, int height )
 
 void gfx_text_cell( int row, int col, int ch, int attr )
 {
-    u8 *pic = gpages[gapage];
-    const u8 *g = glyph( ch & 0xFF, text_font );
+    uint8_t *pic = gpages[gapage];
+    const uint8_t *g = glyph( ch & 0xFF, text_font );
     int x0 = (col - 1) * 8, y0 = (row - 1) * text_font, x, y;
-    u8 fgc = (u8)colour_of( attr );
+    uint8_t fgc = (uint8_t)colour_of( attr );
 
     if ( y0 + text_font > gm->h || x0 + 8 > gm->w ) {
         return;
     }
     for ( y = 0; y < text_font; y++ ) {
-        u8 bits = g[y];
-        u8 *dst = pic + (u32)(y0 + y) * (u32)gm->w + (u32)x0;
+        uint8_t bits = g[y];
+        uint8_t *dst = pic + (unsigned int)(y0 + y) * (unsigned int)gm->w + (unsigned int)x0;
         for ( x = 0; x < 8; x++ ) {
             dst[x] = (bits & (0x80 >> x)) ? fgc : 0;
         }
@@ -972,8 +972,8 @@ void gfx_text_cell( int row, int col, int ch, int attr )
 
 void gfx_scroll_text( int top, int bottom, int attr )
 {
-    u8 *pic = gpages[gapage];
-    u32 w = (u32)gm->w;
+    uint8_t *pic = gpages[gapage];
+    unsigned int w = (unsigned int)gm->w;
     int y0 = (top - 1) * text_font, y1 = bottom * text_font;
 
     (void)attr;
@@ -981,9 +981,9 @@ void gfx_scroll_text( int top, int bottom, int attr )
         y1 = gm->h;
     }
     if ( y1 - y0 > text_font ) {
-        mem_cpy( pic + (u32)y0 * w, pic + (u32)(y0 + text_font) * w, (u32)(y1 - y0 - text_font) * w );
+        mem_cpy( pic + (unsigned int)y0 * w, pic + (unsigned int)(y0 + text_font) * w, (unsigned int)(y1 - y0 - text_font) * w );
     }
-    mem_set( pic + (u32)(y1 - text_font) * w, 0, (u32)text_font * w );
+    mem_set( pic + (unsigned int)(y1 - text_font) * w, 0, (unsigned int)text_font * w );
     if ( gapage == gvpage ) {
         mark( 0, y0, gm->w - 1, y1 - 1 );
     }
@@ -991,8 +991,8 @@ void gfx_scroll_text( int top, int bottom, int attr )
 
 void gfx_clear_text( int top, int bottom, int attr )
 {
-    u8 *pic = gpages[gapage];
-    u32 w = (u32)gm->w;
+    uint8_t *pic = gpages[gapage];
+    unsigned int w = (unsigned int)gm->w;
     int y0 = (top - 1) * text_font, y1 = bottom * text_font;
 
     (void)attr;
@@ -1000,7 +1000,7 @@ void gfx_clear_text( int top, int bottom, int attr )
         y1 = gm->h;
     }
     if ( y1 > y0 ) {
-        mem_set( pic + (u32)y0 * w, 0, (u32)(y1 - y0) * w );
+        mem_set( pic + (unsigned int)y0 * w, 0, (unsigned int)(y1 - y0) * w );
     }
     if ( gapage == gvpage ) {
         mark( 0, y0, gm->w - 1, y1 - 1 );
@@ -1097,7 +1097,7 @@ int gfx_fg( void )
 }
 
 /* the colour given, or the foreground */
-int gfx_colour_arg( s32 c, int given )
+int gfx_colour_arg( int32_t c, int given )
 {
     return given ? colour_of( c ) : draw_fg;
 }
@@ -1112,7 +1112,7 @@ void gfx_plot( int x, int y, int c )
     if ( x < vx1 || x > vx2 || y < vy1 || y > vy2 ) {
         return;
     }
-    gpages[gapage][(u32)y * (u32)gm->w + (u32)x] = (u8)c;
+    gpages[gapage][(unsigned int)y * (unsigned int)gm->w + (unsigned int)x] = (uint8_t)c;
     if ( gapage == gvpage ) {
         mark( x, y, x, y );
     }
@@ -1123,7 +1123,7 @@ int gfx_get_px( int x, int y )
     if ( x < vx1 || x > vx2 || y < vy1 || y > vy2 ) {
         return -1;
     }
-    return gpages[gapage][(u32)y * (u32)gm->w + (u32)x];
+    return gpages[gapage][(unsigned int)y * (unsigned int)gm->w + (unsigned int)x];
 }
 
 /* a run of one row, for BF and PAINT: x0 <= x1 */
@@ -1141,7 +1141,7 @@ void gfx_hline( int x0, int x1, int y, int c )
     if ( x0 > x1 ) {
         return;
     }
-    mem_set( gpages[gapage] + (u32)y * (u32)gm->w + (u32)x0, c, (u32)(x1 - x0 + 1) );
+    mem_set( gpages[gapage] + (unsigned int)y * (unsigned int)gm->w + (unsigned int)x0, c, (unsigned int)(x1 - x0 + 1) );
     if ( gapage == gvpage ) {
         mark( x0, y, x1, y );
     }
@@ -1159,7 +1159,7 @@ void gfx_view_box( int *x1, int *y1, int *x2, int *y2 )
 void rtf_PSET( void )
 {
     int flags = (int)POP_L();
-    s32 c = POP_L();
+    int32_t c = POP_L();
     double y = POP_D(), x = POP_D();
     int sx, sy, colour;
 
@@ -1177,7 +1177,7 @@ void rtf_PSET( void )
 
 /* a line, with a style mask (0 for solid) that goes round as it draws:
    the mask starts at the first point inside the viewport */
-static u32 line_style;
+static uint32_t line_style;
 static int style_on;
 
 static void style_plot( int x, int y, int c )
@@ -1200,16 +1200,16 @@ static void style_plot( int x, int y, int c )
    rounded down - found by asking the real one about every slope. */
 void gfx_line( int x0, int y0, int x1, int y1, int c )
 {
-    u32 dx, dy, major, minor, start, i, step;  /* 65535 * 65535 fits */
+    uint32_t dx, dy, major, minor, start, i, step; /* 65535 * 65535 fits */
     int sy, t;
 
     if ( x1 < x0 ) {
         t = x0; x0 = x1; x1 = t;
         t = y0; y0 = y1; y1 = t;
     }
-    dx = (u32)(x1 - x0);
+    dx = (uint32_t)(x1 - x0);
     sy = y1 < y0 ? -1 : 1;
-    dy = (u32)(y1 < y0 ? y0 - y1 : y1 - y0);
+    dy = (uint32_t)(y1 < y0 ? y0 - y1 : y1 - y0);
     if ( dx >= dy ) {
         major = dx;
         minor = dy;
@@ -1233,7 +1233,7 @@ void gfx_line( int x0, int y0, int x1, int y1, int c )
 void rtf_LINE( void )
 {
     int flags = (int)POP_L();
-    s32 style = POP_L(), c = POP_L();
+    int32_t style = POP_L(), c = POP_L();
     double y2 = POP_D(), x2 = POP_D(), y1 = POP_D(), x1 = POP_D();
     int sx1, sy1, sx2, sy2, colour, t;
 
@@ -1252,7 +1252,7 @@ void rtf_LINE( void )
     gfx_to_screen( x1, y1, &sx1, &sy1 );
     gfx_to_screen( x2, y2, &sx2, &sy2 );
     style_on = (flags & 64) != 0;
-    line_style = (u32)style & 0xFFFF;
+    line_style = (uint32_t)style & 0xFFFF;
     if ( flags & 32 ) {
         if ( sx1 > sx2 ) {
             t = sx1; sx1 = sx2; sx2 = t;
@@ -1293,7 +1293,7 @@ void rtf_VIEW( void )
 {
     int flags = (int)POP_L(), t, y;
     int had_win = win_on, had_screen = win_screen;
-    s32 border = POP_L(), fill = POP_L();
+    int32_t border = POP_L(), fill = POP_L();
     double y2 = POP_D(), x2 = POP_D(), y1 = POP_D(), x1 = POP_D();
     int ix1, iy1, ix2, iy2;
 
@@ -1388,7 +1388,7 @@ void rtf_WINDOW( void )
 /* PMAP(v, n): 0 and 1 logical to physical, 2 and 3 back */
 void rtf_PMAP( void )
 {
-    s32 n = POP_L();
+    int32_t n = POP_L();
     double v = POP_D(), x, y;
     int ipx, ipy;
 
@@ -1417,7 +1417,7 @@ void rtf_PMAP( void )
 /* POINT(n): the last point, physical (0, 1) or logical (2, 3) */
 void rtf_POINT1( void )
 {
-    s32 n = POP_L();
+    int32_t n = POP_L();
     int px, py;
 
     gfx_need();
@@ -1452,7 +1452,7 @@ void gfx_cls( int how )
             gfx_hline( vx1, vx2, y, 0 );
         }
     } else if ( how == 0 || how == -1 ) {
-        mem_set( gpages[gapage], 0, (u32)gm->w * (u32)gm->h );
+        mem_set( gpages[gapage], 0, (unsigned int)gm->w * (unsigned int)gm->h );
         if ( gapage == gvpage ) {
             mark_all();
         }
@@ -1468,9 +1468,9 @@ void gfx_cls( int how )
 
 /* OUT to the DAC's ports, as a program's own palette code does it: the
    hardware's entry, and the colour of every attribute that shows it */
-void gfx_dac_write( int index, const u8 *c )
+void gfx_dac_write( int index, const uint8_t *c )
 {
-    u8 entry[4];
+    uint8_t entry[4];
     int i;
 
     entry[0] = c[2];
@@ -1494,9 +1494,9 @@ void gfx_dac_write( int index, const u8 *c )
     }
 }
 
-void gfx_dac_read( int index, u8 *c )
+void gfx_dac_read( int index, uint8_t *c )
 {
-    u8 entry[4];
+    uint8_t entry[4];
     int i;
 
     if ( gm != NULL && gm->hw == 0x13 && index < gm->colors ) {

@@ -53,9 +53,9 @@
 #define TR      OP_AM
 
 #define OP( fl, mu, ks, tl, ar, dr, sl, rr, ws ) \
-    { (u8)((fl) | (mu)), (u8)(((ks) << 6) | (tl)), (u8)(((ar) << 4) | (dr)), \
-      (u8)(((sl) << 4) | (rr)), (u8)(ws) }
-#define PATCH( mod, car, fb, cn, nt )   { { mod, car }, (u8)(((fb) << 1) | (cn)), (s8)(nt) }
+    { (uint8_t)((fl) | (mu)), (uint8_t)(((ks) << 6) | (tl)), (uint8_t)(((ar) << 4) | (dr)), \
+      (uint8_t)(((sl) << 4) | (rr)), (uint8_t)(ws) }
+#define PATCH( mod, car, fb, cn, nt )   { { mod, car }, (uint8_t)(((fb) << 1) | (cn)), (int8_t)(nt) }
 
 const MDPATCH md_melodic[128] = {
     /* pianos */

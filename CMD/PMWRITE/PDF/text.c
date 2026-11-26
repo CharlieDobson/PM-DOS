@@ -17,19 +17,31 @@
 #include "gfx.h"
 
 typedef struct {
-    s32 xpos, ypos;             /* 256ths of a point, from the page's top left */
-    u16 uni;
-    u16 advance;
-    u16 size;
-    u16 spare;
+    int32_t xpos, ypos;         /* 256ths of a point, from the page's top left */
+    uint16_t uni;
+    uint16_t advance;
+    uint16_t size;
+    uint16_t spare;
 } TCHAR;
 
 #define LINE_MAX    400
 
-static TCHAR *chars;
-static u32    char_count, char_cap;
+static TCHAR       *chars;
+static unsigned int char_count, char_cap;
 
-static void note( u16 uni, fx xpos, fx ypos, fx advance, fx size )
+/* A width or a height in 256ths of a point, with the sign dropped: a
+   negative font size (mirrored text) is as tall as a positive one, and
+   fx_hypot comes back negative past 32,767 points.  More than 250
+   points either way is "not known", 64000. */
+static uint16_t in_256ths( fx value )
+{
+    if ( value < -I2FX( 250 ) || value > I2FX( 250 ) ) {
+        return 64000U;
+    }
+    return (uint16_t)( ( value < 0 ? -value : value ) >> 8 );
+}
+
+static void note( uint16_t uni, fx xpos, fx ypos, fx advance, fx size )
 {
     TCHAR *grown;
 
@@ -49,16 +61,16 @@ static void note( u16 uni, fx xpos, fx ypos, fx advance, fx size )
     chars[char_count].xpos = xpos >> 8;
     chars[char_count].ypos = ypos >> 8;
     chars[char_count].uni = uni;
-    chars[char_count].advance = (u16)(advance > I2FX( 250 ) ? 64000U : (u32)(advance >> 8));
-    chars[char_count].size = (u16)(size > I2FX( 250 ) ? 64000U : (u32)(size >> 8));
+    chars[char_count].advance = in_256ths( advance );
+    chars[char_count].size = in_256ths( size );
     char_count++;
 }
 
 /* by height, or across within "count" that are one line */
-static void sort_chars( TCHAR *list, u32 count, int across )
+static void sort_chars( TCHAR *list, unsigned int count, int across )
 {
     TCHAR hold;
-    u32 gap, at, back;
+    unsigned int gap, at, back;
 
     for ( gap = 1; gap < count / 3; gap = gap * 3 + 1 ) {
     }
@@ -83,8 +95,8 @@ TEXTPAGE *text_extract( int index )
     TEXTPAGE *tp;
     TCHAR *ch;
     char **lines, cells[4];
-    u32 start, end, at, sum = 0, seen = 0, line_cap, count = 0;
-    s32 cell, left = 0x7FFFFFFFL, top, tall, gap, prev_end, prev_y = -1, prev_tall = 0, target;
+    unsigned int start, end, at, sum = 0, seen = 0, line_cap, count = 0;
+    int32_t cell, left = 0x7FFFFFFFL, top, tall, gap, prev_end, prev_y = -1, prev_tall = 0, target;
     int col, cells_count, index2, blank;
 
     if ( !pdf_page( index, &page ) ) {
@@ -111,7 +123,7 @@ TEXTPAGE *text_extract( int index )
             left = chars[at].xpos;
         }
     }
-    cell = seen ? (s32)(sum / seen) : 6 * 256;
+    cell = seen ? (int32_t)(sum / seen) : 6 * 256;
     if ( cell < 3 * 256 ) {
         cell = 3 * 256;
     }
@@ -168,7 +180,7 @@ TEXTPAGE *text_extract( int index )
                 while ( col < target && col < LINE_MAX - 8 ) {
                     line[col++] = ' ';
                 }
-            } else if ( gap > (s32)ch->size / 6 && gap > cell / 5 && line[col - 1] != ' ' &&
+            } else if ( gap > (int32_t)ch->size / 6 && gap > cell / 5 && line[col - 1] != ' ' &&
                         cells[0] != ' ' && col < LINE_MAX - 8 ) {
                 line[col++] = ' ';
             }

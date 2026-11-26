@@ -23,7 +23,7 @@ extern const char M_SERIAL[];
 extern const char M_NOSUBS[];
 extern const char M_TOODEEP[];
 
-void  out_raw( int handle, const char *buf, u32 len );
+void  out_raw( int handle, const char *buf, unsigned int len );
 void  out_text( int handle, const char *str );
 void  out_msg( int handle, const char *tmpl, const char *a1, const char *a2 );   /* + newline */
 

@@ -31,9 +31,9 @@ SFT_DEVINFO     EQU 05h                 ; dw  DOS's device information word -
                                         ;     bit 7 a character device, and
                                         ;     a file's drive in bits 0-5;
                                         ;     what 4400h answers
-SFT_DEVPTR      EQU 07h                 ; dd  the device header, far, or
-                                        ;     FFFF:FFFF for a file (DOS puts
-                                        ;     the DPB there; there is none)
+SFT_DEVPTR      EQU 07h                 ; dd  the device header, far, or for
+                                        ;     a file its drive's parameter
+                                        ;     block, as DOS has it (sub_open)
 SFT_CLUSLO      EQU 0Bh                 ; dw  the first cluster, low word, as
                                         ;     DOS has it - SFT_START is ours
 SFT_TIME        EQU 0Dh                 ; dw
@@ -162,7 +162,7 @@ fw_load:
         mov     bx,cs
         mov     es,bx
         mov     bx,OFFSET rd_fatbuf
-        mov     cx,2
+        call    fat_pair                ; two sectors, or the last one alone
         call    rd_rdsec
         jnc     fw_done
         mov     dword ptr [rd_fatlba],-1        ; do not believe what is in
@@ -170,6 +170,30 @@ fw_load:
 fw_done:
         pop     es
         popad
+        ret
+
+;--- fat_pair - SI = volume, [rd_fatlba] = the window's first sector ->
+;--- CX = how many sectors the window is.  Two - but ONE when the first
+;--- is the FAT's last (2026-11-21).  The pair was read and written
+;--- there as well: the sector after the last one of the first copy is
+;--- the first of the second copy, which did no harm, and the sector
+;--- after the last one of the LAST copy is the first sector of the root
+;--- directory, which fat_flush then wrote the window's second half
+;--- over - sixteen directory entries replaced by a sector of FAT - as
+;--- soon as a cluster in the last 256 of a volume was given out or
+;--- freed.  A volume filled to the end found it (scratch t\GROW.COM F).
+;--- No entry of any FAT straddles out of its last sector, so one
+;--- sector is all there is to hold.
+fat_pair:
+        push    eax
+        mov     cx,2
+        mov     eax,dword ptr [rd_fatlba]
+        inc     eax
+        cmp     eax,dword ptr [si+VOL_SPF]
+        jb      fpr_two
+        dec     cx
+fpr_two:
+        pop     eax
         ret
 
 ;--- fat_flush - write the window back if anything changed, to EVERY
@@ -196,11 +220,19 @@ ff_next:
         add     eax,dword ptr [si+VOL_FATLBA]
         push    cx
         mov     bx,OFFSET rd_fatbuf
-        mov     cx,2
+        call    fat_pair                ; two sectors, or the last one alone
         call    rd_wrsec
         pop     cx
+        jc      ff_lost
         inc     dword ptr [rd_fatn]
         loop    ff_next
+        jmp     short ff_clean
+ff_lost:
+        ; IT DID NOT GO (rd_crit has said so, or failed it).  What the
+        ; window holds is what the disk does not, and the next look must
+        ; read the disk as it is - see rd_bufdrop.
+        mov     dword ptr [rd_fatlba],-1
+        mov     word ptr [rd_fatvol],0
 ff_clean:
         mov     byte ptr [rd_fatdirty],0
 ff_done:
@@ -423,6 +455,7 @@ fa_full:
 ; FAT sector that number lands in: sector 1048647 of a 32MB disk.
 fat_freechain:
         pushad
+        mov     word ptr [rd_growsft],0 ; the end sft_grow knew may be in it
         mov     ebx,eax
 fc_loop:
         cmp     ebx,2
@@ -528,11 +561,26 @@ dir_flush:
         mov     eax,dword ptr [rd_dirlba]
         mov     cx,1
         call    rd_wrsec
+        jnc     df_clean
+        mov     dword ptr [rd_dirlba],-1        ; did not go: forgotten, as
+        mov     word ptr [rd_dirvol],0          ; fat_flush forgets its own
 df_clean:
         mov     byte ptr [rd_dirdirty],0
 df_done:
         pop     es
         popad
+        ret
+
+;--- rd_bufdrop - the FAT and directory windows forgotten, unwritten: an
+;--- INT 24h handler that never came back left a call half done, and
+;--- what it had changed in them never reached the disk (crit_abandon).
+rd_bufdrop:
+        mov     dword ptr [rd_fatlba],-1
+        mov     word ptr [rd_fatvol],0
+        mov     byte ptr [rd_fatdirty],0
+        mov     dword ptr [rd_dirlba],-1
+        mov     word ptr [rd_dirvol],0
+        mov     byte ptr [rd_dirdirty],0
         ret
 
 ;--- rd_flush - everything, everywhere.  0Dh and every close call it.
@@ -1471,6 +1519,25 @@ rdl_notlow:
         jbe     rdl_nothigh
         mov     ax,SFT_MAX
 rdl_nothigh:
+IFDEF RD_STKFLOAT
+        ; A TRACE BUILD MAY NOT HAVE ROOM FOR THAT MANY (RMDOS.ASM, at
+        ; rd_imgend): the entries that fit between the image and
+        ; RD_TAILEND, with the second block's one after them, if FILES=
+        ; says more.  A release build always has the room - the build
+        ; checks it - and does not look.
+        mov     bx,ax
+        mov     ax,RD_TAILEND - 12 - SFT_LEN
+        mov     cx,OFFSET rd_imgend + 15
+        and     cx,0FFF0h
+        sub     ax,cx
+        xor     dx,dx
+        mov     cx,SFT_LEN
+        div     cx                      ; AX = how many fit
+        cmp     bx,ax
+        ja      rdl_trace
+        mov     ax,bx
+rdl_trace:
+ENDIF
         mov     [rd_nsft],ax
         mov     di,OFFSET rd_imgend + 15
         and     di,0FFF0h

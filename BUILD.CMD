@@ -274,6 +274,14 @@ rem little as anything here can.  It is what found the 64 bytes every
 rem failed EXEC left on the kernel stack.  A machine that says nothing
 rem at all stopped with interrupts off.
 if "%TGT%"=="hang" set DEFS=-dHANG_E9
+rem "trapcnt" counts what a DOS box makes the monitor answer: every #GP
+rem by its opcode, every INT by its vector, every claimed port, every
+rem other exception, and the interrupts that stopped a box or were
+rem handed into one.  Every five seconds the timer writes the counts to
+rem port E9h and starts again from zero (DBXRUN -E9, QEMU -debugcon).
+rem It is how to tell which traps a slow program is paying for.  The
+rem counting is a few instructions a trap and nothing else changes.
+if "%TGT%"=="trapcnt" set DEFS=-dV86_TCOUNT
 rem "scsi6" takes every SCSI drive for one that has only the 6-byte MODE
 rem SENSE and MODE SELECT, so that the translation SCSI.INC does for such
 rem a drive runs on a machine whose drives would never need it.  86Box
@@ -472,7 +480,7 @@ TOOLS\FSIZE.EXE -max 196608 IO\IOPM.BIN "the IO_PM_MAX the stub blits" || goto :
 rem ...and AHCI.INC's tables go in what the file leaves of that, 1K
 rem aligned: IO_PM_MAX - 400h - AHM_NEED, which IOPM.ASM works out and
 rem checks is this number (IOPMEND_MAX).
-TOOLS\FSIZE.EXE -max 177152 IO\IOPM.BIN "room past PMIO for the AHCI tables" || goto :fail
+TOOLS\FSIZE.EXE -max 174080 IO\IOPM.BIN "room past PMIO for the AHCI tables" || goto :fail
 copy /b IO\IORM.BIN+IO\IOPM.BIN BIN\PMIO.SYS >nul
 
 echo === PMDOS.SYS ===
@@ -614,10 +622,22 @@ wlink form raw bin name ..\..\BIN\FDISK.EXE file fdisk.obj order clname CODE off
 cd ..\..
 rem MOUNT ships: giving a file a drive letter is a thing a user does,
 rem not a thing a test does, and it is the only way to reach the
-rem kernel's F1h AL=0Fh..11h from a command line.
+rem kernel's F1h AL=0Fh..11h and 2Bh from a command line.  It is C
+rem since 2026-11-25, DELTREE's kind with DELTREE's runtime, because
+rem it unpacks and packs a .IMZ: PMWRITE's FLATE.C and CRC.C are
+rem compiled here from PMWRITE's folder as they stand, and MOUNT's
+rem RT.H declares the four calls FLATE.C makes of a runtime.
 cd CMD\MOUNT
-wasm -q -i=..\..\INC mount.asm                  || goto :fail
-wlink form raw bin option offset=0x2000 name ..\..\BIN\MOUNT.EXE file mount.obj || goto :fail
+wasm -q -dD32 -i=..\..\INC dosint.asm           || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 -i=..\PMWRITE main.c    || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 -i=..\PMWRITE imz.c     || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 rt.c      || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 sys_d32.c || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 -i=..\PMWRITE -fo=flate.obj ..\PMWRITE\flate.c || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 -i=..\PMWRITE -fo=crc.obj ..\PMWRITE\crc.c     || goto :fail
+wlink form raw bin option offset=0x2000 name ..\..\BIN\MOUNT.EXE ^
+    file dosint.obj,main.obj,imz.obj,rt.obj,sys_d32.obj,flate.obj,crc.obj ^
+    order clname CODE clname DATA clname BSS clname D32END || goto :fail
 cd ..\..
 rem CACHE is SMARTDRV /S for the cache that lives in the kernel: the
 rem report and the switches, asked over 21h/F1h AL=16h.  CACHE and not
@@ -789,12 +809,14 @@ rem LRGDISK.386 is a driver for Windows 3.1 and Windows for Workgroups,
 rem not a PM-DOS program: 32-bit disk access for the IDE disks WDCTRL
 rem refuses, the ones a BIOS translates (over 504MB), on both cables: by
 rem bus-master DMA where the BIOS left a mode set, and by PIO a block of
-rem sectors an interrupt where the engine is not used.  An LE VxD, which
+rem sectors an interrupt where the engine is not used.  It also puts
+rem right what WfW 3.11's VSHARE.386 expects back in ECX from the VMM
+rem (ld_gv86), which is nothing to do with disks.  An LE VxD, which
 rem wlink lays out as the DDK's LINK386 does; the segment lines are
 rem WDCTRL.DEF's.
 cd CMD\LRGDISK
 wasm -q lrgdisk.asm                             || goto :fail
-wlink format windows vxd name ..\..\BIN\LRGDISK.386 file lrgdisk.obj option nodefaultlibs option description 'LRGDISK 1.4 - 32-bit disk access for IDE disks past 504MB' export LRGDISK_DDB.1 segment _LTEXT preload nondiscardable segment _LDATA preload nondiscardable segment _ITEXT discardable segment _IDATA discardable || goto :fail
+wlink format windows vxd name ..\..\BIN\LRGDISK.386 file lrgdisk.obj option nodefaultlibs option description 'LRGDISK 1.5 - 32-bit disk access for IDE disks past 504MB' export LRGDISK_DDB.1 segment _LTEXT preload nondiscardable segment _LDATA preload nondiscardable segment _ITEXT discardable segment _IDATA discardable || goto :fail
 rem LRGSTAT.EXE is a Windows program as well: a window that shows what
 rem LRGDISK has in use, asked of the driver through its API (ld_api).
 rem Small model, with Open Watcom's Windows headers and libraries, which
@@ -819,6 +841,14 @@ rem same source differ byte-for-byte; the code is identical.
 cd CMD\PMDOS386
 wasm -q pmdos386.asm                            || goto :fail
 wlink format windows vxd name ..\..\BIN\PMDOS.386 file pmdos386.obj option nodefaultlibs option description 'PMDOS.386 - PM-DOS bridge for Windows for Workgroups 3.11' export PMDOS_DDB.1 segment _LTEXT preload nondiscardable segment _LDATA preload nondiscardable segment _ITEXT discardable segment _IDATA discardable || goto :fail
+cd ..\..
+rem UNDELETE.386 is UNDELETE=ON while Windows runs in 386 enhanced mode,
+rem when the kernel is parked and nothing else keeps a deleted file.
+rem The third VxD, laid out like the two above.  It writes \RECYCLED and
+rem UNDELETE.DAT as DOS\RECYCLE.INC does, so UNDELETE.EXE reads both.
+cd CMD\UNDELETE
+wasm -q undel386.asm                            || goto :fail
+wlink format windows vxd name ..\..\BIN\UNDELETE.386 file undel386.obj option nodefaultlibs option description 'UNDELETE.386 - PM-DOS delete protection under Windows' export UNDELETE_DDB.1 segment _LTEXT preload nondiscardable segment _LDATA preload nondiscardable segment _ITEXT discardable segment _IDATA discardable || goto :fail
 cd ..\..
 rem FIND is MS-DOS 6.22's, switch for switch and message for message:
 rem batch files test what it prints and the errorlevel it leaves.
@@ -1157,7 +1187,7 @@ wlink form raw bin option offset=0x2000 name ..\..\BIN\PMWRITE.EXE ^
     file fx.obj,stream.obj,lex.obj,doc.obj,xref.obj,filter.obj,inflate.obj,crypt.obj,ccitt.obj,dct.obj,color.obj,raster.obj,path.obj,names.obj,font.obj,ttf.obj,cff.obj,type1.obj,sfont.obj,glyph.obj,image.obj,shade.obj,interp.obj,text.obj ^
     order clname CODE clname DATA clname BSS clname D32END || goto :fail
 cd ..\..
-rem MPLAY is C: a media player - wave, VOC, MIDI, MP3 and Ogg Vorbis -
+rem MPLAY is C: a media player - wave, VOC, MIDI, MP3, FLAC and Ogg Vorbis -
 rem with a playlist, a ten-band equalizer and a spectrum
 rem analyzer, on the text screen and on graphics screens up to
 rem 1280x1024 (PMWRITE's SCR, GFX, UI and FBOX, copied).  It plays
@@ -1177,15 +1207,15 @@ rem its decoder (WMA.C, ASF.C) needs WMATAB.C, tables from FFmpeg under
 rem the LGPL, which is not shipped; without HAVE_WMA, DECTAB.C turns a
 rem Windows Media file down by name.
 cd CMD\MPLAY
-set MPDEFS=-dHAVE_VOC -dHAVE_MIDI -dHAVE_MP3 -dHAVE_OGG
+set MPDEFS=-dHAVE_VOC -dHAVE_MIDI -dHAVE_MP3 -dHAVE_OGG -dHAVE_FLAC
 wasm -q -i=..\..\INC dosint.asm                 || goto :fail
 wasm -q jmp.asm                                 || goto :fail
 for %%M in (main view plist dlgs player eqtd fft trig scr gfx ui fbox sys_d32 rt src eq tag dectab wav voc ^
-  midi mdopl mdsyn mdbank mp3 mp3l12 mp3l3 mp3syn mp3tab ogg vbdec vbmdct vbtab) do wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 -i=. -i=..\..\INC %MPDEFS% %%M.c || goto :fail
+  midi mdopl mdsyn mdbank mp3 mp3l12 mp3l3 mp3syn mp3tab ogg vbdec vbmdct vbtab flac) do wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 -i=. -i=..\..\INC %MPDEFS% %%M.c || goto :fail
 wlink form raw bin option offset=0x2000 name ..\..\BIN\MPLAY.EXE ^
     file dosint.obj,jmp.obj,main.obj,view.obj,plist.obj,dlgs.obj,player.obj,eqtd.obj,fft.obj,trig.obj,scr.obj,gfx.obj,ui.obj,fbox.obj,sys_d32.obj ^
     file rt.obj,src.obj,eq.obj,tag.obj,dectab.obj,wav.obj,voc.obj,midi.obj,mdopl.obj,mdsyn.obj,mdbank.obj ^
-    file mp3.obj,mp3l12.obj,mp3l3.obj,mp3syn.obj,mp3tab.obj,ogg.obj,vbdec.obj,vbmdct.obj,vbtab.obj ^
+    file mp3.obj,mp3l12.obj,mp3l3.obj,mp3syn.obj,mp3tab.obj,ogg.obj,vbdec.obj,vbmdct.obj,vbtab.obj,flac.obj ^
     order clname CODE clname DATA clname BSS clname D32END || goto :fail
 cd ..\..
 rem XARC is C: XArchive's DOS program made native - zip, 7z, RAR, CAB,
@@ -1311,13 +1341,13 @@ rem what each file is; its test mode is SETUPTEST and keys from a
 rem redirected file (SCR.C).
 cd CMD\SETUP
 wasm -q -i=..\..\INC dosint.asm                 || goto :fail
-for %%F in (main scr ui text rt inf copy disk cfg undo floppy plat32) do wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 %%F.c || goto :fail
+for %%F in (main scr ui text rt inf copy bboard disk cfg undo floppy plat32) do wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 %%F.c || goto :fail
 wlink form raw bin option offset=0x2000 name ..\..\BIN\SETUP.EXE ^
-    file dosint.obj,main.obj,scr.obj,ui.obj,text.obj,rt.obj,inf.obj,copy.obj,disk.obj,cfg.obj,undo.obj,floppy.obj,plat32.obj ^
+    file dosint.obj,main.obj,scr.obj,ui.obj,text.obj,rt.obj,inf.obj,copy.obj,bboard.obj,disk.obj,cfg.obj,undo.obj,floppy.obj,plat32.obj ^
     order clname CODE clname DATA clname BSS clname D32END || goto :fail
-for %%F in (main scr ui text rt inf copy disk cfg undo floppy plat16) do wcc -q -bt=dos -ml -0 -s -os -w4 -we -fo=%%F16.obj %%F.c || goto :fail
+for %%F in (main scr ui text rt inf copy bboard disk cfg undo floppy plat16) do wcc -q -bt=dos -ml -0 -s -os -w4 -we -fo=%%F16.obj %%F.c || goto :fail
 wlink system dos name SETUP16.EXE option stack=16k ^
-    file main16.obj,scr16.obj,ui16.obj,text16.obj,rt16.obj,inf16.obj,copy16.obj,disk16.obj,cfg16.obj,undo16.obj,floppy16.obj,plat1616.obj || goto :fail
+    file main16.obj,scr16.obj,ui16.obj,text16.obj,rt16.obj,inf16.obj,copy16.obj,bboard16.obj,disk16.obj,cfg16.obj,undo16.obj,floppy16.obj,plat1616.obj || goto :fail
 cd ..\..
 
 echo === the MS-DOS stub, in front of every 32-bit command ===
@@ -2472,6 +2502,33 @@ wasm -q -i=..\INC hooktest.asm                   || goto :fail
 wlink form raw bin name ..\BIN\TESTS\HOOKTEST.COM file hooktest.obj order clname CODE offset=0x100 || goto :fail
 cd ..
 
+echo === VECBACK.COM (vectors a program leaves hooked, put back when it ends) ===
+cd TOOLS
+wasm -q -i=..\INC vecback.asm                    || goto :fail
+wlink form raw bin name ..\BIN\TESTS\VECBACK.COM file vecback.obj order clname CODE offset=0x100 || goto :fail
+cd ..
+
+echo === SCRBACK.COM (a box the kernel ends from a graphics screen leaves a text screen) ===
+cd TOOLS
+wasm -q -i=..\INC scrback.asm                    || goto :fail
+wlink form raw bin name ..\BIN\TESTS\SCRBACK.COM file scrback.obj order clname CODE offset=0x100 || goto :fail
+cd ..
+
+echo === VIFTEST.COM (a DOS box's interrupt flag, as the box sees it) ===
+cd TOOLS
+wasm -q -i=..\INC viftest.asm                    || goto :fail
+wlink form raw bin name ..\BIN\TESTS\VIFTEST.COM file viftest.obj order clname CODE offset=0x100 || goto :fail
+cd ..
+
+rem TRAPBEN is not a test with a right answer and is not in RUNTESTS: it
+rem prints how many CLIs, PUSHFs, INTs and so on a box gets through in a
+rem second, which is the machine's number, for two kernels side by side.
+echo === TRAPBEN.COM (how fast a DOS box gets through what the monitor answers) ===
+cd TOOLS
+wasm -q -i=..\INC trapben.asm                    || goto :fail
+wlink form raw bin name ..\BIN\TESTS\TRAPBEN.COM file trapben.obj order clname CODE offset=0x100 || goto :fail
+cd ..
+
 echo === MSTEST.COM (INT 33h from a DOS box: the mouse driver) ===
 cd TOOLS
 wasm -q -i=..\INC mstest.asm                     || goto :fail
@@ -2514,6 +2571,12 @@ echo === MS32TEST.EXE (INT 33h from a native program: the mouse driver) ===
 cd TOOLS
 wasm -q -i=..\INC ms32test.asm                   || goto :fail
 wlink form raw bin option offset=0x2000 name ..\BIN\TESTS\MS32TEST.EXE file ms32test.obj || goto :fail
+cd ..
+
+echo === RAWKEY.EXE (21h/F0h AL=0Fh, 10h: the scan codes for a native program) ===
+cd TOOLS
+wasm -q -i=..\INC rawkey.asm                     || goto :fail
+wlink form raw bin option offset=0x2000 name ..\BIN\TESTS\RAWKEY.EXE file rawkey.obj || goto :fail
 cd ..
 
 echo === VPICTEST.COM (a card's interrupt, in a DOS box) ===
@@ -2704,7 +2767,7 @@ rem TREEVIEW.EXE, and QBRUN.EXE (Make EXE File's runtime) last.
 rem TREEVIEW.EXE went on to the applications disk on 2026-11-14, so
 rem that this one has room for the help to grow: 360K free then.
 echo === PMDOS2.IMG (the help disk) ===
-TOOLS\MKDISK.EXE IMAGES\PMDOS2.IMG BIN\BOOT.BIN -label "PM-DOS HELP" -nolfn BIN\HELP.EXE DISK\HELP.HLP BIN\LRGDISK.386 BIN\LRGSTAT.EXE BIN\MODE.EXE BIN\DEBUG.EXE BIN\QBASIC.EXE DISK\QBASIC.HLP BIN\QBRUN.EXE || goto :fail
+TOOLS\MKDISK.EXE IMAGES\PMDOS2.IMG BIN\BOOT.BIN -label "PM-DOS HELP" -nolfn BIN\HELP.EXE DISK\HELP.HLP BIN\LRGDISK.386 BIN\LRGSTAT.EXE BIN\UNDELETE.386 BIN\MODE.EXE BIN\DEBUG.EXE BIN\QBASIC.EXE DISK\QBASIC.HLP BIN\QBRUN.EXE || goto :fail
 
 rem === PMDOS3.IMG - the applications disk ===
 rem The full-screen programs that are not needed to start or mend a
@@ -2738,7 +2801,7 @@ TOOLS\MKDISK.EXE IMAGES\TESTS.IMG BIN\BOOT.BIN -label "PM-DOS TEST" -dir ^
     TESTS BIN\TESTS\DRIVES.EXE BIN\TESTS\LFNAPI.COM BIN\TESTS\HELLO.COM BIN\TESTS\HELLOX.EXE BIN\TESTS\ARGS.COM ^
     BIN\TESTS\XMSTEST.COM BIN\TESTS\A20TEST.COM BIN\TESTS\MEMPROBE.COM BIN\TESTS\EXECTST.COM BIN\TESTS\TSRTEST.COM ^
     BIN\TESTS\I13TEST.COM BIN\TESTS\CURTEST.COM BIN\TESTS\DPMITEST.COM BIN\TESTS\DEVTEST.COM ^
-    BIN\TESTS\APITEST.COM BIN\TESTS\IDLETEST.COM BIN\TESTS\HOOKTEST.COM BIN\TESTS\MSTEST.COM BIN\TESTS\LOLTEST.COM BIN\TESTS\RMTEST.COM ^
+    BIN\TESTS\APITEST.COM BIN\TESTS\IDLETEST.COM BIN\TESTS\HOOKTEST.COM BIN\TESTS\VECBACK.COM BIN\TESTS\SCRBACK.COM BIN\TESTS\VIFTEST.COM BIN\TESTS\TRAPBEN.COM BIN\TESTS\MSTEST.COM BIN\TESTS\LOLTEST.COM BIN\TESTS\RMTEST.COM ^
     BIN\TESTS\RMFIND.COM BIN\TESTS\PARKTEST.EXE BIN\TESTS\WINTEST.COM BIN\TESTS\PARKWIN.COM ^
     BIN\TESTS\PARKEXEC.COM BIN\TESTS\PEKID.COM BIN\TESTS\PROBE13.COM BIN\TESTS\SFTSCAN.COM ^
     BIN\TESTS\XMSREPT.COM BIN\TESTS\CDXTEST.COM BIN\TESTS\CDATEST.COM ^
@@ -2747,7 +2810,7 @@ TOOLS\MKDISK.EXE IMAGES\TESTS.IMG BIN\BOOT.BIN -label "PM-DOS TEST" -dir ^
     BIN\TESTS\BUFTEST.COM BIN\TESTS\UMBTEST.COM BIN\TESTS\EMSTEST.COM BIN\TESTS\EMS4TEST.COM BIN\TESTS\DEVCRIT.EXE ^
     BIN\TESTS\I24TEST.COM BIN\TESTS\VFYTEST.EXE BIN\TESTS\IDETEST.EXE BIN\TESTS\HWPROBE.EXE BIN\TESTS\AHCITEST.EXE BIN\TESTS\F32TEST.COM BIN\TESTS\FNDTEST.EXE ^
     BIN\TESTS\CFGTEST.COM BIN\TESTS\CACHETST.COM BIN\TESTS\VFTEST.COM BIN\TESTS\SHARETST.COM BIN\TESTS\TESTDEV.SYS BIN\TESTS\ANSITEST.COM BIN\TESTS\TESTBLK.SYS BIN\TESTS\IOCDEV.SYS BIN\TESTS\SVTEST.COM BIN\TESTS\SVDEV.SYS BIN\TESTS\DRVTEST.COM BIN\TESTS\CDSTEST.COM BIN\TESTS\NETTEST.COM BIN\TESTS\NDTEST.SYS BIN\TESTS\NDRVTEST.EXE BIN\TESTS\NICTEST.EXE BIN\TESTS\SOCKTEST.EXE BIN\TESTS\SEEKWR.COM BIN\TESTS\BLKTEST.COM BIN\TESTS\RDTEST.COM BIN\TESTS\CTRYDMP.COM BIN\TESTS\NLSTEST.COM BIN\TESTS\KBLTEST.COM BIN\TESTS\LOCKTEST.COM BIN\TESTS\BRKTEST.COM BIN\TESTS\BRK32.EXE ^
-    BIN\TESTS\CTRYTEST.COM BIN\TESTS\CRASH.EXE BIN\TESTS\R3TEST.EXE BIN\TESTS\MS32TEST.EXE BIN\TESTS\VPICTEST.COM BIN\TESTS\TIMERTST.COM BIN\TESTS\RMIVT.COM BIN\TESTS\IRQXTEST.COM BIN\TESTS\IRQXWAIT.EXE BIN\TESTS\DMATEST.COM BIN\TESTS\DPMIIRQ.COM BIN\TESTS\DPMII32.COM BIN\TESTS\DPMIVEC.COM BIN\TESTS\DPMIV32.COM BIN\TESTS\VDSTEST.COM BIN\TESTS\NICIRQ.COM BIN\TESTS\PCITEST.EXE BIN\TESTS\IRQTEST.EXE BIN\TESTS\FPUTEST.COM BIN\TESTS\FPU32.EXE BIN\TESTS\DPMIFPU.COM BIN\TESTS\DPMIFP32.COM ^
+    BIN\TESTS\CTRYTEST.COM BIN\TESTS\CRASH.EXE BIN\TESTS\R3TEST.EXE BIN\TESTS\MS32TEST.EXE BIN\TESTS\RAWKEY.EXE BIN\TESTS\VPICTEST.COM BIN\TESTS\TIMERTST.COM BIN\TESTS\RMIVT.COM BIN\TESTS\IRQXTEST.COM BIN\TESTS\IRQXWAIT.EXE BIN\TESTS\DMATEST.COM BIN\TESTS\DPMIIRQ.COM BIN\TESTS\DPMII32.COM BIN\TESTS\DPMIVEC.COM BIN\TESTS\DPMIV32.COM BIN\TESTS\VDSTEST.COM BIN\TESTS\NICIRQ.COM BIN\TESTS\PCITEST.EXE BIN\TESTS\IRQTEST.EXE BIN\TESTS\FPUTEST.COM BIN\TESTS\FPU32.EXE BIN\TESTS\DPMIFPU.COM BIN\TESTS\DPMIFP32.COM ^
     BIN\TESTS\LPTTEST.COM BIN\TESTS\RMSPEED.COM BIN\TESTS\HNDTEST.COM BIN\TESTS\RMFSTEST.COM BIN\TESTS\WINDRV.EXE BIN\TESTS\VBETEST.EXE ^
     BIN\TESTS\EXECLEAK.EXE BIN\TESTS\SLOTTEST.EXE BIN\TESTS\BIGMEM.EXE BIN\TESTS\LRGTEST.COM BIN\TESTS\ATAPIRD.COM BIN\TESTS\SRSTTEST.COM ^
     BIN\TESTS\SDSTAT.COM BIN\TESTS\TICKS.COM BIN\TESTS\MOVEPROB.EXE BIN\TESTS\WINSWEEP.EXE BIN\TESTS\TIMEPROB.EXE BIN\TESTS\SPYTICK.EXE DISK\BATTEST.BAT ^

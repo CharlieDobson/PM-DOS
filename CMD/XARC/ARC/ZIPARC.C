@@ -67,10 +67,10 @@ typedef struct {
     ZipCryptState zc;
     AesCtrState   ctr;
     HmacSha1Ctx   mac;
-    unsigned long nproc;        /* ciphertext bytes seen; see CiphFinish */
+    uint32_t      nproc;        /* ciphertext bytes seen; see CiphFinish */
 } ZipCipher;
 
-static void CiphDecrypt( ZipCipher *c, unsigned char *buf, unsigned long len )
+static void CiphDecrypt( ZipCipher *c, uint8_t *buf, uint32_t len )
 {
     if ( !c || c->kind == CIPH_NONE )
         return;
@@ -79,73 +79,73 @@ static void CiphDecrypt( ZipCipher *c, unsigned char *buf, unsigned long len )
 
     if ( c->kind == CIPH_ZC )
     {
-        ZipCryptDecrypt( &c->zc, buf, (UInt32)len );
+        ZipCryptDecrypt( &c->zc, buf, (uint32_t)len );
     }
     else
     {
         HmacSha1Update( &c->mac, buf, (unsigned)len );   /* ciphertext! */
-        AesCtrXor( &c->ctr, buf, (UInt32)len );
+        AesCtrXor( &c->ctr, buf, (uint32_t)len );
     }
 }
 
 #pragma pack(1)
 typedef struct {
-    unsigned long  sig;
-    unsigned short verNeeded;
-    unsigned short flags;
-    unsigned short method;
-    unsigned short modTime;
-    unsigned short modDate;
-    unsigned long  crc32;
-    unsigned long  compSize;
-    unsigned long  uncompSize;
-    unsigned short fnLen;
-    unsigned short extraLen;
+    uint32_t sig;
+    uint16_t verNeeded;
+    uint16_t flags;
+    uint16_t method;
+    uint16_t modTime;
+    uint16_t modDate;
+    uint32_t crc32;
+    uint32_t compSize;
+    uint32_t uncompSize;
+    uint16_t fnLen;
+    uint16_t extraLen;
 } LocalHdr;
 
 typedef struct {
-    unsigned long  sig;
-    unsigned short verMade;
-    unsigned short verNeeded;
-    unsigned short flags;
-    unsigned short method;
-    unsigned short modTime;
-    unsigned short modDate;
-    unsigned long  crc32;
-    unsigned long  compSize;
-    unsigned long  uncompSize;
-    unsigned short fnLen;
-    unsigned short extraLen;
-    unsigned short commentLen;
-    unsigned short diskStart;
-    unsigned short intAttr;
-    unsigned long  extAttr;
-    long           localOffset;
+    uint32_t sig;
+    uint16_t verMade;
+    uint16_t verNeeded;
+    uint16_t flags;
+    uint16_t method;
+    uint16_t modTime;
+    uint16_t modDate;
+    uint32_t crc32;
+    uint32_t compSize;
+    uint32_t uncompSize;
+    uint16_t fnLen;
+    uint16_t extraLen;
+    uint16_t commentLen;
+    uint16_t diskStart;
+    uint16_t intAttr;
+    uint32_t extAttr;
+    int32_t  localOffset;
 } CentralHdr;
 
 typedef struct {
-    unsigned long  sig;
-    unsigned short diskNum;
-    unsigned short diskStart;
-    unsigned short entriesThis;
-    unsigned short entriesTotal;
-    unsigned long  dirSize;
-    unsigned long  dirOffset;
-    unsigned short commentLen;
+    uint32_t sig;
+    uint16_t diskNum;
+    uint16_t diskStart;
+    uint16_t entriesThis;
+    uint16_t entriesTotal;
+    uint32_t dirSize;
+    uint32_t dirOffset;
+    uint16_t commentLen;
 } EndRec;
 #pragma pack()
 
 /*---- CRC-32 (self-contained, reflected, poly 0xEDB88320) ----------------- */
-static unsigned long crcTable[256];
+static uint32_t      crcTable[256];
 static int           crcInited = 0;
 
 static void BuildCrcTable( void )
 {
-    unsigned long c;
+    uint32_t c;
     int n, k;
     for ( n = 0; n < 256; n++ )
     {
-        c = (unsigned long)n;
+        c = (uint32_t)n;
         for ( k = 0; k < 8; k++ )
             c = ( c & 1 ) ? ( 0xEDB88320UL ^ ( c >> 1 ) ) : ( c >> 1 );
         crcTable[n] = c;
@@ -153,13 +153,13 @@ static void BuildCrcTable( void )
     crcInited = 1;
 }
 
-static unsigned long UpdateCrc( unsigned long crc,
-                                const unsigned char *buf, unsigned long len )
+static uint32_t UpdateCrc( uint32_t crc,
+                           const uint8_t *buf, uint32_t len )
 {
     if ( !crcInited ) BuildCrcTable();
     crc ^= 0xFFFFFFFFUL;
     while ( len-- )
-        crc = crcTable[(unsigned char)( crc ^ *buf++ )] ^ ( crc >> 8 );
+        crc = crcTable[(uint8_t)( crc ^ *buf++ )] ^ ( crc >> 8 );
     return crc ^ 0xFFFFFFFFUL;
 }
 
@@ -194,16 +194,16 @@ typedef struct {
     VolFile       *fp;
     unsigned long  bitsLeft;    /* real bits in bitBuf; those above are 0  */
     unsigned long  bitBuf;      /* the next bit is bit 0                   */
-    unsigned long  bytesLeft;   /* data not yet read from the file         */
+    uint32_t       bytesLeft;   /* data not yet read from the file         */
     int            eof;         /* a bit was wanted past the end           */
     ZipCipher     *ciph;        /* NULL for a plaintext entry              */
-    unsigned char *in;          /* BR_INBUF bytes, read and decrypted      */
+    uint8_t       *in;          /* BR_INBUF bytes, read and decrypted      */
     unsigned int   inPos;
     unsigned int   inLen;
 } BitReader;
 
-static void BrInit( BitReader *br, VolFile *fp, unsigned long compSize,
-                    ZipCipher *ciph, unsigned char *inBuf )
+static void BrInit( BitReader *br, VolFile *fp, uint32_t compSize,
+                    ZipCipher *ciph, uint8_t *inBuf )
 {
     br->fp = fp; br->bitsLeft = 0; br->bitBuf = 0;
     br->bytesLeft = compSize; br->eof = 0;
@@ -404,19 +404,19 @@ static const unsigned char distExtra[30] = {
  * buffer at a time; Inflate sends its window. */
 typedef struct {
     FILE          *out;      /* file sink (NULL when testing or mem sink)   */
-    unsigned char *mem;      /* memory sink (NULL when file / test)         */
+    uint8_t       *mem;      /* memory sink (NULL when file / test)         */
     unsigned long  memPos;
     unsigned long  memCap;
-    unsigned char *buf;      /* Explode only                                */
+    uint8_t       *buf;      /* Explode only                                */
     unsigned int   len;
-    unsigned long  crc;
+    uint32_t       crc;
     int            rc;       /* SZ_OK / SZ_ERR_WRITE */
 } OutBuf;
 
-static int OutWrite( OutBuf *o, const unsigned char *p, unsigned int n )
+static int OutWrite( OutBuf *o, const uint8_t *p, unsigned int n )
 {
     if ( n == 0 ) return 0;
-    o->crc = UpdateCrc( o->crc, p, (unsigned long)n );
+    o->crc = UpdateCrc( o->crc, p, (uint32_t)n );
     if ( o->out && fwrite( p, 1, n, o->out ) != n )
     {                                        /* out == NULL => test only */
         o->rc = SZ_ERR_WRITE;
@@ -442,7 +442,7 @@ static int OutFlush( OutBuf *o )
     return r;
 }
 
-static int OutByte( OutBuf *o, unsigned char b )
+static int OutByte( OutBuf *o, uint8_t b )
 {
     o->buf[o->len++] = b;
     if ( o->len >= OBUF_SIZE )
@@ -453,13 +453,13 @@ static int OutByte( OutBuf *o, unsigned char b )
 /* Inflate's window, which is also its output buffer: win[0..pos) has not
  * been sent on yet, and win[pos..WSIZE) still holds the lap before. */
 typedef struct {
-    unsigned char *win;
+    uint8_t       *win;
     unsigned int   pos;
     unsigned long  total;    /* bytes decoded so far - how far back a
                               * distance may reach */
 } InfWin;
 
-static int WinPut( InfWin *w, OutBuf *o, unsigned char b )
+static int WinPut( InfWin *w, OutBuf *o, uint8_t b )
 {
     w->win[w->pos++] = b;
     w->total++;
@@ -484,7 +484,7 @@ static int InflateStored( BitReader *br, OutBuf *o, InfWin *w )
     {
         if ( br->bitsLeft >= 8 )            /* whole bytes already taken in */
         {
-            if ( WinPut( w, o, (unsigned char)br->bitBuf ) ) return o->rc;
+            if ( WinPut( w, o, (uint8_t)br->bitBuf ) ) return o->rc;
             BrConsume( br, 8 );
             len--;
         }
@@ -514,7 +514,7 @@ static int InflateStored( BitReader *br, OutBuf *o, InfWin *w )
 static int InflateCodes( BitReader *br, OutBuf *o, InfWin *w,
                          const HuffTree *hl, const HuffTree *hd )
 {
-    unsigned char *win = w->win;
+    uint8_t       *win = w->win;
     unsigned int   pos = w->pos;
     int            rc  = SZ_OK;
 
@@ -525,7 +525,7 @@ static int InflateCodes( BitReader *br, OutBuf *o, InfWin *w,
         if ( sym < 256 )
         {
             if ( sym < 0 ) { rc = SZ_ERR_DATA; break; }
-            win[pos++] = (unsigned char)sym;
+            win[pos++] = (uint8_t)sym;
             w->total++;
             if ( pos == WSIZE )
             {
@@ -635,11 +635,11 @@ static int InflateDynamic( BitReader *br, HuffTree *hl, HuffTree *hd,
 }
 
 static int Inflate( VolFile *in, FILE *out,
-                    unsigned char *memSink, unsigned long memCap,
-                    unsigned long compSize, unsigned long uncompSize,
-                    unsigned long *crcOut, ZipCipher *ciph )
+                    uint8_t *memSink, unsigned long memCap,
+                    uint32_t compSize, uint32_t uncompSize,
+                    uint32_t *crcOut, ZipCipher *ciph )
 {
-    unsigned char *inBuf;
+    uint8_t       *inBuf;
     unsigned char  llit[288], ldist[32];
     HuffTree      *hl, *hd, *hcl;
     BitReader      br;
@@ -648,8 +648,8 @@ static int Inflate( VolFile *in, FILE *out,
     int            rc, bfinal, btype;
 
     (void)uncompSize;
-    w.win = (unsigned char *)malloc( WSIZE );
-    inBuf = (unsigned char *)malloc( BR_INBUF );
+    w.win = (uint8_t *)malloc( WSIZE );
+    inBuf = (uint8_t *)malloc( BR_INBUF );
     hl    = (HuffTree *)malloc( sizeof( HuffTree ) );
     hd    = (HuffTree *)malloc( sizeof( HuffTree ) );
     hcl   = (HuffTree *)malloc( sizeof( HuffTree ) );
@@ -778,12 +778,12 @@ static int SfDecode( SfTree *t, BitReader *br )
 }
 
 static int Explode( VolFile *in, FILE *out,
-                    unsigned char *memSink, unsigned long memCap,
-                    unsigned long compSize, unsigned long uncompSize,
-                    unsigned int gpflag, unsigned long *crcOut,
+                    uint8_t *memSink, unsigned long memCap,
+                    uint32_t compSize, uint32_t uncompSize,
+                    unsigned int gpflag, uint32_t *crcOut,
                     ZipCipher *ciph )
 {
-    unsigned char *window, *inBuf;
+    uint8_t       *window, *inBuf;
     SfTree        *litT, *lenT, *distT;
     BitReader      br;
     OutBuf         o;
@@ -800,11 +800,11 @@ static int Explode( VolFile *in, FILE *out,
     distLow    = bigDict ? 7 : 6;
     minMatch   = threeTrees ? 3 : 2;
 
-    window = (unsigned char *)malloc( WSIZE );
-    inBuf  = (unsigned char *)malloc( BR_INBUF );
+    window = (uint8_t *)malloc( WSIZE );
+    inBuf  = (uint8_t *)malloc( BR_INBUF );
     lenT   = (SfTree *)malloc( sizeof( SfTree ) );
     distT  = (SfTree *)malloc( sizeof( SfTree ) );
-    o.buf  = (unsigned char *)malloc( OBUF_SIZE );
+    o.buf  = (uint8_t *)malloc( OBUF_SIZE );
     if ( threeTrees ) litT = (SfTree *)malloc( sizeof( SfTree ) );
     if ( !window || !inBuf || !lenT || !distT || !o.buf || ( threeTrees && !litT ) )
     { rc = SZ_ERR_MEMORY; goto edone; }
@@ -832,9 +832,9 @@ static int Explode( VolFile *in, FILE *out,
             }
             else
                 lit = (int)BrRead( &br, 8 );
-            window[wpos] = (unsigned char)lit;
+            window[wpos] = (uint8_t)lit;
             wpos = ( wpos + 1 ) & WSIZE_MASK;
-            if ( OutByte( &o, (unsigned char)lit ) ) { rc = o.rc; goto edone; }
+            if ( OutByte( &o, (uint8_t)lit ) ) { rc = o.rc; goto edone; }
             produced++;
         }
         else                                     /* (length, distance) match */
@@ -854,7 +854,7 @@ static int Explode( VolFile *in, FILE *out,
             while ( n-- > 0 && produced < uncompSize )
             {
                 unsigned int  back = ( wpos + WSIZE - (unsigned int)dist ) & WSIZE_MASK;
-                unsigned char b    = window[back];
+                uint8_t       b    = window[back];
                 window[wpos] = b;
                 wpos = ( wpos + 1 ) & WSIZE_MASK;
                 if ( OutByte( &o, b ) ) { rc = o.rc; goto edone; }
@@ -887,7 +887,7 @@ struct ZipArchive {
     long     bias;                          /* SFX stub offset bias         */
     int      numEntries;
     ZipEntry      *entries;                 /* public: name/size/crc/isDir  */
-    unsigned long *compSize;                /* extraction metadata          */
+    uint32_t      *compSize;                /* extraction metadata          */
     unsigned int  *method;
     unsigned int  *flags;
     long          *localOffset;
@@ -896,8 +896,8 @@ struct ZipArchive {
     /* WinZip AES, per entry.  strength is 0 for an entry that is not AES -
      * which includes ZipCrypto entries, whose scheme carries no parameters at
      * all and needs nothing remembered here. */
-    Byte          *aesStrength;             /* 1 = 128, 2 = 192, 3 = 256    */
-    Byte          *aesVer;                  /* 1 = AE-1 (has CRC), 2 = AE-2 */
+    uint8_t       *aesStrength;             /* 1 = 128, 2 = 192, 3 = 256    */
+    uint8_t       *aesVer;                  /* 1 = AE-1 (has CRC), 2 = AE-2 */
 
     /* The password, held for the life of the archive because every entry
      * needs it and the user should be asked once.  Not scrubbed on close:
@@ -912,7 +912,7 @@ struct ZipArchive {
  * FindEndRec because FindEndRec runs on files that turn out not to be zips at
  * all, and it has no business allocating for those.  A comment of zero length
  * stays NULL, which is what "no comment" means to the caller. */
-static void ZipReadComment( ZipArchive *z, long eocdPos, unsigned short len )
+static void ZipReadComment( ZipArchive *z, long eocdPos, uint16_t len )
 {
     if ( !len ) return;
     z->comment = (char *)malloc( (size_t)len + 1 );
@@ -944,12 +944,12 @@ static void ZipReadComment( ZipArchive *z, long eocdPos, unsigned short len )
  * cannot extract anything" floor is derived from the code that does the
  * work instead of being a second constant that can drift away from it.
  *-------------------------------------------------------------------------- */
-UInt32 ZipMemNeeded( ZipArchive *z )
+uint32_t ZipMemNeeded( ZipArchive *z )
 {
-    UInt32 trees = (UInt32)( sizeof( HuffTree ) * 3 + sizeof( SfTree ) * 3 );
+    uint32_t trees = (uint32_t)( sizeof( HuffTree ) * 3 + sizeof( SfTree ) * 3 );
 
     (void)z;
-    return (UInt32)WSIZE + (UInt32)BR_INBUF + (UInt32)OBUF_SIZE + trees;
+    return (uint32_t)WSIZE + (uint32_t)BR_INBUF + (uint32_t)OBUF_SIZE + trees;
 }
 
 const char *ZipComment( ZipArchive *z )
@@ -962,12 +962,12 @@ static int ZipAllocTables( ZipArchive *z, unsigned n )
 {
     if ( n == 0 ) n = 1;
     z->entries     = (ZipEntry *)calloc( n, sizeof( ZipEntry ) );
-    z->compSize    = (unsigned long *)calloc( n, sizeof( unsigned long ) );
+    z->compSize    = (uint32_t *)calloc( n, sizeof( uint32_t ) );
     z->method      = (unsigned int *)calloc( n, sizeof( unsigned int ) );
     z->flags       = (unsigned int *)calloc( n, sizeof( unsigned int ) );
     z->localOffset = (long *)calloc( n, sizeof( long ) );
-    z->aesStrength = (Byte *)calloc( n, sizeof( Byte ) );
-    z->aesVer      = (Byte *)calloc( n, sizeof( Byte ) );
+    z->aesStrength = (uint8_t *)calloc( n, sizeof( uint8_t ) );
+    z->aesVer      = (uint8_t *)calloc( n, sizeof( uint8_t ) );
     return ( z->entries && z->compSize && z->method &&
              z->flags && z->localOffset && z->aesStrength && z->aesVer );
 }
@@ -989,7 +989,7 @@ static int ZipAllocTables( ZipArchive *z, unsigned n )
  * and demonstrably wrong.
  *--------------------------------------------------------------------------*/
 static int CiphBegin( ZipArchive *z, int idx, ZipCipher *ciph,
-                      unsigned long *dataLen )
+                      uint32_t *dataLen )
 {
     ZipEntry *e = &z->entries[idx];
 
@@ -1004,16 +1004,16 @@ static int CiphBegin( ZipArchive *z, int idx, ZipCipher *ciph,
 
     if ( z->aesStrength[idx] )
     {
-        Byte salt[16], wantVer[2], gotVer[2];
-        Byte cipherKey[32], macKey[32];
-        int  keyBytes, saltLen, rc;
-        unsigned long overhead;
+        uint8_t salt[16], wantVer[2], gotVer[2];
+        uint8_t cipherKey[32], macKey[32];
+        int     keyBytes, saltLen, rc;
+        uint32_t overhead;
 
         saltLen = ZipAesSaltLen( z->aesStrength[idx] );
         if ( !saltLen )
             return SZ_ERR_FORMAT;
 
-        overhead = (unsigned long)saltLen + AES_PWVER_LEN + AES_AUTH_LEN;
+        overhead = (uint32_t)saltLen + AES_PWVER_LEN + AES_AUTH_LEN;
         if ( *dataLen < overhead )
             return SZ_ERR_FORMAT;
 
@@ -1042,7 +1042,7 @@ static int CiphBegin( ZipArchive *z, int idx, ZipCipher *ciph,
     }
 
     {
-        Byte hdr[ ZC_HDR_LEN ];
+        uint8_t hdr[ ZC_HDR_LEN ];
 
         if ( *dataLen < ZC_HDR_LEN )
             return SZ_ERR_FORMAT;
@@ -1082,16 +1082,16 @@ static int CiphBegin( ZipArchive *z, int idx, ZipCipher *ciph,
  * password would send them the wrong way.
  *--------------------------------------------------------------------------*/
 static int CiphFinish( ZipArchive *z, ZipCipher *ciph,
-                       long dataStart, unsigned long dataLen )
+                       long dataStart, uint32_t dataLen )
 {
-    Byte tag[20], want[ AES_AUTH_LEN ], buf[512];
+    uint8_t tag[20], want[ AES_AUTH_LEN ], buf[512];
 
     if ( ciph->kind != CIPH_AES )
         return SZ_OK;
 
     if ( ciph->nproc < dataLen )
     {
-        unsigned long left = dataLen - ciph->nproc;
+        uint32_t left = dataLen - ciph->nproc;
 
         if ( VolSeek( z->fp, dataStart + (long)ciph->nproc, SEEK_SET ) != 0 )
             return SZ_ERR_READ;
@@ -1182,7 +1182,7 @@ static void BuildOut( char *dst, int dstSize,
 
 static int FindEndRec( VolFile *fp, EndRec *er, long *eocdPos )
 {
-    unsigned char *buf;
+    uint8_t       *buf;
     long           fileLen, base, want, got, i;
     int            rc = SZ_ERR_SIG;
 
@@ -1193,7 +1193,7 @@ static int FindEndRec( VolFile *fp, EndRec *er, long *eocdPos )
     want = ( fileLen < ZIP_EOCD_WINDOW ) ? fileLen : ZIP_EOCD_WINDOW;
     base = fileLen - want;
 
-    buf = (unsigned char *)malloc( (size_t)want );
+    buf = (uint8_t *)malloc( (size_t)want );
     if ( !buf ) return SZ_ERR_MEMORY;
 
     if ( VolSeek( fp, base, SEEK_SET ) != 0 ) { free( buf ); return SZ_ERR_READ; }
@@ -1255,7 +1255,7 @@ int ZipOpen( const char *path, ZipArchive **out )
          * so require the local-file-header magic before blaming a volume. */
         if ( rc == SZ_ERR_SIG && VolIsSet( z->fp ) )
         {
-            unsigned char lfh[4];
+            uint8_t lfh[4];
 
             if ( VolSeek( z->fp, 0L, SEEK_SET ) == 0 &&
                  VolRead( lfh, 1, 4, z->fp ) == 4 &&
@@ -1291,7 +1291,7 @@ int ZipOpen( const char *path, ZipArchive **out )
         ZipEntry *e;
         unsigned int fnLen;
         unsigned int aesMethod;
-        Byte         aesStrength, aesVer;
+        uint8_t      aesStrength, aesVer;
         int          j, last;
 
         if ( VolRead( &ch, sizeof( CentralHdr ), 1, z->fp ) != 1 )
@@ -1317,7 +1317,7 @@ int ZipOpen( const char *path, ZipArchive **out )
         aesMethod   = ch.method;
         if ( ch.method == METHOD_AES && ch.extraLen > 0 )
         {
-            Byte  ex[ 512 ];
+            uint8_t ex[ 512 ];
             unsigned int exLen = ( ch.extraLen < sizeof( ex ) )
                                ? ch.extraLen : (unsigned int)sizeof( ex );
             long  exPos = VolTell( z->fp ) + (long)( ch.fnLen - fnLen );
@@ -1425,12 +1425,12 @@ static int ZipExtractIndex( ZipArchive *z, int idx, const char *destDir )
     LocalHdr      lh;
     char          outPath[SZ_MAX_NAME * 4];
     FILE         *out;
-    unsigned long crc, remain, wrote;
+    uint32_t      crc, remain, wrote;
     unsigned int  toRead;
-    unsigned char buf[512];
+    uint8_t       buf[512];
     int           rc;
     ZipCipher     ciph;
-    unsigned long dataLen;
+    uint32_t      dataLen;
     long          dataStart;
 
     /* destDir == NULL means "test only": decode + CRC-check but write nothing. */
@@ -1539,15 +1539,15 @@ static int ZipExtractIndex( ZipArchive *z, int idx, const char *destDir )
 
 /* Decompress one entry wholly into memory (for unwrapping a .imz disk image). */
 int ZipExtractToMemory( ZipArchive *z, int index,
-                        unsigned char **outBuf, UInt32 *outLen )
+                        uint8_t **outBuf, uint32_t *outLen )
 {
     ZipEntry     *e;
     LocalHdr      lh;
-    unsigned char *buf;
-    unsigned long crc = 0;
+    uint8_t      *buf;
+    uint32_t      crc = 0;
     int           rc;
     ZipCipher     ciph;
-    unsigned long dataLen;
+    uint32_t      dataLen;
     long          dataStart;
 
     *outBuf = NULL;
@@ -1573,7 +1573,7 @@ int ZipExtractToMemory( ZipArchive *z, int index,
     if ( rc != SZ_OK ) return rc;
     dataStart = VolTell( z->fp );
 
-    buf = (unsigned char *)malloc( e->size ? e->size : 1 );
+    buf = (uint8_t *)malloc( e->size ? e->size : 1 );
     if ( !buf ) return SZ_ERR_MEMORY;
 
     if ( z->method[index] == METHOD_STORE )
@@ -1732,19 +1732,19 @@ static int SpanCmp( const void *pa, const void *pb )
     return sa->idx - sb->idx;
 }
 
-static void ZPut16( Byte *p, UInt32 v ) { p[0] = (Byte)v; p[1] = (Byte)( v >> 8 ); }
-static void ZPut32( Byte *p, UInt32 v )
+static void ZPut16( uint8_t *p, uint32_t v ) { p[0] = (uint8_t)v; p[1] = (uint8_t)( v >> 8 ); }
+static void ZPut32( uint8_t *p, uint32_t v )
 {
     ZPut16( p, v & 0xFFFFUL );
     ZPut16( p + 2, v >> 16 );
 }
-static UInt32 ZGet16( const Byte *p ) { return (UInt32)p[0] | ( (UInt32)p[1] << 8 ); }
-static UInt32 ZGet32( const Byte *p ) { return ZGet16( p ) | ( ZGet16( p + 2 ) << 16 ); }
+static uint32_t ZGet16( const uint8_t *p ) { return (uint32_t)p[0] | ( (uint32_t)p[1] << 8 ); }
+static uint32_t ZGet32( const uint8_t *p ) { return ZGet16( p ) | ( ZGet16( p + 2 ) << 16 ); }
 
 typedef struct {
     ArcCompProgress prog;
     void           *user;
-    UInt32          doneBytes, totalBytes;
+    uint32_t        doneBytes, totalBytes;
 } ZipDelProg;
 
 static int ZipDelTick( ZipDelProg *zp, int index, int count, const char *name )
@@ -1755,14 +1755,14 @@ static int ZipDelTick( ZipDelProg *zp, int index, int count, const char *name )
 }
 
 /* Copy 'len' bytes from 'from' in the archive to the end of 'out'. */
-static int ZipCopyRange( ZipArchive *z, long from, UInt32 len, FILE *out,
-                         Byte *buf, ZipDelProg *zp, int index, int count,
+static int ZipCopyRange( ZipArchive *z, long from, uint32_t len, FILE *out,
+                         uint8_t *buf, ZipDelProg *zp, int index, int count,
                          const char *name )
 {
     if ( VolSeek( z->fp, from, SEEK_SET ) != 0 ) return SZ_ERR_READ;
     while ( len > 0 )
     {
-        UInt32 part = ( len > ZDEL_BUF ) ? ZDEL_BUF : len;
+        uint32_t part = ( len > ZDEL_BUF ) ? ZDEL_BUF : len;
 
         if ( VolRead( buf, 1, part, z->fp ) != part ) return SZ_ERR_READ;
         if ( fwrite( buf, 1, (size_t)part, out ) != (size_t)part )
@@ -1774,19 +1774,19 @@ static int ZipCopyRange( ZipArchive *z, long from, UInt32 len, FILE *out,
     return SZ_OK;
 }
 
-int ZipDeleteWrite( ZipArchive *z, const Byte *del, FILE *out,
+int ZipDeleteWrite( ZipArchive *z, const uint8_t *del, FILE *out,
                     ArcCompProgress prog, void *user, const char **why )
 {
     EndRec      er;
     ZipDelProg  zp;
     ZipSpan    *spans = NULL;
-    Byte       *cdir = NULL, *buf = NULL;
+    uint8_t    *cdir = NULL, *buf = NULL;
     long       *newOff = NULL;
-    UInt32     *recPos = NULL;
+    uint32_t   *recPos = NULL;
     long        eocdPos, cdStart, first, outPos;
-    UInt32      pos, cdOutSize;
+    uint32_t    pos, cdOutSize;
     int         n = z->numEntries, kept = 0, done = 0, i, k, rc;
-    Byte        eocd[22];
+    uint8_t     eocd[22];
 
     (void)why;
     /* Nothing in a single-file zip stops an entry from going. */
@@ -1802,11 +1802,11 @@ int ZipDeleteWrite( ZipArchive *z, const Byte *del, FILE *out,
     cdStart = (long)er.dirOffset + z->bias;
 
     rc = SZ_ERR_MEMORY;
-    cdir   = (Byte *)malloc( er.dirSize ? (size_t)er.dirSize : 1 );
-    buf    = (Byte *)malloc( ZDEL_BUF );
+    cdir   = (uint8_t *)malloc( er.dirSize ? (size_t)er.dirSize : 1 );
+    buf    = (uint8_t *)malloc( ZDEL_BUF );
     spans  = (ZipSpan *)malloc( sizeof( ZipSpan ) * ( n ? n : 1 ) );
     newOff = (long *)malloc( sizeof( long ) * ( n ? n : 1 ) );
-    recPos = (UInt32 *)malloc( sizeof( UInt32 ) * ( n ? n : 1 ) );
+    recPos = (uint32_t *)malloc( sizeof( uint32_t ) * ( n ? n : 1 ) );
     if ( !cdir || !buf || !spans || !newOff || !recPos ) goto done;
 
     /* The central directory again, whole and raw: the records kept go out
@@ -1818,7 +1818,7 @@ int ZipDeleteWrite( ZipArchive *z, const Byte *del, FILE *out,
     rc = SZ_ERR_FORMAT;
     for ( pos = 0, i = 0; i < n; i++ )
     {
-        UInt32 recLen;
+        uint32_t recLen;
 
         if ( er.dirSize - pos < 46 || ZGet32( cdir + pos ) != SIG_CENT ) goto done;
         recLen = 46 + ZGet16( cdir + pos + 28 ) + ZGet16( cdir + pos + 30 ) +
@@ -1839,15 +1839,15 @@ int ZipDeleteWrite( ZipArchive *z, const Byte *del, FILE *out,
         if ( !del[spans[k].idx] )
         {
             kept++;
-            zp.totalBytes += (UInt32)( end - spans[k].off );
+            zp.totalBytes += (uint32_t)( end - spans[k].off );
         }
     }
 
     /* The stub, or whatever else sits in front of the first entry. */
     first = ( n > 0 ) ? spans[0].off + z->bias : cdStart;
     if ( first < 0 ) goto done;
-    zp.totalBytes += (UInt32)first + er.commentLen;
-    rc = ZipCopyRange( z, 0L, (UInt32)first, out, buf, &zp, 0, kept, "" );
+    zp.totalBytes += (uint32_t)first + er.commentLen;
+    rc = ZipCopyRange( z, 0L, (uint32_t)first, out, buf, &zp, 0, kept, "" );
     if ( rc != SZ_OK ) goto done;
     outPos = first;
 
@@ -1860,7 +1860,7 @@ int ZipDeleteWrite( ZipArchive *z, const Byte *del, FILE *out,
         if ( del[idx] ) continue;
         newOff[idx] = outPos - z->bias;
         rc = ZipCopyRange( z, spans[k].off + z->bias,
-                           (UInt32)( end - spans[k].off ), out, buf, &zp,
+                           (uint32_t)( end - spans[k].off ), out, buf, &zp,
                            done, kept, z->entries[idx].name );
         if ( rc != SZ_OK ) goto done;
         outPos += end - spans[k].off;
@@ -1872,12 +1872,12 @@ int ZipDeleteWrite( ZipArchive *z, const Byte *del, FILE *out,
     cdOutSize = 0;
     for ( i = 0; i < n; i++ )
     {
-        Byte  *rec = cdir + recPos[i];
-        UInt32 recLen = 46 + ZGet16( rec + 28 ) + ZGet16( rec + 30 ) +
+        uint8_t *rec = cdir + recPos[i];
+        uint32_t recLen = 46 + ZGet16( rec + 28 ) + ZGet16( rec + 30 ) +
                         ZGet16( rec + 32 );
 
         if ( del[i] ) continue;
-        ZPut32( rec + 42, (UInt32)newOff[i] );
+        ZPut32( rec + 42, (uint32_t)newOff[i] );
         if ( fwrite( rec, 1, (size_t)recLen, out ) != (size_t)recLen ) goto done;
         cdOutSize += recLen;
     }
@@ -1885,10 +1885,10 @@ int ZipDeleteWrite( ZipArchive *z, const Byte *del, FILE *out,
     /* And the end record, with the comment the archive already had. */
     memset( eocd, 0, sizeof( eocd ) );
     ZPut32( eocd, SIG_END );
-    ZPut16( eocd + 8, (UInt32)kept );
-    ZPut16( eocd + 10, (UInt32)kept );
+    ZPut16( eocd + 8, (uint32_t)kept );
+    ZPut16( eocd + 10, (uint32_t)kept );
     ZPut32( eocd + 12, cdOutSize );
-    ZPut32( eocd + 16, (UInt32)( outPos - z->bias ) );
+    ZPut32( eocd + 16, (uint32_t)( outPos - z->bias ) );
     ZPut16( eocd + 20, er.commentLen );
     if ( fwrite( eocd, 1, sizeof( eocd ), out ) != sizeof( eocd ) ) goto done;
     rc = SZ_OK;

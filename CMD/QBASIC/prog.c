@@ -53,7 +53,7 @@ void prog_clear( void )
 static TOKEN line_toks[256];
 
 /* the first statement's tokens, after a label or line number */
-static TOKEN *first_tokens( const char *text, u32 len, int *count )
+static TOKEN *first_tokens( const char *text, unsigned int len, int *count )
 {
     int col;
     const char *msg;
@@ -76,7 +76,7 @@ static TOKEN *first_tokens( const char *text, u32 len, int *count )
 }
 
 /* SUB or FUNCTION starting a procedure: its name and kind */
-int prog_line_proc( const char *text, u32 len, char *name, int *kind )
+int prog_line_proc( const char *text, unsigned int len, char *name, int *kind )
 {
     int count, i;
     TOKEN *tok = first_tokens( text, len, &count );
@@ -94,7 +94,7 @@ int prog_line_proc( const char *text, u32 len, char *name, int *kind )
 }
 
 /* END SUB or END FUNCTION */
-static int is_proc_end( const char *text, u32 len )
+static int is_proc_end( const char *text, unsigned int len )
 {
     int count;
     TOKEN *tok = first_tokens( text, len, &count );
@@ -105,7 +105,7 @@ static int is_proc_end( const char *text, u32 len )
 
 /* a remark, a blank line or a DEFtype statement: what goes with the
    procedure below it.  -> 2 for a DEFtype statement, 1 for the others */
-static int is_lead_line( const char *text, u32 len, u8 *deftype )
+static int is_lead_line( const char *text, unsigned int len, uint8_t *deftype )
 {
     int count, i, from, to, type;
     TOKEN *tok = first_tokens( text, len, &count );
@@ -136,7 +136,7 @@ static int is_lead_line( const char *text, u32 len, u8 *deftype )
         }
         if ( from >= 0 && to <= 25 && from <= to ) {
             for ( ; from <= to; from++ ) {
-                deftype[from] = (u8)type;
+                deftype[from] = (uint8_t)type;
             }
         }
         if ( i < count && tok[i].kind == TK_COMMA ) {
@@ -150,7 +150,7 @@ static int is_lead_line( const char *text, u32 len, u8 *deftype )
 
 /* DEFINT A-Z and the like: the statements that make "deftype" from all
    SINGLE, a type at a time */
-static int add_deflines( DOC *doc, u32 at, const u8 *deftype )
+static int add_deflines( DOC *doc, unsigned int at, const uint8_t *deftype )
 {
     static const char *const kws[] = { "", "DEFINT", "DEFLNG", "", "DEFDBL", "DEFSTR" };
     char line[128];
@@ -185,7 +185,7 @@ static int add_deflines( DOC *doc, u32 at, const u8 *deftype )
             }
         }
         if ( len ) {
-            if ( !doc_insert_line( doc, at + (u32)added, line, (u32)len ) ) {
+            if ( !doc_insert_line( doc, at + (unsigned int)added, line, (unsigned int)len ) ) {
                 return -1;
             }
             added++;
@@ -194,7 +194,7 @@ static int add_deflines( DOC *doc, u32 at, const u8 *deftype )
     return added;
 }
 
-static int defs_differ( const u8 *deftype )
+static int defs_differ( const uint8_t *deftype )
 {
     int i;
 
@@ -211,22 +211,22 @@ static int defs_differ( const u8 *deftype )
 /* ------------------------------------------------------------------ */
 
 typedef struct {
-    char **text;
-    u32   *len;
-    u32    count, cap;
+    char        **text;
+    unsigned int *len;
+    unsigned int  count, cap;
 } PENDING;
 
-static int pending_add( PENDING *p, const char *text, u32 len )
+static int pending_add( PENDING *p, const char *text, unsigned int len )
 {
     if ( p->count == p->cap ) {
-        u32 cap = p->cap ? p->cap * 2 : 16;
+        unsigned int cap = p->cap ? p->cap * 2 : 16;
         char **gt = (char **)try_realloc( p->text, cap * sizeof( char * ) );
-        u32 *gl;
+        unsigned int *gl;
         if ( gt == NULL ) {
             return 0;
         }
         p->text = gt;
-        gl = (u32 *)try_realloc( p->len, cap * sizeof( u32 ) );
+        gl = (unsigned int *)try_realloc( p->len, cap * sizeof( unsigned int ) );
         if ( gl == NULL ) {
             return 0;
         }
@@ -245,7 +245,7 @@ static int pending_add( PENDING *p, const char *text, u32 len )
 
 static int pending_flush( PENDING *p, DOC *doc )
 {
-    u32 i;
+    unsigned int i;
     int ok = 1;
 
     for ( i = 0; i < p->count; i++ ) {
@@ -278,19 +278,20 @@ static DOC *new_proc_text( const char *name, int kind )
         return NULL;
     }
     str_cpyn( doc->pname, name, sizeof( doc->pname ) );
-    doc->pkind = (u8)kind;
+    doc->pkind = (uint8_t)kind;
     ptext.texts[ptext.ntexts++] = doc;
     return doc;
 }
 
 int prog_load( const char *path )
 {
-    u32 handle, got, pos, len = 0;
-    u8 *buf;
+    uint32_t handle;
+    unsigned int got, pos, len = 0;
+    uint8_t *buf;
     char *line;
     int rc, last_cr = 0, ok = 1, state = 0, kind, at_eof = 0;
     char name[NAME_MAX + 2];
-    u8 deftype[26];
+    uint8_t deftype[26];
     DOC *cur = NULL;
     PENDING pend;
     const char *slash;
@@ -299,7 +300,7 @@ int prog_load( const char *path )
     if ( rc != 0 ) {
         return rc;
     }
-    buf = (u8 *)try_alloc( 8192 );
+    buf = (uint8_t *)try_alloc( 8192 );
     line = (char *)try_alloc( MAX_LINE + 1 );
     if ( buf == NULL || line == NULL ) {
         xfree( buf );
@@ -357,11 +358,11 @@ int prog_load( const char *path )
                     break;
                 }
                 {
-                    u32 i;
+                    unsigned int i;
                     int has_def = 0;
                     /* the file's own DEFtype line above the procedure: no other added */
                     for ( i = 0; i < pend.count; i++ ) {
-                        u8 tmp[26];
+                        uint8_t tmp[26];
                         mem_cpy( tmp, deftype, 26 );
                         if ( is_lead_line( pend.text[i], pend.len[i], tmp ) == 2 ) {
                             has_def = 1;
@@ -429,11 +430,11 @@ int prog_load( const char *path )
 int prog_find( const char *name )
 {
     int i;
-    u32 len = str_len( name );
+    unsigned int len = str_len( name );
 
     for ( i = 1; i < ptext.ntexts; i++ ) {
         const char *have = ptext.texts[i]->pname;
-        u32 hlen = str_len( have );
+        unsigned int hlen = str_len( have );
         /* the name may carry its suffix on either side */
         if ( hlen > 0 && lex_suffix_type( have[hlen - 1] ) != TY_NONE ) {
             hlen--;
@@ -450,10 +451,10 @@ int prog_find( const char *name )
 }
 
 /* the module's DEFtype letters at its end, which a new procedure gets */
-static void module_deftypes( u8 *deftype )
+static void module_deftypes( uint8_t *deftype )
 {
     DOC *doc = ptext.texts[0];
-    u32 i;
+    unsigned int i;
 
     mem_set( deftype, TY_SINGLE, 26 );
     for ( i = 0; i < doc->count; i++ ) {
@@ -466,7 +467,7 @@ int prog_add_proc( const char *name, int kind )
 {
     DOC *doc;
     char line[NAME_MAX + 16];
-    u8 deftype[26];
+    uint8_t deftype[26];
     int added;
 
     if ( prog_find( name ) >= 0 ) {
@@ -480,13 +481,13 @@ int prog_add_proc( const char *name, int kind )
     added = defs_differ( deftype ) ? add_deflines( doc, 0, deftype ) : 0;
     str_cpy( line, kind == PK_SUB ? "SUB " : "FUNCTION " );
     str_catn( line, name, sizeof( line ) );
-    if ( added < 0 || !doc_set_line( doc, (u32)added, line, str_len( line ) )
+    if ( added < 0 || !doc_set_line( doc, (unsigned int)added, line, str_len( line ) )
       || !doc_append( doc, kind == PK_SUB ? "END SUB" : "END FUNCTION", kind == PK_SUB ? 7 : 12 ) ) {
         prog_delete_proc( ptext.ntexts - 1 );
         return -1;
     }
-    if ( added > 0 && doc->count > (u32)added + 2 ) {
-        doc_delete_lines( doc, (u32)added + 1, 1 );
+    if ( added > 0 && doc->count > (unsigned int)added + 2 ) {
+        doc_delete_lines( doc, (unsigned int)added + 1, 1 );
     }
     ptext.modified = 1;
     return ptext.ntexts - 1;
@@ -513,18 +514,18 @@ void prog_delete_proc( int text )
 /* ------------------------------------------------------------------ */
 
 typedef struct {
-    u32 handle;
-    u8  buf[4096];
-    u32 used;
-    int rc;
+    uint32_t     handle;
+    uint8_t      buf[4096];
+    unsigned int used;
+    int          rc;
 } WRITER;
 
-static void w_bytes( WRITER *w, const char *text, u32 len )
+static void w_bytes( WRITER *w, const char *text, unsigned int len )
 {
-    u32 done;
+    unsigned int done;
 
     while ( len > 0 && w->rc == 0 ) {
-        u32 n = sizeof( w->buf ) - w->used;
+        unsigned int n = sizeof( w->buf ) - w->used;
         if ( n > len ) {
             n = len;
         }
@@ -539,7 +540,7 @@ static void w_bytes( WRITER *w, const char *text, u32 len )
     }
 }
 
-static void w_line( WRITER *w, const char *text, u32 len )
+static void w_line( WRITER *w, const char *text, unsigned int len )
 {
     w_bytes( w, text, len );
     w_bytes( w, "\r\n", 2 );
@@ -549,11 +550,11 @@ static void w_line( WRITER *w, const char *text, u32 len )
 static int has_declare( const char *name, int kind )
 {
     DOC *doc = ptext.texts[0];
-    u32 i;
+    unsigned int i;
     int count;
     TOKEN *tok;
     char upper[NAME_MAX + 2], have[NAME_MAX + 2];
-    u32 n;
+    unsigned int n;
 
     str_cpyn( upper, name, sizeof( upper ) );
     for ( n = 0; upper[n]; n++ ) {
@@ -579,9 +580,9 @@ static int has_declare( const char *name, int kind )
 }
 
 /* DECLARE SUB name (the parameters of its heading) */
-static int declare_for( DOC *doc, char *out, u32 max )
+static int declare_for( DOC *doc, char *out, unsigned int max )
 {
-    u32 i, at;
+    unsigned int i, at;
     LINE *ln;
     const char *paren;
     int count;
@@ -603,7 +604,7 @@ static int declare_for( DOC *doc, char *out, u32 max )
         str_catn( out, " (", max );
         paren = NULL;
         {
-            u32 k;
+            unsigned int k;
             for ( k = tok[1].col + tok[1].len; k < ln->len; k++ ) {
                 if ( ln->text[k] == '(' ) {
                     paren = ln->text + k + 1;
@@ -618,7 +619,7 @@ static int declare_for( DOC *doc, char *out, u32 max )
             /* to the ) that closes the list: a( ) in it is an array */
             const char *close = paren;
             int depth = 1;
-            u32 plen;
+            unsigned int plen;
             while ( close < ln->text + ln->len ) {
                 if ( *close == '(' ) {
                     depth++;
@@ -627,7 +628,7 @@ static int declare_for( DOC *doc, char *out, u32 max )
                 }
                 close++;
             }
-            plen = (u32)(close - paren);
+            plen = (unsigned int)(close - paren);
             at = str_len( out );
             if ( at + plen + 2 > max ) {
                 return 0;                       /* too long for a line: no DECLARE */
@@ -645,7 +646,7 @@ int prog_save( const char *path )
 {
     WRITER *w;
     DOC *doc;
-    u32 i, done;
+    unsigned int i, done;
     int t, order[MAX_PROCS + 1], n, j, k, added = 0;
     static char decl[MAX_LINE + 1];
     const char *slash;
@@ -654,7 +655,7 @@ int prog_save( const char *path )
     for ( t = 1; t < ptext.ntexts; t++ ) {
         doc = ptext.texts[t];
         if ( !has_declare( doc->pname, doc->pkind ) && declare_for( doc, decl, sizeof( decl ) ) ) {
-            if ( !doc_insert_line( ptext.texts[0], (u32)added, decl, str_len( decl ) ) ) {
+            if ( !doc_insert_line( ptext.texts[0], (unsigned int)added, decl, str_len( decl ) ) ) {
                 return ERR_NOMEM;
             }
             added++;

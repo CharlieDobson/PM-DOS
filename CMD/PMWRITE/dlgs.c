@@ -22,9 +22,9 @@
 /* lengths and text                                                    */
 /* ------------------------------------------------------------------ */
 
-void len_text( s32 twips, char *buf )
+void len_text( int twips, char *buf )
 {
-    u32 value, whole, part;
+    unsigned int value, whole, part;
     int used = 0;
 
     if ( twips < 0 ) {
@@ -32,9 +32,9 @@ void len_text( s32 twips, char *buf )
         twips = -twips;
     }
     if ( set.inches ) {
-        value = ((u32)twips * 100 + 720) / 1440;        /* hundredths of an inch */
+        value = ((unsigned int)twips * 100 + 720) / 1440;   /* hundredths of an inch */
     } else {
-        value = ((u32)twips * 254 + 720) / 1440;        /* hundredths of a centimeter */
+        value = ((unsigned int)twips * 254 + 720) / 1440;   /* hundredths of a centimeter */
     }
     whole = value / 100;
     part = value % 100;
@@ -43,15 +43,15 @@ void len_text( s32 twips, char *buf )
 
 /* a number with a decimal point (or comma) as thousandths: 0 if there
    is no number there.  *text moves past it. */
-static int number_parse( const char **text, u32 *thousandths )
+static int number_parse( const char **text, unsigned int *thousandths )
 {
     const char *cur = *text;
-    u32 whole = 0, part = 0, scale = 100;
+    unsigned int whole = 0, part = 0, scale = 100;
     int digits = 0;
 
     while ( *cur >= '0' && *cur <= '9' ) {
         if ( whole < 100000UL ) {
-            whole = whole * 10 + (u32)(*cur - '0');
+            whole = whole * 10 + (unsigned int)(*cur - '0');
         }
         cur++;
         digits++;
@@ -59,7 +59,7 @@ static int number_parse( const char **text, u32 *thousandths )
     if ( *cur == '.' || *cur == ',' ) {
         cur++;
         while ( *cur >= '0' && *cur <= '9' ) {
-            part += (u32)(*cur - '0') * scale;
+            part += (unsigned int)(*cur - '0') * scale;
             scale /= 10;
             cur++;
             digits++;
@@ -73,9 +73,9 @@ static int number_parse( const char **text, u32 *thousandths )
     return 1;
 }
 
-int len_parse( const char *text, s32 *twips )
+int len_parse( const char *text, int *twips )
 {
-    u32 value;
+    unsigned int value;
     int negative = 0;
 
     while ( *text == ' ' ) {
@@ -107,14 +107,14 @@ int len_parse( const char *text, s32 *twips )
     if ( value > 31680 ) {              /* twenty-two inches: no paper is wider */
         return 0;
     }
-    *twips = negative ? -(s32)value : (s32)value;
+    *twips = negative ? -(int)value : (int)value;
     return 1;
 }
 
 /* points, typed with or without "pt", as twips */
-static int pt_parse( const char *text, s32 *twips )
+static int pt_parse( const char *text, int *twips )
 {
-    u32 value;
+    unsigned int value;
 
     while ( *text == ' ' ) {
         text++;
@@ -122,59 +122,59 @@ static int pt_parse( const char *text, s32 *twips )
     if ( !number_parse( &text, &value ) || value > 1584000UL ) {
         return 0;
     }
-    *twips = (s32)(value / 50);
+    *twips = (int)(value / 50);
     return 1;
 }
 
-static void pt_text( s32 twips, char *buf )
+static void pt_text( int twips, char *buf )
 {
-    sfmt( buf, 12, twips % 20 ? "%u.%u pt" : "%u pt", (u32)twips / 20, ((u32)twips % 20) / 2 );
+    sfmt( buf, 12, twips % 20 ? "%u.%u pt" : "%u pt", (uint32_t)twips / 20, ((uint32_t)twips % 20) / 2 );
 }
 
 /* what was typed, which is in the screen's code page, as the
    document's kind of text -> how many units */
-static u32 to_wide( const char *text, u16 *out, u32 max )
+static unsigned int to_wide( const char *text, uint16_t *out, unsigned int max )
 {
-    u32 len = 0;
+    unsigned int len = 0;
 
     while ( *text && len < max ) {
-        out[len++] = cp_to_uni( country.codepage ? country.codepage : CP_437, (u8)*text++ );
+        out[len++] = cp_to_uni( country.codepage ? country.codepage : CP_437, (uint8_t)*text++ );
     }
     return len;
 }
 
 /* UTF-8, as the document keeps its title and the like, for a field */
-static void field_from_utf8( char *field, u32 max, const char *utf8 )
+static void field_from_utf8( char *field, unsigned int max, const char *utf8 )
 {
-    const u8 *cur = (const u8 *)utf8, *end = cur + str_len( utf8 );
+    const uint8_t *cur = (const uint8_t *)utf8, *end = cur + str_len( utf8 );
     char near_buf[8];
-    u32 used = 0;
+    unsigned int used = 0;
     int count;
 
     while ( cur < end ) {
         count = cp_put( country.codepage ? country.codepage : CP_437, utf8_get( &cur, end ), near_buf );
-        if ( used + (u32)count >= max ) {
+        if ( used + (unsigned int)count >= max ) {
             break;
         }
-        mem_cpy( field + used, near_buf, (u32)count );
-        used += (u32)count;
+        mem_cpy( field + used, near_buf, (unsigned int)count );
+        used += (unsigned int)count;
     }
     field[used] = 0;
 }
 
-static void field_to_utf8( char *utf8, u32 max, const char *field )
+static void field_to_utf8( char *utf8, unsigned int max, const char *field )
 {
-    u8 one[4];
-    u32 used = 0;
+    uint8_t one[4];
+    unsigned int used = 0;
     int count;
 
     for ( ; *field; field++ ) {
-        count = utf8_put( one, cp_to_uni( country.codepage ? country.codepage : CP_437, (u8)*field ) );
-        if ( used + (u32)count >= max ) {
+        count = utf8_put( one, cp_to_uni( country.codepage ? country.codepage : CP_437, (uint8_t)*field ) );
+        if ( used + (unsigned int)count >= max ) {
             break;
         }
-        mem_cpy( utf8 + used, one, (u32)count );
-        used += (u32)count;
+        mem_cpy( utf8 + used, one, (unsigned int)count );
+        used += (unsigned int)count;
     }
     utf8[used] = 0;
 }
@@ -230,7 +230,7 @@ static const char *const color_names[] = {
     "Dark Cyan", "Dark Green", "Dark Magenta", "Dark Red", "Dark Yellow", "Dark Gray", "Light Gray"
 };
 
-static const u32 color_values[] = {
+static const uint32_t color_values[] = {
     COLOR_AUTO, 0x000000UL, 0x0000FFUL, 0x00FFFFUL, 0x00FF00UL, 0xFF00FFUL, 0xFF0000UL, 0xFFFF00UL,
     0xFFFFFFUL, 0x000080UL, 0x008080UL, 0x008000UL, 0x800080UL, 0x800000UL, 0x808000UL, 0x808080UL,
     0xC0C0C0UL
@@ -241,7 +241,7 @@ static const u32 color_values[] = {
 void dlg_font( void )
 {
     static const char *const always[] = { "Times New Roman", "Arial", "Courier New", "Symbol" };
-    static const u16 flag_of[] = { CF_BOLD, CF_ITALIC, CF_UNDER, CF_DUNDER, CF_STRIKE, CF_HIDDEN,
+    static const uint16_t flag_of[] = { CF_BOLD, CF_ITALIC, CF_UNDER, CF_DUNDER, CF_STRIKE, CF_HIDDEN,
                                    CF_SMALLCAPS, CF_ALLCAPS };
     static const char *const flag_names[] = { "&Bold", "&Italic", "&Underline", "&Double Underline",
                                               "Stri&kethrough", "&Hidden", "S&mall Caps", "&All Caps" };
@@ -251,9 +251,10 @@ void dlg_font( void )
     DLG dlg;
     CHP was, now;
     char size[12];
-    s32 points;
-    u32 mask = 0, index;
-    u16 flag_mask = 0;
+    int points;
+    uint32_t mask = 0;
+    unsigned int index;
+    uint16_t flag_mask = 0;
     int flags[8], place, place_was, color_was = 0, count, used = 0;
 
     for ( index = 0; index < 4; index++ ) {
@@ -265,7 +266,7 @@ void dlg_font( void )
         wd_font( ed->doc, tf_family( index ), FAM_ANY, -1 );
     }
     count = ed->doc->nfont > 64 ? 64 : (int)ed->doc->nfont;
-    for ( index = 0; index < (u32)count; index++ ) {
+    for ( index = 0; index < (unsigned int)count; index++ ) {
         names[index] = ed->doc->font[index].name;
     }
     ed_cur_chp( ed, &was );
@@ -279,7 +280,7 @@ void dlg_font( void )
         flags[index] = (was.flags & flag_of[index]) != 0;
     }
     place = place_was = (was.flags & CF_SUPER) ? 1 : (was.flags & CF_SUB) ? 2 : 0;
-    sfmt( size, sizeof( size ), (was.size & 1) ? "%u.5" : "%u", (u32)was.size / 2 );
+    sfmt( size, sizeof( size ), (was.size & 1) ? "%u.5" : "%u", (uint32_t)was.size / 2 );
 
     mem_set( &dlg, 0, sizeof( dlg ) );
     dlg.title = "Font";
@@ -289,7 +290,7 @@ void dlg_font( void )
     dlg.activate = plain_activate;
     ctl_label( &ctl[used++], 1, 2, "&Font:" );
     ctl_drop( &ctl[used], 2, 2, 28, names, count );
-    ctl[used++].sel = was.font < (u32)count ? was.font : 0;
+    ctl[used++].sel = was.font < (unsigned int)count ? was.font : 0;
     ctl_label( &ctl[used++], 1, 33, "&Size:" );
     ctl_edit( &ctl[used++], 2, 33, 7, size, sizeof( size ) );
     ctl_label( &ctl[used++], 1, 43, "&Color:" );
@@ -316,11 +317,11 @@ void dlg_font( void )
         msg_box( "The size is a number of points from 1 to 500.", MB_OK );
     }
     /* only what was changed */
-    now.font = (u16)ctl[1].sel;
+    now.font = (uint16_t)ctl[1].sel;
     if ( now.font != was.font ) {
         mask |= CM_FONT;
     }
-    now.size = (u16)(points / 10);
+    now.size = (uint16_t)(points / 10);
     if ( now.size != was.size ) {
         mask |= CM_SIZE;
     }
@@ -339,7 +340,7 @@ void dlg_font( void )
     }
     if ( place != place_was ) {
         flag_mask |= CF_SUPER | CF_SUB;
-        now.flags |= (u16)(place == 1 ? CF_SUPER : place == 2 ? CF_SUB : 0);
+        now.flags |= (uint16_t)(place == 1 ? CF_SUPER : place == 2 ? CF_SUB : 0);
     }
     if ( flag_mask ) {
         mask |= CM_FLAGS;
@@ -364,9 +365,9 @@ void dlg_paragraph( void )
     DLG dlg;
     char left[16], right[16], first[16], before[12], after[12], at[12];
     char left_was[16], right_was[16], first_was[16], before_was[12], after_was[12], at_was[12];
-    s32 value;
-    u32 mask = 0;
-    u16 flag_mask = 0;
+    int value;
+    uint32_t mask = 0;
+    uint16_t flag_mask = 0;
     int page_before, keep_next, keep, spacing, spacing_was, used = 0, align_at, spacing_at;
 
     len_text( was->left, left );
@@ -435,7 +436,7 @@ void dlg_paragraph( void )
         mask = 0;
         flag_mask = 0;
         if ( ctl[align_at].sel != was->align ) {
-            now.align = (u8)ctl[align_at].sel;
+            now.align = (uint8_t)ctl[align_at].sel;
             mask |= PM_ALIGN;
         }
         if ( str_cmp( left, left_was ) != 0 ) {
@@ -467,7 +468,7 @@ void dlg_paragraph( void )
                 msg_box( "The space before is a number of points.", MB_OK );
                 continue;
             }
-            now.before = (u16)value;
+            now.before = (uint16_t)value;
             mask |= PM_BEFORE;
         }
         if ( str_cmp( after, after_was ) != 0 ) {
@@ -475,7 +476,7 @@ void dlg_paragraph( void )
                 msg_box( "The space after is a number of points.", MB_OK );
                 continue;
             }
-            now.after = (u16)value;
+            now.after = (uint16_t)value;
             mask |= PM_AFTER;
         }
         spacing = ctl[spacing_at].sel;
@@ -485,10 +486,10 @@ void dlg_paragraph( void )
                     msg_box( "Say in \"At\" how many points apart the lines are.", MB_OK );
                     continue;
                 }
-                now.line = (u16)value;
-                now.line_rule = (u8)(spacing == 3 ? LS_ATLEAST : LS_EXACT);
+                now.line = (uint16_t)value;
+                now.line_rule = (uint8_t)(spacing == 3 ? LS_ATLEAST : LS_EXACT);
             } else {
-                now.line = (u16)(spacing == 2 ? 480 : spacing == 1 ? 360 : 240);
+                now.line = (uint16_t)(spacing == 2 ? 480 : spacing == 1 ? 360 : 240);
                 now.line_rule = LS_MULTIPLE;
             }
             mask |= PM_LINE;
@@ -504,7 +505,7 @@ void dlg_paragraph( void )
     if ( keep != ((was->flags & PF_KEEP) != 0) ) {
         flag_mask |= PF_KEEP;
     }
-    now.flags = (u16)((page_before ? PF_PAGEBEFORE : 0) | (keep_next ? PF_KEEPNEXT : 0) | (keep ? PF_KEEP : 0));
+    now.flags = (uint16_t)((page_before ? PF_PAGEBEFORE : 0) | (keep_next ? PF_KEEPNEXT : 0) | (keep ? PF_KEEP : 0));
     if ( flag_mask ) {
         mask |= PM_FLAGS;
     }
@@ -522,16 +523,16 @@ void dlg_paragraph( void )
  * its place and, after it, a letter for its kind - L (or none), C, R,
  * D for decimal - and a mark for what leads up to it: . - or _
  */
-static void tabs_text( const PAP *pap, char *buf, u32 max )
+static void tabs_text( const PAP *pap, char *buf, unsigned int max )
 {
     char one[24];
-    u32 value;
+    unsigned int value;
     int index;
 
     buf[0] = 0;
     for ( index = 0; index < pap->ntabs && pap->tabs != NULL; index++ ) {
-        value = set.inches ? ((u32)pap->tabs[index].pos * 100 + 720) / 1440 :
-                             ((u32)pap->tabs[index].pos * 254 + 720) / 1440;
+        value = set.inches ? ((unsigned int)pap->tabs[index].pos * 100 + 720) / 1440 :
+                             ((unsigned int)pap->tabs[index].pos * 254 + 720) / 1440;
         sfmt( one, sizeof( one ), "%s%u.%02u%c%s", index ? " " : "", value / 100, value % 100,
               "LCRD"[pap->tabs[index].kind & 3], pap->tabs[index].lead == LEAD_DOTS ? "." :
               pap->tabs[index].lead == LEAD_DASHES ? "-" : pap->tabs[index].lead == LEAD_LINE ? "_" : "" );
@@ -543,7 +544,7 @@ static void tabs_text( const PAP *pap, char *buf, u32 max )
 
 static int tabs_parse( const char *text, WTAB *tabs, int *count )
 {
-    u32 value;
+    unsigned int value;
 
     *count = 0;
     for ( ;; ) {
@@ -561,7 +562,7 @@ static int tabs_parse( const char *text, WTAB *tabs, int *count )
             return 0;
         }
         mem_set( &tabs[*count], 0, sizeof( WTAB ) );
-        tabs[*count].pos = (s32)value;
+        tabs[*count].pos = (int)value;
         switch ( ch_upper( *text ) ) {
         case 'L':
             text++;
@@ -602,7 +603,7 @@ void dlg_tabs( void )
     WTAB tabs[MAX_TABS];
     /* room for every stop a paragraph can have, written out in full */
     char text[MAX_TABS * 14], was[MAX_TABS * 14], deftab[16], deftab_was[16];
-    s32 value;
+    int value;
     int count, used = 0;
 
     tabs_text( ed_cur_pap( ed ), text, sizeof( text ) );
@@ -646,7 +647,7 @@ void dlg_tabs( void )
     if ( str_cmp( text, was ) != 0 ) {
         pap_init( &pap );
         pap.tabs = tabs;
-        pap.ntabs = (u8)count;
+        pap.ntabs = (uint8_t)count;
         ed_set_pap( ed, PM_TABS, &pap, 0 );
     }
     if ( str_cmp( deftab, deftab_was ) != 0 ) {
@@ -666,7 +667,7 @@ static const char *const paper_names[] = {
     "A5 148 x 210 mm", "B5 182 x 257 mm", "Custom"
 };
 
-static const s32 paper_sizes[][2] = {
+static const int paper_sizes[][2] = {
     { 12240, 15840 }, { 12240, 20160 }, { 10440, 15120 }, { 11906, 16838 }, { 8391, 11906 },
     { 10318, 14570 }
 };
@@ -703,7 +704,7 @@ void dlg_page_setup( void )
     CTL ctl[30];
     DLG dlg;
     char width[16], height[16], top[16], bottom[16], left[16], right[16], header[16], footer[16];
-    s32 short_side, long_side, hold;
+    int short_side, long_side, hold;
     int landscape, landscape_was, paper = NPAPERS, index, used = 0;
 
     landscape = landscape_was = page->width > page->height;
@@ -792,7 +793,7 @@ void dlg_page_setup( void )
         }
         break;
     }
-    now.landscape = (u8)(now.width > now.height);
+    now.landscape = (uint8_t)(now.width > now.height);
     *page = now;
     ed->doc->serial++;
     lay_stale( ed->lay );
@@ -817,8 +818,8 @@ static void not_found( void )
 
 void find_again( void )
 {
-    u16 what[64];
-    u32 len;
+    uint16_t what[64];
+    unsigned int len;
 
     if ( find_text[0] == 0 ) {
         dlg_find( 0 );
@@ -835,9 +836,9 @@ void dlg_find( int replace )
     EDITOR *ed = ED;
     CTL ctl[12];
     DLG dlg;
-    u16 what[64], with[64];
+    uint16_t what[64], with[64];
     char said[40];
-    u32 len, with_len, count;
+    unsigned int len, with_len, count;
     int id, used = 0, col;
 
     mem_set( &dlg, 0, sizeof( dlg ) );
@@ -912,7 +913,7 @@ void dlg_goto( void )
     const LPAGE *start;
     WPOS pos;
     char text[8];
-    u32 page, pages;
+    unsigned int page, pages;
     int ok;
 
     text[0] = 0;
@@ -927,7 +928,7 @@ void dlg_goto( void )
         if ( PDFV->pages < 1 ) {
             return;
         }
-        PDFV->page = (int)(page > (u32)PDFV->pages ? (u32)PDFV->pages : page) - 1;
+        PDFV->page = (int)(page > (unsigned int)PDFV->pages ? (unsigned int)PDFV->pages : page) - 1;
         PDFV->scroll_y = 0;
         PDFV->top = 0;
         return;
@@ -1008,7 +1009,7 @@ void dlg_table( void )
     static char cols[6] = "2", rows[6] = "2";
     CTL ctl[8];
     DLG dlg;
-    u32 ncols, nrows;
+    unsigned int ncols, nrows;
     int used = 0, ok_cols, ok_rows;
 
     mem_set( &dlg, 0, sizeof( dlg ) );
@@ -1047,7 +1048,7 @@ void dlg_col_width( void )
     char wide[16];
     CTL ctl[6];
     DLG dlg;
-    s32 twips = ed_col_width( ED );
+    int twips = ed_col_width( ED );
     int used = 0;
 
     if ( twips <= 0 ) {
@@ -1146,7 +1147,7 @@ void dlg_count( void )
     EDITOR *ed = ED;
     const WPARA *para;
     char text[200];
-    u32 pi, index, words = 0, chars = 0, lines = 0;
+    unsigned int pi, index, words = 0, chars = 0, lines = 0;
     int in_word;
 
     lay_update( ed->lay );

@@ -483,9 +483,9 @@
 #define PHY_NL          5               /* NetLogic: the 82598's SFP+ */
 
 typedef struct {
-    u16 device;
-    u8  mac;
-    u8  media;
+    uint16_t device;
+    unsigned char mac;
+    unsigned char media;
     const char *name;
 } IX_KIND;
 
@@ -543,42 +543,42 @@ static const IX_KIND ix_kinds[] = {
 #define TXN     16
 #define BUFSZ   2048            /* SRRCTL's unit is 1K; every frame fits one */
 
-static u32  membase;
-static u8   mac_type;
-static u8   media;
-static u16  device_id;
-static u8   lan_id;             /* the port: STATUS.LAN_ID */
-static u32  phy_sem;            /* its PHY's semaphore, PHY0 or PHY1 */
-static u8   found_once;         /* card_find has run to the end before */
-static u8   lesm;               /* 82599: the firmware runs the link state machine */
-static u8   orig_stored;
-static u32  orig_autoc, orig_autoc2;    /* AUTOC, AUTOC2 as the EEPROM first had each */
-static u8   link_fresh;         /* a reset came after the last link bring-up */
-static int  port_want = 1;      /* /N: */
+static uint32_t membase;
+static unsigned char mac_type;
+static unsigned char media;
+static uint16_t device_id;
+static uint8_t  lan_id;           /* the port: STATUS.LAN_ID */
+static uint32_t phy_sem;          /* its PHY's semaphore, PHY0 or PHY1 */
+static unsigned char found_once;  /* card_find has run to the end before */
+static unsigned char lesm;        /* 82599: the firmware runs the link state machine */
+static unsigned char orig_stored;
+static uint32_t orig_autoc, orig_autoc2; /* AUTOC, AUTOC2 as the EEPROM first had each */
+static unsigned char link_fresh;  /* a reset came after the last link bring-up */
+static int      port_want = 1;    /* /N: */
 
-static u8   phy_kind = PHY_NONE;
-static u8   phy_addr;
-static u8   phy_looked;         /* the MDIO bus has been searched */
+static unsigned char phy_kind = PHY_NONE;
+static uint8_t phy_addr;
+static unsigned char phy_looked;  /* the MDIO bus has been searched */
 
-static u16  sfp_type = SFP_NOT_PRESENT;
-static u8   sfp_multispeed;     /* a dual-rate optic: 1G SX and 10G SR, or LX and LR */
-static u8   sfp_1g;             /* a 1G module */
+static uint16_t sfp_type = SFP_NOT_PRESENT;
+static unsigned char sfp_multispeed; /* a dual-rate optic: 1G SX and 10G SR, or LX and LR */
+static unsigned char sfp_1g;         /* a 1G module */
 static const char *sfp_text = "module not read";
 
-static volatile u32 *rxd;       /* RXN descriptors of four dwords */
-static volatile u32 *txd;       /* TXN of the same */
-static u8  *rxbuf[RXN];
-static u8  *txbuf[TXN];
-static int  rx_cur, tx_cur;
-static u8   rx_skip;            /* inside a frame that spans descriptors: dropped */
-static u32  int_mask;           /* what EIMS gets back after card_service */
+static volatile uint32_t *rxd;  /* RXN descriptors of four dwords */
+static volatile uint32_t *txd;  /* TXN of the same */
+static uint8_t *rxbuf[RXN];
+static uint8_t *txbuf[TXN];
+static int      rx_cur, tx_cur;
+static unsigned char rx_skip;   /* inside a frame that spans descriptors: dropped */
+static uint32_t int_mask;       /* what EIMS gets back after card_service */
 
-static u32  rd( u32 off ) { return MMIO32( membase, off ); }
-static void wr( u32 off, u32 value ) { MMIO32( membase, off ) = value; }
-static void flush( void ) { (void)rd( IXGBE_STATUS ); }
+static uint32_t rd( uint32_t off ) { return MMIO32( membase, off ); }
+static void     wr( uint32_t off, uint32_t value ) { MMIO32( membase, off ) = value; }
+static void     flush( void ) { (void)rd( IXGBE_STATUS ); }
 
 /* milliseconds, by the timer (net_delay_us is the only measured wait) */
-static void wait_ms( u32 ms )
+static void wait_ms( unsigned int ms )
 {
     while ( ms-- ) net_delay_us( 1000 );
 }
@@ -604,7 +604,7 @@ static void say_begin( void )
     say_text( ": " );
 }
 
-static void say_hex( u32 value, int digits )
+static void say_hex( uint32_t value, int digits )
 {
     static const char hexdig[] = "0123456789ABCDEF";
     int shift;
@@ -676,7 +676,7 @@ static int reg_sem_get( void )
     return 0;
 }
 
-static void swfw_give( u32 mask )
+static void swfw_give( uint32_t mask )
 {
     (void)reg_sem_get();                /* the shared code clears its bits regardless */
     wr( IXGBE_GSSR, rd( IXGBE_GSSR ) & ~mask );
@@ -693,9 +693,9 @@ static void swfw_give( u32 mask )
    second is waited.  Then, as the X540's code does, a resource the
    firmware will not give back is taken anyway; the 82598/82599 code
    clears the stuck bits instead and reports the failure */
-static int swfw_take( u32 mask )
+static int swfw_take( uint32_t mask )
 {
-    u32 fwmask = mask << 5, hwmask = 0, gssr = 0;
+    uint32_t fwmask = mask << 5, hwmask = 0, gssr = 0;
     int i;
 
     if ( mac_type >= MAC_X540 && ( mask & IXGBE_GSSR_EEP_SM ) ) hwmask = IXGBE_GSSR_FLASH_SM;
@@ -753,9 +753,9 @@ static int reset_blocked( void )
 /* the EEPROM (82598, 82599 - the X540 and X550 are not asked)        */
 /* ---------------------------------------------------------------- */
 
-static int ee_read( u32 offset, u16 *value )
+static int ee_read( uint32_t offset, uint16_t *value )
 {
-    u32 reg;
+    uint32_t reg;
     long i;
 
     if ( offset > IXGBE_EERD_MAX_ADDR ) return 0;
@@ -763,7 +763,7 @@ static int ee_read( u32 offset, u16 *value )
     for ( i = 0; i < IXGBE_EERD_EEWR_ATTEMPTS; i++ ) {
         reg = rd( IXGBE_EERD );
         if ( reg & IXGBE_EEPROM_RW_REG_DONE ) {
-            *value = (u16)( reg >> IXGBE_EEPROM_RW_REG_DATA );
+            *value = (uint16_t)( reg >> IXGBE_EEPROM_RW_REG_DATA );
             return 1;
         }
         net_delay_us( 5 );
@@ -774,11 +774,11 @@ static int ee_read( u32 offset, u16 *value )
 /* 82599: the firmware module's LESM state word, through two pointers */
 static int lesm_check( void )
 {
-    u16 fw, param, state;
+    uint16_t fw, param, state;
 
     if ( !ee_read( IXGBE_FW_PTR, &fw ) || fw == 0 || fw == 0xFFFF ) return 0;
-    if ( !ee_read( (u32)fw + IXGBE_FW_LESM_PARAMETERS_PTR, &param ) || param == 0 || param == 0xFFFF ) return 0;
-    if ( !ee_read( (u32)param + IXGBE_FW_LESM_STATE_1, &state ) ) return 0;
+    if ( !ee_read( (uint32_t)fw + IXGBE_FW_LESM_PARAMETERS_PTR, &param ) || param == 0 || param == 0xFFFF ) return 0;
+    if ( !ee_read( (uint32_t)param + IXGBE_FW_LESM_STATE_1, &state ) ) return 0;
     return ( state & IXGBE_FW_LESM_STATE_ENABLED ) != 0;
 }
 
@@ -786,7 +786,7 @@ static int lesm_check( void )
 /* MDIO, clause 45, through MSCA/MSRWD                               */
 /* ---------------------------------------------------------------- */
 
-static int mdi_cmd( u32 command )
+static int mdi_cmd( uint32_t command )
 {
     int i;
 
@@ -798,25 +798,25 @@ static int mdi_cmd( u32 command )
     return 0;
 }
 
-static u32 mdi_addr( u32 dev, u32 reg )
+static uint32_t mdi_addr( uint32_t dev, uint32_t reg )
 {
-    return reg | ( dev << IXGBE_MSCA_DEV_TYPE_SHIFT ) | ( (u32)phy_addr << IXGBE_MSCA_PHY_ADDR_SHIFT );
+    return reg | ( dev << IXGBE_MSCA_DEV_TYPE_SHIFT ) | ( (uint32_t)phy_addr << IXGBE_MSCA_PHY_ADDR_SHIFT );
 }
 
 /* with the PHY's semaphore already held */
-static int mdi_read( u32 dev, u32 reg, u16 *value )
+static int mdi_read( uint32_t dev, uint32_t reg, uint16_t *value )
 {
-    u32 base = mdi_addr( dev, reg );
+    uint32_t base = mdi_addr( dev, reg );
 
     if ( !mdi_cmd( base | IXGBE_MSCA_ADDR_CYCLE | IXGBE_MSCA_MDI_COMMAND ) ) return 0;
     if ( !mdi_cmd( base | IXGBE_MSCA_READ | IXGBE_MSCA_MDI_COMMAND ) ) return 0;
-    *value = (u16)( rd( IXGBE_MSRWD ) >> IXGBE_MSRWD_READ_DATA_SHIFT );
+    *value = (uint16_t)( rd( IXGBE_MSRWD ) >> IXGBE_MSRWD_READ_DATA_SHIFT );
     return 1;
 }
 
-static int mdi_write( u32 dev, u32 reg, u16 value )
+static int mdi_write( uint32_t dev, uint32_t reg, uint16_t value )
 {
-    u32 base = mdi_addr( dev, reg );
+    uint32_t base = mdi_addr( dev, reg );
 
     wr( IXGBE_MSRWD, value );
     if ( !mdi_cmd( base | IXGBE_MSCA_ADDR_CYCLE | IXGBE_MSCA_MDI_COMMAND ) ) return 0;
@@ -825,7 +825,7 @@ static int mdi_write( u32 dev, u32 reg, u16 value )
 
 /* one register, the semaphore taken for it alone (as the shared code's
    read_reg/write_reg), for the NetLogic script with its long delays */
-static int phy_write( u32 dev, u32 reg, u16 value )
+static int phy_write( uint32_t dev, uint32_t reg, uint16_t value )
 {
     int ok;
 
@@ -835,7 +835,7 @@ static int phy_write( u32 dev, u32 reg, u16 value )
     return ok;
 }
 
-static int phy_read( u32 dev, u32 reg, u16 *value )
+static int phy_read( uint32_t dev, uint32_t reg, uint16_t *value )
 {
     int ok;
 
@@ -850,26 +850,26 @@ static int phy_read( u32 dev, u32 reg, u16 *value )
    SFP+ cage): PHY_NONE, said by the caller only where one is wanted */
 static void phy_look( void )
 {
-    u16 high, low, ext;
-    u32 id;
+    uint16_t high, low, ext;
+    uint32_t id;
     int addr;
 
     if ( phy_looked ) return;
     if ( !swfw_take( phy_sem ) ) { say( "the firmware would not give up the PHY" ); return; }
     phy_looked = 1;
     for ( addr = 0; addr < IXGBE_MAX_PHY_ADDR; addr++ ) {
-        phy_addr = (u8)addr;
+        phy_addr = (uint8_t)addr;
         if ( !mdi_read( IXGBE_MDIO_PMA_PMD_DEV_TYPE, IXGBE_MDIO_PHY_ID_HIGH, &high ) ) continue;
         if ( high == 0xFFFF || high == 0 ) continue;
         if ( !mdi_read( IXGBE_MDIO_PMA_PMD_DEV_TYPE, IXGBE_MDIO_PHY_ID_LOW, &low ) ) continue;
-        id = ( (u32)high << 16 ) | ( low & IXGBE_PHY_REVISION_MASK );
+        id = ( (uint32_t)high << 16 ) | ( low & IXGBE_PHY_REVISION_MASK );
         if ( id == ATH_PHY_ID ) phy_kind = PHY_NL;
         else if ( id == TN1010_PHY_ID ) phy_kind = PHY_TN;
         else if ( id == X540_PHY_ID || id == X550_PHY_ID || id == X550_PHY_ID2 || id == X550_PHY_ID3 ) phy_kind = PHY_AQ;
         else {
             ext = 0;
             (void)mdi_read( IXGBE_MDIO_PMA_PMD_DEV_TYPE, IXGBE_MDIO_PHY_EXT_ABILITY, &ext );
-            phy_kind = (u8)( ( ext & ( IXGBE_MDIO_PHY_10GBASET_ABILITY | IXGBE_MDIO_PHY_1000BASET_ABILITY ) ) ? PHY_CU : PHY_GENERIC );
+            phy_kind = (unsigned char)( ( ext & ( IXGBE_MDIO_PHY_10GBASET_ABILITY | IXGBE_MDIO_PHY_1000BASET_ABILITY ) ) ? PHY_CU : PHY_GENERIC );
         }
         break;
     }
@@ -880,13 +880,13 @@ static void phy_look( void )
 /* the 82599's I2C to the SFP+ cage, bit-banged (ixgbe_phy.c's)       */
 /* ---------------------------------------------------------------- */
 
-static void i2c_out( u32 ctl )
+static void i2c_out( uint32_t ctl )
 {
     wr( IXGBE_I2CCTL_82599, ctl );
     flush();
 }
 
-static void i2c_clk_high( u32 *ctl )
+static void i2c_clk_high( uint32_t *ctl )
 {
     int i;
 
@@ -899,7 +899,7 @@ static void i2c_clk_high( u32 *ctl )
     }
 }
 
-static void i2c_clk_low( u32 *ctl )
+static void i2c_clk_low( uint32_t *ctl )
 {
     *ctl &= ~IXGBE_I2C_CLK_OUT;
     i2c_out( *ctl );
@@ -908,7 +908,7 @@ static void i2c_clk_low( u32 *ctl )
 
 /* the data line; a high one is read back (another driver of the line
    would hold it low) */
-static int i2c_data( u32 *ctl, int high )
+static int i2c_data( uint32_t *ctl, int high )
 {
     if ( high ) *ctl |= IXGBE_I2C_DATA_OUT;
     else *ctl &= ~IXGBE_I2C_DATA_OUT;
@@ -921,7 +921,7 @@ static int i2c_data( u32 *ctl, int high )
 
 static void i2c_start( void )
 {
-    u32 ctl = rd( IXGBE_I2CCTL_82599 );
+    uint32_t ctl = rd( IXGBE_I2CCTL_82599 );
 
     (void)i2c_data( &ctl, 1 );
     i2c_clk_high( &ctl );
@@ -934,7 +934,7 @@ static void i2c_start( void )
 
 static void i2c_stop( void )
 {
-    u32 ctl = rd( IXGBE_I2CCTL_82599 );
+    uint32_t ctl = rd( IXGBE_I2CCTL_82599 );
 
     (void)i2c_data( &ctl, 0 );
     i2c_clk_high( &ctl );
@@ -945,7 +945,7 @@ static void i2c_stop( void )
 
 static int i2c_bit_out( int bit )
 {
-    u32 ctl = rd( IXGBE_I2CCTL_82599 );
+    uint32_t ctl = rd( IXGBE_I2CCTL_82599 );
 
     if ( !i2c_data( &ctl, bit ) ) return 0;
     i2c_clk_high( &ctl );
@@ -957,7 +957,7 @@ static int i2c_bit_out( int bit )
 
 static int i2c_bit_in( void )
 {
-    u32 ctl = rd( IXGBE_I2CCTL_82599 );
+    uint32_t ctl = rd( IXGBE_I2CCTL_82599 );
     int bit;
 
     i2c_clk_high( &ctl );
@@ -969,7 +969,7 @@ static int i2c_bit_in( void )
     return bit;
 }
 
-static int i2c_byte_out( u8 data )
+static int i2c_byte_out( uint8_t data )
 {
     int i, ok = 1;
 
@@ -978,19 +978,19 @@ static int i2c_byte_out( u8 data )
     return ok;
 }
 
-static u8 i2c_byte_in( void )
+static uint8_t i2c_byte_in( void )
 {
-    int i;
-    u8  data = 0;
+    int     i;
+    uint8_t data = 0;
 
-    for ( i = 7; i >= 0; i-- ) data = (u8)( data | ( i2c_bit_in() << i ) );
+    for ( i = 7; i >= 0; i-- ) data = (uint8_t)( data | ( i2c_bit_in() << i ) );
     return data;
 }
 
 /* the slave pulls the data line low on the ninth clock: 1 if it did */
 static int i2c_ack( void )
 {
-    u32 ctl = rd( IXGBE_I2CCTL_82599 );
+    uint32_t ctl = rd( IXGBE_I2CCTL_82599 );
     int i, nack = 1;
 
     i2c_clk_high( &ctl );
@@ -1009,7 +1009,7 @@ static int i2c_ack( void )
 /* nine clocks, for a slave left holding the data line mid-byte */
 static void i2c_bus_clear( void )
 {
-    u32 ctl;
+    uint32_t ctl;
     int i;
 
     i2c_start();
@@ -1028,7 +1028,7 @@ static void i2c_bus_clear( void )
 /* one byte of the module's EEPROM (A0h): three tries, the bus cleared
    between tries.  No module answers nothing, so this is also how an
    empty cage is found */
-static int i2c_sfp_byte( u8 offset, u8 *value )
+static int i2c_sfp_byte( uint8_t offset, uint8_t *value )
 {
     int tries;
 
@@ -1055,14 +1055,14 @@ static int i2c_sfp_byte( u8 offset, u8 *value )
 }
 
 /* the same byte on the 82598, through the NetLogic PHY's I2C master */
-static int nl_sfp_byte( u8 offset, u8 *value )
+static int nl_sfp_byte( uint8_t offset, uint8_t *value )
 {
-    u16 stat = 0, data;
+    uint16_t stat = 0, data;
     int i, ok = 0;
 
     if ( !swfw_take( phy_sem ) ) return 0;
     if ( mdi_write( IXGBE_MDIO_PMA_PMD_DEV_TYPE, IXGBE_MDIO_PMA_PMD_SDA_SCL_ADDR,
-                    (u16)( ( ( IXGBE_I2C_EEPROM_DEV_ADDR << 8 ) + offset ) | IXGBE_I2C_EEPROM_READ_MASK ) ) ) {
+                    (uint16_t)( ( ( IXGBE_I2C_EEPROM_DEV_ADDR << 8 ) + offset ) | IXGBE_I2C_EEPROM_READ_MASK ) ) ) {
         for ( i = 0; i < 100; i++ ) {
             if ( !mdi_read( IXGBE_MDIO_PMA_PMD_DEV_TYPE, IXGBE_MDIO_PMA_PMD_SDA_SCL_STAT, &stat ) ) break;
             stat &= IXGBE_I2C_EEPROM_STATUS_MASK;
@@ -1071,7 +1071,7 @@ static int nl_sfp_byte( u8 offset, u8 *value )
         }
         if ( stat == IXGBE_I2C_EEPROM_STATUS_PASS &&
              mdi_read( IXGBE_MDIO_PMA_PMD_DEV_TYPE, IXGBE_MDIO_PMA_PMD_SDA_SCL_DATA, &data ) ) {
-            *value = (u8)( data >> 8 );
+            *value = (uint8_t)( data >> 8 );
             ok = 1;
         }
     }
@@ -1079,7 +1079,7 @@ static int nl_sfp_byte( u8 offset, u8 *value )
     return ok;
 }
 
-static int sfp_byte( u8 offset, u8 *value )
+static int sfp_byte( uint8_t offset, uint8_t *value )
 {
     if ( mac_type == MAC_82598 ) return nl_sfp_byte( offset, value );
     return i2c_sfp_byte( offset, value );
@@ -1093,8 +1093,8 @@ static int sfp_byte( u8 offset, u8 *value )
    without its rule that optics be Intel's */
 static void sfp_identify( void )
 {
-    u8  ident = 0, comp10 = 0, comp1 = 0, tech = 0, spec = 0;
-    u16 core = (u16)( lan_id ? 1 : 0 );
+    uint8_t  ident = 0, comp10 = 0, comp1 = 0, tech = 0, spec = 0;
+    uint16_t core = (uint16_t)( lan_id ? 1 : 0 );
 
     sfp_type = SFP_NOT_PRESENT;
     sfp_multispeed = 0;
@@ -1120,26 +1120,26 @@ static void sfp_identify( void )
         return;
     }
     if ( tech & IXGBE_SFF_DA_PASSIVE_CABLE ) {
-        sfp_type = (u16)( SFP_DA_CU_CORE0 + core );
+        sfp_type = (uint16_t)( SFP_DA_CU_CORE0 + core );
         sfp_text = "DA cable";
     } else if ( tech & IXGBE_SFF_DA_ACTIVE_CABLE ) {
         if ( sfp_byte( IXGBE_SFF_CABLE_SPEC_COMP, &spec ) && ( spec & IXGBE_SFF_DA_SPEC_ACTIVE_LIMITING ) ) {
-            sfp_type = (u16)( SFP_DA_ACT_CORE0 + core );
+            sfp_type = (uint16_t)( SFP_DA_ACT_CORE0 + core );
             sfp_text = "active DA cable";
         }
     } else if ( comp10 & ( IXGBE_SFF_10GBASESR_CAPABLE | IXGBE_SFF_10GBASELR_CAPABLE ) ) {
-        sfp_type = (u16)( SFP_SRLR_CORE0 + core );
+        sfp_type = (uint16_t)( SFP_SRLR_CORE0 + core );
         sfp_text = ( comp10 & IXGBE_SFF_10GBASESR_CAPABLE ) ? "SR module" : "LR module";
     } else if ( comp1 & IXGBE_SFF_1GBASET_CAPABLE ) {
-        sfp_type = (u16)( SFP_1G_CU_CORE0 + core );
+        sfp_type = (uint16_t)( SFP_1G_CU_CORE0 + core );
         sfp_text = "1G copper module";
         sfp_1g = 1;
     } else if ( comp1 & IXGBE_SFF_1GBASESX_CAPABLE ) {
-        sfp_type = (u16)( SFP_1G_SX_CORE0 + core );
+        sfp_type = (uint16_t)( SFP_1G_SX_CORE0 + core );
         sfp_text = "1G SX module";
         sfp_1g = 1;
     } else if ( comp1 & IXGBE_SFF_1GBASELX_CAPABLE ) {
-        sfp_type = (u16)( SFP_1G_LX_CORE0 + core );
+        sfp_type = (uint16_t)( SFP_1G_LX_CORE0 + core );
         sfp_text = "1G LX module";
         sfp_1g = 1;
     }
@@ -1152,9 +1152,9 @@ static void sfp_identify( void )
 /* Where the EEPROM keeps the setup for this kind of module: a list of
    (id, offset) pairs at the word word 2Bh points to.  Active cables and
    1G modules are set up as SR (ixgbe_get_sfp_init_sequence_offsets) */
-static int sfp_offsets( u16 *data_offset )
+static int sfp_offsets( uint16_t *data_offset )
 {
-    u16 type = sfp_type, list, id;
+    uint16_t type = sfp_type, list, id;
     int i;
 
     if ( mac_type == MAC_82598 && device_id == 0x10E1 && type == SFP_DA_CU ) return 0;
@@ -1171,10 +1171,10 @@ static int sfp_offsets( u16 *data_offset )
     for ( i = 0; i < 64; i++ ) {
         if ( !ee_read( list, &id ) || id == IXGBE_PHY_INIT_END_NL ) return 0;
         if ( id == type ) {
-            if ( !ee_read( (u32)list + 1, data_offset ) ) return 0;
+            if ( !ee_read( (uint32_t)list + 1, data_offset ) ) return 0;
             return *data_offset != 0 && *data_offset != 0xFFFF;
         }
-        list = (u16)( list + 2 );
+        list = (uint16_t)( list + 2 );
     }
     return 0;
 }
@@ -1183,7 +1183,7 @@ static int sfp_offsets( u16 *data_offset )
    written under the MAC's semaphore (ixgbe_setup_sfp_modules_82599) */
 static int sfp_setup_82599( void )
 {
-    u16 offset, word = 0;
+    uint16_t offset, word = 0;
     int i, ok = 0;
 
     if ( !sfp_offsets( &offset ) ) { say( "the EEPROM has no setup for this module" ); return 0; }
@@ -1207,14 +1207,14 @@ static int sfp_setup_82599( void )
    damaged EEPROM cannot hold the load up for long */
 static int nl_reset( void )
 {
-    u16 offset, eword, reg, ctl = 0;
-    u16 edata;
-    u32 slept = 0;
+    uint16_t offset, eword, reg, ctl = 0;
+    uint16_t edata;
+    unsigned int slept = 0;
     int i, steps;
 
     if ( !sfp_offsets( &offset ) ) { say( "the EEPROM has no setup for this module" ); return 0; }
     if ( !phy_read( IXGBE_MDIO_PHY_XS_DEV_TYPE, IXGBE_MDIO_PHY_XS_CONTROL, &ctl ) ||
-         !phy_write( IXGBE_MDIO_PHY_XS_DEV_TYPE, IXGBE_MDIO_PHY_XS_CONTROL, (u16)( ctl | IXGBE_MDIO_PHY_XS_RESET ) ) ) {
+         !phy_write( IXGBE_MDIO_PHY_XS_DEV_TYPE, IXGBE_MDIO_PHY_XS_CONTROL, (uint16_t)( ctl | IXGBE_MDIO_PHY_XS_RESET ) ) ) {
         say( "the PHY did not answer" );
         return 0;
     }
@@ -1226,8 +1226,8 @@ static int nl_reset( void )
     offset++;                           /* past the block's CRC word */
     for ( steps = 0; steps < 1024; steps++ ) {
         if ( !ee_read( offset, &eword ) ) break;
-        ctl = (u16)( eword >> IXGBE_CONTROL_SHIFT_NL );
-        edata = (u16)( eword & IXGBE_DATA_MASK_NL );
+        ctl = (uint16_t)( eword >> IXGBE_CONTROL_SHIFT_NL );
+        edata = (uint16_t)( eword & IXGBE_DATA_MASK_NL );
         offset++;
         if ( ctl == IXGBE_DELAY_NL ) {
             slept += edata;
@@ -1262,7 +1262,7 @@ static int nl_reset( void )
    LESM wants it */
 static int pipeline_reset( void )
 {
-    u32 autoc, autoc2, anlp1 = 0;
+    uint32_t autoc, autoc2, anlp1 = 0;
     int i;
 
     autoc2 = rd( IXGBE_AUTOC2 );
@@ -1285,7 +1285,7 @@ static int pipeline_reset( void )
 /* AUTOC written as the shared code's prot_autoc_write: on the 82599
    not while the firmware vetoes it, under the MAC semaphore if LESM
    runs, and followed by a pipeline reset */
-static int autoc_write( u32 value )
+static int autoc_write( uint32_t value )
 {
     int locked = 0, ok;
 
@@ -1332,7 +1332,7 @@ static void mac_restart( void )
    then the MAC's side restarted (ixgbe_setup_phy_link_generic, _tnx) */
 static void link_copper( void )
 {
-    u16 ability, value;
+    uint16_t ability, value;
 
     phy_look();
     if ( phy_kind == PHY_NONE ) { say( "no PHY answered" ); return; }
@@ -1341,13 +1341,13 @@ static void link_copper( void )
          mdi_read( IXGBE_MDIO_VENDOR_SPECIFIC_1_DEV_TYPE, IXGBE_MDIO_VENDOR_SPECIFIC_1_CONTROL, &value ) &&
          ( value & IXGBE_MDIO_PHY_SET_LOW_POWER_MODE ) ) {
         (void)mdi_write( IXGBE_MDIO_VENDOR_SPECIFIC_1_DEV_TYPE, IXGBE_MDIO_VENDOR_SPECIFIC_1_CONTROL,
-                         (u16)( value & ~IXGBE_MDIO_PHY_SET_LOW_POWER_MODE ) );
+                         (uint16_t)( value & ~IXGBE_MDIO_PHY_SET_LOW_POWER_MODE ) );
     }
     if ( !mdi_read( IXGBE_MDIO_PMA_PMD_DEV_TYPE, IXGBE_MDIO_PHY_SPEED_ABILITY, &ability ) ) {
         ability = IXGBE_MDIO_PHY_SPEED_10G | IXGBE_MDIO_PHY_SPEED_1G | IXGBE_MDIO_PHY_SPEED_100M;
     }
     if ( mdi_read( IXGBE_MDIO_AUTO_NEG_DEV_TYPE, IXGBE_MII_10GBASE_T_AUTONEG_CTRL_REG, &value ) ) {
-        value = (u16)( value & ~IXGBE_MII_10GBASE_T_ADVERTISE );
+        value = (uint16_t)( value & ~IXGBE_MII_10GBASE_T_ADVERTISE );
         if ( ability & IXGBE_MDIO_PHY_SPEED_10G ) value |= IXGBE_MII_10GBASE_T_ADVERTISE;
         (void)mdi_write( IXGBE_MDIO_AUTO_NEG_DEV_TYPE, IXGBE_MII_10GBASE_T_AUTONEG_CTRL_REG, value );
     }
@@ -1356,28 +1356,28 @@ static void link_copper( void )
         if ( ( ability & IXGBE_MDIO_PHY_SPEED_1G ) &&
              mdi_read( IXGBE_MDIO_AUTO_NEG_DEV_TYPE, IXGBE_MII_AUTONEG_XNP_TX_REG, &value ) ) {
             (void)mdi_write( IXGBE_MDIO_AUTO_NEG_DEV_TYPE, IXGBE_MII_AUTONEG_XNP_TX_REG,
-                             (u16)( value | IXGBE_MII_1GBASE_T_ADVERTISE_XNP_TX ) );
+                             (uint16_t)( value | IXGBE_MII_1GBASE_T_ADVERTISE_XNP_TX ) );
         }
         if ( ( ability & IXGBE_MDIO_PHY_SPEED_100M ) &&
              mdi_read( IXGBE_MDIO_AUTO_NEG_DEV_TYPE, IXGBE_MII_AUTONEG_ADVERTISE_REG, &value ) ) {
             (void)mdi_write( IXGBE_MDIO_AUTO_NEG_DEV_TYPE, IXGBE_MII_AUTONEG_ADVERTISE_REG,
-                             (u16)( value | IXGBE_MII_100BASE_T_ADVERTISE ) );
+                             (uint16_t)( value | IXGBE_MII_100BASE_T_ADVERTISE ) );
         }
     } else {
         if ( mdi_read( IXGBE_MDIO_AUTO_NEG_DEV_TYPE, IXGBE_MII_AUTONEG_VENDOR_PROVISION_1_REG, &value ) ) {
-            value = (u16)( value & ~IXGBE_MII_1GBASE_T_ADVERTISE );
-            if ( mac_type == MAC_X550 ) value = (u16)( value & ~( IXGBE_MII_2_5GBASE_T_ADVERTISE | IXGBE_MII_5GBASE_T_ADVERTISE ) );
+            value = (uint16_t)( value & ~IXGBE_MII_1GBASE_T_ADVERTISE );
+            if ( mac_type == MAC_X550 ) value = (uint16_t)( value & ~( IXGBE_MII_2_5GBASE_T_ADVERTISE | IXGBE_MII_5GBASE_T_ADVERTISE ) );
             if ( ability & IXGBE_MDIO_PHY_SPEED_1G ) value |= IXGBE_MII_1GBASE_T_ADVERTISE;
             (void)mdi_write( IXGBE_MDIO_AUTO_NEG_DEV_TYPE, IXGBE_MII_AUTONEG_VENDOR_PROVISION_1_REG, value );
         }
         if ( mdi_read( IXGBE_MDIO_AUTO_NEG_DEV_TYPE, IXGBE_MII_AUTONEG_ADVERTISE_REG, &value ) ) {
-            value = (u16)( value & ~( IXGBE_MII_100BASE_T_ADVERTISE | IXGBE_MII_100BASE_T_ADVERTISE_HALF ) );
+            value = (uint16_t)( value & ~( IXGBE_MII_100BASE_T_ADVERTISE | IXGBE_MII_100BASE_T_ADVERTISE_HALF ) );
             if ( ability & IXGBE_MDIO_PHY_SPEED_100M ) value |= IXGBE_MII_100BASE_T_ADVERTISE;
             (void)mdi_write( IXGBE_MDIO_AUTO_NEG_DEV_TYPE, IXGBE_MII_AUTONEG_ADVERTISE_REG, value );
         }
     }
     if ( !reset_blocked() && mdi_read( IXGBE_MDIO_AUTO_NEG_DEV_TYPE, IXGBE_MDIO_AUTO_NEG_CONTROL, &value ) ) {
-        (void)mdi_write( IXGBE_MDIO_AUTO_NEG_DEV_TYPE, IXGBE_MDIO_AUTO_NEG_CONTROL, (u16)( value | IXGBE_MII_RESTART ) );
+        (void)mdi_write( IXGBE_MDIO_AUTO_NEG_DEV_TYPE, IXGBE_MDIO_AUTO_NEG_CONTROL, (uint16_t)( value | IXGBE_MII_RESTART ) );
     }
     swfw_give( phy_sem );
     mac_restart();
@@ -1386,7 +1386,7 @@ static void link_copper( void )
 /* the laser: SDP3 drives the cage's TX_DISABLE */
 static void laser( int on )
 {
-    u32 esdp = rd( IXGBE_ESDP );
+    uint32_t esdp = rd( IXGBE_ESDP );
 
     wr( IXGBE_ESDP, on ? ( esdp & ~IXGBE_ESDP_SDP3 ) : ( esdp | IXGBE_ESDP_SDP3 ) );
     flush();
@@ -1395,7 +1395,7 @@ static void laser( int on )
 /* 82599 SFP+ (the shared code's setup_sfp, then setup_link) */
 static void link_sfp_82599( void )
 {
-    u32 autoc, autoc2;
+    uint32_t autoc, autoc2;
     int own_laser = !mng_enabled();
 
     if ( own_laser ) laser( 1 );
@@ -1454,7 +1454,7 @@ static int is_copper( void )
     return mac_type >= MAC_X540 || media == MED_COPPER || phy_kind == PHY_TN || phy_kind == PHY_CU;
 }
 
-static const char *speed_text( u32 links )
+static const char *speed_text( uint32_t links )
 {
     if ( mac_type == MAC_82598 ) return ( links & IXGBE_LINKS_SPEED ) ? "10 Gb/s" : "1 Gb/s";
     switch ( links & IXGBE_LINKS_SPEED_82599 ) {
@@ -1472,7 +1472,7 @@ static const char *speed_text( u32 links )
    port has a cage, and the speed or "no link" with LINKS as it stood */
 static void link_report( void )
 {
-    u32 links = 0;
+    uint32_t links = 0;
     int i, limit = is_copper() ? 100 : 60;  /* 50ms steps: 5s for 10GBASE-T */
     int cage = media == MED_SFP && ( mac_type != MAC_82598 || phy_kind == PHY_NL );
 
@@ -1509,7 +1509,7 @@ static void link_report( void )
 static void queues_off( int all )
 {
     int i, rxq = 1, txq = 1;
-    u32 value;
+    uint32_t value;
 
     wr( IXGBE_EIMC, 0xFFFFFFFFL );
     if ( mac_type != MAC_82598 ) {
@@ -1542,15 +1542,15 @@ static void queues_off( int all )
 
 /* 82598: Atlas transmit lanes powered down by a loopback test stay down
    through a reset (ixgbe_reset_hw_82598) */
-static u8 atlas_read( u32 reg )
+static uint8_t atlas_read( uint32_t reg )
 {
     wr( IXGBE_ATLASCTL, IXGBE_ATLASCTL_WRITE_CMD | ( reg << 8 ) );
     flush();
     net_delay_us( 10 );
-    return (u8)rd( IXGBE_ATLASCTL );
+    return (uint8_t)rd( IXGBE_ATLASCTL );
 }
 
-static void atlas_write( u32 reg, u8 value )
+static void atlas_write( uint32_t reg, uint8_t value )
 {
     wr( IXGBE_ATLASCTL, ( reg << 8 ) | value );
     flush();
@@ -1560,10 +1560,10 @@ static void atlas_write( u32 reg, u8 value )
 static void atlas_power_up( void )
 {
     if ( !( atlas_read( IXGBE_ATLAS_PDN_LPBK ) & IXGBE_ATLAS_PDN_TX_REG_EN ) ) return;
-    atlas_write( IXGBE_ATLAS_PDN_LPBK, (u8)( atlas_read( IXGBE_ATLAS_PDN_LPBK ) & ~IXGBE_ATLAS_PDN_TX_REG_EN ) );
-    atlas_write( IXGBE_ATLAS_PDN_10G, (u8)( atlas_read( IXGBE_ATLAS_PDN_10G ) & ~IXGBE_ATLAS_PDN_TX_QL_ALL ) );
-    atlas_write( IXGBE_ATLAS_PDN_1G, (u8)( atlas_read( IXGBE_ATLAS_PDN_1G ) & ~IXGBE_ATLAS_PDN_TX_QL_ALL ) );
-    atlas_write( IXGBE_ATLAS_PDN_AN, (u8)( atlas_read( IXGBE_ATLAS_PDN_AN ) & ~IXGBE_ATLAS_PDN_TX_QL_ALL ) );
+    atlas_write( IXGBE_ATLAS_PDN_LPBK, (uint8_t)( atlas_read( IXGBE_ATLAS_PDN_LPBK ) & ~IXGBE_ATLAS_PDN_TX_REG_EN ) );
+    atlas_write( IXGBE_ATLAS_PDN_10G, (uint8_t)( atlas_read( IXGBE_ATLAS_PDN_10G ) & ~IXGBE_ATLAS_PDN_TX_QL_ALL ) );
+    atlas_write( IXGBE_ATLAS_PDN_1G, (uint8_t)( atlas_read( IXGBE_ATLAS_PDN_1G ) & ~IXGBE_ATLAS_PDN_TX_QL_ALL ) );
+    atlas_write( IXGBE_ATLAS_PDN_AN, (uint8_t)( atlas_read( IXGBE_ATLAS_PDN_AN ) & ~IXGBE_ATLAS_PDN_TX_QL_ALL ) );
 }
 
 /* when bus mastering would not stop: the PCIe block's buffers cleared
@@ -1571,7 +1571,7 @@ static void atlas_power_up( void )
    (ixgbe_clear_tx_pending) */
 static void tx_pending_clear( void )
 {
-    u32 hlreg0 = rd( IXGBE_HLREG0 ), gcr_ext;
+    uint32_t hlreg0 = rd( IXGBE_HLREG0 ), gcr_ext;
     int i;
 
     wr( IXGBE_HLREG0, hlreg0 | IXGBE_HLREG0_LPBK );
@@ -1591,7 +1591,7 @@ static void tx_pending_clear( void )
 
 static int hw_reset( void )
 {
-    u32 ctrl, autoc, autoc2 = 0;
+    uint32_t ctrl, autoc, autoc2 = 0;
     int i, pass, passes = 1, locked;
 
     queues_off( 1 );
@@ -1662,7 +1662,7 @@ static int hw_reset( void )
    and MSI-X off in the capability list (bounded: a broken list ends) */
 static void intx_on( void )
 {
-    u32 cmd, cap, id, ctl;
+    uint32_t cmd, cap, id, ctl;
     int n;
 
     cmd = net_pci_cfg_read( net_pciaddr, 0x04, 2 );
@@ -1707,10 +1707,10 @@ static int port_find( int want, const PCI_ID **which )
     for ( i = 0; ix_ids[i].vendor; i++ ) {
         for ( index = 0; index < 8; index++ ) {
             net_memzero( &regs, sizeof( regs ) );
-            regs.eax = (u32)BUS_PCIID << 8;
+            regs.eax = (uint32_t)BUS_PCIID << 8;
             regs.ecx = ix_ids[i].vendor;
             regs.edx = ix_ids[i].device;
-            regs.esi = (u32)index;
+            regs.esi = (uint32_t)index;
             if ( !nds_bus( &regs ) ) break;
             if ( ++seen == want ) {
                 net_pciaddr = regs.ebx;
@@ -1722,7 +1722,7 @@ static int port_find( int want, const PCI_ID **which )
     return 0;
 }
 
-static const IX_KIND *kind_of( u16 device )
+static const IX_KIND *kind_of( uint16_t device )
 {
     int i;
 
@@ -1732,7 +1732,7 @@ static const IX_KIND *kind_of( u16 device )
     return 0;
 }
 
-static u32 align128( u32 p ) { return ( p + 127 ) & ~127L; }
+static uint32_t align128( uint32_t p ) { return ( p + 127 ) & ~127L; }
 
 /* ---------------------------------------------------------------- */
 /* the five a card provides                                          */
@@ -1743,8 +1743,8 @@ int card_find( void )
     const PCI_ID *which;
     const IX_KIND *kind;
     int isio, i;
-    u32 bar, at, ral, rah, status;
-    u8 *pool;
+    uint32_t bar, at, ral, rah, status;
+    uint8_t *pool;
 
     if ( net_line ) port_want = port_switch();
     net_strcpy( net_name, "Intel 10 gigabit" );
@@ -1769,14 +1769,14 @@ int card_find( void )
     if ( !found_once ) {
         /* once: an un-park comes here again, and the line, /POLL and the
            WfW bridge's choices are NETCORE's from then on */
-        net_irq = (u8)net_pci_irqline( net_pciaddr );
+        net_irq = (uint8_t)net_pci_irqline( net_pciaddr );
         net_bus = NICB_PCI;
         net_flags = NICF_WORD;
     }
 
     status = rd( IXGBE_STATUS );
     if ( status == 0xFFFFFFFFL ) { say( "the card does not answer" ); return 1; }
-    lan_id = (u8)( ( status & IXGBE_STATUS_LAN_ID ) >> IXGBE_STATUS_LAN_ID_SHIFT );
+    lan_id = (uint8_t)( ( status & IXGBE_STATUS_LAN_ID ) >> IXGBE_STATUS_LAN_ID_SHIFT );
     phy_sem = lan_id ? IXGBE_GSSR_PHY1_SM : IXGBE_GSSR_PHY0_SM;
     if ( mac_type == MAC_X550 && ( rd( IXGBE_FWSM ) & IXGBE_FWSM_FW_NVM_RECOVERY_MODE ) ) {
         say( "the firmware is in recovery mode: the card's NVM needs an update" );
@@ -1784,16 +1784,16 @@ int card_find( void )
     }
     if ( !found_once ) {
         if ( mac_type >= MAC_X540 ) swfw_init();
-        if ( mac_type == MAC_82599 ) lesm = (u8)lesm_check();
+        if ( mac_type == MAC_82599 ) lesm = (unsigned char)lesm_check();
     }
     if ( !hw_reset() ) return 1;
 
     ral = rd( IXGBE_RAL( 0 ) );
     rah = rd( IXGBE_RAH( 0 ) );
     if ( !( rah & IXGBE_RAH_AV ) ) { say( "no station address was loaded (RAH0)" ); return 1; }
-    net_mac[0] = (u8)ral;           net_mac[1] = (u8)( ral >> 8 );
-    net_mac[2] = (u8)( ral >> 16 ); net_mac[3] = (u8)( ral >> 24 );
-    net_mac[4] = (u8)rah;           net_mac[5] = (u8)( rah >> 8 );
+    net_mac[0] = (uint8_t)ral;           net_mac[1] = (uint8_t)( ral >> 8 );
+    net_mac[2] = (uint8_t)( ral >> 16 ); net_mac[3] = (uint8_t)( ral >> 24 );
+    net_mac[4] = (uint8_t)rah;           net_mac[5] = (uint8_t)( rah >> 8 );
     if ( !net_mac_ok( net_mac ) ) { say( "the station address is not usable" ); return 1; }
 
     if ( rxd == 0 ) {
@@ -1802,11 +1802,11 @@ int card_find( void )
            the rings on 128 too */
         pool = net_alloc( RXN * 16 + TXN * 16 + ( RXN + TXN ) * BUFSZ + 128 );
         if ( pool == 0 ) { say( "no memory for the rings" ); return 1; }
-        at = align128( (u32)pool );
-        rxd = (volatile u32 *)at;   at += RXN * 16;
-        txd = (volatile u32 *)at;   at += TXN * 16;
-        for ( i = 0; i < RXN; i++ ) { rxbuf[i] = (u8 *)at; at += BUFSZ; }
-        for ( i = 0; i < TXN; i++ ) { txbuf[i] = (u8 *)at; at += BUFSZ; }
+        at = align128( (uint32_t)pool );
+        rxd = (volatile uint32_t *)at;   at += RXN * 16;
+        txd = (volatile uint32_t *)at;   at += TXN * 16;
+        for ( i = 0; i < RXN; i++ ) { rxbuf[i] = (uint8_t *)at; at += BUFSZ; }
+        for ( i = 0; i < TXN; i++ ) { txbuf[i] = (uint8_t *)at; at += BUFSZ; }
     }
     found_once = 1;
     return 0;
@@ -1816,9 +1816,9 @@ int card_find( void )
    header address, whose low bit is where DD will be written */
 static void rx_arm( int entry )
 {
-    volatile u32 *desc = rxd + entry * 4;
+    volatile uint32_t *desc = rxd + entry * 4;
 
-    desc[0] = (u32)rxbuf[entry];
+    desc[0] = (uint32_t)rxbuf[entry];
     desc[1] = 0;
     desc[2] = 0;
     desc[3] = 0;
@@ -1828,7 +1828,7 @@ static void rx_arm( int entry )
    held off around it (ixgbe_enable_rx_dma_82599) */
 static void rx_enable( void )
 {
-    u32 value = rd( IXGBE_RXCTRL ) | IXGBE_RXCTRL_RXEN;
+    uint32_t value = rd( IXGBE_RXCTRL ) | IXGBE_RXCTRL_RXEN;
     int i;
 
     if ( mac_type == MAC_82598 ) value |= IXGBE_RXCTRL_DMBYPS;
@@ -1845,7 +1845,7 @@ static void rx_enable( void )
 
 int card_setup( void )
 {
-    u32 value;
+    uint32_t value;
     int i, linked;
 
     /* masked and quiet: card_setup comes after card_find, after
@@ -1892,7 +1892,7 @@ int card_setup( void )
     for ( i = 0; i < RXN; i++ ) rx_arm( i );
     rx_cur = 0;
     rx_skip = 0;
-    wr( IXGBE_RDBAL( 0 ), (u32)rxd );
+    wr( IXGBE_RDBAL( 0 ), (uint32_t)rxd );
     wr( IXGBE_RDBAH( 0 ), 0 );
     wr( IXGBE_RDLEN( 0 ), RXN * 16 );
     flush();
@@ -1904,13 +1904,13 @@ int card_setup( void )
 
     /* the transmit ring, every descriptor free (DD) */
     for ( i = 0; i < TXN; i++ ) {
-        txd[i * 4 + 0] = (u32)txbuf[i];
+        txd[i * 4 + 0] = (uint32_t)txbuf[i];
         txd[i * 4 + 1] = 0;
         txd[i * 4 + 2] = 0;
         txd[i * 4 + 3] = IXGBE_TXD_STAT_DD;
     }
     tx_cur = 0;
-    wr( IXGBE_TDBAL( 0 ), (u32)txd );
+    wr( IXGBE_TDBAL( 0 ), (uint32_t)txd );
     wr( IXGBE_TDBAH( 0 ), 0 );
     wr( IXGBE_TDLEN( 0 ), TXN * 16 );
     wr( IXGBE_TDH( 0 ), 0 );
@@ -1983,24 +1983,24 @@ void card_stop( void )
     queues_off( 0 );
 }
 
-int card_send( const u8 *frame, u32 len )
+int card_send( const uint8_t *frame, unsigned int len )
 {
     int entry = tx_cur, i;
-    volatile u32 *desc = txd + entry * 4;
-    u32 size = len < 60 ? 60 : len;
+    volatile uint32_t *desc = txd + entry * 4;
+    unsigned int size = len < 60 ? 60 : len;
 
     if ( len > NIC_MAXFRAME ) return 0;
     for ( i = 0; i < 200 && !( desc[3] & IXGBE_TXD_STAT_DD ); i++ ) net_delay_us( 50 );
     if ( !( desc[3] & IXGBE_TXD_STAT_DD ) ) { net_stats.txerrors++; return 0; }
     net_memcpy( txbuf[entry], frame, len );
     if ( len < 60 ) net_memzero( txbuf[entry] + len, 60 - len );
-    desc[0] = (u32)txbuf[entry];
+    desc[0] = (uint32_t)txbuf[entry];
     desc[1] = 0;
     desc[2] = size | IXGBE_ADVTXD_DTYP_DATA | IXGBE_ADVTXD_DCMD_DEXT | IXGBE_ADVTXD_DCMD_IFCS |
               IXGBE_ADVTXD_DCMD_EOP | IXGBE_ADVTXD_DCMD_RS;
     desc[3] = size << IXGBE_ADVTXD_PAYLEN_SHIFT;    /* DD cleared with it */
     tx_cur = ( entry + 1 ) % TXN;
-    wr( IXGBE_TDT( 0 ), (u32)tx_cur );
+    wr( IXGBE_TDT( 0 ), (uint32_t)tx_cur );
     return 1;
 }
 
@@ -2009,10 +2009,11 @@ int card_send( const u8 *frame, u32 len )
    dword 3 the length */
 static int rx_drain( void )
 {
-    volatile u32 *desc;
-    u32 staterr, len;
+    volatile uint32_t *desc;
+    uint32_t staterr;
+    unsigned int len;
     int n, last = -1, got = 0;
-    u8 *slot;
+    uint8_t *slot;
 
     for ( n = 0; n < RXN; n++ ) {
         desc = rxd + rx_cur * 4;
@@ -2038,7 +2039,7 @@ static int rx_drain( void )
         rx_cur = ( rx_cur + 1 ) % RXN;
         got++;
     }
-    if ( last >= 0 ) wr( IXGBE_RDT( 0 ), (u32)last );
+    if ( last >= 0 ) wr( IXGBE_RDT( 0 ), (uint32_t)last );
     return got;
 }
 
@@ -2050,7 +2051,7 @@ static int rx_drain( void )
    latches others, which EIMS keeps off the line) or frames came */
 int card_service( void )
 {
-    u32 eicr;
+    uint32_t eicr;
     int got, masked = !( net_flags & NICF_POLLED );
 
     if ( masked ) wr( IXGBE_EIMC, 0xFFFFFFFFL );

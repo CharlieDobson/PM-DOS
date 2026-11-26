@@ -17,16 +17,16 @@
 #include "szarc.h"      /* SzProgress, and the shared SZ_ERR_* result codes */
 
 typedef struct {
-    char   name[SZ_MAX_NAME];   /* archive-relative path (back-slashes)     */
-    UInt32 size;                /* uncompressed size                        */
-    UInt32 packed;              /* compressed size                          */
-    UInt32 crc;                 /* expected CRC-32                          */
-    int    methodCode;          /* 0 = stored, 8 = deflated                 */
-    UInt16 modDate, modTime;    /* MS-DOS packed modification date/time     */
-    UInt32 attrib;              /* external attributes (low byte = DOS bits) */
-    int    dosAttr;             /* 1 = made on DOS, OS/2 or Windows, so the
-                                   low byte of attrib means R/H/S/A         */
-    int    isDir;               /* directory entry                          */
+    char     name[SZ_MAX_NAME];  /* archive-relative path (back-slashes)    */
+    uint32_t size;               /* uncompressed size                       */
+    uint32_t packed;             /* compressed size                         */
+    uint32_t crc;                /* expected CRC-32                         */
+    int      methodCode;         /* 0 = stored, 8 = deflated                */
+    uint16_t modDate, modTime;   /* MS-DOS packed modification date/time    */
+    uint32_t attrib;             /* external attributes (low byte = DOS bits) */
+    int      dosAttr;            /* 1 = made on DOS, OS/2 or Windows, so the
+                                    low byte of attrib means R/H/S/A         */
+    int      isDir;              /* directory entry                         */
 } ZipEntry;
 
 typedef struct ZipArchive ZipArchive;
@@ -47,7 +47,7 @@ const ZipEntry *ZipGetEntry( ZipArchive *z, int index );
  * CRC is verified.  Fails with SZ_ERR_UNSUPPORTED for encrypted / non
  * store-or-deflate entries. */
 int  ZipExtractToMemory( ZipArchive *z, int index,
-                         unsigned char **outBuf, UInt32 *outLen );
+                         uint8_t **outBuf, uint32_t *outLen );
 
 /* Extract all / a chosen subset (entry indices) beneath destDir, verifying
  * CRCs.  prog is called once per entry; return 0 from it to cancel. */
@@ -64,7 +64,7 @@ const char *ZipComment( ZipArchive *z );
 /* Peak bytes one extraction needs; see ArcMemNeeded in ARCFILE.H.  The answer
  * does not depend on the archive - zip streams through a fixed window - so z
  * may be NULL, which ArcMemStartupOk relies on. */
-UInt32 ZipMemNeeded( ZipArchive *z );
+uint32_t ZipMemNeeded( ZipArchive *z );
 
 /*---- Encryption ----------------------------------------------------------- *
  * Zip has two incompatible schemes and this module reads both: PKWARE's
@@ -94,7 +94,7 @@ void ZipClose( ZipArchive *z );
 
 /* Delete entries - ArcDeleteItems in ARCFILE.H; the arguments are set out
  * in ARCFILE.C.  The entries kept are copied across as they are. */
-int  ZipDeleteWrite( ZipArchive *z, const Byte *del, FILE *out,
+int  ZipDeleteWrite( ZipArchive *z, const uint8_t *del, FILE *out,
                      ArcCompProgress prog, void *user, const char **why );
 
 #endif /* ZIPARC_H */

@@ -35,21 +35,21 @@
 #include "defrag.h"
 
 typedef struct {
-    u32 first;                  /* the first entry: of the long name, or
+    unsigned int first;         /* the first entry: of the long name, or
                                    the 8.3 entry itself */
-    u32 count;                  /* entries: the long name's and the 8.3 one */
-    u32 node;                   /* N_NONE: a volume label, a "." */
-    u32 klass;                  /* 0 ".", 1 "..", 2 kept at the top, 3 the rest */
+    unsigned int count;         /* entries: the long name's and the 8.3 one */
+    unsigned int node;          /* N_NONE: a volume label, a "." */
+    unsigned int klass;         /* 0 ".", 1 "..", 2 kept at the top, 3 the rest */
 } GROUP;
 
 ARRANGED arranged;
 
-static GROUP *groups;
-static u32    ngroups, group_cap;
-static const u8 *sort_data;     /* the directory being sorted */
-static int    sort_by;
+static GROUP       *groups;
+static unsigned int ngroups, group_cap;
+static const uint8_t *sort_data; /* the directory being sorted */
+static int          sort_by;
 
-static void group_add( u32 first, u32 count, u32 node, u32 klass )
+static void group_add( unsigned int first, unsigned int count, unsigned int node, unsigned int klass )
 {
     GROUP *grown;
 
@@ -71,11 +71,11 @@ static void group_add( u32 first, u32 count, u32 node, u32 klass )
 
 /* the groups of a directory, in the order they lie; -> the entries in
    use before the end mark, deleted ones among them */
-static u32 groups_of( u32 dirno )
+static unsigned int groups_of( unsigned int dirno )
 {
     const DIRINFO *di = &dirs[dirno];
-    const u8 *ent;
-    u32 idx, node, start = 0, klass;
+    const uint8_t *ent;
+    unsigned int idx, node, start = 0, klass;
     int pending = 0;
 
     ngroups = 0;
@@ -110,28 +110,28 @@ static u32 groups_of( u32 dirno )
 }
 
 /* the 8.3 entry of a group */
-static const u8 *group_ent( const GROUP *grp )
+static const uint8_t *group_ent( const GROUP *grp )
 {
     return sort_data + (grp->first + grp->count - 1) * 32;
 }
 
-static int by_name( const u8 *lhs, const u8 *rhs )
+static int by_name( const uint8_t *lhs, const uint8_t *rhs )
 {
     int diff = mem_cmp( lhs, rhs, 8 );
 
     return diff ? diff : mem_cmp( lhs + 8, rhs + 8, 3 );
 }
 
-static int key_cmp( u32 lhs, u32 rhs )
+static int key_cmp( uint32_t lhs, uint32_t rhs )
 {
     return lhs < rhs ? -1 : lhs > rhs ? 1 : 0;
 }
 
 /* < 0: group "one" comes before group "two" */
-static int group_cmp( u32 one, u32 two )
+static int group_cmp( unsigned int one, unsigned int two )
 {
     const GROUP *lhs = &groups[one], *rhs = &groups[two];
-    const u8 *lent, *rent;
+    const uint8_t *lent, *rent;
     int diff = 0;
 
     if ( lhs->klass != rhs->klass ) {
@@ -169,11 +169,11 @@ static int group_cmp( u32 one, u32 two )
 
 /* the groups' numbers in the order they are to be in: as they lie, or
    sorted - a merge sort, so that what compares equal keeps its order */
-static u32 *order_of( u32 dirno, int sort )
+static unsigned int *order_of( unsigned int dirno, int sort )
 {
-    u32 *order, *spare, *swap, width, lo, mid, hi, left, right, out, index;
+    unsigned int *order, *spare, *swap, width, lo, mid, hi, left, right, out, index;
 
-    order = (u32 *)xalloc( (ngroups ? ngroups : 1) * sizeof( u32 ) );
+    order = (unsigned int *)xalloc( (ngroups ? ngroups : 1) * sizeof( unsigned int ) );
     for ( index = 0; index < ngroups; index++ ) {
         order[index] = index;
     }
@@ -182,7 +182,7 @@ static u32 *order_of( u32 dirno, int sort )
     }
     sort_data = dirs[dirno].buf.data;
     sort_by = sort;
-    spare = (u32 *)xalloc( ngroups * sizeof( u32 ) );
+    spare = (unsigned int *)xalloc( ngroups * sizeof( unsigned int ) );
     for ( width = 1; width < ngroups; width *= 2 ) {
         for ( lo = 0; lo < ngroups; lo += 2 * width ) {
             mid = lo + width < ngroups ? lo + width : ngroups;
@@ -208,9 +208,9 @@ static u32 *order_of( u32 dirno, int sort )
 /* The files and directories of a directory in the order arranging it
    would put them, without arranging it: where things are to go is
    worked out before anything is written. */
-void dir_children( u32 dirno, int sort, U32LIST *out )
+void dir_children( unsigned int dirno, int sort, U32LIST *out )
 {
-    u32 *order, index;
+    unsigned int *order, index;
 
     groups_of( dirno );
     order = order_of( dirno, sort );
@@ -225,21 +225,21 @@ void dir_children( u32 dirno, int sort, U32LIST *out )
 /* Arrange the copy in memory - or, with "apply" 0, only say whether
    arranging it would change anything.  1 = it is, or would be, not what
    is on the disk any more. */
-static int arrange( u32 dirno, int sort, int apply )
+static int arrange( unsigned int dirno, int sort, int apply )
 {
     DIRINFO *di = &dirs[dirno];
     /* the root goes out in whole sectors, and its entries need not fill
        the last one */
-    u32 bytes = di->buf.fixed_root ? vol.root_secs * vol.bps : di->buf.nent * 32;
-    u32 end, at = 0, index, *order, *who;
+    unsigned int bytes = di->buf.fixed_root ? vol.root_secs * vol.bps : di->buf.nent * 32;
+    unsigned int end, at = 0, index, *order, *who;
     const GROUP *grp;
-    u8 *image;
+    uint8_t *image;
     int changed;
 
     end = groups_of( dirno );
     order = order_of( dirno, sort );
-    image = (u8 *)xzalloc( bytes ? bytes : 32 );
-    who = (u32 *)xzalloc( (di->buf.nent ? di->buf.nent : 1) * sizeof( u32 ) );
+    image = (uint8_t *)xzalloc( bytes ? bytes : 32 );
+    who = (unsigned int *)xzalloc( (di->buf.nent ? di->buf.nent : 1) * sizeof( unsigned int ) );
     for ( index = 0; index < ngroups; index++ ) {
         grp = &groups[order[index]];
         mem_cpy( image + at * 32, di->buf.data + grp->first * 32, grp->count * 32 );
@@ -274,12 +274,12 @@ static int arrange( u32 dirno, int sort, int apply )
     return 1;
 }
 
-int dir_arrange( u32 dirno, int sort )
+int dir_arrange( unsigned int dirno, int sort )
 {
     return arrange( dirno, sort, 1 );
 }
 
-int dir_check( u32 dirno, int sort )
+int dir_check( unsigned int dirno, int sort )
 {
     return arrange( dirno, sort, 0 );
 }

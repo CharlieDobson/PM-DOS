@@ -38,11 +38,11 @@ void MszipFree( MszipDec *dec );
  * SZ_ERR_DATA for anything malformed: a missing signature, a bad code, a
  * distance reaching back past the start of the data, or a stream that needs
  * more bytes than the block holds. */
-int  MszipDecodeBlock( MszipDec *dec, const Byte *in, UInt32 inLen,
-                       Byte *out, UInt32 outCap, UInt32 *outLen,
-                       UInt32 *inUsed );
+int  MszipDecodeBlock( MszipDec *dec, const uint8_t *in, uint32_t inLen,
+                       uint8_t *out, uint32_t outCap, uint32_t *outLen,
+                       uint32_t *inUsed );
 
 /* Bytes one decoder holds, for ArcMemNeeded. */
-UInt32 MszipMemNeeded( void );
+uint32_t MszipMemNeeded( void );
 
 #endif /* MSZIPDEC_H */

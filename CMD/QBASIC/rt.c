@@ -9,19 +9,19 @@
 /* memory and strings                                                  */
 /* ------------------------------------------------------------------ */
 
-void mem_set( void *dst, int val, u32 len )
+void mem_set( void *dst, int val, unsigned int len )
 {
-    u8 *cur = (u8 *)dst;
+    uint8_t *cur = (uint8_t *)dst;
 
     while ( len-- ) {
-        *cur++ = (u8)val;
+        *cur++ = (uint8_t)val;
     }
 }
 
-void mem_cpy( void *dst, const void *src, u32 len )
+void mem_cpy( void *dst, const void *src, unsigned int len )
 {
-    u8 *dcur = (u8 *)dst;
-    const u8 *scur = (const u8 *)src;
+    uint8_t *dcur = (uint8_t *)dst;
+    const uint8_t *scur = (const uint8_t *)src;
 
     if ( dcur < scur ) {
         while ( len-- ) {
@@ -36,9 +36,9 @@ void mem_cpy( void *dst, const void *src, u32 len )
     }
 }
 
-u32 str_len( const char *str )
+unsigned int str_len( const char *str )
 {
-    u32 len = 0;
+    unsigned int len = 0;
 
     while ( str[len] ) {
         len++;
@@ -56,9 +56,9 @@ char *str_cpy( char *dst, const char *src )
 }
 
 /* a copy that stops short of "max" bytes including the NUL */
-int str_cpyn( char *dst, const char *src, u32 max )
+int str_cpyn( char *dst, const char *src, unsigned int max )
 {
-    u32 len = str_len( src );
+    unsigned int len = str_len( src );
 
     if ( len + 1 > max ) {
         return 0;
@@ -68,9 +68,9 @@ int str_cpyn( char *dst, const char *src, u32 max )
 }
 
 /* as much of src as fits in max bytes, always ended */
-void str_cpyt( char *dst, const char *src, u32 max )
+void str_cpyt( char *dst, const char *src, unsigned int max )
 {
-    u32 len = str_len( src );
+    unsigned int len = str_len( src );
 
     if ( max == 0 ) {
         return;
@@ -82,9 +82,9 @@ void str_cpyt( char *dst, const char *src, u32 max )
     dst[len] = 0;
 }
 
-int str_catn( char *dst, const char *src, u32 max )
+int str_catn( char *dst, const char *src, unsigned int max )
 {
-    u32 have = str_len( dst );
+    unsigned int have = str_len( dst );
 
     if ( have >= max ) {
         return 0;
@@ -126,7 +126,7 @@ int str_icmp( const char *lhs, const char *rhs )
     }
 }
 
-int str_nicmp( const char *lhs, const char *rhs, u32 len )
+int str_nicmp( const char *lhs, const char *rhs, unsigned int len )
 {
     int lch, rch;
 
@@ -171,13 +171,13 @@ int str_cmp( const char *lhs, const char *rhs )
         lhs++;
         rhs++;
     }
-    return (int)(u8)*lhs - (int)(u8)*rhs;
+    return (int)(uint8_t)*lhs - (int)(uint8_t)*rhs;
 }
 
-int mem_cmp( const void *lhs, const void *rhs, u32 len )
+int mem_cmp( const void *lhs, const void *rhs, unsigned int len )
 {
-    const u8 *lcur = (const u8 *)lhs;
-    const u8 *rcur = (const u8 *)rhs;
+    const uint8_t *lcur = (const uint8_t *)lhs;
+    const uint8_t *rcur = (const uint8_t *)rhs;
 
     for ( ; len; len--, lcur++, rcur++ ) {
         if ( *lcur != *rcur ) {
@@ -187,13 +187,13 @@ int mem_cmp( const void *lhs, const void *rhs, u32 len )
     return 0;
 }
 
-u32 dec_parse( const char *str, int *ok )
+unsigned int dec_parse( const char *str, int *ok )
 {
-    u32 val = 0;
+    unsigned int val = 0;
 
     *ok = 0;
     while ( *str >= '0' && *str <= '9' ) {
-        val = val * 10 + (u32)(*str - '0');
+        val = val * 10 + (unsigned int)(*str - '0');
         *ok = 1;
         str++;
     }
@@ -203,7 +203,7 @@ u32 dec_parse( const char *str, int *ok )
     return val;
 }
 
-char *fmt_dec( u32 val, int width, char *buf )
+char *fmt_dec( unsigned int val, int width, char *buf )
 {
     char digits[12];
     int count = 0, pos = 0;

@@ -28,16 +28,16 @@
 
 /* a BIOS call that only asks (21h/F1h AL=21h) */
 typedef struct {
-    u32 eax, ebx, ecx, edx, esi, edi;
-    u16 es, ds;
-    u32 flags;                  /* out: bit 0 is CF */
+    uint32_t eax, ebx, ecx, edx, esi, edi;
+    uint16_t es, ds;
+    uint32_t flags;             /* out: bit 0 is CF */
 } BQ;
 
 /* the printer and serial settings the kernel keeps (21h/F1h AL=28h) */
 typedef struct {
-    u8 route[4];                /* LPT1-3: 0, or the COM port 1-4      */
-    u8 lretry[4];               /* LPT1-3: RETRY_*                     */
-    u8 cretry[4];               /* COM1-4: RETRY_*                     */
+    uint8_t route[4];           /* LPT1-3: 0, or the COM port 1-4      */
+    uint8_t lretry[4];          /* LPT1-3: RETRY_*                     */
+    uint8_t cretry[4];          /* COM1-4: RETRY_*                     */
 } PORTSET;
 
 #define RETRY_NONE  0
@@ -48,16 +48,16 @@ typedef struct {
 
 int   sys_init( void );
 const char *sys_cmdline( void );
-void  sys_write( int handle, const char *buf, u32 len );
+void  sys_write( int handle, const char *buf, unsigned int len );
 void  sys_exit( int code );
 
-u16   sys_low_word( u32 addr );
-u8    sys_low_byte( u32 addr );
-int   sys_low_ram( u32 addr );                  /* 1 if a byte there keeps */
-int   sys_bios( int intno, BQ *bq );            /* 0 = done */
+uint16_t sys_low_word( uint32_t addr );
+uint8_t  sys_low_byte( uint32_t addr );
+int      sys_low_ram( uint32_t addr );          /* 1 if a byte there keeps */
+int      sys_bios( int intno, BQ *bq );         /* 0 = done */
 
-u32 __cdecl port_in( u32 port );
-void __cdecl port_out( u32 port, u32 value );
+uint32_t __cdecl port_in( uint32_t port );
+void __cdecl port_out( uint32_t port, uint32_t value );
 
 /* the screen and the keyboard */
 void  sys_scr_size( int *rows, int *cols );
@@ -74,12 +74,12 @@ int   sys_lpt_out( int lpt, int byte, int *status );
 /* files and devices, for the code pages and ANSI.SYS */
 int   sys_open( const char *name, int mode, int *handle );
 void  sys_close( int handle );
-int   sys_read( int handle, void *buf, u32 len, u32 *got );
-int   sys_devinfo( int handle, u16 *info );     /* 4400h */
-int   sys_setinfo( int handle, u16 info );      /* 4401h */
-int   sys_ioctl_write( int handle, const void *buf, u32 len );   /* 4403h */
+int   sys_read( int handle, void *buf, unsigned int len, unsigned int *got );
+int   sys_devinfo( int handle, uint16_t *info );  /* 4400h */
+int   sys_setinfo( int handle, uint16_t info );   /* 4401h */
+int   sys_ioctl_write( int handle, const void *buf, unsigned int len ); /* 4403h */
 int   sys_genioctl( int handle, int cat, int func, void *block );  /* 440Ch */
-int   sys_break( int set, int on );             /* -> the setting before */
-void *sys_mem_alloc( u32 size );
+int   sys_break( int set, int on );               /* -> the setting before */
+void *sys_mem_alloc( unsigned int size );
 
 #endif

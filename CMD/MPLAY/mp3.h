@@ -31,7 +31,7 @@
  * multiplier walks (fix.h): the data, not the coefficient.
  */
 /* (a * b + 2^30) >> 31 */
-s32 mp3_mul31( s32 a, s32 b );
+int32_t mp3_mul31( int32_t a, int32_t b );
 #pragma aux mp3_mul31 = \
     "imul edx" \
     "add eax,40000000h" \
@@ -40,7 +40,7 @@ s32 mp3_mul31( s32 a, s32 b );
     parm [eax] [edx] value [edx] modify exact [eax edx] nomemory;
 
 /* (a * b + 2^29) >> 30 */
-s32 mp3_mul30( s32 a, s32 b );
+int32_t mp3_mul30( int32_t a, int32_t b );
 #pragma aux mp3_mul30 = \
     "imul edx" \
     "add eax,20000000h" \
@@ -49,7 +49,7 @@ s32 mp3_mul30( s32 a, s32 b );
     parm [eax] [edx] value [eax] modify exact [eax edx] nomemory;
 
 /* (a * b + 2^27) >> 28 */
-s32 mp3_mul28( s32 a, s32 b );
+int32_t mp3_mul28( int32_t a, int32_t b );
 #pragma aux mp3_mul28 = \
     "imul edx" \
     "add eax,8000000h" \
@@ -58,7 +58,7 @@ s32 mp3_mul28( s32 a, s32 b );
     parm [eax] [edx] value [eax] modify exact [eax edx] nomemory;
 
 /* (a * b + 2^26) >> 27 */
-s32 mp3_mul27( s32 a, s32 b );
+int32_t mp3_mul27( int32_t a, int32_t b );
 #pragma aux mp3_mul27 = \
     "imul edx" \
     "add eax,4000000h" \
@@ -67,7 +67,7 @@ s32 mp3_mul27( s32 a, s32 b );
     parm [eax] [edx] value [eax] modify exact [eax edx] nomemory;
 
 /* (a * b + 2^15) >> 16 */
-s32 mp3_mul16( s32 a, s32 b );
+int32_t mp3_mul16( int32_t a, int32_t b );
 #pragma aux mp3_mul16 = \
     "imul edx" \
     "add eax,8000h" \
@@ -100,7 +100,7 @@ s32 mp3_mul16( s32 a, s32 b );
 #define MP3_TAP14 "mov eax,[esi+56]" "imul dword ptr [edi+56]" "add ebx,eax" "adc ecx,edx"
 #define MP3_TAP15 "mov eax,[esi+60]" "imul dword ptr [edi+60]" "add ebx,eax" "adc ecx,edx"
 
-s32 mp3_dot16( const s32 *hv, const s32 *wr );
+int32_t mp3_dot16( const int32_t *hv, const int32_t *wr );
 #pragma aux mp3_dot16 = \
     "xor ebx,ebx" \
     "xor ecx,ecx" \
@@ -114,7 +114,7 @@ s32 mp3_dot16( const s32 *hv, const s32 *wr );
     parm [esi] [edi] value [ebx] modify exact [eax ebx ecx edx];
 
 /* the same without the outermost tap at each end */
-s32 mp3_dot14( const s32 *hv, const s32 *wr );
+int32_t mp3_dot14( const int32_t *hv, const int32_t *wr );
 #pragma aux mp3_dot14 = \
     "xor ebx,ebx" \
     "xor ecx,ecx" \
@@ -129,7 +129,7 @@ s32 mp3_dot14( const s32 *hv, const s32 *wr );
 
 /* the taps at odd ages only (output N/2, whose even-age values are 0):
    8 of them, or 7 without age 15 */
-s32 mp3_odd8( const s32 *hv, const s32 *wr );
+int32_t mp3_odd8( const int32_t *hv, const int32_t *wr );
 #pragma aux mp3_odd8 = \
     "xor ebx,ebx" \
     "xor ecx,ecx" \
@@ -140,7 +140,7 @@ s32 mp3_odd8( const s32 *hv, const s32 *wr );
     "shrd ebx,ecx,25" \
     parm [esi] [edi] value [ebx] modify exact [eax ebx ecx edx];
 
-s32 mp3_odd7( const s32 *hv, const s32 *wr );
+int32_t mp3_odd7( const int32_t *hv, const int32_t *wr );
 #pragma aux mp3_odd7 = \
     "xor ebx,ebx" \
     "xor ecx,ecx" \
@@ -205,7 +205,7 @@ s32 mp3_odd7( const s32 *hv, const s32 *wr );
     "mov eax,ebp" "add eax,[esi+4]" "imul dword ptr [edi+88]" "shrd eax,edx,13" "sub ecx,eax" \
     "mov eax,ebp" "sub eax,[esi+4]" "imul dword ptr [edi+92]" "shrd eax,edx,13" "sub ebx,eax"
 
-void mp3_pair8( const s32 *hv, const s32 *cf, s32 *res );
+void mp3_pair8( const int32_t *hv, const int32_t *cf, int32_t *res );
 #pragma aux mp3_pair8 = \
     "push ebp" \
     "push eax" \
@@ -226,7 +226,7 @@ void mp3_pair8( const s32 *hv, const s32 *cf, s32 *res );
     parm [esi] [edi] [eax] modify exact [eax ebx ecx edx];
 
 /* 12 taps: without ages 0, 1, 14 and 15 (the pairs 0-15 and 14-1) */
-s32 mp3_dot12( const s32 *hv, const s32 *wr );
+int32_t mp3_dot12( const int32_t *hv, const int32_t *wr );
 #pragma aux mp3_dot12 = \
     "xor ebx,ebx" \
     "xor ecx,ecx" \
@@ -237,7 +237,7 @@ s32 mp3_dot12( const s32 *hv, const s32 *wr );
     "shrd ebx,ecx,25" \
     parm [esi] [edi] value [ebx] modify exact [eax ebx ecx edx];
 
-s32 mp3_odd6( const s32 *hv, const s32 *wr );
+int32_t mp3_odd6( const int32_t *hv, const int32_t *wr );
 #pragma aux mp3_odd6 = \
     "xor ebx,ebx" \
     "xor ecx,ecx" \
@@ -247,7 +247,7 @@ s32 mp3_odd6( const s32 *hv, const s32 *wr );
     "shrd ebx,ecx,25" \
     parm [esi] [edi] value [ebx] modify exact [eax ebx ecx edx];
 
-void mp3_pair6( const s32 *hv, const s32 *cf, s32 *res );
+void mp3_pair6( const int32_t *hv, const int32_t *cf, int32_t *res );
 #pragma aux mp3_pair6 = \
     "push ebp" \
     "push eax" \
@@ -260,7 +260,7 @@ void mp3_pair6( const s32 *hv, const s32 *cf, s32 *res );
     "pop ebp" \
     parm [esi] [edi] [eax] modify exact [eax ebx ecx edx];
 
-void mp3_pair7( const s32 *hv, const s32 *cf, s32 *res );
+void mp3_pair7( const int32_t *hv, const int32_t *cf, int32_t *res );
 #pragma aux mp3_pair7 = \
     "push ebp" \
     "push eax" \
@@ -296,51 +296,51 @@ void mp3_pair7( const s32 *hv, const s32 *cf, s32 *res );
 
 /* one frame's header, taken apart */
 typedef struct {
-    u8   version;                   /* MV_* */
-    u8   layer;                     /* 1, 2, 3 */
-    u8   crc;                       /* 1: two bytes of CRC follow the header */
-    u8   br_index;                  /* 0: free format */
-    u8   sr_index;                  /* 0..2 within the version */
-    u8   padding;
-    u8   mode;                      /* MODE_* */
-    u8   mode_ext;
-    u8   channels;                  /* 1 or 2 */
-    u8   sfreq;                     /* 0..8: the rate's row in the band tables */
-    u16  samples;                   /* a channel's samples in the frame */
-    u32  rate;                      /* Hz */
-    u32  kbps;                      /* 0: free format */
-    u32  length;                    /* the frame's bytes with the header; 0 for free format
+    uint8_t  version;               /* MV_* */
+    uint8_t  layer;                 /* 1, 2, 3 */
+    uint8_t  crc;                   /* 1: two bytes of CRC follow the header */
+    uint8_t  br_index;              /* 0: free format */
+    uint8_t  sr_index;              /* 0..2 within the version */
+    uint8_t  padding;
+    uint8_t  mode;                  /* MODE_* */
+    uint8_t  mode_ext;
+    uint8_t  channels;              /* 1 or 2 */
+    uint8_t  sfreq;                 /* 0..8: the rate's row in the band tables */
+    uint16_t samples;               /* a channel's samples in the frame */
+    uint32_t rate;                  /* Hz */
+    uint32_t kbps;                  /* 0: free format */
+    uint32_t length;                /* the frame's bytes with the header; 0 for free format
                                        until the stream has shown it */
 } MP3HDR;
 
 /* the synthesis of one channel */
 typedef struct {
-    s32 *hist;                      /* [2][17][32]: two histories of the matrixed vectors,
+    int32_t *hist;                  /* [2][17][32]: two histories of the matrixed vectors,
                                        each kept twice over so that 16 in a row are always
                                        next to each other */
-    int  pos;                       /* where the newest vector is, 0..15 */
-    int  phase;                     /* which history is read this time */
+    int      pos;                   /* where the newest vector is, 0..15 */
+    int      phase;                 /* which history is read this time */
 } MP3SYN;
 
 /* the bits of a buffer, read from the top down */
 typedef struct {
-    const u8 *data;
-    u32   len;                      /* bytes in data: past them come zeros */
-    u32   pos;                      /* the next byte to load */
-    u32   cache;                    /* bits waiting, the next one at bit 31 */
-    int   count;                    /* how many */
+    const uint8_t *data;
+    unsigned int   len;             /* bytes in data: past them come zeros */
+    unsigned int   pos;             /* the next byte to load */
+    uint32_t       cache;           /* bits waiting, the next one at bit 31 */
+    int            count;           /* how many */
 } MP3BITS;
 
-#define MP3_BITPOS( bits )  ((bits)->pos * 8 - (u32)(bits)->count)
+#define MP3_BITPOS( bits )  ((bits)->pos * 8 - (unsigned int)(bits)->count)
 
-void mp3_bits_init( MP3BITS *bits, const u8 *data, u32 len, u32 bitpos );
-u32  mp3_bits_get( MP3BITS *bits, int count );      /* count 0..24 */
+void     mp3_bits_init( MP3BITS *bits, const uint8_t *data, unsigned int len, unsigned int bitpos );
+uint32_t mp3_bits_get( MP3BITS *bits, int count );  /* count 0..24 */
 
 /* a Huffman table by table_select */
 typedef struct {
-    u16  first;                     /* its first entry in mp3_huff */
-    u8   bits;                      /* bits the first lookup takes; 0: every value is 0 */
-    u8   linbits;
+    uint16_t first;                 /* its first entry in mp3_huff */
+    uint8_t  bits;                  /* bits the first lookup takes; 0: every value is 0 */
+    uint8_t  linbits;
 } MP3HTAB;
 
 /* layer 3: everything a channel keeps from granule to granule */
@@ -348,68 +348,68 @@ typedef struct MP3L3 MP3L3;
 
 /* the decoder's state as the layers see it */
 typedef struct {
-    MP3HDR hdr;                     /* the frame being decoded */
-    u8   out_ch;                    /* channels made: 1 or 2 */
-    u8   nsb;                       /* subbands made: 32, 16 or 8 */
-    u8   fast;
-    u8   eq_on;                     /* the equalizer is not flat */
-    s32 *sb[2];                     /* [MP3_SLOTS][32] subband samples for each channel made */
-    u32  slots;                     /* slots the frame filled */
-    u32  eq32[32];                  /* layers 1 and 2: a Q16 gain for each subband */
-    MP3L3 *l3;
+    MP3HDR   hdr;                   /* the frame being decoded */
+    uint8_t  out_ch;                /* channels made: 1 or 2 */
+    uint8_t  nsb;                   /* subbands made: 32, 16 or 8 */
+    uint8_t  fast;
+    uint8_t  eq_on;                 /* the equalizer is not flat */
+    int32_t *sb[2];                 /* [MP3_SLOTS][32] subband samples for each channel made */
+    uint32_t slots;                 /* slots the frame filled */
+    uint32_t eq32[32];              /* layers 1 and 2: a Q16 gain for each subband */
+    MP3L3   *l3;
 } MP3DEC;
 
 /* MP3L12.C: one frame of layer 1 or 2 into dec->sb.  0, or -1 when the
    frame is too short for what its header says */
-int  mp3_layer1( MP3DEC *dec, const u8 *frame, u32 len );
-int  mp3_layer2( MP3DEC *dec, const u8 *frame, u32 len );
+int  mp3_layer1( MP3DEC *dec, const uint8_t *frame, unsigned int len );
+int  mp3_layer2( MP3DEC *dec, const uint8_t *frame, unsigned int len );
 
 /* MP3L3.C */
-int  mp3_l3_open( MP3DEC *dec, u32 sfreq );         /* DE_OK or DE_NOMEM */
+int  mp3_l3_open( MP3DEC *dec, unsigned int sfreq ); /* DE_OK or DE_NOMEM */
 void mp3_l3_close( MP3DEC *dec );
-void mp3_l3_reset( MP3DEC *dec );                   /* after a seek: no reservoir, no overlap */
-void mp3_l3_eq( MP3DEC *dec, const EQSET *eq, u32 rate );
+void mp3_l3_reset( MP3DEC *dec );                    /* after a seek: no reservoir, no overlap */
+void mp3_l3_eq( MP3DEC *dec, const EQSET *eq, uint32_t rate );
 /* One frame into dec->sb (two granules for MPEG-1, one for the lower
    rates).  A frame whose bit reservoir is not there plays as silence. */
-void mp3_layer3( MP3DEC *dec, const u8 *frame, u32 len );
+void mp3_layer3( MP3DEC *dec, const uint8_t *frame, unsigned int len );
 
 /* MP3SYN.C */
-int  mp3_syn_open( MP3SYN *syn );                   /* DE_OK or DE_NOMEM */
+int  mp3_syn_open( MP3SYN *syn );                    /* DE_OK or DE_NOMEM */
 void mp3_syn_close( MP3SYN *syn );
 void mp3_syn_reset( MP3SYN *syn );
 /* One slot: nsb subband samples (Q24) into nsb output samples, every
-   "stride"th s16 of out.  taps is 16, or 12 for the fast path. */
-void mp3_synth( MP3SYN *syn, const s32 *sb, int nsb, s16 *out, int stride, int taps );
+   "stride"th int16_t of out.  taps is 16, or 12 for the fast path. */
+void mp3_synth( MP3SYN *syn, const int32_t *sb, int nsb, int16_t *out, int stride, int taps );
 
 /* MP3TAB.C */
-extern const u16 mp3_huff[];
-extern const MP3HTAB mp3_htab[32];
-extern const u8  mp3_quad_a[64];
-extern const s32 mp3_win32[16 + 15 * 24 + 16];
-extern const s32 mp3_win16[16 + 7 * 24 + 16];
-extern const s32 mp3_win8[16 + 3 * 24 + 16];
-extern const s32 mp3_pow_small[4 * 16];
-extern const u32 mp3_pow43[8207];
-extern const s32 mp3_frac4[4];
-extern const u16 mp3_sfb_long[9 * 23];
-extern const u16 mp3_sfb_short[9 * 14];
-extern const s32 mp3_lee32[16];
-extern const s32 mp3_lee16[8];
-extern const s32 mp3_lee8[4];
-extern const s32 mp3_lee4[2];
-extern const s32 mp3_lee2[1];
-extern const s32 mp3_c9[7];
-extern const s32 mp3_q9[9];
-extern const s32 mp3_cwl[4 * 2 * 36];
-extern const s32 mp3_c6[4];
-extern const s32 mp3_cws[2 * 12];
-extern const s32 mp3_alias[8 * 3];
-extern const s32 mp3_is_ratio[7];
-extern const s32 mp3_l12_sf[64];
-extern const s32 mp3_l12_inv[17];
-extern const u8  mp3_l12_shift[17];
-extern const s8  mp3_group3[32 * 3];
-extern const s8  mp3_group5[128 * 3];
-extern const s8  mp3_group9[1024 * 3];
+extern const uint16_t mp3_huff[];
+extern const MP3HTAB  mp3_htab[32];
+extern const uint8_t  mp3_quad_a[64];
+extern const int32_t  mp3_win32[16 + 15 * 24 + 16];
+extern const int32_t  mp3_win16[16 + 7 * 24 + 16];
+extern const int32_t  mp3_win8[16 + 3 * 24 + 16];
+extern const int32_t  mp3_pow_small[4 * 16];
+extern const uint32_t mp3_pow43[8207];
+extern const int32_t  mp3_frac4[4];
+extern const uint16_t mp3_sfb_long[9 * 23];
+extern const uint16_t mp3_sfb_short[9 * 14];
+extern const int32_t  mp3_lee32[16];
+extern const int32_t  mp3_lee16[8];
+extern const int32_t  mp3_lee8[4];
+extern const int32_t  mp3_lee4[2];
+extern const int32_t  mp3_lee2[1];
+extern const int32_t  mp3_c9[7];
+extern const int32_t  mp3_q9[9];
+extern const int32_t  mp3_cwl[4 * 2 * 36];
+extern const int32_t  mp3_c6[4];
+extern const int32_t  mp3_cws[2 * 12];
+extern const int32_t  mp3_alias[8 * 3];
+extern const int32_t  mp3_is_ratio[7];
+extern const int32_t  mp3_l12_sf[64];
+extern const int32_t  mp3_l12_inv[17];
+extern const uint8_t  mp3_l12_shift[17];
+extern const int8_t   mp3_group3[32 * 3];
+extern const int8_t   mp3_group5[128 * 3];
+extern const int8_t   mp3_group9[1024 * 3];
 
 #endif

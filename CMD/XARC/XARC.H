@@ -105,15 +105,15 @@ typedef struct {
    memory has them, and in bits 16-23 what a graphics screen draws
    instead of the character - an icon, or a slice of a progress bar.
    A text screen never sees bits 16 and up. */
-typedef u32 CELL;
+typedef uint32_t CELL;
 
-#define CELL_CHAR( c )      ((u8)((c) & 0xFF))
-#define CELL_ATTR( c )      ((u8)(((c) >> 8) & 0xFF))
-#define CELL_EXTRA( c )     ((u8)(((c) >> 16) & 0xFF))
-#define CELL_MAKE( ch, at ) ((CELL)(u8)(ch) | ((CELL)(u8)(at) << 8))
-#define CELL_WITH( c, ex )  (((c) & 0xFFFFUL) | ((CELL)(u8)(ex) << 16))
+#define CELL_CHAR( c )      ((uint8_t)((c) & 0xFF))
+#define CELL_ATTR( c )      ((uint8_t)(((c) >> 8) & 0xFF))
+#define CELL_EXTRA( c )     ((uint8_t)(((c) >> 16) & 0xFF))
+#define CELL_MAKE( ch, at ) ((CELL)(uint8_t)(ch) | ((CELL)(uint8_t)(at) << 8))
+#define CELL_WITH( c, ex )  (((c) & 0xFFFFUL) | ((CELL)(uint8_t)(ex) << 16))
 
-#define EXTRA_ICON( id )        ((u8)((id) + 1))
+#define EXTRA_ICON( id )        ((uint8_t)((id) + 1))
 #define EXTRA_IS_ICON( e )      ((e) >= 1 && (e) <= ICON_MAX)
 #define EXTRA_BAR               0x40    /* | how many of 8 columns are full */
 #define EXTRA_BAR_LEFT          0x10
@@ -137,7 +137,7 @@ void  df_fill( int top, int left, int bottom, int right, int bg );
 void  df_clear( int fg, int bg );
 void  df_clear_row( int row, int fg, int bg );
 void  df_shade( int top, int left, int bottom, int right );
-void  df_bar( int row, int col, int cells, u32 done, u32 total, int fg, int bg );
+void  df_bar( int row, int col, int cells, uint32_t done, uint32_t total, int fg, int bg );
 void  df_icon( int row, int col, int icon, int bg );
 void  df_cells_read( int top, int left, int bottom, int right, CELL *buf );
 void  df_cells_write( int top, int left, int bottom, int right, const CELL *buf );
@@ -150,15 +150,15 @@ const char *const *df_icon_art( int icon, int *rows );
 /* input.  ev_wait sends the screen first and waits; ev_poll looks and
    comes back - in test mode with nothing, unless XAPOLL says the keys
    are for a running job too. */
-int   ev_wait( EVENT *ev );
-int   ev_poll( EVENT *ev );
-int   ev_mouse_on( void );
-int   ev_buttons( void );               /* the buttons down now */
-void  ev_mouse_reset( void );           /* after a change of screen */
-u32   ev_clock( void );                 /* hundredths, for double clicks */
-int   ev_testing( void );
-void  ev_init( void );
-void  ev_break_off( void );             /* ^C is a key, not the end */
+int      ev_wait( EVENT *ev );
+int      ev_poll( EVENT *ev );
+int      ev_mouse_on( void );
+int      ev_buttons( void );            /* the buttons down now */
+void     ev_mouse_reset( void );        /* after a change of screen */
+uint32_t ev_clock( void );              /* hundredths, for double clicks */
+int      ev_testing( void );
+void     ev_init( void );
+void     ev_break_off( void );          /* ^C is a key, not the end */
 
 /* test mode, from the key file: the screen as text into the log */
 void  scr_dump( const char *why );
@@ -186,16 +186,16 @@ typedef struct {
 
 /* a box that puts back what it covered */
 typedef struct {
-    RECT  at;
-    int   fg, bg;
-    int   border;                       /* BORDER_* */
-    char  title[35];
-    int   just;                         /* where the title goes: JUST_* */
-    int   shadow;
-    CELL *save;
-    u32   save_cells;
-    int   saved;
-    RECT  saved_at;
+    RECT     at;
+    int      fg, bg;
+    int      border;                    /* BORDER_* */
+    char     title[35];
+    int      just;                      /* where the title goes: JUST_* */
+    int      shadow;
+    CELL    *save;
+    unsigned save_cells;
+    int      saved;
+    RECT     saved_at;
 } POPUP;
 
 void  popup_init( POPUP *pop, int fg, int bg, const char *title );
@@ -286,7 +286,7 @@ int   radio_event( RADIO *rad, const EVENT *ev );
 #define PB_ROOM     (PB_WIDTH - 6)
 
 void  prog_open( const char *title );
-int   prog_update( const char *text, u32 done, u32 total );    /* 0 = stop */
+int   prog_update( const char *text, uint32_t done, uint32_t total ); /* 0 = stop */
 void  prog_close( void );
 int   prog_is_open( void );
 void  wait_open( const char *message );
@@ -332,24 +332,24 @@ typedef int  (*ROWINT)( void *user, int row );
 typedef void (*ROWNAME)( void *user, int row, char *buf, int buflen );
 
 typedef struct {
-    RECT    at;                         /* the frame, from 0 */
-    int     fg, bg, sel_fg, sel_bg, mark_fg;
-    char    header[128];
-    int     count, sel, top;
-    u8     *marks;
-    int     mark_count;
-    void   *user;
-    ROWFILL fill;
-    ROWACT  on_activate, on_double;
+    RECT     at;                        /* the frame, from 0 */
+    int      fg, bg, sel_fg, sel_bg, mark_fg;
+    char     header[128];
+    int      count, sel, top;
+    uint8_t *marks;
+    int      mark_count;
+    void    *user;
+    ROWFILL  fill;
+    ROWACT   on_activate, on_double;
     void  (*on_marks)( void *user );
-    ROWINT  can_mark, row_icon;
-    int     mark_icon;
+    ROWINT   can_mark, row_icon;
+    int      mark_icon;
     /* a tree: the list owns the name field at the left */
-    ROWINT  depth, has_kids, expanded, toggle;
-    ROWNAME label;
-    int     name_width;
-    int     last_click_row;
-    u32     last_click_at;
+    ROWINT   depth, has_kids, expanded, toggle;
+    ROWNAME  label;
+    int      name_width;
+    int      last_click_row;
+    uint32_t last_click_at;
 } LIST;
 
 void  list_init( LIST *lst, int fg, int bg );
@@ -379,52 +379,52 @@ int   list_event( LIST *lst, const EVENT *ev );    /* 1 = the list's */
 enum { DS_PARENT, DS_DRIVE, DS_DIR, DS_FILE };
 
 typedef struct {
-    u32   name;                 /* where its name is in the pool */
-    int   kind;
-    u32   size;
-    u16   date, time;
-    u8    attr;
+    unsigned name;              /* where its name is in the pool */
+    int      kind;
+    uint32_t size;
+    uint16_t date, time;
+    uint8_t  attr;
 } DSENT;
 
 typedef struct {
-    DSENT *ents;
-    int    count, cap;
-    char  *pool;                /* the names, one after another */
-    u32    pool_used, pool_cap;
-    char   path[DS_PATHLEN];
-    int    drives;              /* the drive list, not a directory */
-    char   filter[64];
-    int    files_only;
-    int    cut;                 /* more entries than the list could hold */
+    DSENT   *ents;
+    int      count, cap;
+    char    *pool;              /* the names, one after another */
+    unsigned pool_used, pool_cap;
+    char     path[DS_PATHLEN];
+    int      drives;            /* the drive list, not a directory */
+    char     filter[64];
+    int      files_only;
+    int      cut;               /* more entries than the list could hold */
 } DIRSCAN;
 
-int   drive_exists( int drive );        /* 1 = A: */
-void  dirscan_init( DIRSCAN *ds );
-void  dirscan_free( DIRSCAN *ds );
-int   dirscan_rescan( DIRSCAN *ds );
-int   dirscan_path( DIRSCAN *ds, const char *dir );   /* by name, not by moving */
-void  dirscan_empty( DIRSCAN *ds );
-void  dirscan_show_directory( DIRSCAN *ds );
-int   dirscan_items( const DIRSCAN *ds );
-int   dirscan_kind( const DIRSCAN *ds, int row );
+int      drive_exists( int drive );     /* 1 = A: */
+void     dirscan_init( DIRSCAN *ds );
+void     dirscan_free( DIRSCAN *ds );
+int      dirscan_rescan( DIRSCAN *ds );
+int      dirscan_path( DIRSCAN *ds, const char *dir ); /* by name, not by moving */
+void     dirscan_empty( DIRSCAN *ds );
+void     dirscan_show_directory( DIRSCAN *ds );
+int      dirscan_items( const DIRSCAN *ds );
+int      dirscan_kind( const DIRSCAN *ds, int row );
 const char *dirscan_name( const DIRSCAN *ds, int row );
-void  dirscan_disp( const DIRSCAN *ds, int row, char *buf, int buflen );
-u32   dirscan_size( const DIRSCAN *ds, int row );
-int   dirscan_is_dir( const DIRSCAN *ds, int row );
-int   dirscan_is_up( const DIRSCAN *ds, int row );
-void  dirscan_date( const DIRSCAN *ds, int row, char *buf, int buflen );
-void  dirscan_attr( const DIRSCAN *ds, int row, char *buf, int buflen );
-void  dirscan_full( const DIRSCAN *ds, int row, char *dst, int size );
-int   dirscan_enter( DIRSCAN *ds, int row );
-int   dirscan_up( DIRSCAN *ds );
+void     dirscan_disp( const DIRSCAN *ds, int row, char *buf, int buflen );
+uint32_t dirscan_size( const DIRSCAN *ds, int row );
+int      dirscan_is_dir( const DIRSCAN *ds, int row );
+int      dirscan_is_up( const DIRSCAN *ds, int row );
+void     dirscan_date( const DIRSCAN *ds, int row, char *buf, int buflen );
+void     dirscan_attr( const DIRSCAN *ds, int row, char *buf, int buflen );
+void     dirscan_full( const DIRSCAN *ds, int row, char *dst, int size );
+int      dirscan_enter( DIRSCAN *ds, int row );
+int      dirscan_up( DIRSCAN *ds );
 
 #define DT_MAX_NODES    1024
 #define DT_MAX_DEPTH    34
 
 typedef struct {
-    char  name[256];
-    u8    depth;
-    u8    flags;
+    char    name[256];
+    uint8_t depth;
+    uint8_t flags;
 } DTNODE;
 
 #define DT_OPEN     0x01
@@ -446,13 +446,13 @@ int   dirtree_reveal( DIRTREE *dt, const char *path );
 
 /* a directory search a disk error cannot lie to (see DIRS.C) */
 typedef struct {
-    int  lfn;
-    u32  handle;
-    u8   rec[320];
-    char name[260];
-    u8   attr;
-    u32  size;
-    u16  date, time;
+    int      lfn;
+    uint32_t handle;
+    uint8_t  rec[320];
+    char     name[260];
+    uint8_t  attr;
+    uint32_t size;
+    uint16_t date, time;
 } FIND;
 
 int   find_first( const char *pattern, int attrs, FIND *fd );   /* 0 = found */
@@ -529,7 +529,7 @@ int   cli_run( int argc, char **argv );
 int   cli_video_switch( const char *arg, int *graphics );
 void  mem_warn_text( char *buf, int size );
 const char *test_passed_text( ArcFile *arc );
-void  fmt_total( u64 val, char *buf );          /* grouped */
+void  fmt_total( uint64_t val, char *buf );     /* grouped */
 const char *base_name( const char *path );
 
 #endif

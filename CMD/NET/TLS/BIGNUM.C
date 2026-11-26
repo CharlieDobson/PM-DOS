@@ -20,7 +20,7 @@ void bn_zero(bignum *a)
         a->w[i] = 0;
 }
 
-void bn_set_word(bignum *a, u32 v)
+void bn_set_word(bignum *a, uint32_t v)
 {
     bn_zero(a);
     a->w[0] = v;
@@ -48,7 +48,7 @@ int bn_cmp(const bignum *a, const bignum *b)
 int bn_bitlen(const bignum *a)
 {
     int wl = bn_words(a), b;
-    u32 top;
+    uint32_t top;
     if (wl == 0)
         return 0;
     top = a->w[wl - 1];
@@ -62,23 +62,23 @@ static int bn_getbit(const bignum *a, int i)
     return (int)((a->w[i >> 5] >> (i & 31)) & 1);
 }
 
-void bn_from_bytes(bignum *a, const unsigned char *bytes, int len)
+void bn_from_bytes(bignum *a, const uint8_t *bytes, int len)
 {
     int i;
     bn_zero(a);
     /* bytes[len-1] is least-significant */
     for (i = 0; i < len; i++) {
-        u32 b = bytes[len - 1 - i];
+        uint32_t b = bytes[len - 1 - i];
         a->w[i >> 2] |= b << ((i & 3) * 8);
     }
 }
 
-void bn_to_bytes(const bignum *a, unsigned char *bytes, int len)
+void bn_to_bytes(const bignum *a, uint8_t *bytes, int len)
 {
     int i, pos;
     for (i = 0; i < len; i++) {
         pos = len - 1 - i;                          /* little-endian index */
-        bytes[i] = (unsigned char)(a->w[pos >> 2] >> ((pos & 3) * 8));
+        bytes[i] = (uint8_t)(a->w[pos >> 2] >> ((pos & 3) * 8));
     }
 }
 
@@ -88,7 +88,7 @@ void bn_to_bytes(const bignum *a, unsigned char *bytes, int len)
    does it with one MUL; elsewhere it is four 16x16 products (no 64-bit type
    needed). */
 #ifdef __WATCOMC__
-u32 mac32(u32 a, u32 b, u32 c, u32 d, u32 *hi);
+uint32_t mac32(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t *hi);
 #pragma aux mac32 =     \
     "mul edx"           \
     "add eax,ebx"       \
@@ -100,19 +100,19 @@ u32 mac32(u32 a, u32 b, u32 c, u32 d, u32 *hi);
     value [eax]         \
     modify exact [eax edx];
 #else
-static u32 mac32(u32 a, u32 b, u32 c, u32 d, u32 *hi)
+static uint32_t mac32(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t *hi)
 {
-    u32 al = a & 0xFFFF, ah = a >> 16;
-    u32 bl = b & 0xFFFF, bh = b >> 16;
-    u32 ll = al * bl;
-    u32 t1 = ah * bl;
-    u32 t2 = al * bh;
-    u32 mid = t1 + t2;
-    u32 midcarry = (mid < t1) ? 1u : 0u;            /* carry out of t1+t2 */
-    u32 hh = ah * bh;
-    u32 low = ll + (mid << 16);
-    u32 loc = (low < ll) ? 1u : 0u;
-    u32 high = hh + (mid >> 16) + loc + (midcarry << 16);
+    uint32_t al = a & 0xFFFF, ah = a >> 16;
+    uint32_t bl = b & 0xFFFF, bh = b >> 16;
+    uint32_t ll = al * bl;
+    uint32_t t1 = ah * bl;
+    uint32_t t2 = al * bh;
+    uint32_t mid = t1 + t2;
+    uint32_t midcarry = (mid < t1) ? 1u : 0u;       /* carry out of t1+t2 */
+    uint32_t hh = ah * bh;
+    uint32_t low = ll + (mid << 16);
+    uint32_t loc = (low < ll) ? 1u : 0u;
+    uint32_t high = hh + (mid >> 16) + loc + (midcarry << 16);
     low += c; if (low < c) high++;
     low += d; if (low < d) high++;
     *hi = high;
@@ -121,13 +121,13 @@ static u32 mac32(u32 a, u32 b, u32 c, u32 d, u32 *hi)
 #endif
 
 /* p[0..an+bn-1] = a[0..an-1] * b[0..bn-1]  (schoolbook). */
-static void umul(u32 *p, const u32 *a, int an, const u32 *b, int bn)
+static void umul(uint32_t *p, const uint32_t *a, int an, const uint32_t *b, int bn)
 {
     int i, j;
     for (i = 0; i < an + bn; i++)
         p[i] = 0;
     for (i = 0; i < an; i++) {
-        u32 carry = 0;
+        uint32_t carry = 0;
         for (j = 0; j < bn; j++)
             p[i + j] = mac32(a[i], b[j], p[i + j], carry, &carry);
         p[i + bn] = carry;                          /* column untouched so far */
@@ -135,7 +135,7 @@ static void umul(u32 *p, const u32 *a, int an, const u32 *b, int bn)
 }
 
 /* Compare magnitude of a[0..len-1] and b[0..len-1]. */
-static int ucmp(const u32 *a, const u32 *b, int len)
+static int ucmp(const uint32_t *a, const uint32_t *b, int len)
 {
     int i;
     for (i = len - 1; i >= 0; i--)
@@ -145,13 +145,13 @@ static int ucmp(const u32 *a, const u32 *b, int len)
 }
 
 /* r[0..mlen] -= m[0..mlen-1]   (m zero-extended by one word; assumes r >= m). */
-static void usub_ext(u32 *r, const u32 *m, int mlen)
+static void usub_ext(uint32_t *r, const uint32_t *m, int mlen)
 {
-    u32 borrow = 0;
+    uint32_t borrow = 0;
     int i;
     for (i = 0; i < mlen; i++) {
-        u32 tmp = m[i] + borrow;
-        u32 nb  = (tmp < borrow) ? 1u : 0u;         /* m[i]+borrow overflowed */
+        uint32_t tmp = m[i] + borrow;
+        uint32_t nb  = (tmp < borrow) ? 1u : 0u;    /* m[i]+borrow overflowed */
         if (r[i] < tmp) nb = 1u;
         r[i] = r[i] - tmp;
         borrow = nb;
@@ -160,22 +160,22 @@ static void usub_ext(u32 *r, const u32 *m, int mlen)
 }
 
 /* r <<= 1 over len words. */
-static void shl1(u32 *r, int len)
+static void shl1(uint32_t *r, int len)
 {
-    u32 carry = 0;
+    uint32_t carry = 0;
     int i;
     for (i = 0; i < len; i++) {
-        u32 nc = r[i] >> 31;
+        uint32_t nc = r[i] >> 31;
         r[i] = (r[i] << 1) | carry;
         carry = nc;
     }
 }
 
 /* dst = x[0..xwords-1] mod m[0..mlen-1]   (bit-by-bit long division). */
-static void reduce(bignum *dst, const u32 *x, int xwords,
-                   const u32 *m, int mlen)
+static void reduce(bignum *dst, const uint32_t *x, int xwords,
+                   const uint32_t *m, int mlen)
 {
-    u32 r[BN_WORDS + 1];
+    uint32_t r[BN_WORDS + 1];
     int i;
 
     for (i = 0; i <= mlen; i++)
@@ -216,7 +216,7 @@ void bn_copy(bignum *dst, const bignum *src)
 /* out = (a * b) mod m */
 void bn_mulmod(bignum *out, const bignum *a, const bignum *b, const bignum *m)
 {
-    u32 prod[2 * BN_WORDS];
+    uint32_t prod[2 * BN_WORDS];
     int mlen = bn_words(m);
     if (mlen == 0) { bn_zero(out); return; }
     umul(prod, a->w, mlen, b->w, mlen);
@@ -234,13 +234,13 @@ void bn_mod(bignum *out, const bignum *a, const bignum *m)
 /* out = (a + b) mod m   (a, b < m) */
 void bn_addmod(bignum *out, const bignum *a, const bignum *b, const bignum *m)
 {
-    u32 t[BN_WORDS + 1];
+    uint32_t t[BN_WORDS + 1];
     int i, mlen = bn_words(m);
-    u32 carry = 0;
+    uint32_t carry = 0;
     if (mlen == 0) { bn_zero(out); return; }
     for (i = 0; i < mlen; i++) {
-        u32 s = a->w[i] + carry;
-        u32 c = (s < carry) ? 1u : 0u;
+        uint32_t s = a->w[i] + carry;
+        uint32_t c = (s < carry) ? 1u : 0u;
         s += b->w[i];
         if (s < b->w[i]) c = 1u;
         t[i] = s; carry = c;
@@ -255,29 +255,29 @@ void bn_submod(bignum *out, const bignum *a, const bignum *b, const bignum *m)
     int i, mlen = bn_words(m);
     if (mlen == 0) { bn_zero(out); return; }
     if (bn_cmp(a, b) >= 0) {                         /* a >= b: direct */
-        u32 borrow = 0;
+        uint32_t borrow = 0;
         for (i = 0; i < mlen; i++) {                 /* out may alias a: read */
-            u32 bi = b->w[i] + borrow;               /* a[i] before writing   */
-            u32 nb = (bi < borrow) ? 1u : 0u;
+            uint32_t bi = b->w[i] + borrow;          /* a[i] before writing   */
+            uint32_t nb = (bi < borrow) ? 1u : 0u;
             if (a->w[i] < bi) nb = 1u;
             out->w[i] = a->w[i] - bi;
             borrow = nb;
         }
         for (; i < BN_WORDS; i++) out->w[i] = 0;     /* clear high words after */
     } else {                                         /* a < b: out = a + m - b */
-        u32 t[BN_WORDS + 1];
-        u32 carry = 0, borrow = 0;
+        uint32_t t[BN_WORDS + 1];
+        uint32_t carry = 0, borrow = 0;
         for (i = 0; i < mlen; i++) {
-            u32 s = a->w[i] + carry;
-            u32 c = (s < carry) ? 1u : 0u;
+            uint32_t s = a->w[i] + carry;
+            uint32_t c = (s < carry) ? 1u : 0u;
             s += m->w[i];
             if (s < m->w[i]) c = 1u;
             t[i] = s; carry = c;
         }
         t[mlen] = carry;
         for (i = 0; i < mlen; i++) {
-            u32 bi = b->w[i] + borrow;
-            u32 nb = (bi < borrow) ? 1u : 0u;
+            uint32_t bi = b->w[i] + borrow;
+            uint32_t nb = (bi < borrow) ? 1u : 0u;
             if (t[i] < bi) nb = 1u;
             t[i] = t[i] - bi;
             borrow = nb;
@@ -295,9 +295,9 @@ void bn_submod(bignum *out, const bignum *a, const bignum *b, const bignum *m)
 static void mont_modexp(bignum *out, const bignum *b, const bignum *exp,
                         const bignum *mod, int mlen)
 {
-    u32 big[BN_WORDS + 1];
-    u32 rr[BN_WORDS], unit[BN_WORDS], one[BN_WORDS], two[BN_WORDS], bm[BN_WORDS], acc[BN_WORDS];
-    u32 minv = bn_w_minv( mod->w[0] ), rbits = 32 * (u32)mlen;
+    uint32_t big[BN_WORDS + 1];
+    uint32_t rr[BN_WORDS], unit[BN_WORDS], one[BN_WORDS], two[BN_WORDS], bm[BN_WORDS], acc[BN_WORDS];
+    uint32_t minv = bn_w_minv( mod->w[0] ), rbits = 32 * (uint32_t)mlen;
     bignum t;
     int i, ebits = 0;
 
@@ -324,7 +324,7 @@ void bn_modexp(bignum *out, const bignum *base,
                const bignum *exp, const bignum *mod)
 {
     bignum result, b;
-    u32 prod[2 * BN_WORDS];
+    uint32_t prod[2 * BN_WORDS];
     int mlen = bn_words(mod);
     int bits = bn_bitlen(exp);
     int i, blen;
@@ -362,30 +362,30 @@ void bn_modexp(bignum *out, const bignum *base,
 }
 
 /* --- word arrays (for the curves and mont_modexp) ------------------------ */
-void bn_w_from_bytes( u32 *w, int nw, const unsigned char *bytes, int len )
+void bn_w_from_bytes( uint32_t *w, int nw, const uint8_t *bytes, int len )
 {
     int i;
     for ( i = 0; i < nw; i++ ) w[i] = 0;
     for ( i = 0; i < len && i < nw * 4; i++ ) {
-        w[i >> 2] |= (u32)bytes[len - 1 - i] << ( ( i & 3 ) * 8 );
+        w[i >> 2] |= (uint32_t)bytes[len - 1 - i] << ( ( i & 3 ) * 8 );
     }
 }
 
-void bn_w_to_bytes( const u32 *w, int nw, unsigned char *bytes, int len )
+void bn_w_to_bytes( const uint32_t *w, int nw, uint8_t *bytes, int len )
 {
     int i, pos;
     for ( i = 0; i < len; i++ ) {
         pos = len - 1 - i;
-        bytes[i] = pos < nw * 4 ? (unsigned char)( w[pos >> 2] >> ( ( pos & 3 ) * 8 ) ) : 0;
+        bytes[i] = pos < nw * 4 ? (uint8_t)( w[pos >> 2] >> ( ( pos & 3 ) * 8 ) ) : 0;
     }
 }
 
-int bn_w_cmp( const u32 *a, const u32 *b, int nw )
+int bn_w_cmp( const uint32_t *a, const uint32_t *b, int nw )
 {
     return ucmp( a, b, nw );
 }
 
-int bn_w_is_zero( const u32 *a, int nw )
+int bn_w_is_zero( const uint32_t *a, int nw )
 {
     int i;
     for ( i = 0; i < nw; i++ ) {
@@ -395,9 +395,9 @@ int bn_w_is_zero( const u32 *a, int nw )
 }
 
 /* r = a + b mod m (a, b < m; r may be a or b) */
-void bn_w_addmod( u32 *r, const u32 *a, const u32 *b, const u32 *m, int nw )
+void bn_w_addmod( uint32_t *r, const uint32_t *a, const uint32_t *b, const uint32_t *m, int nw )
 {
-    u32 carry = 0, sum, ext[BN_WORDS + 1];
+    uint32_t carry = 0, sum, ext[BN_WORDS + 1];
     int i;
     for ( i = 0; i < nw; i++ ) {
         sum = a[i] + carry;
@@ -411,9 +411,9 @@ void bn_w_addmod( u32 *r, const u32 *a, const u32 *b, const u32 *m, int nw )
 }
 
 /* r = a - b mod m (a, b < m; r may be a or b) */
-void bn_w_submod( u32 *r, const u32 *a, const u32 *b, const u32 *m, int nw )
+void bn_w_submod( uint32_t *r, const uint32_t *a, const uint32_t *b, const uint32_t *m, int nw )
 {
-    u32 borrow = 0, carry = 0, diff, sub, sum;
+    uint32_t borrow = 0, carry = 0, diff, sub, sum;
     int i;
     for ( i = 0; i < nw; i++ ) {
         sub = b[i] + borrow;
@@ -434,9 +434,9 @@ void bn_w_submod( u32 *r, const u32 *a, const u32 *b, const u32 *m, int nw )
 
 /* -m0^-1 mod 2^32 for odd m0, by Newton's iteration: x = m0 is right to 3
    bits, and each step doubles that. */
-u32 bn_w_minv( u32 m0 )
+uint32_t bn_w_minv( uint32_t m0 )
 {
-    u32 x = m0;
+    uint32_t x = m0;
     int i;
     for ( i = 0; i < 4; i++ ) x *= 2 - m0 * x;
     return 0 - x;
@@ -445,10 +445,10 @@ u32 bn_w_minv( u32 m0 )
 /* r = a b / R mod m, R = 2^(32 nw): Montgomery multiplication, one word of
    b at a time, each step adding the multiple of m that clears the low word
    (Koc's CIOS).  a, b < m in, r < m out; r may be a or b. */
-void bn_w_mont( u32 *r, const u32 *a, const u32 *b, const u32 *m, int nw, u32 minv )
+void bn_w_mont( uint32_t *r, const uint32_t *a, const uint32_t *b, const uint32_t *m, int nw, uint32_t minv )
 {
-    u32 t[BN_WORDS + 2];
-    u32 carry, top, q;
+    uint32_t t[BN_WORDS + 2];
+    uint32_t carry, top, q;
     int i, j;
 
     for ( j = 0; j < nw + 2; j++ ) t[j] = 0;
@@ -475,10 +475,10 @@ void bn_w_mont( u32 *r, const u32 *a, const u32 *b, const u32 *m, int nw, u32 mi
 
 /* r = a^e in Montgomery form (a and one = R mod m in that form too), over
    the low ebits bits of e, most significant first; r may be a. */
-void bn_w_mont_pow( u32 *r, const u32 *a, const u32 *e, int ebits,
-                    const u32 *m, int nw, u32 minv, const u32 *one )
+void bn_w_mont_pow( uint32_t *r, const uint32_t *a, const uint32_t *e, int ebits,
+                    const uint32_t *m, int nw, uint32_t minv, const uint32_t *one )
 {
-    u32 acc[BN_WORDS];
+    uint32_t acc[BN_WORDS];
     int i;
     for ( i = 0; i < nw; i++ ) acc[i] = one[i];
     for ( i = ebits - 1; i >= 0; i-- ) {

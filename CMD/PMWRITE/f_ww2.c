@@ -43,7 +43,7 @@ enum { W2_STSHF = 1, W2_FNDREF = 2, W2_FNDTXT = 3, W2_SED = 6, W2_HDD = 11, W2_B
 
 /* how many bytes follow each sprm: 7 a length byte and that many, 8 a
    length word and one fewer, 9 one that is not known - the list ends */
-static const u8 w2_sprm_size[165] = {
+static const uint8_t w2_sprm_size[165] = {
     0, 9, 1, 7, 1, 1, 1, 1, 1, 1,  1, 1, 1, 1, 1, 7, 2, 2, 2, 2,      /*   0 */
     2, 2, 2, 7, 1, 1, 2, 2, 2, 1,  2, 2, 2, 2, 2, 2, 2, 1, 2, 2,      /*  20 */
     2, 2, 2, 2, 1, 2, 2, 2, 2, 2,  1, 1, 0, 1, 1, 1, 9, 7, 0, 9,      /*  40 */
@@ -55,115 +55,116 @@ static const u8 w2_sprm_size[165] = {
     4, 2, 2, 5, 4                                                      /* 160 */
 };
 
-static const u32 w2_colors[17] = {
+static const uint32_t w2_colors[17] = {
     COLOR_AUTO, 0x000000UL, 0x0000FFUL, 0x00FFFFUL, 0x00FF00UL, 0xFF00FFUL, 0xFF0000UL, 0xFFFF00UL,
     0xFFFFFFUL, 0x000080UL, 0x008080UL, 0x008000UL, 0x800080UL, 0x800000UL, 0x808000UL, 0x808080UL,
     0xC0C0C0UL
 };
 
 typedef struct {
-    u32 cp, cp_end;     /* the characters it holds */
-    u32 fc;             /* where in the file they are */
-    u32 prm;            /* the changes it carries */
+    uint32_t cp, cp_end;  /* the characters it holds */
+    uint32_t fc;          /* where in the file they are */
+    uint32_t prm;         /* the changes it carries */
 } W2PIECE;
 
 /* character properties while they are worked out */
 typedef struct {
-    CHP chp;
-    u8  spec;           /* a special character: a picture, a field's mark, a note's number */
-    u8  gone;           /* deleted while changes were marked: left out */
-    u16 spare;
-    u32 pic;            /* where the picture is, for the character that is one */
+    CHP      chp;
+    uint8_t  spec;      /* a special character: a picture, a field's mark, a note's number */
+    uint8_t  gone;      /* deleted while changes were marked: left out */
+    uint16_t spare;
+    uint32_t pic;       /* where the picture is, for the character that is one */
 } W2CHP;
 
 /* ...and paragraph properties */
 typedef struct {
-    PAP  pap;           /* its tabs are in "tabs" below, never its own block */
-    WTAB tabs[MAX_TABS];
-    u32  ntabs;
-    u8   stc;
-    u8   in_table;
-    u8   ttp;           /* the mark that ends a table's row */
-    u8   has_row;
-    TROW row;
+    PAP          pap;       /* its tabs are in "tabs" below, never its own block */
+    WTAB         tabs[MAX_TABS];
+    unsigned int ntabs;
+    uint8_t      stc;
+    uint8_t      in_table;
+    uint8_t      ttp;       /* the mark that ends a table's row */
+    uint8_t      has_row;
+    TROW         row;
 } W2PAP;
 
 /* what a section's sprms say */
 typedef struct {
-    s32 width, height, left, right, top, bottom, header, footer;
-    u32 first_page;
-    u32 grpf;           /* which running heads it has */
-    u32 bkc;            /* how it starts: 0 on the same page */
-    u32 columns;
+    int      width, height, left, right, top, bottom, header, footer;
+    uint32_t first_page;
+    uint32_t grpf;      /* which running heads it has */
+    uint32_t bkc;       /* how it starts: 0 on the same page */
+    uint32_t columns;
 } W2SEP;
 
 typedef struct {
-    u8  known;
-    u8  base;
-    u8  style;          /* the document's style it became */
-    u8  spare;
-    const u8 *chpx;
-    u32 chpx_len;
-    const u8 *papx;     /* its sprms */
-    u32 papx_len;
+    uint8_t  known;
+    uint8_t  base;
+    uint8_t  style;       /* the document's style it became */
+    uint8_t  spare;
+    const uint8_t *chpx;
+    uint32_t chpx_len;
+    const uint8_t *papx;  /* its sprms */
+    uint32_t papx_len;
 } W2STYLE;
 
 typedef struct {
-    u16 kind;           /* 0 one kept as its result; a WCH_* field; 1 a symbol */
-    u8  result;         /* its separator has been met */
-    u8  spare;
+    uint16_t kind;      /* 0 one kept as its result; a WCH_* field; 1 a symbol */
+    uint8_t  result;    /* its separator has been met */
+    uint8_t  spare;
 } W2FIELD;
 
 typedef struct {
-    const u8 *data;
-    u32   len;
-    WDOC *doc;
-    WBUILD wb;
-    int   ww1;
-    u32   ccp_text, ccp_ftn, ccp_hdr;
-    u32   cp_max;       /* how many characters the pieces hold */
-    W2PIECE *piece;
-    u32   npiece;
-    const u8 *clx;
-    u32   clx_len;
-    const u8 *bte[2];   /* the bin tables: CHPX, PAPX */
-    u32   nbte[2];
-    u32   pn_first[2], pn_count[2];     /* ...and the pages in a row they may not list */
-    u32   run_from[2], run_to[2];       /* the run last found of each kind */
-    const u8 *run_prop[2];
-    u32   run_len[2];
-    W2STYLE *style;
-    W2PAP *xpap;        /* the paragraph in hand's properties */
-    u16  *font;
-    u32   nfont;
-    const u8 *sed;      /* the section table: CPs, then where each one's sprms are */
-    u32   nsed;
-    const u8 *fnd_ref;  /* the notes: where each mark is, where each text is */
-    const u8 *fnd_txt;
-    u32   nnote, ref_next;
-    int  *note_obj;
-    const u8 *fld;      /* the story in hand's field table */
-    u32   nfld, fld_next, fld_base;
-    W2FIELD field[W2_FIELDS];
-    u32   nfield, over, mute;
-    char  code[64];     /* the innermost field's instructions */
-    u32   code_len;
+    const uint8_t *data;
+    uint32_t     len;
+    WDOC        *doc;
+    WBUILD       wb;
+    int          ww1;
+    uint32_t     ccp_text, ccp_ftn, ccp_hdr;
+    uint32_t     cp_max;        /* how many characters the pieces hold */
+    W2PIECE     *piece;
+    unsigned int npiece;
+    const uint8_t *clx;
+    uint32_t     clx_len;
+    const uint8_t *bte[2];      /* the bin tables: CHPX, PAPX */
+    unsigned int nbte[2];
+    uint32_t     pn_first[2], pn_count[2];  /* ...and the pages in a row they may not list */
+    uint32_t     run_from[2], run_to[2];     /* the run last found of each kind */
+    const uint8_t *run_prop[2];
+    uint32_t     run_len[2];
+    W2STYLE     *style;
+    W2PAP       *xpap;          /* the paragraph in hand's properties */
+    uint16_t    *font;
+    unsigned int nfont;
+    const uint8_t *sed;         /* the section table: CPs, then where each one's sprms are */
+    unsigned int nsed;
+    const uint8_t *fnd_ref;     /* the notes: where each mark is, where each text is */
+    const uint8_t *fnd_txt;
+    unsigned int nnote, ref_next;
+    int         *note_obj;
+    const uint8_t *fld;         /* the story in hand's field table */
+    unsigned int nfld, fld_next;
+    uint32_t     fld_base;
+    W2FIELD      field[W2_FIELDS];
+    unsigned int nfield, over, mute;
+    char         code[64];      /* the innermost field's instructions */
+    unsigned int code_len;
 } W2CTX;
 
-static void w2_sprms( W2CTX *ctx, const u8 *grpprl, u32 len, W2PAP *pap, W2CHP *chp, const W2CHP *base,
+static void w2_sprms( W2CTX *ctx, const uint8_t *grpprl, uint32_t len, W2PAP *pap, W2CHP *chp, const W2CHP *base,
                       W2SEP *sep );
 
-static s32 w2_s16( const u8 *ptr )
+static int w2_s16( const uint8_t *ptr )
 {
-    u32 value = LE16( ptr );
+    uint32_t value = LE16( ptr );
 
-    return value >= 0x8000UL ? (s32)value - 0x10000L : (s32)value;
+    return value >= 0x8000UL ? (int)value - 0x10000L : (int)value;
 }
 
 /* one of the header's places -> 1 if there is something there */
-static int w2_pair( const W2CTX *ctx, u32 which, u32 *fc, u32 *lcb )
+static int w2_pair( const W2CTX *ctx, unsigned int which, uint32_t *fc, uint32_t *lcb )
 {
-    u32 at;
+    uint32_t at;
 
     if ( ctx->ww1 && which >= 27 ) {
         /* Word 1 has one print-setup block where Word 2 has three */
@@ -178,9 +179,9 @@ static int w2_pair( const W2CTX *ctx, u32 which, u32 *fc, u32 *lcb )
     return *lcb != 0 && IN_RANGE( *fc, *lcb, ctx->len );
 }
 
-static int w2_detect( const u8 *data, u32 len, const char *ext )
+static int w2_detect( const uint8_t *data, uint32_t len, const char *ext )
 {
-    u32 ident, fib, fc_min, fc_mac;
+    uint32_t ident, fib, fc_min, fc_mac;
 
     (void)ext;
     if ( len < 0x180 ) {
@@ -201,10 +202,12 @@ static int w2_detect( const u8 *data, u32 len, const char *ext )
 
 /* ---- where the text is ---- */
 
-static int w2_pieces( W2CTX *ctx, u32 fc_min, u32 fc_mac, int complex )
+static int w2_pieces( W2CTX *ctx, uint32_t fc_min, uint32_t fc_mac, int complex )
 {
-    const u8 *body = NULL, *pcd;
-    u32 pos = 0, size = 0, count = 0, index, cp, cp_end, fc;
+    const uint8_t *body = NULL, *pcd;
+    uint32_t pos = 0, size = 0;
+    unsigned int count = 0, index;
+    uint32_t cp, cp_end, fc;
 
     if ( complex && ctx->clx != NULL ) {
         while ( pos + 3 <= ctx->clx_len ) {
@@ -272,9 +275,9 @@ static int w2_pieces( W2CTX *ctx, u32 fc_min, u32 fc_mac, int complex )
 
 /* where the character "cp" is in the file; "*hint" is the piece it was
    last found in, and is set to the one it is in */
-static u32 w2_fc( const W2CTX *ctx, u32 cp, u32 *hint )
+static uint32_t w2_fc( const W2CTX *ctx, uint32_t cp, unsigned int *hint )
 {
-    u32 low = 0, high = ctx->npiece, mid;
+    unsigned int low = 0, high = ctx->npiece, mid;
 
     if ( *hint < ctx->npiece && cp >= ctx->piece[*hint].cp && cp < ctx->piece[*hint].cp_end ) {
         return ctx->piece[*hint].fc + (cp - ctx->piece[*hint].cp);
@@ -296,10 +299,10 @@ static u32 w2_fc( const W2CTX *ctx, u32 cp, u32 *hint )
 /* ---- the pages of formatting ---- */
 
 /* is "fc" in this page's runs?  -> the page, or NULL */
-static const u8 *w2_fkp( const W2CTX *ctx, u32 pn, u32 fc )
+static const uint8_t *w2_fkp( const W2CTX *ctx, uint32_t pn, uint32_t fc )
 {
-    const u8 *page;
-    u32 crun;
+    const uint8_t *page;
+    uint32_t crun;
 
     if ( pn >= ctx->len / W2_PAGE ) {
         return NULL;
@@ -314,10 +317,11 @@ static const u8 *w2_fkp( const W2CTX *ctx, u32 pn, u32 fc )
 
 /* the run that holds "fc", of character properties ("kind" 0) or of
    paragraph properties (1): ctx->run_*[kind] */
-static void w2_run( W2CTX *ctx, u32 fc, int kind )
+static void w2_run( W2CTX *ctx, uint32_t fc, int kind )
 {
-    const u8 *page = NULL, *bte = ctx->bte[kind];
-    u32 count = ctx->nbte[kind], index, crun, off, size;
+    const uint8_t *page = NULL, *bte = ctx->bte[kind];
+    unsigned int count = ctx->nbte[kind], index;
+    uint32_t crun, off, size;
 
     if ( fc >= ctx->run_from[kind] && fc < ctx->run_to[kind] ) {
         return;
@@ -351,7 +355,7 @@ static void w2_run( W2CTX *ctx, u32 fc, int kind )
         ctx->run_to[kind] = fc + 1;
         return;
     }
-    off = 2 * (u32)page[4 * (crun + 1) + index];
+    off = 2 * (uint32_t)page[4 * (crun + 1) + index];
     if ( off == 0 || off >= W2_PAGE - 1 ) {
         return;
     }
@@ -368,19 +372,19 @@ static void w2_run( W2CTX *ctx, u32 fc, int kind )
 
 /* ---- properties ---- */
 
-static u16 w2_font( const W2CTX *ctx, u32 ftc )
+static uint16_t w2_font( const W2CTX *ctx, uint32_t ftc )
 {
     return ctx->font != NULL && ftc < ctx->nfont ? ctx->font[ftc] : 0;
 }
 
-static void w2_toggle( W2CHP *chp, u16 flag, int on )
+static void w2_toggle( W2CHP *chp, uint16_t flag, int on )
 {
     if ( on ) {
         chp->chp.flags ^= flag;
     }
 }
 
-static void w2_underline( W2CHP *chp, u32 kul )
+static void w2_underline( W2CHP *chp, uint32_t kul )
 {
     chp->chp.flags &= ~(CF_UNDER | CF_WUNDER | CF_DUNDER);
     if ( kul == 2 ) {
@@ -392,7 +396,7 @@ static void w2_underline( W2CHP *chp, u32 kul )
     }
 }
 
-static void w2_position( W2CHP *chp, u32 pos )
+static void w2_position( W2CHP *chp, uint32_t pos )
 {
     chp->chp.flags &= ~(CF_SUPER | CF_SUB);
     if ( pos ) {
@@ -403,10 +407,10 @@ static void w2_position( W2CHP *chp, u32 pos )
 /* a CHPX laid over the properties it is a change to: its flags say
    "not what the style has", and its other fields count only where a
    bit says they are set */
-static void w2_chpx( W2CTX *ctx, const u8 *chpx, u32 len, W2CHP *chp )
+static void w2_chpx( W2CTX *ctx, const uint8_t *chpx, uint32_t len, W2CHP *chp )
 {
-    u8 raw[24];
-    u32 sets, ftc, hps, pos, ico, kul;
+    uint8_t raw[24];
+    uint32_t sets, ftc, hps, pos, ico, kul;
 
     if ( chpx == NULL || len == 0 ) {
         return;
@@ -422,7 +426,7 @@ static void w2_chpx( W2CTX *ctx, const u8 *chpx, u32 len, W2CHP *chp )
     if ( raw[1] & 0x01 ) {
         ctx->doc->lost |= LOST_REVISIONS;       /* typed while changes were marked: kept */
     }
-    chp->spec = (u8)((raw[1] & 0x02) != 0);
+    chp->spec = (uint8_t)((raw[1] & 0x02) != 0);
     if ( ctx->ww1 ) {
         w2_toggle( chp, CF_STRIKE, raw[0] & 0x04 );
         sets = raw[1] >> 2;
@@ -455,7 +459,7 @@ static void w2_chpx( W2CTX *ctx, const u8 *chpx, u32 len, W2CHP *chp )
         chp->chp.font = w2_font( ctx, ftc );
     }
     if ( (sets & 0x04) && hps ) {
-        chp->chp.size = (u16)hps;
+        chp->chp.size = (uint16_t)hps;
     }
     if ( sets & 0x08 ) {
         w2_underline( chp, kul );
@@ -467,26 +471,28 @@ static void w2_chpx( W2CTX *ctx, const u8 *chpx, u32 len, W2CHP *chp )
 
 /* a sprm that sets a character flag: 0 off, 1 on, 128 as the style has
    it, 129 not as the style has it */
-static void w2_flag( W2CHP *chp, const W2CHP *base, u16 flag, u32 value )
+static void w2_flag( W2CHP *chp, const W2CHP *base, uint16_t flag, uint32_t value )
 {
     int on = (value & 1) != 0;
 
     if ( value & 0x80 ) {
         on ^= base != NULL && (base->chp.flags & flag) != 0;
     }
-    chp->chp.flags = (u16)(on ? chp->chp.flags | flag : chp->chp.flags & ~flag);
+    chp->chp.flags = (uint16_t)(on ? chp->chp.flags | flag : chp->chp.flags & ~flag);
 }
 
-static void w2_border( W2PAP *pap, u16 flag, const u8 *arg )
+static void w2_border( W2PAP *pap, uint16_t flag, const uint8_t *arg )
 {
-    pap->pap.flags = (u16)(LE16( arg ) ? pap->pap.flags | flag : pap->pap.flags & ~flag);
+    pap->pap.flags = (uint16_t)(LE16( arg ) ? pap->pap.flags | flag : pap->pap.flags & ~flag);
 }
 
 /* tab stops taken away and tab stops set, on top of the style's */
-static void w2_tabs( W2PAP *pap, const u8 *arg, u32 len )
+static void w2_tabs( W2PAP *pap, const uint8_t *arg, uint32_t len )
 {
-    u32 gone, added, index, at, pos = 0, kind;
-    s32 where;
+    uint32_t gone, added;
+    unsigned int index, at;
+    uint32_t pos = 0, kind;
+    int where;
 
     if ( len < 1 ) {
         return;
@@ -528,15 +534,16 @@ static void w2_tabs( W2PAP *pap, const u8 *arg, u32 len )
         }
         mem_set( &pap->tabs[at], 0, sizeof( WTAB ) );
         pap->tabs[at].pos = where;
-        pap->tabs[at].kind = (u8)(kind & 7);            /* TAB_*'s order */
-        pap->tabs[at].lead = (u8)((kind >> 3) & 3);     /* LEAD_*'s order */
+        pap->tabs[at].kind = (uint8_t)(kind & 7);         /* TAB_*'s order */
+        pap->tabs[at].lead = (uint8_t)((kind >> 3) & 3);  /* LEAD_*'s order */
     }
 }
 
 /* a table row's cells: how many, and where each one's edge is */
-static void w2_row( W2PAP *pap, const u8 *arg, u32 len )
+static void w2_row( W2PAP *pap, const uint8_t *arg, uint32_t len )
 {
-    u32 cells, index;
+    uint32_t cells;
+    unsigned int index;
 
     if ( len < 3 ) {
         return;
@@ -549,7 +556,7 @@ static void w2_row( W2PAP *pap, const u8 *arg, u32 len )
         cells = (len - 1) / 2 - 1;
     }
     mem_set( &pap->row, 0, sizeof( TROW ) );
-    pap->row.ncells = (u8)cells;
+    pap->row.ncells = (uint8_t)cells;
     pap->row.left = w2_s16( arg + 1 );
     for ( index = 0; index < cells; index++ ) {
         pap->row.edge[index] = w2_s16( arg + 3 + 2 * index );
@@ -557,25 +564,25 @@ static void w2_row( W2PAP *pap, const u8 *arg, u32 len )
     pap->has_row = 1;
 }
 
-static void w2_sprm( W2CTX *ctx, u32 op, const u8 *arg, u32 len, W2PAP *pap, W2CHP *chp,
+static void w2_sprm( W2CTX *ctx, uint32_t op, const uint8_t *arg, uint32_t len, W2PAP *pap, W2CHP *chp,
                      const W2CHP *base, W2SEP *sep )
 {
-    u32 value = len >= 2 ? LE16( arg ) : len ? arg[0] : 0;
-    s32 line;
+    uint32_t value = len >= 2 ? LE16( arg ) : len ? arg[0] : 0;
+    int line;
 
     if ( pap != NULL ) {
         switch ( op ) {
         case 5:
-            pap->pap.align = (u8)(value & 3);   /* left, centered, right, both: AL_*'s order */
+            pap->pap.align = (uint8_t)(value & 3);  /* left, centered, right, both: AL_*'s order */
             break;
         case 7:
-            pap->pap.flags = (u16)(value ? pap->pap.flags | PF_KEEP : pap->pap.flags & ~PF_KEEP);
+            pap->pap.flags = (uint16_t)(value ? pap->pap.flags | PF_KEEP : pap->pap.flags & ~PF_KEEP);
             break;
         case 8:
-            pap->pap.flags = (u16)(value ? pap->pap.flags | PF_KEEPNEXT : pap->pap.flags & ~PF_KEEPNEXT);
+            pap->pap.flags = (uint16_t)(value ? pap->pap.flags | PF_KEEPNEXT : pap->pap.flags & ~PF_KEEPNEXT);
             break;
         case 9:
-            pap->pap.flags = (u16)(value ? pap->pap.flags | PF_PAGEBEFORE : pap->pap.flags & ~PF_PAGEBEFORE);
+            pap->pap.flags = (uint16_t)(value ? pap->pap.flags | PF_PAGEBEFORE : pap->pap.flags & ~PF_PAGEBEFORE);
             break;
         case 15:
             w2_tabs( pap, arg, len );
@@ -595,20 +602,20 @@ static void w2_sprm( W2CTX *ctx, u32 op, const u8 *arg, u32 len, W2PAP *pap, W2C
         case 20:
             /* a height: at least so much, or - below zero - exactly */
             line = w2_s16( arg );
-            pap->pap.line_rule = (u8)(line == 0 ? LS_MULTIPLE : line > 0 ? LS_ATLEAST : LS_EXACT);
-            pap->pap.line = (u16)(line == 0 ? 240 : line > 0 ? line : -line);
+            pap->pap.line_rule = (uint8_t)(line == 0 ? LS_MULTIPLE : line > 0 ? LS_ATLEAST : LS_EXACT);
+            pap->pap.line = (uint16_t)(line == 0 ? 240 : line > 0 ? line : -line);
             break;
         case 21:
-            pap->pap.before = (u16)value;
+            pap->pap.before = (uint16_t)value;
             break;
         case 22:
-            pap->pap.after = (u16)value;
+            pap->pap.after = (uint16_t)value;
             break;
         case 24:
-            pap->in_table = (u8)(value != 0);
+            pap->in_table = (uint8_t)(value != 0);
             break;
         case 25:
-            pap->ttp = (u8)(value != 0);
+            pap->ttp = (uint8_t)(value != 0);
             break;
         case 30:
         case 38:
@@ -629,7 +636,7 @@ static void w2_sprm( W2CTX *ctx, u32 op, const u8 *arg, u32 len, W2PAP *pap, W2C
         case 26:
         case 27:
         case 28:
-            ctx->doc->lost |= LOST_LAYOUT;      /* set at a place on the page */
+            ctx->doc->lost |= LOST_LAYOUT;          /* set at a place on the page */
             break;
         case 152:
         case 154:
@@ -673,7 +680,7 @@ static void w2_sprm( W2CTX *ctx, u32 op, const u8 *arg, u32 len, W2PAP *pap, W2C
             break;
         case 74:
             if ( value & 0xFF ) {
-                chp->chp.size = (u16)(value & 0xFF);
+                chp->chp.size = (uint16_t)(value & 0xFF);
             }
             break;
         case 76:
@@ -695,31 +702,31 @@ static void w2_sprm( W2CTX *ctx, u32 op, const u8 *arg, u32 len, W2PAP *pap, W2C
             sep->grpf = value;
             break;
         case 131:
-            sep->header = (s32)value;
+            sep->header = (int)value;
             break;
         case 132:
-            sep->footer = (s32)value;
+            sep->footer = (int)value;
             break;
         case 136:
             sep->first_page = value;
             break;
         case 139:
-            sep->width = (s32)value;
+            sep->width = (int)value;
             break;
         case 140:
-            sep->height = (s32)value;
+            sep->height = (int)value;
             break;
         case 141:
-            sep->left = (s32)value;
+            sep->left = (int)value;
             break;
         case 142:
-            sep->right = (s32)value;
+            sep->right = (int)value;
             break;
         case 143:
-            sep->top = (s32)value;
+            sep->top = (int)value;
             break;
         case 144:
-            sep->bottom = (s32)value;
+            sep->bottom = (int)value;
             break;
         default:
             break;
@@ -728,10 +735,10 @@ static void w2_sprm( W2CTX *ctx, u32 op, const u8 *arg, u32 len, W2PAP *pap, W2C
 }
 
 /* a list of sprms: each a number and its bytes */
-static void w2_sprms( W2CTX *ctx, const u8 *grpprl, u32 len, W2PAP *pap, W2CHP *chp, const W2CHP *base,
+static void w2_sprms( W2CTX *ctx, const uint8_t *grpprl, uint32_t len, W2PAP *pap, W2CHP *chp, const W2CHP *base,
                       W2SEP *sep )
 {
-    u32 pos = 0, op, size;
+    uint32_t pos = 0, op, size;
 
     while ( grpprl != NULL && pos < len ) {
         op = grpprl[pos++];
@@ -776,17 +783,17 @@ static void w2_sprms( W2CTX *ctx, const u8 *grpprl, u32 len, W2PAP *pap, W2CHP *
 
 /* the changes a piece carries: one sprm with one byte, or the number of
    a list kept with the piece table */
-static void w2_prm( W2CTX *ctx, u32 prm, W2PAP *pap, W2CHP *chp, const W2CHP *base )
+static void w2_prm( W2CTX *ctx, uint32_t prm, W2PAP *pap, W2CHP *chp, const W2CHP *base )
 {
-    u8 one[2];
-    u32 pos = 0, want, size;
+    uint8_t one[2];
+    uint32_t pos = 0, want, size;
 
     if ( prm == 0 ) {
         return;
     }
     if ( !(prm & 1) ) {
-        one[0] = (u8)((prm >> 1) & 0x7F);
-        one[1] = (u8)(prm >> 8);
+        one[0] = (uint8_t)((prm >> 1) & 0x7F);
+        one[1] = (uint8_t)(prm >> 8);
         if ( w2_sprm_size[one[0]] == 1 ) {
             w2_sprms( ctx, one, 2, pap, chp, base, NULL );
         }
@@ -808,22 +815,22 @@ static void w2_prm( W2CTX *ctx, u32 prm, W2PAP *pap, W2CHP *chp, const W2CHP *ba
 }
 
 /* what a style gives a paragraph and its text: its base's, then its own */
-static void w2_style_props( W2CTX *ctx, u32 stc, W2PAP *pap, W2CHP *chp )
+static void w2_style_props( W2CTX *ctx, uint32_t stc, W2PAP *pap, W2CHP *chp )
 {
-    u8 chain[16];
-    u32 depth = 0;
+    uint8_t chain[16];
+    unsigned int depth = 0;
     const W2STYLE *style;
 
     pap_init( &pap->pap );
     pap->ntabs = 0;
-    pap->stc = (u8)stc;
+    pap->stc = (uint8_t)stc;
     pap->in_table = pap->ttp = pap->has_row = 0;
     mem_set( chp, 0, sizeof( W2CHP ) );
     chp->chp.font = w2_font( ctx, 0 );
     chp->chp.size = 20;                 /* these versions start at 10 point */
     chp->chp.color = COLOR_AUTO;
     while ( depth < sizeof( chain ) && stc != W2_STC_NONE && stc < W2_STYLES && ctx->style[stc].known ) {
-        chain[depth++] = (u8)stc;
+        chain[depth++] = (uint8_t)stc;
         stc = ctx->style[stc].base;
     }
     while ( depth ) {
@@ -838,10 +845,10 @@ static void w2_style_props( W2CTX *ctx, u32 stc, W2PAP *pap, W2CHP *chp )
 
 /* the paragraph whose mark is at "fc", in piece "piece": its style, the
    changes stored with it, the changes its piece carries */
-static void w2_para_props( W2CTX *ctx, u32 fc, u32 piece, W2PAP *pap, W2CHP *base )
+static void w2_para_props( W2CTX *ctx, uint32_t fc, unsigned int piece, W2PAP *pap, W2CHP *base )
 {
-    const u8 *papx;
-    u32 len, stc = 0;
+    const uint8_t *papx;
+    uint32_t len, stc = 0;
 
     w2_run( ctx, fc, 1 );
     papx = ctx->run_prop[1];
@@ -858,7 +865,7 @@ static void w2_para_props( W2CTX *ctx, u32 fc, u32 piece, W2PAP *pap, W2CHP *bas
 
 /* ---- the tables read once ---- */
 
-static const char *w2_style_name( u32 stc, int *kind )
+static const char *w2_style_name( uint32_t stc, int *kind )
 {
     static const char *const heads[9] = {
         "Heading 1", "Heading 2", "Heading 3", "Heading 4", "Heading 5", "Heading 6", "Heading 7",
@@ -903,11 +910,12 @@ static const char *w2_style_name( u32 stc, int *kind )
 static void w2_styles( W2CTX *ctx )
 {
     char name[STYLE_NAME_LEN];
-    const u8 *sheet;
+    const uint8_t *sheet;
     const char *given;
     W2PAP *pap = ctx->xpap;
     W2CHP chp;
-    u32 fc, lcb, std, pos, end, index, size, count, stc, used, at;
+    uint32_t fc, lcb, std, pos, end, index, size, count, stc;
+    unsigned int used, at;
     int kind, style;
 
     if ( !w2_pair( ctx, W2_STSHF, &fc, &lcb ) || lcb < 4 ) {
@@ -946,7 +954,7 @@ static void w2_styles( W2CTX *ctx )
             given = name;
         }
         style = wd_style( ctx->doc, given, kind );
-        ctx->style[stc].style = (u8)(style > 0 ? style : 0);
+        ctx->style[stc].style = (uint8_t)(style > 0 ? style : 0);
         pos += size;
     }
     count = index;
@@ -1014,7 +1022,7 @@ static void w2_styles( W2CTX *ctx )
             w2_style_props( ctx, stc, pap, &chp );
             style = ctx->style[stc].style;
             ctx->doc->style[style].chp = chp.chp;
-            pap->pap.style = (u8)style;
+            pap->pap.style = (uint8_t)style;
             pap->pap.ntabs = 0;
             ctx->doc->style[style].pap = pap->pap;
         }
@@ -1026,8 +1034,10 @@ static int w2_fonts( W2CTX *ctx )
 {
     static const char *const usual[3] = { "Times New Roman", "Symbol", "Arial" };
     char name[FONT_NAME_LEN];
-    const u8 *table = NULL;
-    u32 fc, lcb = 0, pos, size, count = 0, used, at, lead = ctx->ww1 ? 2 : 3;
+    const uint8_t *table = NULL;
+    uint32_t fc, lcb = 0, pos, size;
+    unsigned int count = 0, used, at;
+    uint32_t lead = ctx->ww1 ? 2 : 3;
     int family, font;
 
     if ( w2_pair( ctx, W2_FFN, &fc, &lcb ) && lcb > 2 ) {
@@ -1036,14 +1046,14 @@ static int w2_fonts( W2CTX *ctx )
             count++;
         }
     }
-    ctx->font = (u16 *)try_alloc( (count > 3 ? count : 3) * sizeof( u16 ) );
+    ctx->font = (uint16_t *)try_alloc( (count > 3 ? count : 3) * sizeof( uint16_t ) );
     if ( ctx->font == NULL ) {
         return 0;
     }
     /* with no table, the three every Windows had */
     for ( at = 0; at < 3; at++ ) {
         font = wd_font( ctx->doc, usual[at], FAM_ANY, -1 );
-        ctx->font[at] = (u16)font;
+        ctx->font[at] = (uint16_t)font;
     }
     ctx->nfont = 3;
     if ( count == 0 ) {
@@ -1073,15 +1083,15 @@ static int w2_fonts( W2CTX *ctx )
                         family == 1 ? FAM_ROMAN : family == 2 ? FAM_SWISS : family == 3 ? FAM_MODERN :
                         family == 4 ? FAM_SCRIPT : family == 5 ? FAM_DECOR : FAM_ANY,
                         size >= 1 && (table[pos + 1] & 3) == 1 ? 1 : -1 );
-        ctx->font[ctx->nfont++] = (u16)font;
+        ctx->font[ctx->nfont++] = (uint16_t)font;
     }
     return 1;
 }
 
 /* a section's sprms -> 1 if it has any stored */
-static int w2_sepx( W2CTX *ctx, u32 index, W2SEP *sep )
+static int w2_sepx( W2CTX *ctx, unsigned int index, W2SEP *sep )
 {
-    u32 fc, size;
+    uint32_t fc, size;
 
     if ( index >= ctx->nsed ) {
         return 0;
@@ -1099,10 +1109,11 @@ static int w2_sepx( W2CTX *ctx, u32 index, W2SEP *sep )
 }
 
 /* a line of the summary: the n-th string of a table of them */
-static void w2_info( const W2CTX *ctx, const u8 *table, u32 lcb, u32 which, char *dst )
+static void w2_info( const W2CTX *ctx, const uint8_t *table, uint32_t lcb, unsigned int which, char *dst )
 {
-    u16 wide[INFO_LEN];
-    u32 pos = 2, size, used = 0, index;
+    uint16_t wide[INFO_LEN];
+    uint32_t pos = 2, size;
+    unsigned int used = 0, index;
 
     while ( pos < lcb ) {
         size = table[pos++];
@@ -1126,11 +1137,11 @@ static void w2_info( const W2CTX *ctx, const u8 *table, u32 lcb, u32 which, char
 
 /* the picture a picture character stands for: a header, then - of the
    kinds that can be kept - a Windows metafile */
-static int w2_picture( W2CTX *ctx, u32 fc )
+static int w2_picture( W2CTX *ctx, uint32_t fc )
 {
-    const u8 *pic;
-    u32 size, head, mode, scale;
-    s32 width, height;
+    const uint8_t *pic;
+    uint32_t size, head, mode, scale;
+    int width, height;
 
     if ( !IN_RANGE( fc, 46, ctx->len ) ) {
         return -1;
@@ -1146,19 +1157,19 @@ static int w2_picture( W2CTX *ctx, u32 fc )
         return -1;                      /* a bitmap of the screen's own kind, or a file's name */
     }
     scale = LE16( pic + 32 );
-    width = (s32)(LE16( pic + 28 ) * (scale ? scale : 1000) / 1000);
+    width = (int)(LE16( pic + 28 ) * (scale ? scale : 1000) / 1000);
     scale = LE16( pic + 34 );
-    height = (s32)(LE16( pic + 30 ) * (scale ? scale : 1000) / 1000);
+    height = (int)(LE16( pic + 30 ) * (scale ? scale : 1000) / 1000);
     if ( width == 0 || height == 0 ) {
-        width = (s32)(LE16( pic + 8 ) * 72 / 127);      /* hundredths of a millimeter */
-        height = (s32)(LE16( pic + 10 ) * 72 / 127);
+        width = (int)(LE16( pic + 8 ) * 72 / 127);  /* hundredths of a millimeter */
+        height = (int)(LE16( pic + 10 ) * 72 / 127);
     }
     return wd_image_new( ctx->doc, pic + head, size - head, IMG_WMF, width, height );
 }
 
 /* ---- the text ---- */
 
-static void w2_put( W2CTX *ctx, u32 code )
+static void w2_put( W2CTX *ctx, uint32_t code )
 {
     if ( ctx->mute == 0 && ctx->over == 0 ) {
         wb_char( &ctx->wb, code );
@@ -1166,7 +1177,7 @@ static void w2_put( W2CTX *ctx, u32 code )
 }
 
 /* the paragraph in hand ends, with these properties */
-static void w2_par( W2CTX *ctx, const W2PAP *pap, u16 flags )
+static void w2_par( W2CTX *ctx, const W2PAP *pap, uint16_t flags )
 {
     PAP *dst = &ctx->wb.pap;
 
@@ -1186,18 +1197,18 @@ static void w2_par( W2CTX *ctx, const W2PAP *pap, u16 flags )
 }
 
 /* what kind of field the instructions are for */
-static u16 w2_field_kind( const W2CTX *ctx, u32 flt )
+static uint16_t w2_field_kind( const W2CTX *ctx, uint32_t flt )
 {
     static const struct {
-        u8 flt;
-        u16 kind;
+        uint8_t flt;
+        uint16_t kind;
         const char *word;
     } kinds[] = {
         { 33, WCH_PAGENUM, "PAGE" }, { 26, WCH_NUMPAGES, "NUMPAGES" }, { 31, WCH_DATE, "DATE" },
         { 32, WCH_TIME, "TIME" }, { 29, WCH_FILENAME, "FILENAME" }, { 57, 1, "SYMBOL" }
     };
     const char *code = ctx->code;
-    u32 index, size;
+    unsigned int index, size;
 
     while ( *code == ' ' ) {
         code++;
@@ -1205,7 +1216,7 @@ static u16 w2_field_kind( const W2CTX *ctx, u32 flt )
     for ( index = 0; index < sizeof( kinds ) / sizeof( kinds[0] ); index++ ) {
         size = str_len( kinds[index].word );
         if ( flt == kinds[index].flt ||
-             (flt == 0 && str_nicmp( code, kinds[index].word, size ) == 0 && (u8)code[size] <= ' ') ) {
+             (flt == 0 && str_nicmp( code, kinds[index].word, size ) == 0 && (uint8_t)code[size] <= ' ') ) {
             return kinds[index].kind;
         }
     }
@@ -1213,9 +1224,9 @@ static u16 w2_field_kind( const W2CTX *ctx, u32 flt )
 }
 
 /* the field type the field table gives the mark at "cp"; 0 for none */
-static u32 w2_field_flt( W2CTX *ctx, u32 cp )
+static uint32_t w2_field_flt( W2CTX *ctx, uint32_t cp )
 {
-    u32 where;
+    uint32_t where;
 
     while ( ctx->fld_next < ctx->nfld ) {
         where = LE32( ctx->fld + 4 * ctx->fld_next ) + ctx->fld_base;
@@ -1233,10 +1244,10 @@ static u32 w2_field_flt( W2CTX *ctx, u32 cp )
 /* a field's mark: 13h starts it, 14h parts its instructions from its
    result, 15h ends it.  The instructions are never shown; the result
    is, unless the field is one the document makes itself. */
-static void w2_field( W2CTX *ctx, u32 ch, u32 cp )
+static void w2_field( W2CTX *ctx, uint32_t ch, uint32_t cp )
 {
     W2FIELD *field;
-    u32 value = 0, index;
+    unsigned int value = 0, index;
     int ok;
 
     if ( ch == 0x13 ) {
@@ -1247,7 +1258,7 @@ static void w2_field( W2CTX *ctx, u32 ch, u32 cp )
         field = &ctx->field[ctx->nfield++];
         field->kind = 0;
         field->result = 0;
-        field->spare = (u8)w2_field_flt( ctx, cp );
+        field->spare = (uint8_t)w2_field_flt( ctx, cp );
         ctx->mute++;
         ctx->code_len = 0;
         ctx->code[0] = 0;
@@ -1287,7 +1298,7 @@ static void w2_field( W2CTX *ctx, u32 ch, u32 cp )
         }
         ok = 0;
         for ( ; ctx->code[index] >= '0' && ctx->code[index] <= '9' && value < 0x10000UL; index++ ) {
-            value = value * 10 + (u32)(ctx->code[index] - '0');
+            value = value * 10 + (unsigned int)(ctx->code[index] - '0');
             ok = 1;
         }
         if ( ok && value == 183 ) {
@@ -1305,9 +1316,9 @@ static void w2_field( W2CTX *ctx, u32 ch, u32 cp )
 /* the mark that ends the paragraph "cp" is in.  A paragraph's end is
    two characters: CR LF, or in a table CR and the cell mark; the second
    is the mark.  A section's or a page's end is one. */
-static u32 w2_para_mark( const W2CTX *ctx, u32 cp, u32 cp_end, u32 *hint )
+static uint32_t w2_para_mark( const W2CTX *ctx, uint32_t cp, uint32_t cp_end, unsigned int *hint )
 {
-    u32 fc;
+    uint32_t fc;
     int ch;
 
     for ( ; cp + 1 < cp_end; cp++ ) {
@@ -1332,10 +1343,10 @@ static u32 w2_para_mark( const W2CTX *ctx, u32 cp, u32 cp_end, u32 *hint )
 
 /* does the section mark at "cp" start a page?  It does unless the
    section after it says it runs on, or nothing is after it. */
-static int w2_page_after( W2CTX *ctx, u32 cp, u32 cp_end )
+static int w2_page_after( W2CTX *ctx, uint32_t cp, uint32_t cp_end )
 {
     W2SEP sep;
-    u32 index;
+    unsigned int index;
 
     if ( cp + 1 >= cp_end ) {
         return 0;
@@ -1356,13 +1367,15 @@ static int w2_page_after( W2CTX *ctx, u32 cp, u32 cp_end )
 
 /* a story's text, from "cp" to "cp_end": the body ("kind" 0), a note
    (1), a running head (2) */
-static void w2_story( W2CTX *ctx, STORY *story, u32 cp, u32 cp_end, int kind )
+static void w2_story( W2CTX *ctx, STORY *story, uint32_t cp, uint32_t cp_end, int kind )
 {
     W2PAP *pap = ctx->xpap;
     W2CHP base, cur;
     WPARA *last_cell = NULL;
     TROW row;
-    u32 mark, fc, piece = 0, chp_piece = W2_NONE, row_cells = 0, fld_fc, fld_lcb, index;
+    uint32_t mark, fc;
+    unsigned int piece = 0, chp_piece = W2_NONE, row_cells = 0;
+    uint32_t fld_fc, fld_lcb, index;
     int ch, chp_valid, obj;
 
     if ( cp_end > ctx->cp_max ) {
@@ -1418,7 +1431,7 @@ static void w2_story( W2CTX *ctx, STORY *story, u32 cp, u32 cp_end, int kind )
 
             if ( cur.spec && ch != 0x0D && ch != 0x07 && ch != 0x0C ) {
                 if ( ch >= 0x13 && ch <= 0x15 ) {
-                    w2_field( ctx, (u32)ch, cp );
+                    w2_field( ctx, (uint32_t)ch, cp );
                 } else if ( ch == 0x01 ) {
                     obj = ctx->mute || ctx->over ? -2 : w2_picture( ctx, cur.pic );
                     if ( obj >= 0 ) {
@@ -1453,9 +1466,9 @@ static void w2_story( W2CTX *ctx, STORY *story, u32 cp, u32 cp_end, int kind )
                             row = pap->row;
                         } else {
                             mem_set( &row, 0, sizeof( row ) );
-                            row.ncells = (u8)(row_cells > MAX_CELLS ? MAX_CELLS : row_cells);
+                            row.ncells = (uint8_t)(row_cells > MAX_CELLS ? MAX_CELLS : row_cells);
                             for ( index = 0; index < row.ncells; index++ ) {
-                                row.edge[index] = (s32)((index + 1) * 8640 / row.ncells);
+                                row.edge[index] = (int)((index + 1) * 8640 / row.ncells);
                             }
                             ctx->doc->lost |= LOST_TABLES;
                         }
@@ -1509,9 +1522,9 @@ static void w2_story( W2CTX *ctx, STORY *story, u32 cp, u32 cp_end, int kind )
 }
 
 /* one running head: the "which"-th of the header story's parts */
-static void w2_head( W2CTX *ctx, const u8 *plc, u32 count, u32 which, STORY *story )
+static void w2_head( W2CTX *ctx, const uint8_t *plc, unsigned int count, unsigned int which, STORY *story )
 {
-    u32 base = ctx->ccp_text + ctx->ccp_ftn, from, to;
+    uint32_t base = ctx->ccp_text + ctx->ccp_ftn, from, to;
 
     if ( which + 1 >= count ) {
         return;
@@ -1528,9 +1541,10 @@ static void w2_head( W2CTX *ctx, const u8 *plc, u32 count, u32 which, STORY *sto
     }
 }
 
-static u32 w2_bits_below( u32 value, u32 bit )
+static unsigned int w2_bits_below( uint32_t value, uint32_t bit )
 {
-    u32 count = 0, mask;
+    unsigned int count = 0;
+    uint32_t mask;
 
     for ( mask = 1; mask < bit; mask <<= 1 ) {
         if ( value & mask ) {
@@ -1549,13 +1563,15 @@ static void w2_free( W2CTX *ctx )
     xfree( ctx->note_obj );
 }
 
-static int w2_load( const u8 *data, u32 len, WDOC *doc )
+static int w2_load( const uint8_t *data, uint32_t len, WDOC *doc )
 {
     W2CTX ctx;
     W2SEP sep;
     PAGESETUP *page = &doc->page;
-    const u8 *dop = NULL, *plc;
-    u32 flags, fc_min, fc_mac, fc, lcb, tail, index, count, first, from, to, done, dop_grpf = 0, bit;
+    const uint8_t *dop = NULL, *plc;
+    uint32_t flags, fc_min, fc_mac, fc, lcb, tail;
+    unsigned int index, count, first;
+    uint32_t from, to, done, dop_grpf = 0, bit;
     STORY *story;
 
     if ( !w2_detect( data, len, "" ) ) {
@@ -1625,21 +1641,21 @@ static int w2_load( const u8 *data, u32 len, WDOC *doc )
         dop = data + fc;
         dop_grpf = dop[1];
         if ( ctx.ww1 && lcb >= 0x1A ) {
-            page->height = (s32)LE16( dop + 0x0A );
-            page->width = (s32)LE16( dop + 0x0C );
+            page->height = (int)LE16( dop + 0x0A );
+            page->width = (int)LE16( dop + 0x0C );
             page->top = w2_s16( dop + 0x0E );
-            page->left = (s32)LE16( dop + 0x10 );
+            page->left = (int)LE16( dop + 0x10 );
             page->bottom = w2_s16( dop + 0x12 );
-            page->right = (s32)LE16( dop + 0x14 );
+            page->right = (int)LE16( dop + 0x14 );
             if ( page->top < 0 ) {
                 page->top = -page->top;         /* below zero: "exactly", which is not kept */
             }
             if ( page->bottom < 0 ) {
                 page->bottom = -page->bottom;
             }
-            doc->deftab = (s32)LE16( dop + 0x18 );
+            doc->deftab = (int)LE16( dop + 0x18 );
         } else if ( !ctx.ww1 && lcb >= 0x0C ) {
-            doc->deftab = (s32)LE16( dop + 0x0A );
+            doc->deftab = (int)LE16( dop + 0x0A );
         }
     }
     if ( w2_pair( &ctx, W2_SED, &fc, &lcb ) && lcb >= 10 ) {
@@ -1664,9 +1680,9 @@ static int w2_load( const u8 *data, u32 len, WDOC *doc )
     page->bottom = sep.bottom;
     page->header = sep.header;
     page->footer = sep.footer;
-    page->landscape = (u8)(page->width > page->height);
+    page->landscape = (uint8_t)(page->width > page->height);
     if ( sep.first_page ) {
-        page->first_page = (u16)sep.first_page;
+        page->first_page = (uint16_t)sep.first_page;
     }
     if ( sep.columns > 1 ) {
         doc->lost |= LOST_LAYOUT;

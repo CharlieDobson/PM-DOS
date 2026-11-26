@@ -51,7 +51,7 @@ void mem_warn_text( char *buf, int size )
 }
 
 /* a 64-bit total, grouped as the country has it */
-void fmt_total( u64 val, char *buf )
+void fmt_total( uint64_t val, char *buf )
 {
     char digits[24], rev[24];
     int len = 0, at;
@@ -114,7 +114,7 @@ int cli_is_cmd( const char *arg )
     int ch;
 
     if ( arg[0] && arg[1] == 0 ) {
-        ch = tolower( (u8)arg[0] );
+        ch = tolower( (unsigned char)arg[0] );
         return ch == 'l' || ch == 't' || ch == 'x' || ch == 'a' || ch == 'd';
     }
     return 0;
@@ -127,11 +127,11 @@ int cli_video_switch( const char *arg, int *graphics )
     if ( arg == NULL || (arg[0] != '/' && arg[0] != '-') || arg[1] == 0 || arg[2] != 0 ) {
         return 0;
     }
-    if ( tolower( (u8)arg[1] ) == 'g' ) {
+    if ( tolower( (unsigned char)arg[1] ) == 'g' ) {
         *graphics = 1;
         return 1;
     }
-    if ( tolower( (u8)arg[1] ) == 't' ) {
+    if ( tolower( (unsigned char)arg[1] ) == 't' ) {
         *graphics = 0;
         return 1;
     }
@@ -144,7 +144,7 @@ int cli_video_switch( const char *arg, int *graphics )
    gone and the first is what 21h/48h says it could give in one block. */
 int cli_memory( void )
 {
-    UInt32 sys_kb = 0, big_kb = 0, bud_kb = 0, have_kb = 0, need_kb = 0;
+    uint32_t sys_kb = 0, big_kb = 0, bud_kb = 0, have_kb = 0, need_kb = 0;
     char b1[NUM_FMT_MAX], b2[NUM_FMT_MAX], b3[NUM_FMT_MAX], b4[NUM_FMT_MAX];
 
     ArcMemReportKB( &sys_kb, &big_kb, &bud_kb );
@@ -219,7 +219,7 @@ static int is_no_paths( const char *arg )
 /* "/p<password>": NULL if this is not one; "" is a password too */
 static const char *cli_password( const char *arg )
 {
-    if ( (arg[0] != '/' && arg[0] != '-') || tolower( (u8)arg[1] ) != 'p' ) {
+    if ( (arg[0] != '/' && arg[0] != '-') || tolower( (unsigned char)arg[1] ) != 'p' ) {
         return NULL;
     }
     return arg + 2;
@@ -228,7 +228,7 @@ static const char *cli_password( const char *arg )
 static int last_file = -1;
 
 static int cli_comp_progress( void *user, int idx, int total, const char *name,
-                              UInt32 done_kb, UInt32 total_kb )
+                              uint32_t done_kb, uint32_t total_kb )
 {
     (void)user;
     (void)done_kb;
@@ -258,7 +258,7 @@ static int cli_add( int argc, char **argv )
     const char *archive = NULL, *arg;
     char path[SZ_MAX_NAME + 8], b1[NUM_FMT_MAX], b2[NUM_FMT_MAX];
     int at, rc = SZ_OK, yes = 0, items = 0, fmt, key;
-    UInt32 in, out, pct;
+    uint32_t in, out, pct;
     FILE *there;
 
     if ( job == NULL ) {
@@ -287,7 +287,7 @@ static int cli_add( int argc, char **argv )
             if ( !stricmp( arg + 1, "ex" ) ) {
                 continue;
             }
-            if ( tolower( (u8)arg[1] ) == 'x' && arg[2] ) {
+            if ( tolower( (unsigned char)arg[1] ) == 'x' && arg[2] ) {
                 rc = ArcCompExclude( job, arg + 2 );
                 if ( rc != SZ_OK ) {
                     printf( "Cannot read the exclusion list '%s'.\n", ArcCompProblem( job ) );
@@ -460,7 +460,7 @@ static int is_sep( int ch )
 
 static int fold( int ch )
 {
-    return ch == '/' ? '\\' : toupper( (u8)ch );
+    return ch == '/' ? '\\' : toupper( (unsigned char)ch );
 }
 
 /* does "pat" match the "len" characters at "name"? */
@@ -477,7 +477,7 @@ static int wild( const char *pat, const char *name, int len )
                 if ( wild( pat + 1, name + at, len - at ) ) {
                     return 1;
                 }
-                if ( at >= len || is_sep( (u8)name[at] ) ) {
+                if ( at >= len || is_sep( (unsigned char)name[at] ) ) {
                     return 0;
                 }
                 at++;
@@ -487,7 +487,7 @@ static int wild( const char *pat, const char *name, int len )
             return 0;
         }
         if ( *pat == '?' ) {
-            if ( is_sep( (u8)name[at] ) ) {
+            if ( is_sep( (unsigned char)name[at] ) ) {
                 return 0;
             }
         } else if ( fold( *pat ) != fold( name[at] ) ) {
@@ -504,20 +504,20 @@ static void spec_prep( const char *spec, char *dst )
 {
     int len = 0;
 
-    while ( is_sep( (u8)*spec ) ) {
+    while ( is_sep( (unsigned char)*spec ) ) {
         spec++;
     }
     while ( *spec && len < SZ_MAX_NAME - 1 ) {
         if ( spec[0] == '*' && spec[1] == '.' && spec[2] == '*'
-             && (len == 0 || is_sep( (u8)dst[len - 1] ))
-             && (spec[3] == 0 || is_sep( (u8)spec[3] )) ) {
+             && (len == 0 || is_sep( (unsigned char)dst[len - 1] ))
+             && (spec[3] == 0 || is_sep( (unsigned char)spec[3] )) ) {
             dst[len++] = '*';
             spec += 3;
             continue;
         }
         dst[len++] = *spec++;
     }
-    while ( len > 0 && is_sep( (u8)dst[len - 1] ) ) {
+    while ( len > 0 && is_sep( (unsigned char)dst[len - 1] ) ) {
         len--;
     }
     dst[len] = 0;
@@ -531,11 +531,11 @@ static int spec_matches( const char *spec, const char *name )
     if ( name == NULL ) {
         return 0;
     }
-    while ( is_sep( (u8)*name ) ) {
+    while ( is_sep( (unsigned char)*name ) ) {
         name++;
     }
     len = (int)strlen( name );
-    while ( len > 0 && is_sep( (u8)name[len - 1] ) ) {
+    while ( len > 0 && is_sep( (unsigned char)name[len - 1] ) ) {
         len--;
     }
     if ( len == 0 || !spec[0] ) {
@@ -545,7 +545,7 @@ static int spec_matches( const char *spec, const char *name )
         return 1;
     }
     for ( at = 1; at < len; at++ ) {
-        if ( is_sep( (u8)name[at] ) && wild( spec, name, at ) ) {
+        if ( is_sep( (unsigned char)name[at] ) && wild( spec, name, at ) ) {
             return 1;
         }
     }
@@ -647,7 +647,7 @@ static int cli_delete( int argc, char **argv )
         if ( rc == SZ_OK && !yes ) {
             /* on stderr: with the output in a file, a question on stdout
                is a program that seems to hang */
-            fprintf( stderr, "Delete %s entr%s from %s (Y/N)? ", NumFmt( (UInt32)hits, num ),
+            fprintf( stderr, "Delete %s entr%s from %s (Y/N)? ", NumFmt( (uint32_t)hits, num ),
                      hits == 1 ? "y" : "ies", base_name( archive ) );
             key = read_key();
             fprintf( stderr, "%c\n", key >= 32 && key < 127 ? key : ' ' );
@@ -662,7 +662,7 @@ static int cli_delete( int argc, char **argv )
             rc = ArcDeleteItems( arc, idx, hits, NULL, NULL );
         }
         if ( rc == SZ_OK ) {
-            printf( "Done.  %s entr%s deleted.\n", NumFmt( (UInt32)hits, num ), hits == 1 ? "y" : "ies" );
+            printf( "Done.  %s entr%s deleted.\n", NumFmt( (uint32_t)hits, num ), hits == 1 ? "y" : "ies" );
         } else if ( rc == SZ_ERR_UNSUPPORTED ) {
             printf( "FAILED: %s\n", ArcDeleteHint() );
         } else if ( rc == SZ_ERR_WRITE ) {
@@ -691,10 +691,10 @@ int cli_run( int argc, char **argv )
     const char *cmd = argv[1], *path, *dest, *pos[4], *pw = NULL, *found;
     int npos = 0, at, rc;
 
-    if ( tolower( (u8)cmd[0] ) == 'a' ) {
+    if ( tolower( (unsigned char)cmd[0] ) == 'a' ) {
         return cli_add( argc, argv );
     }
-    if ( tolower( (u8)cmd[0] ) == 'd' ) {
+    if ( tolower( (unsigned char)cmd[0] ) == 'd' ) {
         return cli_delete( argc, argv );
     }
     /* the switches out of the way, wherever they were written */
@@ -726,7 +726,7 @@ int cli_run( int argc, char **argv )
     if ( rc != 0 ) {
         return rc;
     }
-    switch ( tolower( (u8)cmd[0] ) ) {
+    switch ( tolower( (unsigned char)cmd[0] ) ) {
     case 'l':
         rc = cli_list( arc );
         break;

@@ -44,9 +44,9 @@ int tab_size = 8;
 
 /* a line's own block, big enough for "need" bytes - moving it out of
    its pool if it is still there */
-static int line_reserve( LINE *line, u32 need )
+static int line_reserve( LINE *line, unsigned int need )
 {
-    u32 cap;
+    unsigned int cap;
     char *grown;
 
     if ( need <= line->cap ) {
@@ -78,7 +78,7 @@ static int line_reserve( LINE *line, u32 need )
         xfree( line->text );                    /* a pooled line's is not ours */
     }
     line->text = grown;
-    line->cap = (u16)cap;
+    line->cap = (uint16_t)cap;
     return 1;
 }
 
@@ -95,9 +95,9 @@ static void line_release( LINE *line )
    no longer fits in 32 bits */
 #define LINES_MAX   (0xFFFFFFFFUL / sizeof( LINE ))
 
-static int lines_reserve( DOC *doc, u32 need )
+static int lines_reserve( DOC *doc, unsigned int need )
 {
-    u32 cap;
+    unsigned int cap;
     LINE *grown;
 
     if ( need <= doc->cap ) {
@@ -133,7 +133,7 @@ static int lines_reserve( DOC *doc, u32 need )
 
 static void free_lines( DOC *doc )
 {
-    u32 index;
+    unsigned int index;
 
     for ( index = 0; index < doc->count; index++ ) {
         line_release( &doc->lines[index] );
@@ -150,13 +150,13 @@ static void free_lines( DOC *doc )
 }
 
 /* a new pool of "size" bytes, remembered so it is freed with the file */
-static char *pool_new( DOC *doc, u32 size )
+static char *pool_new( DOC *doc, unsigned int size )
 {
     char **grown;
     char *pool;
 
     if ( doc->npools == doc->pool_cap ) {
-        u32 cap = doc->pool_cap ? doc->pool_cap * 2 : 16;
+        unsigned int cap = doc->pool_cap ? doc->pool_cap * 2 : 16;
         grown = (char **)try_alloc( cap * sizeof( char * ) );
         if ( grown == NULL ) {
             return NULL;
@@ -199,7 +199,7 @@ void doc_free( DOC *doc )
     }
 }
 
-LINE *doc_line( DOC *doc, u32 line )
+LINE *doc_line( DOC *doc, unsigned int line )
 {
     return &doc->lines[line];
 }
@@ -224,11 +224,11 @@ void doc_set_path( DOC *doc, const char *path )
 /* ------------------------------------------------------------------ */
 
 typedef struct {
-    DOC  *doc;
-    char *pool;             /* the pool being filled */
-    u32   used, size;       /* its finished lines, and how big it is */
-    u32   len;              /* the line being read, at pool + used */
-    u32   left;             /* bytes of the file still to come */
+    DOC         *doc;
+    char        *pool;          /* the pool being filled */
+    unsigned int used, size;    /* its finished lines, and how big it is */
+    unsigned int len;           /* the line being read, at pool + used */
+    uint32_t     left;          /* bytes of the file still to come */
 } LOADER;
 
 /* room for one more byte of the line being read: a new pool when this
@@ -236,7 +236,7 @@ typedef struct {
 static int ld_room( LOADER *ld )
 {
     char *fresh;
-    u32 size;
+    unsigned int size;
 
     if ( ld->pool && ld->used + ld->len < ld->size ) {
         return 1;
@@ -269,7 +269,7 @@ static int ld_end( LOADER *ld )
     }
     line = &doc->lines[doc->count++];
     line->text = ld->len ? ld->pool + ld->used : NULL;
-    line->len = (u16)ld->len;
+    line->len = (uint16_t)ld->len;
     line->cap = 0;
     ld->used += ld->len;
     ld->len = 0;
@@ -278,7 +278,7 @@ static int ld_end( LOADER *ld )
 
 static int ld_byte( LOADER *ld, int ch )
 {
-    if ( ld->len >= MAX_LINE || (ld->doc->binary && ld->len >= (u32)ld->doc->binary) ) {
+    if ( ld->len >= MAX_LINE || (ld->doc->binary && ld->len >= (unsigned int)ld->doc->binary) ) {
         if ( !ld->doc->binary ) {
             ld->doc->split = 1;                 /* saving will add a line end */
         }
@@ -300,15 +300,16 @@ static int ld_byte( LOADER *ld, int ch )
 int doc_load( DOC *doc, const char *path )
 {
     LOADER ld;
-    u8 *buf;
-    u32 handle, got, pos, size = 0, lines = 1;
+    uint8_t *buf;
+    uint32_t handle, size = 0;
+    unsigned int got, pos, lines = 1;
     int rc, ok = 1, last_cr = 0, pass;
 
     rc = sys_open_read( path, &handle );
     if ( rc != 0 ) {
         return rc;
     }
-    buf = (u8 *)try_alloc( LOAD_BUF );
+    buf = (uint8_t *)try_alloc( LOAD_BUF );
     if ( buf == NULL ) {
         sys_close( handle );
         return -1;
@@ -321,7 +322,7 @@ int doc_load( DOC *doc, const char *path )
     for ( pass = 0; pass < 2 && ok && rc == 0; pass++ ) {
         if ( pass == 1 ) {
             if ( doc->binary ) {
-                lines = size / (u32)doc->binary + 1;
+                lines = size / (unsigned int)doc->binary + 1;
             }
             if ( !lines_reserve( doc, lines + 16 ) ) {
                 ok = 0;
@@ -387,12 +388,13 @@ int doc_load( DOC *doc, const char *path )
 
 int doc_save( DOC *doc, const char *path )
 {
-    u8 *buf;
-    u32 handle, used = 0, done, index, pos;
+    uint8_t *buf;
+    uint32_t handle;
+    unsigned int used = 0, done, index, pos;
     LINE *line;
     int rc;
 
-    buf = (u8 *)try_alloc( 16384 );
+    buf = (uint8_t *)try_alloc( 16384 );
     if ( buf == NULL ) {
         return ERR_NOMEM;
     }
@@ -404,7 +406,7 @@ int doc_save( DOC *doc, const char *path )
     for ( index = 0; index < doc->count && rc == 0; index++ ) {
         line = &doc->lines[index];
         for ( pos = 0; pos < line->len && rc == 0; pos++ ) {
-            buf[used++] = (u8)line->text[pos];
+            buf[used++] = (uint8_t)line->text[pos];
             if ( used == 16384 ) {
                 rc = sys_write( handle, buf, used, &done );
                 used = 0;
@@ -437,9 +439,10 @@ int doc_save( DOC *doc, const char *path )
     return rc;
 }
 
-u32 doc_size( DOC *doc )
+uint32_t doc_size( DOC *doc )
 {
-    u32 index, size = 0;
+    unsigned int index;
+    uint32_t size = 0;
 
     for ( index = 0; index < doc->count; index++ ) {
         size += doc->lines[index].len;
@@ -457,9 +460,9 @@ u32 doc_size( DOC *doc )
 /* In a binary file (/nnn) a tab is a byte like any other, one column
    wide: a line there is exactly nnn bytes of the file, and a tab that
    reached a tab stop would push the rest of the line out of place. */
-u32 doc_col_of( DOC *doc, LINE *line, u32 index )
+unsigned int doc_col_of( DOC *doc, LINE *line, unsigned int index )
 {
-    u32 pos, col = 0;
+    unsigned int pos, col = 0;
 
     for ( pos = 0; pos < index && pos < line->len; pos++ ) {
         if ( line->text[pos] == '\t' && !doc->binary ) {
@@ -476,9 +479,9 @@ u32 doc_col_of( DOC *doc, LINE *line, u32 index )
 
 /* the byte at a column - the one a tab starts at, for a column inside
    the tab - or past the end by as many columns as it is past */
-u32 doc_index_of( DOC *doc, LINE *line, u32 col )
+unsigned int doc_index_of( DOC *doc, LINE *line, unsigned int col )
 {
-    u32 pos, at = 0, width;
+    unsigned int pos, at = 0, width;
 
     for ( pos = 0; pos < line->len; pos++ ) {
         width = line->text[pos] == '\t' && !doc->binary ? (at / tab_size + 1) * tab_size - at : 1;
@@ -497,10 +500,10 @@ u32 doc_index_of( DOC *doc, LINE *line, u32 col )
 /* "text" (with '\n' between lines) into the document at "at", which is
    moved to the end of it.  0 when there was no memory - and then the
    document is as it was. */
-int doc_insert( DOC *doc, POS *at, const char *text, u32 len )
+int doc_insert( DOC *doc, POS *at, const char *text, unsigned int len )
 {
     LINE *line = &doc->lines[at->line];
-    u32 breaks = 0, pos, seg, index, tail_len;
+    unsigned int breaks = 0, pos, seg, index, tail_len;
     LINE *fresh;
     char *tail;
 
@@ -551,7 +554,7 @@ int doc_insert( DOC *doc, POS *at, const char *text, u32 len )
     seg = ++pos;                                /* past the first break */
     for ( ; pos <= len; pos++ ) {
         if ( pos == len || text[pos] == '\n' ) {
-            u32 want = pos - seg + (index == breaks - 1 ? tail_len : 0);
+            unsigned int want = pos - seg + (index == breaks - 1 ? tail_len : 0);
             if ( want > MAX_LINE || !line_reserve( &fresh[index], want ? want : 1 ) ) {
                 while ( index + 1 > 0 ) {
                     xfree( fresh[index].text );
@@ -595,7 +598,7 @@ int doc_insert( DOC *doc, POS *at, const char *text, u32 len )
 int doc_delete( DOC *doc, POS from, POS to )
 {
     LINE *first, *last;
-    u32 index, keep;
+    unsigned int index, keep;
 
     if ( to.line < from.line || (to.line == from.line && to.col <= from.col) ) {
         return 1;
@@ -638,9 +641,9 @@ int doc_delete( DOC *doc, POS from, POS to )
     return 1;
 }
 
-char *doc_extract( DOC *doc, POS from, POS to, u32 *len )
+char *doc_extract( DOC *doc, POS from, POS to, unsigned int *len )
 {
-    u32 total = 0, index, start, end;
+    unsigned int total = 0, index, start, end;
     LINE *line;
     char *text;
 

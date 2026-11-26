@@ -270,7 +270,7 @@ void __cdecl dos_entry( void )
 
     /* "TREEVIEW D:" or "TREEVIEW d": the drive scanned first */
     if ( argc > 1 && args[1][0] ) {
-        char letter = (char)toupper( (u8)args[1][0] );
+        char letter = (char)toupper( (unsigned char)args[1][0] );
 
         if ( letter >= 'A' && letter <= 'Z' ) {
             current_drive = letter - 'A' + 1;

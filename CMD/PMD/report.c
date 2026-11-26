@@ -26,18 +26,18 @@ const char *const customer_labels[8] = {
 };
 
 typedef struct {
-    u32  handle;
-    int  rc;                    /* the first error, and nothing after it */
-    int  line, page;
-    int  is_device;
-    DATETIME when;
-    char buf[1024];
-    u32  used;
+    uint32_t     handle;
+    int          rc;            /* the first error, and nothing after it */
+    int          line, page;
+    int          is_device;
+    DATETIME     when;
+    char         buf[1024];
+    unsigned int used;
 } REPORT;
 
 static void rpt_flush( REPORT *rpt )
 {
-    u32 done;
+    unsigned int done;
     int rc;
 
     if ( rpt->used && rpt->rc == 0 ) {
@@ -51,7 +51,7 @@ static void rpt_flush( REPORT *rpt )
     rpt->used = 0;
 }
 
-static void rpt_bytes( REPORT *rpt, const char *text, u32 len )
+static void rpt_bytes( REPORT *rpt, const char *text, unsigned int len )
 {
     while ( len-- ) {
         if ( rpt->used == sizeof( rpt->buf ) ) {
@@ -75,7 +75,7 @@ static void rpt_header( REPORT *rpt )
                 REPORT_INDENT, "", PMD_VERSION, rpt->when.month, rpt->when.day,
                 rpt->when.year % 100, hour ? hour : 12, rpt->when.minute,
                 rpt->when.hour < 12 ? "am" : "pm", rpt->page );
-    rpt_bytes( rpt, line, (u32)len );
+    rpt_bytes( rpt, line, (unsigned int)len );
     mem_set( line, ' ', REPORT_INDENT );
     mem_set( line + REPORT_INDENT, '=', REPORT_WIDTH );
     rpt_bytes( rpt, line, REPORT_INDENT + REPORT_WIDTH );
@@ -86,7 +86,7 @@ static void rpt_header( REPORT *rpt )
 static void rpt_line( REPORT *rpt, int indent, const char *text )
 {
     char pad[80];
-    u32 len = str_len( text );
+    unsigned int len = str_len( text );
 
     if ( rpt->line >= PAGE_LINES ) {
         rpt_header( rpt );
@@ -95,8 +95,8 @@ static void rpt_line( REPORT *rpt, int indent, const char *text )
         if ( indent > (int)sizeof( pad ) ) {
             indent = sizeof( pad );
         }
-        mem_set( pad, ' ', (u32)indent );
-        rpt_bytes( rpt, pad, (u32)indent );
+        mem_set( pad, ' ', (unsigned int)indent );
+        rpt_bytes( rpt, pad, (unsigned int)indent );
         rpt_bytes( rpt, text, len );
     }
     rpt_bytes( rpt, "\r\n", 2 );
@@ -116,7 +116,7 @@ static void rpt_title( REPORT *rpt, const char *name )
     mem_set( rule, '-', REPORT_WIDTH );
     rule[REPORT_WIDTH] = 0;
     rule[left] = ' ';
-    mem_cpy( rule + left + 1, name, (u32)len );
+    mem_cpy( rule + left + 1, name, (unsigned int)len );
     rule[left + 1 + len] = ' ';
     rpt_line( rpt, REPORT_INDENT, rule );
     rpt_line( rpt, 0, "" );
@@ -167,7 +167,7 @@ void report_summary_text( TEXT *text )
     }
 }
 
-int report_write( const char *path, const u8 *items, const CUSTOMER *who )
+int report_write( const char *path, const uint8_t *items, const CUSTOMER *who )
 {
     static REPORT rpt;
     TEXT text;
@@ -306,7 +306,7 @@ void cmd_report( void )
     static CTL ctl[RPT_ITEMS + 16];
     static CUSTOMER who;
     static int primed;
-    static u8 items[RPT_ITEMS];
+    static uint8_t items[RPT_ITEMS];
     static char file_labels[MAX_VIEWS][16];
     DLG dlg;
     int count = 0, index, slot, rc, total = RPT_FILE + view_count;
@@ -408,7 +408,7 @@ void cmd_report( void )
         return;
     }
     for ( index = 0; index < RPT_ITEMS; index++ ) {
-        items[index] = (u8)(index < total && rpt_checks[1 + index]);
+        items[index] = (uint8_t)(index < total && rpt_checks[1 + index]);
     }
     if ( items[RPT_CUSTOMER] && !customer_dialog( &who ) ) {
         return;

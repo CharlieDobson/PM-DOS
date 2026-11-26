@@ -49,19 +49,19 @@ TARGET tgt;
                                         /* largest volume                  */
 
 /* the boot code, read from the Setup disk when Setup starts */
-static u8 *code_mbr, *code_fat16, *code_fat32, *code_s2;
-u8 *code_floppy;
-static u16 len_s2;
+static uint8_t *code_mbr, *code_fat16, *code_fat32, *code_s2;
+uint8_t *code_floppy;
+static uint16_t len_s2;
 
-static u8 sec[SECSIZE];
+static uint8_t sec[SECSIZE];
 
-static int is_fat( u8 type )
+static int is_fat( uint8_t type )
 {
     return type == 0x01 || type == 0x04 || type == 0x06 || type == 0x0B ||
            type == 0x0C || type == 0x0E;
 }
 
-static int is_ext( u8 type )
+static int is_ext( uint8_t type )
 {
     return type == 0x05 || type == 0x0F || type == 0x85;
 }
@@ -70,12 +70,12 @@ static int is_ext( u8 type )
 /* the boot code from the Setup disk                                   */
 /* ------------------------------------------------------------------ */
 
-static u8 *load_code( const char *name, u16 want, u16 *got )
+static uint8_t *load_code( const char *name, uint16_t want, uint16_t *got )
 {
     INFFILE *file = inf_file( name );
     char path[PATHLEN];
-    u16 handle, done;
-    u8 *data;
+    uint16_t handle, done;
+    uint8_t *data;
 
     if ( file == NULL ) {
         return NULL;
@@ -84,7 +84,7 @@ static u8 *load_code( const char *name, u16 want, u16 *got )
     if ( plat_open( path, 0, &handle ) ) {
         return NULL;
     }
-    data = (u8 *)xalloc( want );
+    data = (uint8_t *)xalloc( want );
     mem_set( data, 0, want );
     if ( plat_read( handle, data, want, &done ) || done == 0 ) {
         plat_close( handle );
@@ -114,17 +114,17 @@ int disk_load_code( void )
 /* ------------------------------------------------------------------ */
 
 typedef struct {
-    u16 bps, rsvd, rootents, spt, heads;
-    u8  spc, nfats, media;
-    u32 total, spf, hidden, rootclus;
-    u32 fatlba, rootlba, datalba, clusters;
-    int fat;
+    uint16_t bps, rsvd, rootents, spt, heads;
+    uint8_t  spc, nfats, media;
+    uint32_t total, spf, hidden, rootclus;
+    uint32_t fatlba, rootlba, datalba, clusters;
+    int      fat;
 } BPB;
 
 /* 0 = a FAT boot sector this code can use */
-static int bpb_read( const u8 *boot, BPB *bpb )
+static int bpb_read( const uint8_t *boot, BPB *bpb )
 {
-    u32 rootsecs;
+    uint32_t rootsecs;
 
     if ( RD16( boot + 510 ) != 0xAA55 ) {
         return 1;
@@ -153,12 +153,12 @@ static int bpb_read( const u8 *boot, BPB *bpb )
          bpb->media < 0xF0 || bpb->spf == 0 || bpb->total == 0 ) {
         return 1;
     }
-    rootsecs = ((u32)bpb->rootents * 32 + SECSIZE - 1) / SECSIZE;
+    rootsecs = ((uint32_t)bpb->rootents * 32 + SECSIZE - 1) / SECSIZE;
     if ( bpb->rsvd >= bpb->total || bpb->spf > (bpb->total - bpb->rsvd) / bpb->nfats ) {
         return 1;
     }
     bpb->fatlba = bpb->rsvd;
-    bpb->rootlba = bpb->rsvd + (u32)bpb->nfats * bpb->spf;
+    bpb->rootlba = bpb->rsvd + (uint32_t)bpb->nfats * bpb->spf;
     if ( rootsecs >= bpb->total - bpb->rootlba ) {
         return 1;
     }
@@ -178,7 +178,7 @@ static int bpb_read( const u8 *boot, BPB *bpb )
 static int root_has( const char *name )
 {
     char path[PATHLEN];
-    u16 attr;
+    uint16_t attr;
 
     path[0] = (char)('A' + tgt.drive);
     path[1] = ':';
@@ -191,8 +191,8 @@ static int root_has( const char *name )
 static int msdos_sys_is_text( void )
 {
     char path[16];
-    u8 head[16];
-    u16 handle, done;
+    uint8_t head[16];
+    uint16_t handle, done;
     int i, text = 1;
 
     sfmt( path, sizeof( path ), "%c:\\MSDOS.SYS", 'A' + tgt.drive );
@@ -214,20 +214,21 @@ static int msdos_sys_is_text( void )
 /* The release of the PM-DOS on the volume, major*256+minor: PMDOS.SYS
    carries "PMDOSVER" and the two numbers (DOS\DOSMAIN.ASM ver_tag) from
    0.70 on.  0 = no tag, a release before that. */
-static u16 installed_version( void )
+static uint16_t installed_version( void )
 {
     static const char tag[] = "PMDOSVER";
     char path[16];
-    u8 *buf = (u8 *)xalloc( 2048 + 16 );
-    u16 handle, done, have, keep = 0, ver = 0, i;
+    uint8_t *buf = (uint8_t *)xalloc( 2048 + 16 );
+    uint16_t handle, done, have, keep = 0, ver = 0;
+    unsigned int i;
 
     sfmt( path, sizeof( path ), "%c:\\PMDOS.SYS", 'A' + tgt.drive );
     if ( plat_open( path, 0, &handle ) == 0 ) {
         while ( ver == 0 && plat_read( handle, buf + keep, 2048, &done ) == 0 && done ) {
-            have = (u16)(keep + done);
+            have = (uint16_t)(keep + done);
             for ( i = 0; i + 10 <= have; i++ ) {
                 if ( buf[i] == 'P' && mem_cmp( buf + i, tag, 8 ) == 0 ) {
-                    ver = (u16)((buf[i + 8] << 8) | buf[i + 9]);
+                    ver = (uint16_t)((buf[i + 8] << 8) | buf[i + 9]);
                     break;
                 }
             }
@@ -246,7 +247,7 @@ static u16 installed_version( void )
 static void examine_volume( void )
 {
     int major, minor;
-    u32 cluster;
+    uint32_t cluster;
 
     if ( plat_disk_free( tgt.drive, &tgt.free_kb, &cluster ) ) {
         tgt.state = TG_RAW;
@@ -293,9 +294,9 @@ static void examine_volume( void )
    back, and a partition running into it ends on a cylinder the BIOS
    says is not there, which PC DOS 7's FDISK calls Non-DOS.  A disk
    bigger than CHS reaches is used to its end. */
-static u32 part_limit( void )
+static uint32_t part_limit( void )
 {
-    u32 cyl = (u32)tgt.spt * tgt.heads;
+    uint32_t cyl = (uint32_t)tgt.spt * tgt.heads;
 
     if ( tgt.disk_secs <= 1024ul * cyl && tgt.chs_secs &&
          tgt.chs_secs < tgt.disk_secs ) {
@@ -308,13 +309,13 @@ static u32 part_limit( void )
    extended partition counts as used).  The first area starts on track
    1, as the MBR has track 0; the others on a cylinder.  Every area
    ends on a cylinder, and none past part_limit. */
-static void find_gap( const u8 *mbr, int table )
+static void find_gap( const uint8_t *mbr, int table )
 {
-    u32 start[5], end[5], lo, hi, best = 0, best_lba = 0, cyl, disk_end, tmp, size;
+    uint32_t start[5], end[5], lo, hi, best = 0, best_lba = 0, cyl, disk_end, tmp, size;
     int n = 0, i, j, slot = -1;
 
     for ( i = 0; i < 4; i++ ) {
-        const u8 *ent = mbr + 0x1BE + i * 16;
+        const uint8_t *ent = mbr + 0x1BE + i * 16;
         if ( !table || ent[4] == 0 ) {
             if ( slot < 0 ) {
                 slot = i;
@@ -337,7 +338,7 @@ static void find_gap( const u8 *mbr, int table )
             }
         }
     }
-    cyl = (u32)tgt.spt * tgt.heads;
+    cyl = (uint32_t)tgt.spt * tgt.heads;
     disk_end = tgt.part_end - tgt.part_end % cyl;
     start[n] = disk_end;                /* the end of the disk closes the */
     end[n] = disk_end;                  /* last area                      */
@@ -364,7 +365,7 @@ static void find_gap( const u8 *mbr, int table )
 }
 
 /* the drive letter PM-DOS gave the partition starting at that sector */
-static int letter_of( int bios, u32 start )
+static int letter_of( int bios, uint32_t start )
 {
     DRIVEINFO di;
     int drive;
@@ -384,8 +385,8 @@ void disk_examine( void )
     DISKINFO dk;
     BPB bpb;
     int i, j, table;
-    const u8 *ent;
-    u32 lba, size;
+    const uint8_t *ent;
+    uint32_t lba, size;
 
     mem_set( &tgt, 0, sizeof( tgt ) );
     tgt.final = 'C';
@@ -520,20 +521,20 @@ int disk_marked( void )
 /* the partition                                                       */
 /* ------------------------------------------------------------------ */
 
-static void put_chs( u8 *at, u32 lba )
+static void put_chs( uint8_t *at, uint32_t lba )
 {
-    u32 cyl = lba / ((u32)tgt.spt * tgt.heads);
-    u32 rest = lba % ((u32)tgt.spt * tgt.heads);
-    u32 head = rest / tgt.spt, secno = rest % tgt.spt + 1;
+    uint32_t cyl = lba / ((uint32_t)tgt.spt * tgt.heads);
+    uint32_t rest = lba % ((uint32_t)tgt.spt * tgt.heads);
+    uint32_t head = rest / tgt.spt, secno = rest % tgt.spt + 1;
 
     if ( cyl > 1023 ) {                 /* past what CHS can say */
         cyl = 1023;
         head = tgt.heads - 1;
         secno = tgt.spt;
     }
-    at[0] = (u8)head;
-    at[1] = (u8)(secno | ((cyl >> 2) & 0xC0));
-    at[2] = (u8)cyl;
+    at[0] = (uint8_t)head;
+    at[1] = (uint8_t)(secno | ((cyl >> 2) & 0xC0));
+    at[2] = (uint8_t)cyl;
 }
 
 /* The type byte, as FDISK gives it (fd_typefor): FAT32 only past the
@@ -541,25 +542,25 @@ static void put_chs( u8 *at, u32 lba )
    BIOS's CHS reach; and inside it 0Bh, or for FAT16 DOS's own rule -
    06h when the partition ends past sector 65535, 04h below that.
    Setup formats FAT16 at 8MB and up, never FAT12, so never 01h. */
-static u8 part_type( u32 lba, u32 secs )
+static uint8_t part_type( uint32_t lba, uint32_t secs )
 {
-    u32 chs_end = tgt.chs_secs ? tgt.chs_secs : 1024ul * tgt.heads * tgt.spt;
+    uint32_t chs_end = tgt.chs_secs ? tgt.chs_secs : 1024ul * tgt.heads * tgt.spt;
     int beyond = lba + secs > chs_end;
 
     if ( secs > FAT16_MAX ) {
-        return (u8)(beyond ? 0x0C : 0x0B);
+        return (uint8_t)(beyond ? 0x0C : 0x0B);
     }
     if ( beyond ) {
         return 0x0E;
     }
-    return (u8)(lba + secs < 65536ul ? 0x04 : 0x06);
+    return (uint8_t)(lba + secs < 65536ul ? 0x04 : 0x06);
 }
 
 /* Write the partition into the gap disk_examine found.  0 = done */
 int disk_partition( void )
 {
-    u8 *ent;
-    u32 lba = tgt.gap_lba, secs = tgt.gap_secs;
+    uint8_t *ent;
+    uint32_t lba = tgt.gap_lba, secs = tgt.gap_secs;
 
     if ( tgt.slot < 0 || secs == 0 ) {
         return 1;
@@ -604,7 +605,7 @@ int disk_partition( void )
 int disk_activate( int made )
 {
     int i, active = -1, ours = -1;
-    u8 *ent;
+    uint8_t *ent;
 
     if ( !(plat_caps & PC_PARTITION) ) {
         return 0;
@@ -625,7 +626,7 @@ int disk_activate( int made )
         return 0;
     }
     for ( i = 0; i < 4; i++ ) {
-        sec[0x1BE + i * 16] = (u8)(i == ours ? 0x80 : 0);
+        sec[0x1BE + i * 16] = (uint8_t)(i == ours ? 0x80 : 0);
     }
     return plat_disk_write( tgt.bios, 0, 1, sec );
 }
@@ -634,7 +635,7 @@ int disk_activate( int made )
 /* the format                                                          */
 /* ------------------------------------------------------------------ */
 
-static void bpb_write( u8 *boot, const BPB *bpb, int fat32, u32 serial )
+static void bpb_write( uint8_t *boot, const BPB *bpb, int fat32, uint32_t serial )
 {
     static const char oem[] = "MSDOS5.0";
     char label[12];
@@ -646,9 +647,9 @@ static void bpb_write( u8 *boot, const BPB *bpb, int fat32, u32 serial )
     WR16( boot + 0x0E, bpb->rsvd );
     boot[0x10] = 2;
     WR16( boot + 0x11, bpb->rootents );
-    WR16( boot + 0x13, bpb->total < 65536ul ? (u16)bpb->total : 0 );
+    WR16( boot + 0x13, bpb->total < 65536ul ? (uint16_t)bpb->total : 0 );
     boot[0x15] = 0xF8;
-    WR16( boot + 0x16, fat32 ? 0 : (u16)bpb->spf );
+    WR16( boot + 0x16, fat32 ? 0 : (uint16_t)bpb->spf );
     WR16( boot + 0x18, bpb->spt );
     WR16( boot + 0x1A, bpb->heads );
     WR32( boot + 0x1C, bpb->hidden );
@@ -668,27 +669,27 @@ static void bpb_write( u8 *boot, const BPB *bpb, int fat32, u32 serial )
     WR32( boot + at + 3, serial );
     mem_set( label, ' ', 11 );
     for ( i = 0; i < 11 && inf.label[i]; i++ ) {
-        label[i] = (char)ch_upper( (u8)inf.label[i] );
+        label[i] = (char)ch_upper( (uint8_t)inf.label[i] );
     }
     mem_cpy( boot + at + 7, label, 11 );
     mem_cpy( boot + at + 18, fat32 ? "FAT32   " : "FAT16   ", 8 );
 }
 
-static u32 serial_now( void )
+static uint32_t serial_now( void )
 {
     int y, m, d, h, mi;
 
     plat_get_date( &y, &m, &d );
     plat_get_time( &h, &mi );
-    return ((u32)(m * 256 + d) << 16) + (u32)y + (u32)(h * 256 + mi) * 31ul;
+    return ((uint32_t)(m * 256 + d) << 16) + (uint32_t)y + (uint32_t)(h * 256 + mi) * 31ul;
 }
 
 /* The layout of a new volume of "total" sectors: FAT16 where FAT16 can
    be, FAT32 past that or when the type byte says FAT32 - unless the
    partition is too small for FAT32, which then gets FAT16. */
-static int layout( BPB *bpb, u32 total )
+static int layout( BPB *bpb, uint32_t total )
 {
-    u32 rootsecs, nclus, spf = 1;
+    uint32_t rootsecs, nclus, spf = 1;
     int n, fat32 = total > FAT16_MAX || (total >= 65536ul &&
                    (tgt.part_type == 0x0B || tgt.part_type == 0x0C));
 
@@ -745,13 +746,13 @@ static int layout( BPB *bpb, u32 total )
     return 0;
 }
 
-static int write_secs( u32 lba, u32 count, const u8 *data, u8 *zeros,
-                       void (*progress)( u32, u32 ), u32 *done, u32 total )
+static int write_secs( uint32_t lba, uint32_t count, const uint8_t *data, uint8_t *zeros,
+                       void (*progress)( uint32_t, uint32_t ), uint32_t *done, uint32_t total )
 {
-    u16 step;
+    uint16_t step;
 
     while ( count ) {
-        step = count > 32 ? 32 : (u16)count;
+        step = count > 32 ? 32 : (uint16_t)count;
         if ( plat_disk_write( tgt.bios, tgt.part_lba + lba, step,
                               data ? data : zeros ) ) {
             return 1;
@@ -759,7 +760,7 @@ static int write_secs( u32 lba, u32 count, const u8 *data, u8 *zeros,
         lba += step;
         count -= step;
         if ( data ) {
-            data += (u32)step * SECSIZE;
+            data += (uint32_t)step * SECSIZE;
         }
         *done += step;
         if ( progress ) {
@@ -771,22 +772,22 @@ static int write_secs( u32 lba, u32 count, const u8 *data, u8 *zeros,
 
 /* Lay a new FAT file system over the partition, the boot code with it.
    0 = done */
-int disk_format( void (*progress)( u32 done, u32 total ) )
+int disk_format( void (*progress)( uint32_t done, uint32_t total ) )
 {
     BPB bpb;
-    u8 *zeros, *boot;
-    u32 total, done = 0, serial = serial_now();
+    uint8_t *zeros, *boot;
+    uint32_t total, done = 0, serial = serial_now();
     int fat32, f;
-    u16 date, time;
+    uint16_t date, time;
     int y, m, d, h, mi;
 
     if ( layout( &bpb, tgt.part_secs ) ) {
         return 1;
     }
     fat32 = bpb.fat == 32;
-    zeros = (u8 *)xalloc( 32ul * SECSIZE );
-    mem_set( zeros, 0, (u16)(32 * SECSIZE) );
-    boot = (u8 *)xalloc( SECSIZE );
+    zeros = (uint8_t *)xalloc( 32ul * SECSIZE );
+    mem_set( zeros, 0, (uint16_t)(32 * SECSIZE) );
+    boot = (uint8_t *)xalloc( SECSIZE );
     total = 2 * bpb.spf + (fat32 ? bpb.spc : 32) + bpb.rsvd;
 
     /* the reserved area first: zeros, then what belongs there */
@@ -848,13 +849,13 @@ int disk_format( void (*progress)( u32 done, u32 total ) )
     mem_set( sec, 0, SECSIZE );
     mem_set( sec, ' ', 11 );
     for ( f = 0; f < 11 && inf.label[f]; f++ ) {
-        sec[f] = (u8)ch_upper( (u8)inf.label[f] );
+        sec[f] = (uint8_t)ch_upper( (uint8_t)inf.label[f] );
     }
     sec[11] = FA_LABEL;
     plat_get_date( &y, &m, &d );
     plat_get_time( &h, &mi );
-    date = (u16)(((y - 1980) << 9) | (m << 5) | d);
-    time = (u16)((h << 11) | (mi << 5));
+    date = (uint16_t)(((y - 1980) << 9) | (m << 5) | d);
+    time = (uint16_t)((h << 11) | (mi << 5));
     WR16( sec + 22, time );
     WR16( sec + 24, date );
     if ( plat_disk_write( tgt.bios, tgt.part_lba + bpb.rootlba, 1, sec ) ) {
@@ -878,9 +879,9 @@ int disk_format( void (*progress)( u32 done, u32 total ) )
 /* ------------------------------------------------------------------ */
 
 /* the FAT entry of a cluster, read through the volume */
-static u32 fat_entry( const BPB *bpb, u32 clus, u8 *buf )
+static uint32_t fat_entry( const BPB *bpb, uint32_t clus, uint8_t *buf )
 {
-    u32 off, lba;
+    uint32_t off, lba;
 
     off = bpb->fat == 12 ? clus + clus / 2 : clus * (bpb->fat == 16 ? 2 : 4);
     lba = bpb->fatlba + off / SECSIZE;
@@ -890,7 +891,7 @@ static u32 fat_entry( const BPB *bpb, u32 clus, u8 *buf )
         return 0;
     }
     if ( bpb->fat == 12 ) {
-        u16 val = RD16( buf + off );
+        uint16_t val = RD16( buf + off );
         return (clus & 1) ? val >> 4 : val & 0xFFF;
     }
     if ( bpb->fat == 16 ) {
@@ -900,9 +901,9 @@ static u32 fat_entry( const BPB *bpb, u32 clus, u8 *buf )
 }
 
 /* the first cluster of a root entry, found by reading the root */
-static u32 root_cluster( const BPB *bpb, const char *name83, u8 *buf )
+static uint32_t root_cluster( const BPB *bpb, const char *name83, uint8_t *buf )
 {
-    u32 lba, last = bpb->datalba;
+    uint32_t lba, last = bpb->datalba;
     int i;
 
     for ( lba = bpb->rootlba; lba < last; lba++ ) {
@@ -915,7 +916,7 @@ static u32 root_cluster( const BPB *bpb, const char *name83, u8 *buf )
             }
             if ( mem_cmp( buf + i, name83, 11 ) == 0 && !(buf[i + 11] & FA_LABEL) ) {
                 return RD16( buf + i + 26 ) |
-                       (bpb->fat == 32 ? (u32)RD16( buf + i + 20 ) << 16 : 0);
+                       (bpb->fat == 32 ? (uint32_t)RD16( buf + i + 20 ) << 16 : 0);
             }
         }
     }
@@ -924,12 +925,12 @@ static u32 root_cluster( const BPB *bpb, const char *name83, u8 *buf )
 
 /* Stage 2 as the file PMBOOT.SYS, all in one piece.  -> the sector it
    starts at, counted from the volume's start, or 0 */
-static u32 stage2_file( const BPB *bpb )
+static uint32_t stage2_file( const BPB *bpb )
 {
     char path[16], temp[16];
-    u8 *buf = (u8 *)xalloc( 2 * SECSIZE );
-    u16 handle, done;
-    u32 first, clus, next, need, lba = 0;
+    uint8_t *buf = (uint8_t *)xalloc( 2 * SECSIZE );
+    uint16_t handle, done;
+    uint32_t first, clus, next, need, lba = 0;
     int tries, n, temps = 0;
 
     sfmt( path, sizeof( path ), "%c:\\PMBOOT.SYS", 'A' + tgt.drive );
@@ -982,7 +983,7 @@ static u32 stage2_file( const BPB *bpb )
     return lba;
 }
 
-static int all_zero( const u8 *data, u16 len )
+static int all_zero( const uint8_t *data, uint16_t len )
 {
     while ( len-- ) {
         if ( *data++ ) {
@@ -997,8 +998,8 @@ static int all_zero( const u8 *data, u16 len )
 int disk_bootable( void )
 {
     BPB bpb;
-    u8 *old = (u8 *)xalloc( SECSIZE ), *s2 = (u8 *)xalloc( S2_SECTORS * SECSIZE );
-    u32 where = 0;
+    uint8_t *old = (uint8_t *)xalloc( SECSIZE ), *s2 = (uint8_t *)xalloc( S2_SECTORS * SECSIZE );
+    uint32_t where = 0;
     int fat32, rc = 1, span;
 
     plat_flush();
@@ -1033,7 +1034,7 @@ int disk_bootable( void )
     }
     /* stage 1: our code round the volume's BPB and OEM name */
     mem_cpy( sec, fat32 ? code_fat32 : code_fat16, SECSIZE );
-    mem_cpy( sec + 3, old + 3, (u16)(span - 3) );
+    mem_cpy( sec + 3, old + 3, (uint16_t)(span - 3) );
     sec[fat32 ? 0x40 : 0x24] = 0x80;
     WR32( sec + VBR_S2, where );
     if ( plat_vol_write( tgt.drive, 0, 1, sec ) ) {
@@ -1051,9 +1052,9 @@ out:
 }
 
 /* room for "need" bytes on the target, counted in its clusters */
-int disk_space_ok( u32 need )
+int disk_space_ok( uint32_t need )
 {
-    u32 cluster, free_kb;
+    uint32_t cluster, free_kb;
 
     if ( plat_disk_free( tgt.drive, &free_kb, &cluster ) ) {
         return 0;

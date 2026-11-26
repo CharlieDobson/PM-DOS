@@ -99,15 +99,15 @@ const char *msg_error( int code )
     return "General failure";
 }
 
-static void raw( const char *buf, u32 len )
+static void raw( const char *buf, unsigned int len )
 {
     sys_write( H_OUT, buf, len );
 }
 
 /* "\n" as CR LF, in runs, so a line is one or two writes */
-static void put_run( const char *str, u32 len )
+static void put_run( const char *str, unsigned int len )
 {
-    u32 start = 0, pos;
+    unsigned int start = 0, pos;
 
     for ( pos = 0; pos < len; pos++ ) {
         if ( str[pos] == '\n' ) {
@@ -141,7 +141,7 @@ static void expand( const char *tmpl, const char *a1, const char *a2 )
 
     for ( ; *tmpl; tmpl++ ) {
         if ( tmpl[0] == '%' && (tmpl[1] == '1' || tmpl[1] == '2') ) {
-            put_run( run, (u32)(tmpl - run) );
+            put_run( run, (unsigned int)(tmpl - run) );
             arg = tmpl[1] == '1' ? a1 : a2;
             if ( arg ) {
                 raw( arg, str_len( arg ) );         /* names are shown as they are */
@@ -150,7 +150,7 @@ static void expand( const char *tmpl, const char *a1, const char *a2 )
             run = tmpl + 1;
         }
     }
-    put_run( run, (u32)(tmpl - run) );
+    put_run( run, (unsigned int)(tmpl - run) );
 }
 
 void out_msg( const char *tmpl, const char *a1, const char *a2 )

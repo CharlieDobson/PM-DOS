@@ -39,36 +39,36 @@
 #include "crc.h"
 #include "flate.h"
 
-#define RD16( ptr )     ((u32)(ptr)[0] | ((u32)(ptr)[1] << 8))
+#define RD16( ptr )     ((uint32_t)(ptr)[0] | ((uint32_t)(ptr)[1] << 8))
 
 #define MAX_BITS        15
 #define LIT_CODES       288     /* with the two that are never used */
 #define DIST_CODES      32      /* likewise */
 #define END_BLOCK       256
 
-static const u16 len_base[29] = {
+static const uint16_t len_base[29] = {
     3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31, 35, 43, 51, 59, 67, 83, 99,
     115, 131, 163, 195, 227, 258
 };
-static const u8 len_extra[29] = {
+static const uint8_t len_extra[29] = {
     0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0
 };
-static const u16 dist_base[30] = {
+static const uint16_t dist_base[30] = {
     1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193, 257, 385, 513, 769, 1025,
     1537, 2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577
 };
-static const u8 dist_extra[30] = {
+static const uint8_t dist_extra[30] = {
     0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12,
     12, 13, 13
 };
 /* the order a block's header gives the lengths of the code-length code in */
-static const u8 clen_order[19] = {
+static const uint8_t clen_order[19] = {
     16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15
 };
 
-static u32 bit_reverse( u32 code, int len )
+static uint32_t bit_reverse( uint32_t code, int len )
 {
-    u32 back = 0;
+    uint32_t back = 0;
 
     while ( len-- ) {
         back = (back << 1) | (code & 1);
@@ -85,22 +85,22 @@ static u32 bit_reverse( u32 code, int len )
 #define FAST_SIZE       (1 << FAST_BITS)
 
 typedef struct {
-    u16 fast[FAST_SIZE];        /* length << 9 | symbol; 0: a longer code */
-    u16 count[MAX_BITS + 1];    /* how many codes of each length */
-    u16 symbol[LIT_CODES];      /* the symbols in the order of their codes */
+    uint16_t fast[FAST_SIZE];      /* length << 9 | symbol; 0: a longer code */
+    uint16_t count[MAX_BITS + 1];  /* how many codes of each length */
+    uint16_t symbol[LIT_CODES];    /* the symbols in the order of their codes */
 } HUFF;
 
 typedef struct {
-    const u8 *src;
-    u32   src_len, pos;
-    u32   bits;                 /* taken from src and not used yet */
-    u32   nbits;
-    u8   *dst;
-    u32   used, cap;
-    int   grows;                /* dst is a heap block: it may be made bigger */
-    u32   max;                  /* ...up to this */
-    HUFF  lit, dist;
-    u8    lens[LIT_CODES + DIST_CODES];
+    const uint8_t *src;
+    uint32_t src_len, pos;
+    uint32_t bits;              /* taken from src and not used yet */
+    uint32_t nbits;
+    uint8_t *dst;
+    uint32_t used, cap;
+    int      grows;             /* dst is a heap block: it may be made bigger */
+    uint32_t max;               /* ...up to this */
+    HUFF     lit, dist;
+    uint8_t  lens[LIT_CODES + DIST_CODES];
 } INFL;
 
 /*
@@ -109,10 +109,10 @@ typedef struct {
  * of one bit, is let through (the distance table of a block with no
  * match or one distance) unless "whole" asks for a complete one.
  */
-static int huff_build( HUFF *huff, const u8 *lens, int count, int whole )
+static int huff_build( HUFF *huff, const uint8_t *lens, int count, int whole )
 {
-    u16 start[MAX_BITS + 2];
-    u32 code, fill;
+    uint16_t start[MAX_BITS + 2];
+    uint32_t code, fill;
     int len, sym, left, index, codes = 0, from;
 
     for ( len = 0; len <= MAX_BITS; len++ ) {
@@ -138,11 +138,11 @@ static int huff_build( HUFF *huff, const u8 *lens, int count, int whole )
     }
     start[1] = 0;
     for ( len = 1; len <= MAX_BITS; len++ ) {
-        start[len + 1] = (u16)(start[len] + huff->count[len]);
+        start[len + 1] = (uint16_t)(start[len] + huff->count[len]);
     }
     for ( sym = 0; sym < count; sym++ ) {
         if ( lens[sym] ) {
-            huff->symbol[start[lens[sym]]++] = (u16)sym;
+            huff->symbol[start[lens[sym]]++] = (uint16_t)sym;
         }
     }
     mem_set( huff->fast, 0, sizeof( huff->fast ) );
@@ -151,7 +151,7 @@ static int huff_build( HUFF *huff, const u8 *lens, int count, int whole )
     for ( len = 1; len <= FAST_BITS; len++ ) {
         for ( from = huff->count[len]; from > 0; from-- ) {
             for ( fill = bit_reverse( code, len ); fill < FAST_SIZE; fill += 1UL << len ) {
-                huff->fast[fill] = (u16)(((u32)len << FAST_BITS) | huff->symbol[index]);
+                huff->fast[fill] = (uint16_t)(((uint32_t)len << FAST_BITS) | huff->symbol[index]);
             }
             index++;
             code++;
@@ -164,15 +164,15 @@ static int huff_build( HUFF *huff, const u8 *lens, int count, int whole )
 static void infl_fill( INFL *infl )
 {
     while ( infl->nbits <= 24 && infl->pos < infl->src_len ) {
-        infl->bits |= (u32)infl->src[infl->pos++] << infl->nbits;
+        infl->bits |= (uint32_t)infl->src[infl->pos++] << infl->nbits;
         infl->nbits += 8;
     }
 }
 
 /* the next "count" bits, 16 at most; -1 when the input ends first */
-static s32 infl_bits( INFL *infl, u32 count )
+static int32_t infl_bits( INFL *infl, uint32_t count )
 {
-    u32 value;
+    uint32_t value;
 
     if ( infl->nbits < count ) {
         infl_fill( infl );
@@ -183,13 +183,13 @@ static s32 infl_bits( INFL *infl, u32 count )
     value = infl->bits & ((1UL << count) - 1);
     infl->bits >>= count;
     infl->nbits -= count;
-    return (s32)value;
+    return (int32_t)value;
 }
 
 /* the next symbol; -1 for bits that are no code, or no more input */
 static int huff_decode( INFL *infl, const HUFF *huff )
 {
-    u32 entry, len, code, first, index, count, bits;
+    uint32_t entry, len, code, first, index, count, bits;
 
     if ( infl->nbits < MAX_BITS ) {
         infl_fill( infl );
@@ -226,10 +226,10 @@ static int huff_decode( INFL *infl, const HUFF *huff )
 }
 
 /* room for "need" more bytes of output */
-static int infl_room( INFL *infl, u32 need )
+static int infl_room( INFL *infl, uint32_t need )
 {
-    u32 want;
-    u8 *fresh;
+    uint32_t want;
+    uint8_t *fresh;
 
     if ( need <= infl->cap - infl->used ) {
         return 1;
@@ -244,7 +244,7 @@ static int infl_room( INFL *infl, u32 need )
     if ( want > infl->max ) {
         want = infl->max;
     }
-    fresh = (u8 *)try_realloc( infl->dst, want );
+    fresh = (uint8_t *)try_realloc( infl->dst, want );
     if ( fresh == NULL ) {
         return 0;
     }
@@ -255,7 +255,7 @@ static int infl_room( INFL *infl, u32 need )
 
 static int infl_stored( INFL *infl )
 {
-    u32 len;
+    uint32_t len;
 
     /* back to whole bytes: what is left of the byte the bits stopped
        in is dropped, and the bytes taken after it are not taken */
@@ -294,8 +294,8 @@ static int infl_fixed( INFL *infl )
 /* a block's own two codes, from its header */
 static int infl_dynamic( INFL *infl )
 {
-    s32 hlit, hdist, hclen, value;
-    u32 index, total, repeat;
+    int32_t hlit, hdist, hclen, value;
+    unsigned int index, total, repeat;
     int sym, fill;
 
     hlit = infl_bits( infl, 5 );
@@ -311,18 +311,18 @@ static int infl_dynamic( INFL *infl )
         return 0;
     }
     mem_set( infl->lens, 0, 19 );
-    for ( index = 0; index < (u32)hclen; index++ ) {
+    for ( index = 0; index < (unsigned int)hclen; index++ ) {
         value = infl_bits( infl, 3 );
         if ( value < 0 ) {
             return 0;
         }
-        infl->lens[clen_order[index]] = (u8)value;
+        infl->lens[clen_order[index]] = (uint8_t)value;
     }
     /* the code the lengths are written in borrows the literals' table */
     if ( !huff_build( &infl->lit, infl->lens, 19, 1 ) ) {
         return 0;
     }
-    total = (u32)hlit + (u32)hdist;
+    total = (unsigned int)hlit + (unsigned int)hdist;
     index = 0;
     while ( index < total ) {
         sym = huff_decode( infl, &infl->lit );
@@ -330,7 +330,7 @@ static int infl_dynamic( INFL *infl )
             return 0;
         }
         if ( sym < 16 ) {
-            infl->lens[index++] = (u8)sym;
+            infl->lens[index++] = (uint8_t)sym;
             continue;
         }
         fill = 0;
@@ -351,12 +351,12 @@ static int infl_dynamic( INFL *infl )
         if ( value < 0 ) {
             return 0;
         }
-        repeat += (u32)value;
+        repeat += (unsigned int)value;
         if ( repeat > total - index ) {
             return 0;
         }
         while ( repeat-- ) {
-            infl->lens[index++] = (u8)fill;
+            infl->lens[index++] = (uint8_t)fill;
         }
     }
     if ( infl->lens[END_BLOCK] == 0 ) {
@@ -369,10 +369,10 @@ static int infl_dynamic( INFL *infl )
 /* literals and matches to the end of a block */
 static int infl_codes( INFL *infl )
 {
-    u8 *out;
-    const u8 *from;
-    u32 len, dist;
-    s32 extra;
+    uint8_t *out;
+    const uint8_t *from;
+    uint32_t len, dist;
+    int32_t extra;
     int sym;
 
     for ( ;; ) {
@@ -384,7 +384,7 @@ static int infl_codes( INFL *infl )
             if ( infl->used == infl->cap && !infl_room( infl, 1 ) ) {
                 return 0;
             }
-            infl->dst[infl->used++] = (u8)sym;
+            infl->dst[infl->used++] = (uint8_t)sym;
             continue;
         }
         if ( sym == END_BLOCK ) {
@@ -398,7 +398,7 @@ static int infl_codes( INFL *infl )
         if ( extra < 0 ) {
             return 0;
         }
-        len = len_base[sym] + (u32)extra;
+        len = len_base[sym] + (uint32_t)extra;
         sym = huff_decode( infl, &infl->dist );
         if ( sym < 0 || sym >= 30 ) {
             return 0;
@@ -407,7 +407,7 @@ static int infl_codes( INFL *infl )
         if ( extra < 0 ) {
             return 0;
         }
-        dist = dist_base[sym] + (u32)extra;
+        dist = dist_base[sym] + (uint32_t)extra;
         if ( dist > infl->used ) {
             return 0;                   /* from before the first byte */
         }
@@ -430,7 +430,7 @@ static int infl_codes( INFL *infl )
 
 static int infl_run( INFL *infl )
 {
-    s32 last, type;
+    int32_t last, type;
     int ok;
 
     do {
@@ -462,8 +462,8 @@ static int infl_run( INFL *infl )
  * made, no bigger than "cap", and *made is it.  -> 1, and how many
  * bytes came out and how many of the input were the stream.
  */
-static int infl_all( const u8 *src, u32 src_len, u8 *dst, u32 cap, u8 **made, u32 *out_len,
-                     u32 *taken )
+static int infl_all( const uint8_t *src, uint32_t src_len, uint8_t *dst, uint32_t cap, uint8_t **made, uint32_t *out_len,
+                     uint32_t *taken )
 {
     INFL *infl = (INFL *)try_alloc( sizeof( INFL ) );
     int ok;
@@ -484,7 +484,7 @@ static int infl_all( const u8 *src, u32 src_len, u8 *dst, u32 cap, u8 **made, u3
     ok = infl_run( infl );
     if ( ok && infl->grows && infl->dst == NULL ) {
         /* a stream of no bytes is still an answer, and NULL is not one */
-        infl->dst = (u8 *)try_alloc( 1 );
+        infl->dst = (uint8_t *)try_alloc( 1 );
         ok = infl->dst != NULL;
     }
     if ( ok ) {
@@ -500,9 +500,9 @@ static int infl_all( const u8 *src, u32 src_len, u8 *dst, u32 cap, u8 **made, u3
     return ok;
 }
 
-int inflate_mem( const u8 *src, u32 src_len, u8 *dst, u32 dst_cap, u32 *dst_len )
+int inflate_mem( const uint8_t *src, uint32_t src_len, uint8_t *dst, uint32_t dst_cap, uint32_t *dst_len )
 {
-    u32 taken;
+    uint32_t taken;
 
     *dst_len = 0;
     if ( dst == NULL ) {
@@ -511,10 +511,10 @@ int inflate_mem( const u8 *src, u32 src_len, u8 *dst, u32 dst_cap, u32 *dst_len 
     return infl_all( src, src_len, dst, dst_cap, NULL, dst_len, &taken );
 }
 
-u8 *inflate_alloc( const u8 *src, u32 src_len, u32 *out_len, u32 max_len )
+uint8_t *inflate_alloc( const uint8_t *src, uint32_t src_len, uint32_t *out_len, uint32_t max_len )
 {
-    u8 *made = NULL;
-    u32 taken;
+    uint8_t *made = NULL;
+    uint32_t taken;
 
     *out_len = 0;
     if ( !infl_all( src, src_len, NULL, max_len, &made, out_len, &taken ) ) {
@@ -525,26 +525,26 @@ u8 *inflate_alloc( const u8 *src, u32 src_len, u32 *out_len, u32 max_len )
 
 /* a zlib stream's two bytes: DEFLATE, a window of 32K at most, the
    check bits right, and no preset dictionary */
-static int zlib_header( const u8 *src, u32 src_len )
+static int zlib_header( const uint8_t *src, uint32_t src_len )
 {
     return src_len >= 6 && (src[0] & 0x0F) == 8 && (src[0] >> 4) <= 7 &&
-           (((u32)src[0] << 8) | src[1]) % 31 == 0 && (src[1] & 0x20) == 0;
+           (((uint32_t)src[0] << 8) | src[1]) % 31 == 0 && (src[1] & 0x20) == 0;
 }
 
-static int zlib_sum_ok( const u8 *src, u32 src_len, u32 taken, const u8 *data, u32 len )
+static int zlib_sum_ok( const uint8_t *src, uint32_t src_len, uint32_t taken, const uint8_t *data, uint32_t len )
 {
-    const u8 *sum = src + 2 + taken;
+    const uint8_t *sum = src + 2 + taken;
 
     if ( src_len - 2 - taken < 4 ) {
         return 0;
     }
     return adler32_update( 1, data, len ) ==
-           (((u32)sum[0] << 24) | ((u32)sum[1] << 16) | ((u32)sum[2] << 8) | (u32)sum[3]);
+           (((uint32_t)sum[0] << 24) | ((uint32_t)sum[1] << 16) | ((uint32_t)sum[2] << 8) | (uint32_t)sum[3]);
 }
 
-int zlib_inflate_mem( const u8 *src, u32 src_len, u8 *dst, u32 dst_cap, u32 *dst_len )
+int zlib_inflate_mem( const uint8_t *src, uint32_t src_len, uint8_t *dst, uint32_t dst_cap, uint32_t *dst_len )
 {
-    u32 taken;
+    uint32_t taken;
 
     *dst_len = 0;
     if ( dst == NULL || !zlib_header( src, src_len ) ||
@@ -558,10 +558,10 @@ int zlib_inflate_mem( const u8 *src, u32 src_len, u8 *dst, u32 dst_cap, u32 *dst
     return 1;
 }
 
-u8 *zlib_inflate_alloc( const u8 *src, u32 src_len, u32 *out_len, u32 max_len )
+uint8_t *zlib_inflate_alloc( const uint8_t *src, uint32_t src_len, uint32_t *out_len, uint32_t max_len )
 {
-    u8 *made = NULL;
-    u32 taken;
+    uint8_t *made = NULL;
+    uint32_t taken;
 
     *out_len = 0;
     if ( !zlib_header( src, src_len ) ||
@@ -587,7 +587,7 @@ u8 *zlib_inflate_alloc( const u8 *src, u32 src_len, u32 *out_len, u32 max_len )
 #define HASH_BITS       15
 #define HASH_SIZE       (1UL << HASH_BITS)
 #define HASH3( ptr ) \
-    ((((u32)(ptr)[0] << 10) ^ ((u32)(ptr)[1] << 5) ^ (u32)(ptr)[2]) & (HASH_SIZE - 1))
+    ((((uint32_t)(ptr)[0] << 10) ^ ((uint32_t)(ptr)[1] << 5) ^ (uint32_t)(ptr)[2]) & (HASH_SIZE - 1))
 #define MAX_CHAIN       64
 #define GOOD_MATCH      8       /* this much in hand: a quarter of the chain */
 #define LAZY_MATCH      16      /* this much in hand: the next place is not tried */
@@ -601,45 +601,45 @@ u8 *zlib_inflate_alloc( const u8 *src, u32 src_len, u32 *out_len, u32 max_len )
 #define STORED_MAX      65535UL
 
 typedef struct {
-    u16 freq[LIT_CODES];
-    u16 code[LIT_CODES];        /* as it goes out: first bit lowest */
-    u8  len[LIT_CODES];
+    uint16_t freq[LIT_CODES];
+    uint16_t code[LIT_CODES];   /* as it goes out: first bit lowest */
+    uint8_t  len[LIT_CODES];
 } TREE;
 
 typedef struct {
-    const u8 *src;
-    u32   len;
-    u8   *out;
-    u32   used, cap;
-    int   failed;               /* no memory for the output */
-    u32   bits;
-    u32   nbits;
-    u32  *head;                 /* by hash: the newest place + 1, 0 for none */
-    u16  *prev;                 /* by place: how far back the one before is */
-    u16  *sym_dist;             /* a block's symbols: 0 for a literal */
-    u8   *sym_lc;               /* ...the literal, or the length less 3 */
-    u32   nsym;
-    TREE  lit, dist, bl, fix_lit, fix_dist;
-    u8    len_code[256];        /* a length less 3 -> its code less 257 */
-    u8    dist_code[512];
+    const uint8_t *src;
+    uint32_t     len;
+    uint8_t     *out;
+    uint32_t     used, cap;
+    int          failed;        /* no memory for the output */
+    uint32_t     bits;
+    uint32_t     nbits;
+    uint32_t    *head;          /* by hash: the newest place + 1, 0 for none */
+    uint16_t    *prev;          /* by place: how far back the one before is */
+    uint16_t    *sym_dist;      /* a block's symbols: 0 for a literal */
+    uint8_t     *sym_lc;        /* ...the literal, or the length less 3 */
+    unsigned int nsym;
+    TREE         lit, dist, bl, fix_lit, fix_dist;
+    uint8_t      len_code[256]; /* a length less 3 -> its code less 257 */
+    uint8_t      dist_code[512];
     /* the code builder's */
-    u32   weight[2 * LIT_CODES];
-    u16   parent[2 * LIT_CODES];
-    u16   depth[2 * LIT_CODES];
-    u16   order[LIT_CODES];
+    uint32_t     weight[2 * LIT_CODES];
+    uint16_t     parent[2 * LIT_CODES];
+    uint16_t     depth[2 * LIT_CODES];
+    uint16_t     order[LIT_CODES];
     /* both codes' lengths as a block's header says them */
-    u8    seq[L_CODES + D_CODES];
-    u8    seq_extra[L_CODES + D_CODES];
-    u32   nseq;
+    uint8_t      seq[L_CODES + D_CODES];
+    uint8_t      seq_extra[L_CODES + D_CODES];
+    unsigned int nseq;
 } DEFL;
 
 #define DIST_CODE( defl, dist ) \
     ((dist) <= 256 ? (defl)->dist_code[(dist) - 1] : (defl)->dist_code[256 + (((dist) - 1) >> 7)])
 
-static int defl_room( DEFL *defl, u32 need )
+static int defl_room( DEFL *defl, uint32_t need )
 {
-    u32 want;
-    u8 *fresh;
+    uint32_t want;
+    uint8_t *fresh;
 
     if ( defl->failed ) {
         return 0;
@@ -655,7 +655,7 @@ static int defl_room( DEFL *defl, u32 need )
     if ( want < defl->used + need ) {
         want = defl->used + need;
     }
-    fresh = (u8 *)try_realloc( defl->out, want );
+    fresh = (uint8_t *)try_realloc( defl->out, want );
     if ( fresh == NULL ) {
         defl->failed = 1;
         return 0;
@@ -666,12 +666,12 @@ static int defl_room( DEFL *defl, u32 need )
 }
 
 /* "count" bits, 16 at most.  The caller has made room. */
-static void defl_put( DEFL *defl, u32 value, u32 count )
+static void defl_put( DEFL *defl, uint32_t value, uint32_t count )
 {
     defl->bits |= value << defl->nbits;
     defl->nbits += count;
     while ( defl->nbits >= 8 ) {
-        defl->out[defl->used++] = (u8)defl->bits;
+        defl->out[defl->used++] = (uint8_t)defl->bits;
         defl->bits >>= 8;
         defl->nbits -= 8;
     }
@@ -680,9 +680,9 @@ static void defl_put( DEFL *defl, u32 value, u32 count )
 /* the codes that go with a tree's lengths */
 static void defl_codes( TREE *tree, int count )
 {
-    u16 next[MAX_BITS + 2];
-    u16 per[MAX_BITS + 1];
-    u32 code = 0;
+    uint16_t next[MAX_BITS + 2];
+    uint16_t per[MAX_BITS + 1];
+    uint32_t code = 0;
     int bits, sym;
 
     for ( bits = 0; bits <= MAX_BITS; bits++ ) {
@@ -694,17 +694,17 @@ static void defl_codes( TREE *tree, int count )
     per[0] = 0;
     for ( bits = 1; bits <= MAX_BITS; bits++ ) {
         code = (code + per[bits - 1]) << 1;
-        next[bits] = (u16)code;
+        next[bits] = (uint16_t)code;
     }
     for ( sym = 0; sym < count; sym++ ) {
         tree->code[sym] = tree->len[sym] ?
-                          (u16)bit_reverse( next[tree->len[sym]]++, tree->len[sym] ) : 0;
+                          (uint16_t)bit_reverse( next[tree->len[sym]]++, tree->len[sym] ) : 0;
     }
 }
 
 /* what a symbol weighs: one that is only there to make up the two a
    tree must have counts as seen once */
-#define WEIGH( tree, sym )  ((tree)->freq[sym] ? (u32)(tree)->freq[sym] : 1UL)
+#define WEIGH( tree, sym )  ((tree)->freq[sym] ? (uint32_t)(tree)->freq[sym] : 1UL)
 #define LIGHTER( tree, one, two ) \
     (WEIGH( tree, one ) < WEIGH( tree, two ) || \
      (WEIGH( tree, one ) == WEIGH( tree, two ) && (one) < (two)))
@@ -715,17 +715,17 @@ static void defl_codes( TREE *tree, int count )
  */
 static void defl_tree( DEFL *defl, TREE *tree, int count, int max_bits )
 {
-    u32 *weight = defl->weight;
-    u16 *parent = defl->parent, *depth = defl->depth, *order = defl->order;
-    u16 per[MAX_BITS + 1];
-    u32 total;
-    u16 hold;
+    uint32_t *weight = defl->weight;
+    uint16_t *parent = defl->parent, *depth = defl->depth, *order = defl->order;
+    uint16_t per[MAX_BITS + 1];
+    uint32_t total;
+    uint16_t hold;
     int used = 0, index, gap, back, leaf, node, fresh, take, bits, pick[2];
 
     for ( index = 0; index < count; index++ ) {
         tree->len[index] = 0;
         if ( tree->freq[index] ) {
-            order[used++] = (u16)index;
+            order[used++] = (uint16_t)index;
         }
     }
     /* two codes at least: a reader is owed a bit to read even when
@@ -734,7 +734,7 @@ static void defl_tree( DEFL *defl, TREE *tree, int count, int max_bits )
         order[used++] = 0;
         order[used++] = 1;
     } else if ( used == 1 ) {
-        order[used++] = (u16)(order[0] == 0 ? 1 : 0);
+        order[used++] = (uint16_t)(order[0] == 0 ? 1 : 0);
     }
     for ( gap = used / 2; gap > 0; gap /= 2 ) {
         for ( index = gap; index < used; index++ ) {
@@ -761,12 +761,12 @@ static void defl_tree( DEFL *defl, TREE *tree, int count, int max_bits )
             }
         }
         weight[fresh] = weight[pick[0]] + weight[pick[1]];
-        parent[pick[0]] = parent[pick[1]] = (u16)fresh;
+        parent[pick[0]] = parent[pick[1]] = (uint16_t)fresh;
         fresh++;
     }
     depth[fresh - 1] = 0;
     for ( index = fresh - 2; index >= 0; index-- ) {
-        depth[index] = (u16)(depth[parent[index]] + 1);
+        depth[index] = (uint16_t)(depth[parent[index]] + 1);
     }
     for ( bits = 0; bits <= MAX_BITS; bits++ ) {
         per[bits] = 0;
@@ -778,7 +778,7 @@ static void defl_tree( DEFL *defl, TREE *tree, int count, int max_bits )
        for: take one off the longest and split the next shortest */
     total = 0;
     for ( bits = 1; bits <= max_bits; bits++ ) {
-        total += (u32)per[bits] << (max_bits - bits);
+        total += (uint32_t)per[bits] << (max_bits - bits);
     }
     while ( total > (1UL << max_bits) ) {
         per[max_bits]--;
@@ -795,7 +795,7 @@ static void defl_tree( DEFL *defl, TREE *tree, int count, int max_bits )
     index = 0;
     for ( bits = max_bits; bits >= 1; bits-- ) {
         for ( take = per[bits]; take > 0; take-- ) {
-            tree->len[order[index++]] = (u8)bits;
+            tree->len[order[index++]] = (uint8_t)bits;
         }
     }
     defl_codes( tree, count );
@@ -805,7 +805,7 @@ static void defl_tree( DEFL *defl, TREE *tree, int count, int max_bits )
    distance have */
 static void defl_tables( DEFL *defl )
 {
-    u32 code, value, step;
+    unsigned int code, value, step;
 
     mem_set( defl->fix_lit.len, 8, 144 );
     mem_set( defl->fix_lit.len + 144, 9, 112 );
@@ -817,19 +817,19 @@ static void defl_tables( DEFL *defl )
 
     for ( code = 0; code < 28; code++ ) {
         for ( value = 0; value < (1UL << len_extra[code]); value++ ) {
-            defl->len_code[len_base[code] - MIN_MATCH + value] = (u8)code;
+            defl->len_code[len_base[code] - MIN_MATCH + value] = (uint8_t)code;
         }
     }
     defl->len_code[MAX_MATCH - MIN_MATCH] = 28;
     for ( code = 0; code < 16; code++ ) {
         for ( value = 0; value < (1UL << dist_extra[code]); value++ ) {
-            defl->dist_code[dist_base[code] - 1 + value] = (u8)code;
+            defl->dist_code[dist_base[code] - 1 + value] = (uint8_t)code;
         }
     }
     for ( code = 16; code < 30; code++ ) {
         step = (1UL << dist_extra[code]) >> 7;
         for ( value = 0; value < step; value++ ) {
-            defl->dist_code[256 + ((dist_base[code] - 1) >> 7) + value] = (u8)code;
+            defl->dist_code[256 + ((dist_base[code] - 1) >> 7) + value] = (uint8_t)code;
         }
     }
 }
@@ -837,8 +837,8 @@ static void defl_tables( DEFL *defl )
 /* one length of the header's list, counted */
 static void defl_seq( DEFL *defl, int sym, int extra )
 {
-    defl->seq[defl->nseq] = (u8)sym;
-    defl->seq_extra[defl->nseq] = (u8)extra;
+    defl->seq[defl->nseq] = (uint8_t)sym;
+    defl->seq_extra[defl->nseq] = (uint8_t)extra;
     defl->nseq++;
     defl->bl.freq[sym]++;
 }
@@ -846,11 +846,11 @@ static void defl_seq( DEFL *defl, int sym, int extra )
 /* the lengths of both codes, runs of them folded as the format allows */
 static void defl_lengths( DEFL *defl, int hlit, int hdist )
 {
-    u8 all[L_CODES + D_CODES];
+    uint8_t all[L_CODES + D_CODES];
     int total = hlit + hdist, index = 0, run, value, part;
 
-    mem_cpy( all, defl->lit.len, (u32)hlit );
-    mem_cpy( all + hlit, defl->dist.len, (u32)hdist );
+    mem_cpy( all, defl->lit.len, (uint32_t)hlit );
+    mem_cpy( all + hlit, defl->dist.len, (uint32_t)hdist );
     mem_set( defl->bl.freq, 0, sizeof( defl->bl.freq ) );
     defl->nseq = 0;
     while ( index < total ) {
@@ -886,7 +886,8 @@ static void defl_lengths( DEFL *defl, int hlit, int hdist )
 /* the symbols of the block in hand, in the two codes given */
 static void defl_symbols( DEFL *defl, const TREE *lit, const TREE *dist )
 {
-    u32 index, far_back, code;
+    unsigned int index;
+    uint32_t far_back, code;
 
     for ( index = 0; index < defl->nsym; index++ ) {
         far_back = defl->sym_dist[index];
@@ -897,7 +898,7 @@ static void defl_symbols( DEFL *defl, const TREE *lit, const TREE *dist )
         code = defl->len_code[defl->sym_lc[index]];
         defl_put( defl, lit->code[END_BLOCK + 1 + code], lit->len[END_BLOCK + 1 + code] );
         if ( len_extra[code] ) {
-            defl_put( defl, (u32)defl->sym_lc[index] + MIN_MATCH - len_base[code], len_extra[code] );
+            defl_put( defl, (uint32_t)defl->sym_lc[index] + MIN_MATCH - len_base[code], len_extra[code] );
         }
         code = DIST_CODE( defl, far_back );
         defl_put( defl, dist->code[code], dist->len[code] );
@@ -912,9 +913,10 @@ static void defl_symbols( DEFL *defl, const TREE *lit, const TREE *dist )
  * The block in hand - its symbols, which stand for src[start..end) -
  * written the smallest way.
  */
-static void defl_block( DEFL *defl, u32 start, u32 end, int final )
+static void defl_block( DEFL *defl, uint32_t start, uint32_t end, int final )
 {
-    u32 dyn_bits, fix_bits, extra_bits = 0, stored, size = end - start, part, index;
+    uint32_t dyn_bits, fix_bits, extra_bits = 0, stored, size = end - start, part;
+    unsigned int index;
     int hlit, hdist, hclen, code;
 
     defl->lit.freq[END_BLOCK]++;
@@ -929,23 +931,23 @@ static void defl_block( DEFL *defl, u32 start, u32 end, int final )
     for ( hclen = BL_CODES; hclen > 4 && defl->bl.len[clen_order[hclen - 1]] == 0; hclen-- ) {
     }
 
-    dyn_bits = 3 + 14 + 3 * (u32)hclen;
+    dyn_bits = 3 + 14 + 3 * (uint32_t)hclen;
     fix_bits = 3;
     for ( code = 0; code < BL_CODES; code++ ) {
-        dyn_bits += (u32)defl->bl.freq[code] * defl->bl.len[code];
+        dyn_bits += (uint32_t)defl->bl.freq[code] * defl->bl.len[code];
     }
-    dyn_bits += (u32)defl->bl.freq[16] * 2 + (u32)defl->bl.freq[17] * 3 + (u32)defl->bl.freq[18] * 7;
+    dyn_bits += (uint32_t)defl->bl.freq[16] * 2 + (uint32_t)defl->bl.freq[17] * 3 + (uint32_t)defl->bl.freq[18] * 7;
     for ( code = 0; code < L_CODES; code++ ) {
-        dyn_bits += (u32)defl->lit.freq[code] * defl->lit.len[code];
-        fix_bits += (u32)defl->lit.freq[code] * defl->fix_lit.len[code];
+        dyn_bits += (uint32_t)defl->lit.freq[code] * defl->lit.len[code];
+        fix_bits += (uint32_t)defl->lit.freq[code] * defl->fix_lit.len[code];
         if ( code > END_BLOCK ) {
-            extra_bits += (u32)defl->lit.freq[code] * len_extra[code - END_BLOCK - 1];
+            extra_bits += (uint32_t)defl->lit.freq[code] * len_extra[code - END_BLOCK - 1];
         }
     }
     for ( code = 0; code < D_CODES; code++ ) {
-        dyn_bits += (u32)defl->dist.freq[code] * defl->dist.len[code];
-        fix_bits += (u32)defl->dist.freq[code] * 5;
-        extra_bits += (u32)defl->dist.freq[code] * dist_extra[code];
+        dyn_bits += (uint32_t)defl->dist.freq[code] * defl->dist.len[code];
+        fix_bits += (uint32_t)defl->dist.freq[code] * 5;
+        extra_bits += (uint32_t)defl->dist.freq[code] * dist_extra[code];
     }
     dyn_bits += extra_bits;
     fix_bits += extra_bits;
@@ -959,31 +961,31 @@ static void defl_block( DEFL *defl, u32 start, u32 end, int final )
             if ( !defl_room( defl, part + 8 ) ) {
                 break;
             }
-            defl_put( defl, (u32)(final && size == 0), 1 );
+            defl_put( defl, (uint32_t)(final && size == 0), 1 );
             defl_put( defl, 0, 2 );
             if ( defl->nbits ) {
                 defl_put( defl, 0, 8 - defl->nbits );
             }
-            defl->out[defl->used++] = (u8)part;
-            defl->out[defl->used++] = (u8)(part >> 8);
-            defl->out[defl->used++] = (u8)~part;
-            defl->out[defl->used++] = (u8)(~part >> 8);
+            defl->out[defl->used++] = (uint8_t)part;
+            defl->out[defl->used++] = (uint8_t)(part >> 8);
+            defl->out[defl->used++] = (uint8_t)~part;
+            defl->out[defl->used++] = (uint8_t)(~part >> 8);
             mem_cpy( defl->out + defl->used, defl->src + start, part );
             defl->used += part;
             start += part;
         } while ( size );
     } else if ( fix_bits <= dyn_bits ) {
         if ( defl_room( defl, fix_bits / 8 + 8 ) ) {
-            defl_put( defl, (u32)final, 1 );
+            defl_put( defl, (uint32_t)final, 1 );
             defl_put( defl, 1, 2 );
             defl_symbols( defl, &defl->fix_lit, &defl->fix_dist );
         }
     } else if ( defl_room( defl, dyn_bits / 8 + 8 ) ) {
-        defl_put( defl, (u32)final, 1 );
+        defl_put( defl, (uint32_t)final, 1 );
         defl_put( defl, 2, 2 );
-        defl_put( defl, (u32)hlit - 257, 5 );
-        defl_put( defl, (u32)hdist - 1, 5 );
-        defl_put( defl, (u32)hclen - 4, 4 );
+        defl_put( defl, (uint32_t)hlit - 257, 5 );
+        defl_put( defl, (uint32_t)hdist - 1, 5 );
+        defl_put( defl, (uint32_t)hclen - 4, 4 );
         for ( code = 0; code < hclen; code++ ) {
             defl_put( defl, defl->bl.len[clen_order[code]], 3 );
         }
@@ -1007,16 +1009,16 @@ static void defl_block( DEFL *defl, u32 start, u32 end, int final )
 
 /* a place put in its hash's chain -> how far back the one before it
    is, 0 for none in reach */
-static u32 defl_insert( DEFL *defl, u32 pos )
+static uint32_t defl_insert( DEFL *defl, uint32_t pos )
 {
-    u32 hash = HASH3( defl->src + pos );
-    u32 was = defl->head[hash];
-    u32 back = was ? pos + 1 - was : 0;
+    uint32_t hash = HASH3( defl->src + pos );
+    uint32_t was = defl->head[hash];
+    uint32_t back = was ? pos + 1 - was : 0;
 
     if ( back >= WSIZE ) {
         back = 0;
     }
-    defl->prev[pos & WMASK] = (u16)back;
+    defl->prev[pos & WMASK] = (uint16_t)back;
     defl->head[hash] = pos + 1;
     return back;
 }
@@ -1026,11 +1028,11 @@ static u32 defl_insert( DEFL *defl, u32 pos )
  * starting "back" bytes back and following the chain.  -> its length
  * and *dist, or 0 for none.
  */
-static u32 defl_match( const DEFL *defl, u32 pos, u32 back, u32 best, u32 max_len, u32 chain,
-                       u32 *dist )
+static uint32_t defl_match( const DEFL *defl, uint32_t pos, uint32_t back, uint32_t best, uint32_t max_len, unsigned int chain,
+                            uint32_t *dist )
 {
-    const u8 *scan = defl->src + pos, *cand;
-    u32 found = 0, len, step;
+    const uint8_t *scan = defl->src + pos, *cand;
+    uint32_t found = 0, len, step;
 
     while ( back ) {
         cand = scan - back;
@@ -1060,19 +1062,19 @@ static u32 defl_match( const DEFL *defl, u32 pos, u32 back, u32 best, u32 max_le
     return found;
 }
 
-static void defl_literal( DEFL *defl, u32 value )
+static void defl_literal( DEFL *defl, uint32_t value )
 {
     defl->sym_dist[defl->nsym] = 0;
-    defl->sym_lc[defl->nsym] = (u8)value;
+    defl->sym_lc[defl->nsym] = (uint8_t)value;
     defl->nsym++;
     defl->lit.freq[value]++;
 }
 
 static void defl_run( DEFL *defl, int last )
 {
-    const u8 *src = defl->src;
-    u32 len = defl->len, pos = 0, block = 0, back, max_len, stop;
-    u32 cur_len, cur_dist = 0, held_len = 0, held_dist = 0;
+    const uint8_t *src = defl->src;
+    uint32_t len = defl->len, pos = 0, block = 0, back, max_len, stop;
+    uint32_t cur_len, cur_dist = 0, held_len = 0, held_dist = 0;
     int held = 0;
 
     while ( pos < len ) {
@@ -1091,8 +1093,8 @@ static void defl_run( DEFL *defl, int last )
         }
         if ( held && held_len >= MIN_MATCH && cur_len <= held_len ) {
             /* the match that was held back, which began a byte ago, stands */
-            defl->sym_dist[defl->nsym] = (u16)held_dist;
-            defl->sym_lc[defl->nsym] = (u8)(held_len - MIN_MATCH);
+            defl->sym_dist[defl->nsym] = (uint16_t)held_dist;
+            defl->sym_lc[defl->nsym] = (uint8_t)(held_len - MIN_MATCH);
             defl->nsym++;
             defl->lit.freq[END_BLOCK + 1 + defl->len_code[held_len - MIN_MATCH]]++;
             defl->dist.freq[DIST_CODE( defl, held_dist )]++;
@@ -1114,8 +1116,8 @@ static void defl_run( DEFL *defl, int last )
             pos++;
         }
         if ( defl->nsym >= BLOCK_SYMS ) {
-            defl_block( defl, block, pos - (u32)held, 0 );
-            block = pos - (u32)held;
+            defl_block( defl, block, pos - (uint32_t)held, 0 );
+            block = pos - (uint32_t)held;
         }
     }
     if ( held ) {
@@ -1130,13 +1132,13 @@ static void defl_run( DEFL *defl, int last )
  * empty stored block after them brings the stream to a whole byte so
  * that the next piece can be written straight after it.
  */
-static u8 *defl_all( const u8 *src, u32 len, u32 *out_len, int zlib, int last )
+static uint8_t *defl_all( const uint8_t *src, uint32_t len, uint32_t *out_len, int zlib, int last )
 {
     DEFL *defl;
-    u8 *out;
-    u32 work = sizeof( DEFL ) + HASH_SIZE * sizeof( u32 ) + WSIZE * sizeof( u16 ) +
-               BLOCK_SYMS * (sizeof( u16 ) + 1);
-    u32 sum;
+    uint8_t *out;
+    unsigned int work = sizeof( DEFL ) + HASH_SIZE * sizeof( uint32_t ) + WSIZE * sizeof( uint16_t ) +
+                   BLOCK_SYMS * (sizeof( uint16_t ) + 1);
+    uint32_t sum;
 
     *out_len = 0;
     defl = (DEFL *)try_alloc( work );
@@ -1144,14 +1146,14 @@ static u8 *defl_all( const u8 *src, u32 len, u32 *out_len, int zlib, int last )
         return NULL;
     }
     mem_set( defl, 0, work );
-    defl->head = (u32 *)(defl + 1);
-    defl->prev = (u16 *)(defl->head + HASH_SIZE);
+    defl->head = (uint32_t *)(defl + 1);
+    defl->prev = (uint16_t *)(defl->head + HASH_SIZE);
     defl->sym_dist = defl->prev + WSIZE;
-    defl->sym_lc = (u8 *)(defl->sym_dist + BLOCK_SYMS);
+    defl->sym_lc = (uint8_t *)(defl->sym_dist + BLOCK_SYMS);
     defl->src = src;
     defl->len = len;
     defl->cap = len / 2 + 64;
-    defl->out = (u8 *)try_alloc( defl->cap );
+    defl->out = (uint8_t *)try_alloc( defl->cap );
     if ( defl->out == NULL ) {
         xfree( defl );
         return NULL;
@@ -1177,10 +1179,10 @@ static u8 *defl_all( const u8 *src, u32 len, u32 *out_len, int zlib, int last )
         }
         if ( zlib ) {
             sum = adler32_update( 1, src, len );
-            defl->out[defl->used++] = (u8)(sum >> 24);
-            defl->out[defl->used++] = (u8)(sum >> 16);
-            defl->out[defl->used++] = (u8)(sum >> 8);
-            defl->out[defl->used++] = (u8)sum;
+            defl->out[defl->used++] = (uint8_t)(sum >> 24);
+            defl->out[defl->used++] = (uint8_t)(sum >> 16);
+            defl->out[defl->used++] = (uint8_t)(sum >> 8);
+            defl->out[defl->used++] = (uint8_t)sum;
         }
     }
     out = defl->out;
@@ -1194,12 +1196,12 @@ static u8 *defl_all( const u8 *src, u32 len, u32 *out_len, int zlib, int last )
     return out;
 }
 
-u8 *deflate_alloc( const u8 *src, u32 len, u32 *out_len, int zlib )
+uint8_t *deflate_alloc( const uint8_t *src, uint32_t len, uint32_t *out_len, int zlib )
 {
     return defl_all( src, len, out_len, zlib, 1 );
 }
 
-u8 *deflate_piece( const u8 *src, u32 len, u32 *out_len, int last )
+uint8_t *deflate_piece( const uint8_t *src, uint32_t len, uint32_t *out_len, int last )
 {
     return defl_all( src, len, out_len, 0, last );
 }

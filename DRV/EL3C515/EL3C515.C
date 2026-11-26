@@ -168,24 +168,24 @@
 #define HOW_PNP     2
 #define HOW_SEEN    3           /* on already, at a base the scan read */
 
-static u8  el_how;              /* HOW_* */
-static u8  el_called;           /* card_find has run once: the DEVICE= load */
-static u8  el_started;          /* card_setup has run once */
-static u8  el_card_irq;         /* the line the card says it has */
-static u8  el_xcvr = 0xFF;      /* the transceiver chosen at the first start */
-static u8  el_fdx;              /* MII: the PHY agreed full duplex */
-static const char *el_speed;    /* MII: what the PHY agreed, for the name */
-static u8  pnp_csn;             /* HOW_PNP: the card's number */
-static u8  pnp_line;            /* ...and the line it was given */
+static unsigned char el_how;      /* HOW_* */
+static unsigned char el_called;   /* card_find has run once: the DEVICE= load */
+static unsigned char el_started;  /* card_setup has run once */
+static uint8_t el_card_irq;       /* the line the card says it has */
+static uint8_t el_xcvr = 0xFF;    /* the transceiver chosen at the first start */
+static unsigned char el_fdx;      /* MII: the PHY agreed full duplex */
+static const char *el_speed;      /* MII: what the PHY agreed, for the name */
+static uint8_t pnp_csn;           /* HOW_PNP: the card's number */
+static uint8_t pnp_line;          /* ...and the line it was given */
 
 /* the rest of a frame that does not end on a doubleword */
-static u8  tail[64];
+static uint8_t tail[64];
 
 static const PCI_ID el_ids[] = { { 0, 0 } };    /* ISA */
 
-void insd( u16 port, void *buf, u32 dwords );
+void insd( uint16_t port, void *buf, unsigned int dwords );
 #pragma aux insd = "rep insd" parm [dx] [edi] [ecx] modify exact [edi ecx];
-void outsd( u16 port, const void *buf, u32 dwords );
+void outsd( uint16_t port, const void *buf, unsigned int dwords );
 #pragma aux outsd = "rep outsd" parm [dx] [esi] [ecx] modify exact [esi ecx];
 
 /* ---------------------------------------------------------------- */
@@ -194,29 +194,29 @@ void outsd( u16 port, const void *buf, u32 dwords );
 
 /* the timer's channel 0, latched: it counts down at 1,193,182 a second
    whatever the processor and the bus are */
-static u16 pit_count( void )
+static uint16_t pit_count( void )
 {
-    u32 flags = int_off();
-    u16 low, high;
+    uint32_t flags = int_off();
+    uint16_t low, high;
 
     outb( 0x43, 0x00 );                 /* latch channel 0 */
     low = inb( 0x40 );
     high = inb( 0x40 );
     int_back( flags );
-    return (u16)( ( high << 8 ) | low );
+    return (uint16_t)( ( high << 8 ) | low );
 }
 
 /* At least USEC microseconds, by the timer and not by a loop count:
    the same as EL3C509.C, which says why. */
-static void el_wait_us( u32 usec )
+static void el_wait_us( unsigned int usec )
 {
-    u32 want = usec * 5 / 2, got = 0, guard = usec * 8 + 64;
-    u16 last, now;
+    unsigned int want = usec * 5 / 2, got = 0, guard = usec * 8 + 64;
+    uint16_t last, now;
 
     last = pit_count();
     while ( got < want && guard ) {
         now = pit_count();
-        got += ( now <= last ) ? (u32)( last - now ) : (u32)last;
+        got += ( now <= last ) ? (unsigned int)( last - now ) : (unsigned int)last;
         last = now;
         guard--;
     }
@@ -241,7 +241,7 @@ static void say_begin( const char *text )
     say_text( text );
 }
 
-static void say_hex( u32 val, int digits )
+static void say_hex( uint32_t val, int digits )
 {
     static const char hexdig[] = "0123456789ABCDEF";
     int shift;
@@ -251,7 +251,7 @@ static void say_hex( u32 val, int digits )
     }
 }
 
-static void say_dec( u32 val )
+static void say_dec( unsigned int val )
 {
     char digits[12];
     int  n = 0;
@@ -272,10 +272,10 @@ static void say_end( void )
 /* the card's own registers                                          */
 /* ---------------------------------------------------------------- */
 
-static void el_cmd( u16 cmd )
+static void el_cmd( uint16_t cmd )
 {
-    u32 n;
-    u16 st;
+    unsigned int n;
+    uint16_t st;
 
     outw( net_port + EL_CMD, cmd );
     for ( n = 0; n < SPIN_CMD; n++ ) {
@@ -287,16 +287,16 @@ static void el_cmd( u16 cmd )
 
 static void el_window( int win )
 {
-    outw( net_port + EL_CMD, (u16)( CMD_SELWIN | win ) );
+    outw( net_port + EL_CMD, (uint16_t)( CMD_SELWIN | win ) );
 }
 
 /* a word of the EEPROM at BASE: 162us to read, then the busy bit is
    watched for up to another millisecond */
-static u16 el_eeprom( u16 base, int addr )
+static uint16_t el_eeprom( uint16_t base, int addr )
 {
     int i;
 
-    outw( base + CS_EECMD, (u16)( 0x80 | ( addr & 0x3F ) ) );
+    outw( base + CS_EECMD, (uint16_t)( 0x80 | ( addr & 0x3F ) ) );
     el_wait_us( 200 );
     for ( i = 0; i < 20 && ( inw( base + CS_EECMD ) & 0x0200 ); i++ ) el_wait_us( 50 );
     return inw( base + CS_EEDATA );
@@ -307,9 +307,9 @@ static u16 el_eeprom( u16 base, int addr )
    a port with nothing on it reads FFFF, whose base bits never match a
    base 20h apart, so the EEPROM command is written only to a card that
    is one. */
-static int el_names( u16 base )
+static int el_names( uint16_t base )
 {
-    u16 rescfg = inw( base + CS_RESCFG );
+    uint16_t rescfg = inw( base + CS_RESCFG );
 
     /* 0000 is no more a card than FFFF is, though its base bits would
        match 200h */
@@ -317,7 +317,7 @@ static int el_names( u16 base )
     return ( rescfg & 0x1F0 ) == ( base & 0x1F0 );
 }
 
-static int el_check( u16 base )
+static int el_check( uint16_t base )
 {
     if ( !el_names( base ) ) return 0;
     return el_eeprom( base, 7 ) == EL_MAKER;
@@ -327,20 +327,20 @@ static int el_check( u16 base )
 static void el_read_mac( void )
 {
     int i;
-    u16 w;
+    uint16_t w;
 
     for ( i = 0; i < 3; i++ ) {
         w = el_eeprom( net_port, i );
-        net_mac[i * 2] = (u8)( w >> 8 );
-        net_mac[i * 2 + 1] = (u8)w;
+        net_mac[i * 2] = (uint8_t)( w >> 8 );
+        net_mac[i * 2 + 1] = (uint8_t)w;
     }
 }
 
 /* the line in the resource configuration register, if it is one an ISA
    card can have */
-static u8 el_line( void )
+static uint8_t el_line( void )
 {
-    u8 line = (u8)( inw( net_port + CS_RESCFG ) & 15 );
+    uint8_t line = (uint8_t)( inw( net_port + CS_RESCFG ) & 15 );
 
     switch ( line ) {
     case 3: case 5: case 7: case 9: case 10: case 11: case 12: case 15:
@@ -354,10 +354,10 @@ static u8 el_line( void )
 /* ---------------------------------------------------------------- */
 
 /* TCM5051, the one id Linux's 3c515.c takes */
-static const u8 pnp_3c515[4] = { 0x50, 0x6D, 0x50, 0x51 };
-static const u8 pnp_irq_pref[] = { 10, 11, 5, 9, 3, 15, 12, 4, 0 };
+static const uint8_t pnp_3c515[4] = { 0x50, 0x6D, 0x50, 0x51 };
+static const uint8_t pnp_irq_pref[] = { 10, 11, 5, 9, 3, 15, 12, 4, 0 };
 
-static int pnp_id_ours( const u8 *id )
+static int pnp_id_ours( const uint8_t *id )
 {
     return id[0] == pnp_3c515[0] && id[1] == pnp_3c515[1] &&
            id[2] == pnp_3c515[2] && id[3] == pnp_3c515[3];
@@ -367,37 +367,37 @@ static int pnp_id_ours( const u8 *id )
    a card whose registers already read on, because the kernel's
    isolation at boot leaves a card not decoding until its activate
    register is written (EL3C509.C, Charlie's 486). */
-static int pnp_activate( u32 csn, u16 base, u8 line )
+static int pnp_activate( unsigned int csn, uint16_t base, uint8_t line )
 {
-    REGS r;
-    u8   pairs[12];
+    REGS    r;
+    uint8_t pairs[12];
 
     pairs[0] = 0x30;  pairs[1] = 0;
-    pairs[2] = 0x60;  pairs[3] = (u8)( base >> 8 );
-    pairs[4] = 0x61;  pairs[5] = (u8)base;
+    pairs[2] = 0x60;  pairs[3] = (uint8_t)( base >> 8 );
+    pairs[4] = 0x61;  pairs[5] = (uint8_t)base;
     pairs[6] = 0x70;  pairs[7] = line;
     pairs[8] = 0x71;  pairs[9] = 2;             /* edge, high */
     pairs[10] = 0x30; pairs[11] = 1;
     net_memzero( &r, sizeof( r ) );
-    r.eax = (u32)BUS_PNPSET << 8;
+    r.eax = (uint32_t)BUS_PNPSET << 8;
     r.edx = csn;                                /* DH = device 0 */
-    r.esi = (u32)pairs;
+    r.esi = (uint32_t)pairs;
     r.ecx = 6;
     return nds_bus( &r );
 }
 
 static int find_pnp( void )
 {
-    REGS r;
-    u8  *res, *regs, tag;
-    u32  cards, csn, len, pos, size, kind;
-    u32  io_min, io_max, io_align, irq_mask;
-    int  ours, devices, i, was_on;
-    u8   line;
-    u16  choice;
+    REGS     r;
+    uint8_t *res, *regs, tag;
+    unsigned int cards, csn, len, pos, size, kind;
+    uint32_t io_min, io_max, io_align, irq_mask;
+    int      ours, devices, i, was_on;
+    uint8_t  line;
+    uint16_t choice;
 
     net_memzero( &r, sizeof( r ) );
-    r.eax = (u32)BUS_PNPHERE << 8;
+    r.eax = (uint32_t)BUS_PNPHERE << 8;
     if ( !nds_bus( &r ) || r.eax == 0 ) return 0;
     cards = r.eax;
     res = nds_alloc( 2048 + 256 );
@@ -406,9 +406,9 @@ static int find_pnp( void )
 
     for ( csn = 1; csn <= cards; csn++ ) {
         net_memzero( &r, sizeof( r ) );
-        r.eax = (u32)BUS_PNPRES << 8;
+        r.eax = (uint32_t)BUS_PNPRES << 8;
         r.edx = csn;
-        r.edi = (u32)res;
+        r.edi = (uint32_t)res;
         r.ecx = 2048;
         if ( !nds_bus( &r ) || r.ecx < 9 ) continue;
         len = r.ecx;
@@ -424,7 +424,7 @@ static int find_pnp( void )
             tag = res[pos++];
             if ( tag & 0x80 ) {                 /* a large item: skipped */
                 if ( pos + 2 > len ) break;
-                size = res[pos] | ( (u32)res[pos + 1] << 8 );
+                size = res[pos] | ( (uint32_t)res[pos + 1] << 8 );
                 pos += 2 + size;
                 continue;
             }
@@ -437,18 +437,18 @@ static int find_pnp( void )
                 if ( size >= 4 && pnp_id_ours( res + pos ) ) ours = 1;
                 break;
             case 4:                             /* a line */
-                if ( devices == 1 && size >= 2 && irq_mask == 0 ) irq_mask = res[pos] | ( (u32)res[pos + 1] << 8 );
+                if ( devices == 1 && size >= 2 && irq_mask == 0 ) irq_mask = res[pos] | ( (uint32_t)res[pos + 1] << 8 );
                 break;
             case 8:                             /* a port range */
                 if ( devices == 1 && size >= 7 && io_align == 0 ) {
-                    io_min = res[pos + 1] | ( (u32)res[pos + 2] << 8 );
-                    io_max = res[pos + 3] | ( (u32)res[pos + 4] << 8 );
+                    io_min = res[pos + 1] | ( (uint32_t)res[pos + 2] << 8 );
+                    io_max = res[pos + 3] | ( (uint32_t)res[pos + 4] << 8 );
                     io_align = res[pos + 5] ? res[pos + 5] : 1;
                 }
                 break;
             case 9:                             /* a port range of one */
                 if ( devices == 1 && size >= 3 && io_align == 0 ) {
-                    io_min = io_max = res[pos] | ( (u32)res[pos + 1] << 8 );
+                    io_min = io_max = res[pos] | ( (uint32_t)res[pos + 1] << 8 );
                     io_align = 1;
                 }
                 break;
@@ -463,25 +463,25 @@ static int find_pnp( void )
            park; otherwise 300h if its range allows, and the first free
            line it will take.  /I: is the line whatever the card had. */
         net_memzero( &r, sizeof( r ) );
-        r.eax = (u32)BUS_PNPREGS << 8;
+        r.eax = (uint32_t)BUS_PNPREGS << 8;
         r.edx = csn;                            /* DH = device 0 */
-        r.edi = (u32)regs;
+        r.edi = (uint32_t)regs;
         was_on = nds_bus( &r ) && ( regs[0x30] & 1 ) && ( regs[0x60] | regs[0x61] );
         if ( was_on ) {
-            choice = (u16)( ( (u16)regs[0x60] << 8 ) | regs[0x61] );
-            line = (u8)( regs[0x70] & 15 );
+            choice = (uint16_t)( ( (uint16_t)regs[0x60] << 8 ) | regs[0x61] );
+            line = (uint8_t)( regs[0x70] & 15 );
         } else if ( el_how == HOW_PNP && csn == pnp_csn ) {
             choice = net_port;
             line = pnp_line;
         } else {
             if ( io_align == 0 ) continue;
-            choice = (u16)io_min;
+            choice = (uint16_t)io_min;
             if ( io_min <= 0x300 && 0x300 <= io_max && ( ( 0x300 - io_min ) % io_align ) == 0 ) choice = 0x300;
             line = 0;
             for ( i = 0; pnp_irq_pref[i]; i++ ) {
                 if ( !( irq_mask & ( 1L << pnp_irq_pref[i] ) ) ) continue;
                 net_memzero( &r, sizeof( r ) );
-                r.eax = (u32)BUS_IRQSTAT << 8;
+                r.eax = (uint32_t)BUS_IRQSTAT << 8;
                 r.edx = pnp_irq_pref[i];
                 if ( nds_bus( &r ) && ( r.eax & ( IRQF_KERNEL | IRQF_HOOKED | IRQF_OPEN | IRQF_DEAD ) ) ) continue;
                 line = pnp_irq_pref[i];
@@ -502,7 +502,7 @@ static int find_pnp( void )
         if ( !el_check( choice ) ) continue;
         el_read_mac();
         if ( !net_mac_ok( net_mac ) ) continue;
-        pnp_csn = (u8)csn;
+        pnp_csn = (uint8_t)csn;
         pnp_line = line;
         el_card_irq = line ? line : NIC_NOIRQ;
         el_how = HOW_PNP;
@@ -516,7 +516,7 @@ static int find_pnp( void )
 /* a 3C515 switched on by its own EEPROM, at a base 20h apart */
 static int find_seen( void )
 {
-    u16 base;
+    uint16_t base;
 
     for ( base = 0x100; base <= 0x3E0; base += 0x20 ) {
         if ( !el_check( base ) ) continue;
@@ -543,7 +543,7 @@ int card_find( void )
     net_strcpy( net_name, "3Com 3C515" );
     if ( net_opt_port ) {
         /* a card already at a known base (/P:) */
-        net_port = (u16)net_opt_port;
+        net_port = (uint16_t)net_opt_port;
         if ( !el_check( net_port ) ) return 1;
         el_read_mac();
         el_card_irq = el_line();
@@ -564,7 +564,7 @@ int card_find( void )
        is the one nd_init settled on and hooked, and stays */
     if ( first && net_irq == NIC_NOIRQ ) net_irq = el_card_irq;
     net_bus = NICB_ISA;
-    net_flags = (u8)( NICF_WORD | ( net_flags & NICF_POLLED ) );
+    net_flags = (uint8_t)( NICF_WORD | ( net_flags & NICF_POLLED ) );
     (void)el_ids;
     return 0;
 }
@@ -602,23 +602,23 @@ static int el_switch( const char *name )
 /* Put the card on transceiver XCVR: its number into window 3's
    InternalConfig, its link-beat bits into window 4's media register,
    the coax converter started or stopped.  Leaves window 4 selected. */
-static void el_media( u8 xcvr )
+static void el_media( uint8_t xcvr )
 {
-    u32 config;
-    u16 media;
+    uint32_t config;
+    uint16_t media;
 
     el_window( 3 );
     config = inl( net_port + W3_CONFIG );
-    config = ( config & ~CFG_XCVR ) | ( (u32)xcvr << 20 );
+    config = ( config & ~CFG_XCVR ) | ( (uint32_t)xcvr << 20 );
     outl( net_port + W3_CONFIG, config );
     /* full duplex only where an MII PHY agreed it with the other end */
     media = inw( net_port + W3_MACCTRL );
     if ( xcvr == XCVR_MII && el_fdx ) media |= MAC_FULLDUP;
-    else media &= (u16)~MAC_FULLDUP;
+    else media &= (uint16_t)~MAC_FULLDUP;
     outw( net_port + W3_MACCTRL, media );
     el_cmd( xcvr == XCVR_10B2 ? CMD_STARTCOAX : CMD_STOPCOAX );
     el_window( 4 );
-    media = (u16)( inw( net_port + W4_MEDIA ) & ~( MED_10TP | MED_SQE ) );
+    media = (uint16_t)( inw( net_port + W4_MEDIA ) & ~( MED_10TP | MED_SQE ) );
     if ( xcvr == XCVR_10T ) media |= MED_10TP;
     else if ( xcvr == XCVR_AUI ) media |= MED_SQE;
     else if ( xcvr == XCVR_100TX || xcvr == XCVR_100FX ) media |= MED_LNK;
@@ -648,24 +648,24 @@ static int el_link( int tenths )
    cycle on the ISA bus is near a microsecond, far slower than the
    2.5MHz the MII allows, so the reads between are delay enough.
    Window 4 must be selected. */
-static void mdio_bit( u16 out )
+static void mdio_bit( uint16_t out )
 {
     outw( net_port + W4_PHYMGMT, out );
     (void)inw( net_port + W4_PHYMGMT );
-    outw( net_port + W4_PHYMGMT, (u16)( out | MDIO_CLK ) );
+    outw( net_port + W4_PHYMGMT, (uint16_t)( out | MDIO_CLK ) );
     (void)inw( net_port + W4_PHYMGMT );
 }
 
 /* register REG of the PHY at ADDR; FFFF when nothing answers */
-static u16 mii_read( int addr, int reg )
+static uint16_t mii_read( int addr, int reg )
 {
-    u32 cmd = ( 0xF6L << 10 ) | ( (u32)addr << 5 ) | (u32)reg;
-    u32 value = 0;
+    uint32_t cmd = ( 0xF6L << 10 ) | ( (uint32_t)addr << 5 ) | (uint32_t)reg;
+    uint32_t value = 0;
     int i;
 
     for ( i = 0; i < 32; i++ ) mdio_bit( MDIO_OUT | MDIO_DATA );   /* preamble */
     for ( i = 14; i >= 0; i-- ) {
-        mdio_bit( (u16)( MDIO_OUT | ( ( cmd >> i ) & 1 ? MDIO_DATA : 0 ) ) );
+        mdio_bit( (uint16_t)( MDIO_OUT | ( ( cmd >> i ) & 1 ? MDIO_DATA : 0 ) ) );
     }
     /* the turnaround, sixteen bits of data and the idle bit */
     for ( i = 0; i < 19; i++ ) {
@@ -676,7 +676,7 @@ static u16 mii_read( int addr, int reg )
         (void)inw( net_port + W4_PHYMGMT );
     }
     if ( value & 0x20000L ) return 0xFFFF;
-    return (u16)( value >> 1 );
+    return (uint16_t)( value >> 1 );
 }
 
 /* The card's PHY: found, given up to three seconds to finish agreeing a
@@ -686,7 +686,7 @@ static u16 mii_read( int addr, int reg )
 static int el_mii( void )
 {
     int addr, i, found = -1;
-    u16 id1 = 0xFFFF, status = 0, mine, theirs, both;
+    uint16_t id1 = 0xFFFF, status = 0, mine, theirs, both;
 
     el_fdx = 0;
     el_speed = 0;
@@ -704,7 +704,7 @@ static int el_mii( void )
     }
     mine = mii_read( found, MII_ANAR );
     theirs = mii_read( found, MII_ANLPAR );
-    both = (u16)( mine & theirs );
+    both = (uint16_t)( mine & theirs );
     if ( status & 0x0020 ) {                    /* the two ends agreed */
         if ( both & 0x0100 )      { el_speed = "100BASE-T"; el_fdx = 1; }
         else if ( both & 0x0080 ) el_speed = "100BASE-T";
@@ -729,16 +729,16 @@ static int el_mii( void )
    5x86's card has neither: W3_OPTIONS F040, MII alone - a PHY chip for
    both speeds.  Both fell back to the EEPROM's choice, 10BASE-T, which
    is not there; /T showed the card had sent nothing (2026-11-01). */
-static u8 el_choose( int *link )
+static uint8_t el_choose( int *link )
 {
-    u32 config;
-    u16 fitted;
-    u8  xcvr;
+    uint32_t config;
+    uint16_t fitted;
+    uint8_t  xcvr;
 
     el_window( 3 );
     config = inl( net_port + W3_CONFIG );
     fitted = inw( net_port + W3_OPTIONS );
-    xcvr = (u8)( ( config & CFG_XCVR ) >> 20 );
+    xcvr = (uint8_t)( ( config & CFG_XCVR ) >> 20 );
     el_window( 4 );
     *link = 1;
     /* /10 or /100: that transceiver, whatever the EEPROM says, if the
@@ -780,7 +780,7 @@ static u8 el_choose( int *link )
 /* the name said at the load: the transceiver, and whether it has a link.
    net_name holds 31 characters: "3Com 3C515, 100BASE-FX, no link" is
    the longest, and an MII PHY's speed is named only with a link. */
-static void el_say_xcvr( u8 xcvr, int link )
+static void el_say_xcvr( uint8_t xcvr, int link )
 {
     switch ( xcvr ) {
     case XCVR_10T:   net_strcpy( net_name, "3Com 3C515, 10BASE-T" );  break;
@@ -810,8 +810,8 @@ static void el_say_xcvr( u8 xcvr, int link )
    enabled again.  0 is an empty stack, FF a card that has gone dark. */
 static void tx_status_pop( void )
 {
-    u8  ts;
-    int i;
+    uint8_t ts;
+    int     i;
 
     for ( i = 0; i < 4; i++ ) {
         ts = inb( net_port + OP_TXSTATUS );
@@ -827,7 +827,7 @@ static void el_filter( void )
 {
     /* station, broadcast AND multicast: the NetBEUI functional address
        is a multicast (EL3C509.C) */
-    el_cmd( (u16)( CMD_SETFILTER | FILTER_STATION | FILTER_MULTI | FILTER_BCAST ) );
+    el_cmd( (uint16_t)( CMD_SETFILTER | FILTER_STATION | FILTER_MULTI | FILTER_BCAST ) );
 }
 
 /* /T: a test at the load, for a card that sends and hears nothing
@@ -838,15 +838,15 @@ static void el_filter( void )
    driver's counts cannot.  Interrupts are masked throughout. */
 static void el_test( void )
 {
-    u8  frame[60];
-    u8  counts[10];
-    u16 status, rxst, seen = 0, first = 0, empty = 0, rxbytes, txbytes;
-    u8  txst, rxerr = 0;
-    u32 heard = 0, i, wait;
+    uint8_t  frame[60];
+    uint8_t  counts[10];
+    uint16_t status, rxst, seen = 0, first = 0, empty = 0, rxbytes, txbytes;
+    uint8_t  txst, rxerr = 0;
+    unsigned int heard = 0, i, wait;
 
     el_cmd( CMD_SETINTR );
-    el_cmd( (u16)( CMD_SETSTATUS | 0x00FE ) );
-    el_cmd( (u16)( CMD_ACKINTR | 0xFF ) );
+    el_cmd( (uint16_t)( CMD_SETSTATUS | 0x00FE ) );
+    el_cmd( (uint16_t)( CMD_ACKINTR | 0xFF ) );
     el_cmd( CMD_STATSEN );
     el_window( 6 );                             /* reading clears them */
     for ( i = 0; i < 10; i++ ) (void)inb( net_port + i );
@@ -890,7 +890,7 @@ static void el_test( void )
             if ( rxst & RXS_ERROR ) rxerr |= inb( net_port + OP_RXERRORS );
             el_cmd( CMD_RXDISCARD );
             for ( wait = 0; wait < SPIN_CMD; wait++ ) if ( !( inw( net_port + EL_STATUS ) & ST_CMDBUSY ) ) break;
-            el_cmd( (u16)( CMD_ACKINTR | ST_RXCOMP ) );
+            el_cmd( (uint16_t)( CMD_ACKINTR | ST_RXCOMP ) );
             continue;                           /* the next one at once */
         }
         empty = rxst;
@@ -998,10 +998,10 @@ int card_setup( void )
        which at idle is always (EL3C509.C).  The transmit path polls the
        free count instead; TX-complete is set only by a frame that
        failed, and card_service pops the status that set it. */
-    el_cmd( (u16)( CMD_SETSTATUS | ST_ADFAIL | ST_TXCOMP | ST_TXAVAIL | ST_RXCOMP | ST_INTREQ ) );
-    el_cmd( (u16)( CMD_ACKINTR | 0xFF ) );
+    el_cmd( (uint16_t)( CMD_SETSTATUS | ST_ADFAIL | ST_TXCOMP | ST_TXAVAIL | ST_RXCOMP | ST_INTREQ ) );
+    el_cmd( (uint16_t)( CMD_ACKINTR | 0xFF ) );
     if ( net_flags & NICF_POLLED ) el_cmd( CMD_SETINTR );
-    else el_cmd( (u16)( CMD_SETINTR | ST_INTLATCH | ST_ADFAIL | ST_RXCOMP | ST_TXCOMP ) );
+    else el_cmd( (uint16_t)( CMD_SETINTR | ST_INTLATCH | ST_ADFAIL | ST_RXCOMP | ST_TXCOMP ) );
     return 0;
 }
 
@@ -1013,9 +1013,9 @@ void card_stop( void )
     if ( el_xcvr == XCVR_10B2 ) el_cmd( CMD_STOPCOAX );
 }
 
-int card_send( const u8 *frame, u32 len )
+int card_send( const uint8_t *frame, unsigned int len )
 {
-    u32 n, use = len, whole, rest;
+    unsigned int n, use = len, whole, rest;
 
     if ( len > NIC_MAXFRAME ) { net_stats.txerrors++; return 0; }
     if ( use < 60 ) use = 60;                    /* padded with zeroes */
@@ -1042,9 +1042,9 @@ int card_send( const u8 *frame, u32 len )
 
 static void rx_drain( void )
 {
-    u16 status;
-    u32 len, n, wait;
-    u8 *slot;
+    uint16_t status;
+    unsigned int len, n, wait;
+    uint8_t *slot;
 
     for ( n = 0; n < 16; n++ ) {
         status = inw( net_port + OP_RXSTATUS );
@@ -1076,8 +1076,8 @@ static void rx_drain( void )
 
 int card_service( void )
 {
-    u16 st;
-    u32 n;
+    uint16_t st;
+    unsigned int n;
     int mine = 0;
 
     for ( n = 0; n < 8; n++ ) {
@@ -1095,7 +1095,7 @@ int card_service( void )
             el_filter();
             el_cmd( CMD_RXENABLE );
         }
-        el_cmd( (u16)( CMD_ACKINTR | ( st & ( ST_INTLATCH | ST_ADFAIL | ST_TXCOMP | ST_INTREQ ) ) ) );
+        el_cmd( (uint16_t)( CMD_ACKINTR | ( st & ( ST_INTLATCH | ST_ADFAIL | ST_TXCOMP | ST_INTREQ ) ) ) );
     }
     return mine;
 }

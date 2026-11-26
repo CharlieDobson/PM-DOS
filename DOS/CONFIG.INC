@@ -634,6 +634,8 @@ cfg_phaseof:
                                         ; for (sys_open, DOSMAIN.ASM), and a
                                         ; COUNTRY= line above the SHELL= one
                                         ; has to find COUNTRY.SYS there too
+        cmp     eax,OFFSET cfg_vme      ; before any DEVICE= line runs a
+        je      cph_first               ; driver in a box
         cmp     eax,OFFSET cfg_lastdrv  ; how many letters, before any
         je      cph_first               ; DEVICE= line takes one, and
                                         ; before vdm_cdsgrow sizes the
@@ -2198,6 +2200,31 @@ cnt_on:
         call    dword ptr ds:[IOS_NULLTRAP]
         ret
 
+;---------------------------------------------------------------------
+; VME=ON|OFF - whether the processor answers a DOS box's CLI, STI,
+; PUSHF, POPF, IRET and INT itself, or the monitor does, as it does on
+; a processor without virtual-8086 mode extensions.
+;
+; ON is the default and changes nothing: PMIO turns VME on at boot on a
+; processor that has it and passes the check v86_vmeinit makes (IO\
+; VM86.INC).  OFF is for finding out whether a problem in a DOS program
+; is VME's - an emulator or a virtual machine whose VME is wrong in a
+; way that check does not look at.  It is read in the first walk over
+; the file, with DOS= and SHELL=, so that no DEVICE= line has run a
+; driver in a box under VME before it.
+;---------------------------------------------------------------------
+cfg_vme:
+        mov     edi,OFFSET cfgw_on
+        call    cfg_iskw
+        jnc     cvm_on
+        mov     edi,OFFSET cfgw_off
+        call    cfg_iskw
+        jc      cfg_badparm
+        mov     al,VMF_OFF
+        call    dword ptr ds:[IOS_VME]
+cvm_on:
+        ret
+
 cfg_badparm:
         call    cfg_show_line
         mov     esi,OFFSET msgCfgBadVal
@@ -2660,6 +2687,7 @@ cfg_table:
         dd      OFFSET cfgn_lfn,     OFFSET cfg_lfn
         dd      OFFSET cfgn_dpmi,    OFFSET cfg_dpmi
         dd      OFFSET cfgn_nulltrp, OFFSET cfg_nulltrap
+        dd      OFFSET cfgn_vme,     OFFSET cfg_vme
         dd      OFFSET cfgn_ems,     OFFSET cfg_ems
         dd      OFFSET cfgn_keyrate, OFFSET cfg_keyrate
         dd      OFFSET cfgn_idedma,  OFFSET cfg_idedma
@@ -2717,6 +2745,7 @@ cfgn_share    db  'SHARE',0
 cfgn_undel    db  'UNDELETE',0
 cfgn_autochk  db  'AUTOCHECK',0
 cfgn_nulltrp  db  'NULLTRAP',0
+cfgn_vme      db  'VME',0
 cfgn_rem      db  'REM',0
 cfgn_buffers  db  'BUFFERS',0
 cfgn_files    db  'FILES',0

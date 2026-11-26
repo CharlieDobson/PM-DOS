@@ -13,19 +13,19 @@
 
 static SOCKET g_sock;
 
-static int io_send( void *ctx, const unsigned char *buf, int len )
+static int io_send( void *ctx, const uint8_t *buf, int len )
 {
     (void)ctx;
     return send( g_sock, (const char *)buf, len, 0 );
 }
-static int io_recv( void *ctx, unsigned char *buf, int len )
+static int io_recv( void *ctx, uint8_t *buf, int len )
 {
     (void)ctx;
     return recv( g_sock, (char *)buf, len, 0 );
 }
 
 static int g_count;
-static void on_entry( void *user, const char *name, int isdir, unsigned long size )
+static void on_entry( void *user, const char *name, int isdir, uint32_t size )
 {
     (void)user;
     printf( "    %-20s %s %lu\n", name, isdir ? "<DIR>" : "     ", size );
@@ -60,7 +60,7 @@ int main( int argc, char **argv )
     }
     printf( "connected to %s:445; user=%s domain=%s share=%s\n", ip, user, domain, share );
 
-    rc = smb2_connect( &cl, io_send, io_recv, (void *)0, (unsigned long)time( (time_t *)0 ),
+    rc = smb2_connect( &cl, io_send, io_recv, (void *)0, (uint32_t)time( (time_t *)0 ),
                        ip, share, user, pass, domain );
     if ( rc != 0 ) {
         printf( "FAIL at stage '%s', NTSTATUS 0x%08lX\n", smb2_stage( &cl ), smb2_status( &cl ) );
@@ -82,7 +82,7 @@ int main( int argc, char **argv )
     /* file I/O: read HELLO.TXT, then write + read back a temp file */
     {
         smb2_fh fh;
-        unsigned char data[256];
+        uint8_t data[256];
         int n;
 
         if ( smb2_open_file( &cl, "HELLO.TXT", 0, 0, &fh ) == 0 ) {
@@ -94,7 +94,7 @@ int main( int argc, char **argv )
 
         if ( smb2_open_file( &cl, "PMDOS.TMP", 1, 1, &fh ) == 0 ) {
             const char *wmsg = "written by PM-DOS SMB2\r\n";
-            int wn = smb2_write( &cl, &fh, 0, 0, (const unsigned char *)wmsg, (int)strlen( wmsg ) );
+            int wn = smb2_write( &cl, &fh, 0, 0, (const uint8_t *)wmsg, (int)strlen( wmsg ) );
             printf( "wrote PMDOS.TMP: %d bytes\n", wn );
             smb2_close_file( &cl, &fh );
             if ( smb2_open_file( &cl, "PMDOS.TMP", 0, 0, &fh ) == 0 ) {

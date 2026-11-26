@@ -45,13 +45,13 @@ const int eq_preset_count = sizeof( eq_presets ) / sizeof( eq_presets[0] );
 
 static int screen_on;
 
-static u32 last_frame;
+static uint32_t last_frame;
 
 static const char usage[] =
 #ifdef HAVE_WMA
-    "Plays sound and music files: WAV, VOC, MIDI, MP3, WMA and Ogg Vorbis.\r\n"
+    "Plays sound and music files: WAV, VOC, MIDI, MP3, FLAC, WMA and Ogg Vorbis.\r\n"
 #else
-    "Plays sound and music files: WAV, VOC, MIDI, MP3 and Ogg Vorbis.\r\n"
+    "Plays sound and music files: WAV, VOC, MIDI, MP3, FLAC and Ogg Vorbis.\r\n"
 #endif
     "\r\n"
     "MPLAY [/T | /G[:width]] [file...]\r\n"
@@ -139,7 +139,7 @@ static void settings_load( void )
     char path[PATH_LEN], line[PATH_LEN + 16];
     const char *at;
     SRC src;
-    u32 len;
+    unsigned int len;
     int ch, value, ok, index;
 
     settings_defaults();
@@ -159,11 +159,11 @@ static void settings_load( void )
         if ( at != NULL ) {
             at++;
             if ( str_nicmp( line, "Equalizer=", 10 ) == 0 ) {
-                set.eq.on = (u8)(take_int( &at, &ok ) != 0);
-                set.eq.preamp = (s8)clamp( take_int( &at, &ok ), -EQ_MAXDB * 2, EQ_MAXDB * 2 );
+                set.eq.on = (uint8_t)(take_int( &at, &ok ) != 0);
+                set.eq.preamp = (int8_t)clamp( take_int( &at, &ok ), -EQ_MAXDB * 2, EQ_MAXDB * 2 );
                 for ( index = 0; index < EQ_BANDS; index++ ) {
                     value = take_int( &at, &ok );
-                    set.eq.band[index] = (s8)(ok ? clamp( value, -EQ_MAXDB * 2, EQ_MAXDB * 2 ) : 0);
+                    set.eq.band[index] = (int8_t)(ok ? clamp( value, -EQ_MAXDB * 2, EQ_MAXDB * 2 ) : 0);
                 }
             } else if ( str_nicmp( line, "LastDir=", 8 ) == 0 ) {
                 str_cpyt( set.last_dir, at, sizeof( set.last_dir ) );
@@ -214,7 +214,7 @@ static void settings_load( void )
 void settings_save( void )
 {
     char path[PATH_LEN], text[600];
-    u32 handle, done;
+    uint32_t handle, done;
     int index;
 
     ini_path( path );
@@ -225,10 +225,11 @@ void settings_save( void )
           "ScreenWidth=%u\r\nScreenHeight=%u\r\nVolume=%u\r\nBalance=%d\r\nAnalyzer=%u\r\n"
           "ShowEqualizer=%u\r\nShowPlaylist=%u\r\nRepeat=%u\r\nShuffle=%u\r\nPreset=%d\r\n"
           "Quality=%u\r\nMono=%u\r\nSynth=%d\r\nRateLimit=%u\r\nPcmEqualizer=%u\r\nEqualizer=%u,%d",
-          (u32)set.mode_w, (u32)set.mode_h, (u32)set.volume, set.balance, (u32)set.analyzer,
-          (u32)set.show_eq, (u32)set.show_list, (u32)set.repeat, (u32)set.shuffle, set.preset,
-          (u32)set.play.quality, (u32)set.play.mono, set.play.synth, (u32)set.play.rate_limit,
-          (u32)set.play.eq_pcm, (u32)set.eq.on, (int)set.eq.preamp );
+          (unsigned int)set.mode_w, (unsigned int)set.mode_h, (unsigned int)set.volume, set.balance,
+          (unsigned int)set.analyzer, (unsigned int)set.show_eq, (unsigned int)set.show_list,
+          (unsigned int)set.repeat, (unsigned int)set.shuffle, set.preset, (unsigned int)set.play.quality,
+          (unsigned int)set.play.mono, set.play.synth, (unsigned int)set.play.rate_limit,
+          (unsigned int)set.play.eq_pcm, (unsigned int)set.eq.on, (int)set.eq.preamp );
     for ( index = 0; index < EQ_BANDS; index++ ) {
         sfmt( text + str_len( text ), sizeof( text ) - str_len( text ), ",%d", (int)set.eq.band[index] );
     }
@@ -418,7 +419,7 @@ void set_volume( int volume )
     pl_set_volume( set.volume, set.balance );
 }
 
-void seek_to( u32 ms )
+void seek_to( uint32_t ms )
 {
     if ( now_open ) {
         pl_seek( ms );
@@ -509,7 +510,7 @@ static void keep_playing( void )
 
     state = pl_pump( pl_cpu_class() == 0 ? 25 : 40 );
     if ( key_testing() ) {
-        static u32 dropouts_said;
+        static uint32_t dropouts_said;
         PLSTAT st;
         char line[96];
 
@@ -543,8 +544,8 @@ static void keep_playing( void )
 static void idle( void )
 {
     static int inside;
-    static u32 frame_ms;
-    u32 now, cost, least;
+    static uint32_t frame_ms;
+    uint32_t now, cost, least;
     PLSTAT st;
 
     if ( inside ) {
@@ -574,12 +575,13 @@ static void idle( void )
 /* ------------------------------------------------------------------ */
 static const FBTYPE media_types[] = {
 #ifdef HAVE_WMA
-    { "Sound and music files", "*.MP3;*.WAV;*.MID;*.OGG;*.WMA;*.VOC;*.MP2;*.MP1;*.RMI;*.KAR;*.MIDI;*.MPA;*.OGA;*.ASF" },
+    { "Sound and music files", "*.MP3;*.WAV;*.MID;*.OGG;*.FLAC;*.FLA;*.WMA;*.VOC;*.MP2;*.MP1;*.RMI;*.KAR;*.MIDI;*.MPA;*.OGA;*.ASF" },
 #else
-    { "Sound and music files", "*.MP3;*.WAV;*.MID;*.OGG;*.VOC;*.MP2;*.MP1;*.RMI;*.KAR;*.MIDI;*.MPA;*.OGA" },
+    { "Sound and music files", "*.MP3;*.WAV;*.MID;*.OGG;*.FLAC;*.FLA;*.VOC;*.MP2;*.MP1;*.RMI;*.KAR;*.MIDI;*.MPA;*.OGA" },
 #endif
     { "MP3 and MPEG audio (*.MP3)", "*.MP3;*.MP2;*.MP1;*.MPA" },
     { "Wave files (*.WAV)", "*.WAV" },
+    { "FLAC files (*.FLAC)", "*.FLAC;*.FLA" },
     { "MIDI music (*.MID)", "*.MID;*.MIDI;*.RMI;*.KAR" },
     { "Ogg Vorbis (*.OGG)", "*.OGG;*.OGA" },
 #ifdef HAVE_WMA
@@ -598,7 +600,7 @@ static const FBTYPE list_types[] = {
 static void remember_dir( const char *path )
 {
     const char *last = NULL, *at;
-    u32 len;
+    unsigned int len;
 
     for ( at = path; *at; at++ ) {
         if ( *at == '\\' ) {
@@ -606,7 +608,7 @@ static void remember_dir( const char *path )
         }
     }
     if ( last != NULL ) {
-        len = (u32)(last - path) + 1;
+        len = (unsigned int)(last - path) + 1;
         if ( len < sizeof( set.last_dir ) ) {
             mem_cpy( set.last_dir, path, len );
             set.last_dir[len] = 0;
@@ -654,7 +656,7 @@ void cmd_do( int cmd )
     char path[PATH_LEN], dir[PATH_LEN];
     PLSTAT st;
     int index, rc;
-    u32 len;
+    unsigned int len;
 
     if ( cmd > CM_EQ_PRESET && cmd < CM_EQ_PRESET + eq_preset_count ) {
         mem_cpy( set.eq.band, eq_presets[cmd - CM_EQ_PRESET].band, EQ_BANDS );
@@ -792,7 +794,7 @@ void cmd_do( int cmd )
         view_status( set.shuffle ? " Shuffle is on" : " Shuffle is off" );
         break;
     case CM_EQ_ON:
-        set.eq.on = (u8)!set.eq.on;
+        set.eq.on = (uint8_t)!set.eq.on;
         eq_apply();
         break;
     case CM_EQ_FLAT:
@@ -936,9 +938,9 @@ static void key_do( int key )
         }
         value = clamp( value, -EQ_MAXDB * 2, EQ_MAXDB * 2 );
         if ( eq_pick == 0 ) {
-            set.eq.preamp = (s8)value;
+            set.eq.preamp = (int8_t)value;
         } else {
-            set.eq.band[eq_pick - 1] = (s8)value;
+            set.eq.band[eq_pick - 1] = (int8_t)value;
         }
         set.preset = -1;
         eq_apply();
@@ -989,10 +991,10 @@ static void key_do( int key )
 /* ------------------------------------------------------------------ */
 /* the start                                                           */
 /* ------------------------------------------------------------------ */
-static int next_word( const char **line, char *word, u32 max )
+static int next_word( const char **line, char *word, unsigned int max )
 {
     const char *at = *line;
-    u32 len = 0;
+    unsigned int len = 0;
     int quoted = 0;
 
     while ( *at == ' ' || *at == '\t' ) {

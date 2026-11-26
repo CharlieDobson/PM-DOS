@@ -61,7 +61,7 @@
 
 #define BDA_COLS        0x44A   /* the screen's columns, a word */
 #define BDA_POINTS      0x485   /* a character's height, a word */
-#define VEC( n )        ((u32)(n) * 4)
+#define VEC( n )        ((uint32_t)(n) * 4)
 
 #define SEQ_INDEX       0x3C4
 #define SEQ_DATA        0x3C5
@@ -71,33 +71,33 @@
 
 /* tables too big to be in the image: one block, allocated once */
 typedef struct {
-    u8  font[16 * 256];
-    u32 rgb[256];               /* a pixel number's colour, 00RRGGBB */
-    u32 packed[256];            /* ...and as the screen's own pixel */
-    u8  opposite[256];          /* gfx_invert's pairs */
-    u8  dac[256][4];            /* blue, green, red, 0: six bits each */
-    u16 vmodes[112];
-    u8  info[256];
+    uint8_t  font[16 * 256];
+    uint32_t rgb[256];          /* a pixel number's colour, 00RRGGBB */
+    uint32_t packed[256];       /* ...and as the screen's own pixel */
+    uint8_t  opposite[256];     /* gfx_invert's pairs */
+    uint8_t  dac[256][4];       /* blue, green, red, 0: six bits each */
+    uint16_t vmodes[112];
+    uint8_t  info[256];
 } TABLES;
 
 int gfx_width, gfx_height;
 int gfx_colors = 16;
 
-static TABLES *tab;
-static u32 vid_sel, vid_bytes, vid_pitch;
-static u32 mode_set = NO_MODE;  /* the mode sys_video_set last set */
-static int video_touched;       /* a mode was set since the last restore */
-static int planar;
-static int px_bytes = 1;        /* bytes a pixel on the screen */
-static int gw, gh;              /* the picture's size */
-static int grows, gcols;        /* ...in cells */
-static int lbytes;              /* a planar line's bytes */
+static TABLES  *tab;
+static uint32_t vid_sel, vid_bytes, vid_pitch;
+static uint32_t mode_set = NO_MODE;  /* the mode sys_video_set last set */
+static int      video_touched;       /* a mode was set since the last restore */
+static int      planar;
+static int      px_bytes = 1;        /* bytes a pixel on the screen */
+static int      gw, gh;              /* the picture's size */
+static int      grows, gcols;        /* ...in cells */
+static int      lbytes;              /* a planar line's bytes */
 
-static u8  *pic;                /* the picture */
-static u8  *planes;             /* changed lines as four planes */
-static u8  *linebuf;            /* a line with the pointer on it */
-static u8  *hibuf;              /* a line as the screen's pixels */
-static u16 *dirty_lo, *dirty_hi;        /* a line's changed pixels: lo > hi for none */
+static uint8_t  *pic;           /* the picture */
+static uint8_t  *planes;        /* changed lines as four planes */
+static uint8_t  *linebuf;       /* a line with the pointer on it */
+static uint8_t  *hibuf;         /* a line as the screen's pixels */
+static uint16_t *dirty_lo, *dirty_hi;   /* a line's changed pixels: lo > hi for none */
 static int have_font, tried_font;
 
 static int clip_x0, clip_y0, clip_x1, clip_y1;
@@ -107,9 +107,9 @@ static int ptr_x, ptr_y, ptr_shape, ptr_on;
 static int cur_row, cur_col, cur_kind = CUR_HIDE, cur_color;
 static int car_x, car_y, car_h, car_on;
 
-static u32 c2p_tab[16];
+static uint32_t c2p_tab[16];
 
-static const u8 vga16[16][3] = {        /* red, green, blue: six bits */
+static const uint8_t vga16[16][3] = {   /* red, green, blue: six bits */
     {  0,  0,  0 }, {  0,  0, 42 }, {  0, 42,  0 }, {  0, 42, 42 },
     { 42,  0,  0 }, { 42,  0, 42 }, { 42, 21,  0 }, { 42, 42, 42 },
     { 21, 21, 21 }, { 21, 21, 63 }, { 21, 63, 21 }, { 21, 63, 63 },
@@ -206,25 +206,25 @@ static int tables_ready( void )
         red = vga16[color][0] << 2 | vga16[color][0] >> 4;
         green = vga16[color][1] << 2 | vga16[color][1] >> 4;
         blue = vga16[color][2] << 2 | vga16[color][2] >> 4;
-        tab->rgb[color] = ((u32)red << 16) | ((u32)green << 8) | (u32)blue;
-        tab->opposite[color] = (u8)(color ^ 15);
+        tab->rgb[color] = ((uint32_t)red << 16) | ((uint32_t)green << 8) | (uint32_t)blue;
+        tab->opposite[color] = (uint8_t)(color ^ 15);
     }
     for ( color = 16; color < 232; color++ ) {
         red = ((color - 16) / 36) * 51;
         green = (((color - 16) / 6) % 6) * 51;
         blue = ((color - 16) % 6) * 51;
-        tab->rgb[color] = ((u32)red << 16) | ((u32)green << 8) | (u32)blue;
-        tab->opposite[color] = (u8)(247 - color);       /* across the cube */
+        tab->rgb[color] = ((uint32_t)red << 16) | ((uint32_t)green << 8) | (uint32_t)blue;
+        tab->opposite[color] = (uint8_t)(247 - color);  /* across the cube */
     }
     for ( color = 232; color < 256; color++ ) {
         level = 8 + 10 * (color - 232);
-        tab->rgb[color] = ((u32)level << 16) | ((u32)level << 8) | (u32)level;
-        tab->opposite[color] = (u8)(487 - color);       /* the ramp's other end */
+        tab->rgb[color] = ((uint32_t)level << 16) | ((uint32_t)level << 8) | (uint32_t)level;
+        tab->opposite[color] = (uint8_t)(487 - color);  /* the ramp's other end */
     }
     for ( color = 0; color < 256; color++ ) {
-        tab->dac[color][0] = (u8)((tab->rgb[color] & 0xFF) >> 2);
-        tab->dac[color][1] = (u8)(((tab->rgb[color] >> 8) & 0xFF) >> 2);
-        tab->dac[color][2] = (u8)(((tab->rgb[color] >> 16) & 0xFF) >> 2);
+        tab->dac[color][0] = (uint8_t)((tab->rgb[color] & 0xFF) >> 2);
+        tab->dac[color][1] = (uint8_t)(((tab->rgb[color] >> 8) & 0xFF) >> 2);
+        tab->dac[color][2] = (uint8_t)(((tab->rgb[color] >> 16) & 0xFF) >> 2);
         tab->dac[color][3] = 0;
     }
     for ( color = 0; color < 16; color++ ) {
@@ -237,12 +237,12 @@ static int tables_ready( void )
     return 1;
 }
 
-static u32 sq( int val )
+static unsigned int sq( int val )
 {
-    return (u32)(val * val);
+    return (unsigned int)(val * val);
 }
 
-static u32 distance( u32 rgb, int red, int green, int blue )
+static unsigned int distance( uint32_t rgb, int red, int green, int blue )
 {
     return sq( (int)((rgb >> 16) & 0xFF) - red ) + sq( (int)((rgb >> 8) & 0xFF) - green )
            + sq( (int)(rgb & 0xFF) - blue );
@@ -251,11 +251,11 @@ static u32 distance( u32 rgb, int red, int green, int blue )
 /* The nearest of the sixteen, and on a 256-colour screen the nearer
    still of the cube's and the grey ramp's.  One of the sixteen wins a
    tie, so that black, white and the VGA's own colours are themselves. */
-int gfx_rgb( u32 rgb )
+int gfx_rgb( uint32_t rgb )
 {
     int red = (int)((rgb >> 16) & 0xFF), green = (int)((rgb >> 8) & 0xFF), blue = (int)(rgb & 0xFF);
     int color, best = 0, index, level;
-    u32 err, least = 0xFFFFFFFFUL;
+    unsigned int err, least = 0xFFFFFFFFUL;
 
     if ( tab == NULL ) {
         return 0;
@@ -290,7 +290,7 @@ int gfx_rgb( u32 rgb )
     return best;
 }
 
-u32 gfx_color_rgb( int color )
+uint32_t gfx_color_rgb( int color )
 {
     return tab != NULL ? tab->rgb[color & 0xFF] : 0;
 }
@@ -305,7 +305,7 @@ static int env_number( const char *name )
 {
     const char *text = sys_getenv( name );
     int ok;
-    u32 val;
+    unsigned int val;
 
     if ( text == NULL ) {
         return 0;
@@ -316,7 +316,7 @@ static int env_number( const char *name )
 
 /* a mode's depth as it is spoken of: 8, 15, 16, 24, 32 - or 4 for the
    planes, 0 for anything this cannot draw in */
-static int depth_of( const u8 *info )
+static int depth_of( const uint8_t *info )
 {
     int bits = info[0x19], model = info[0x1B];
 
@@ -355,25 +355,25 @@ static int rank_of( int depth )
 static void add_mode( DISPMODE *mode, int backend, int depth, int width, int height, int vmode )
 {
     mem_set( mode, 0, sizeof( *mode ) );
-    mode->backend = (u8)backend;
-    mode->bpp = (u8)depth;
-    mode->width = (u16)width;
-    mode->height = (u16)height;
-    mode->cols = (u16)(width / CELL_W);
-    mode->rows = (u16)(height / CELL_H);
-    mode->colors = (u16)(backend == DB_PLANAR ? 16 : 256);
-    mode->vmode = (u16)vmode;
+    mode->backend = (uint8_t)backend;
+    mode->bpp = (uint8_t)depth;
+    mode->width = (uint16_t)width;
+    mode->height = (uint16_t)height;
+    mode->cols = (uint16_t)(width / CELL_W);
+    mode->rows = (uint16_t)(height / CELL_H);
+    mode->colors = (uint16_t)(backend == DB_PLANAR ? 16 : 256);
+    mode->vmode = (uint16_t)vmode;
     sfmt( mode->name, sizeof( mode->name ), "%d x %d, %d colors", width, height, mode->colors );
 }
 
 int gfx_probe( DISPMODE *list, int max )
 {
-    static const u16 sizes[4][2] = { { 640, 480 }, { 800, 600 }, { 1024, 768 }, { 1280, 1024 } };
+    static const uint16_t sizes[4][2] = { { 640, 480 }, { 800, 600 }, { 1024, 768 }, { 1280, 1024 } };
     BREGS regs;
-    u8 probe;
+    uint8_t probe;
     int count = 0, nvbe = 0, version, only, size, index, depth, rank, vga = 0;
     int best_rank[4], best_mode[4], best_depth[4], has_planar[4];
-    const u8 *info;
+    const uint8_t *info;
 
     if ( !sys_peek( 0x449, &probe, 1 ) || !tables_ready() ) {
         return 0;                       /* no way to read a font: text only */
@@ -405,12 +405,12 @@ int gfx_probe( DISPMODE *list, int max )
         if ( tab->vmodes[index] < 0x100 || !sys_vbe_mode( tab->vmodes[index], tab->info ) ) {
             continue;
         }
-        if ( (*(const u16 *)info & 0x11) != 0x11 ) {
+        if ( (*(const uint16_t *)info & 0x11) != 0x11 ) {
             continue;                   /* not there, or text */
         }
         for ( size = 0; size < 4; size++ ) {
-            if ( *(const u16 *)(info + 0x12) == sizes[size][0]
-                 && *(const u16 *)(info + 0x14) == sizes[size][1] ) {
+            if ( *(const uint16_t *)(info + 0x12) == sizes[size][0]
+                 && *(const uint16_t *)(info + 0x14) == sizes[size][1] ) {
                 break;
             }
         }
@@ -424,7 +424,7 @@ int gfx_probe( DISPMODE *list, int max )
         }
         /* a frame buffer the kernel can hand over: VBE 2.0, the mode
            saying it has one, and an address for it */
-        if ( version < 0x0200 || !(*(const u16 *)info & 0x80) || *(const u32 *)(info + 0x28) == 0 ) {
+        if ( version < 0x0200 || !(*(const uint16_t *)info & 0x80) || *(const uint32_t *)(info + 0x28) == 0 ) {
             continue;
         }
         rank = rank_of( depth );
@@ -460,7 +460,7 @@ int gfx_probe( DISPMODE *list, int max )
 /* the font                                                            */
 /* ------------------------------------------------------------------ */
 
-static int set_mode( u32 mode )
+static int set_mode( uint32_t mode )
 {
     if ( mode == mode_set ) {
         return 1;
@@ -474,9 +474,9 @@ static int set_mode( u32 mode )
     return 1;
 }
 
-static int read_far( u32 farptr, u8 *dst, u32 len )
+static int read_far( uint32_t farptr, uint8_t *dst, unsigned int len )
 {
-    u32 addr = ((farptr >> 16) << 4) + (farptr & 0xFFFF);
+    uint32_t addr = ((farptr >> 16) << 4) + (farptr & 0xFFFF);
 
     if ( farptr == 0 || addr + len > 0x100000UL ) {
         return 0;
@@ -485,7 +485,7 @@ static int read_far( u32 farptr, u8 *dst, u32 len )
 }
 
 /* every line of one character, ORed together */
-static int char_bits( const u8 *data, int ch )
+static int char_bits( const uint8_t *data, int ch )
 {
     int line, bits = 0;
 
@@ -499,7 +499,7 @@ static int char_bits( const u8 *data, int ch )
    something in its capital A and something in its second half.  A
    table of another height fails the first of those: its space is read
    from the middle of some other character. */
-static int romfont_sane( const u8 *data )
+static int romfont_sane( const uint8_t *data )
 {
     return char_bits( data, ' ' ) == 0 && char_bits( data, 'A' ) != 0 && char_bits( data, 0xDB ) != 0;
 }
@@ -508,8 +508,8 @@ static int romfont_sane( const u8 *data )
    in memory.  Leaves mode 12h set the first time. */
 static int romfont_load( void )
 {
-    u32 vec;
-    u16 points;
+    uint32_t vec;
+    uint16_t points;
 
     if ( have_font || tried_font ) {
         return have_font;
@@ -551,14 +551,14 @@ static void mark( int x0, int y0, int x1, int y1 )
     }
     for ( line = y0; line <= y1; line++ ) {
         if ( dirty_lo[line] > dirty_hi[line] ) {
-            dirty_lo[line] = (u16)x0;
-            dirty_hi[line] = (u16)x1;
+            dirty_lo[line] = (uint16_t)x0;
+            dirty_hi[line] = (uint16_t)x1;
         } else {
             if ( x0 < dirty_lo[line] ) {
-                dirty_lo[line] = (u16)x0;
+                dirty_lo[line] = (uint16_t)x0;
             }
             if ( x1 > dirty_hi[line] ) {
-                dirty_hi[line] = (u16)x1;
+                dirty_hi[line] = (uint16_t)x1;
             }
         }
     }
@@ -587,7 +587,7 @@ void gfx_strip( int color )
     if ( pic == NULL || top >= gh ) {
         return;
     }
-    mem_set( pic + (u32)top * gw, color, (u32)(gh - top) * gw );
+    mem_set( pic + (unsigned int)top * gw, color, (unsigned int)(gh - top) * gw );
     mark( 0, top, gw - 1, gh - 1 );
 }
 
@@ -614,7 +614,7 @@ static void free_picture( void )
 
 /* one colour's bits into their place in a pixel: "size" bits of an
    eight-bit level, "pos" bits up */
-static u32 field( u32 level, int size, int pos )
+static uint32_t field( uint32_t level, int size, int pos )
 {
     if ( size < 1 || size > 8 || pos < 0 || pos + size > 32 ) {
         return 0;
@@ -624,7 +624,7 @@ static u32 field( u32 level, int size, int pos )
 
 /* the 256 colours as this mode's pixels, from the mode's own account
    of where red, green and blue are */
-static void pack_colors( const u8 *info, int depth )
+static void pack_colors( const uint8_t *info, int depth )
 {
     int rsize = info[0x1F], rpos = info[0x20], gsize = info[0x21], gpos = info[0x22];
     int bsize = info[0x23], bpos = info[0x24], color;
@@ -649,8 +649,8 @@ static void pack_colors( const u8 *info, int depth )
 
 int gfx_enter( const DISPMODE *mode )
 {
-    u32 size = (u32)mode->width * mode->height;
-    u16 cols = 0;
+    unsigned int size = (unsigned int)mode->width * mode->height;
+    uint16_t cols = 0;
 
     free_picture();
     if ( !tables_ready() ) {
@@ -662,21 +662,21 @@ int gfx_enter( const DISPMODE *mode )
     }
     planar = mode->backend == DB_PLANAR;
     px_bytes = mode->bpp <= 8 ? 1 : (mode->bpp + 7) / 8;
-    pic = (u8 *)try_alloc( size );
-    linebuf = (u8 *)try_alloc( mode->width );
-    dirty_lo = (u16 *)try_alloc( (u32)mode->height * sizeof( u16 ) );
-    dirty_hi = (u16 *)try_alloc( (u32)mode->height * sizeof( u16 ) );
+    pic = (uint8_t *)try_alloc( size );
+    linebuf = (uint8_t *)try_alloc( mode->width );
+    dirty_lo = (uint16_t *)try_alloc( (unsigned int)mode->height * sizeof( uint16_t ) );
+    dirty_hi = (uint16_t *)try_alloc( (unsigned int)mode->height * sizeof( uint16_t ) );
     if ( planar ) {
-        planes = (u8 *)try_alloc( size / 2 );
+        planes = (uint8_t *)try_alloc( size / 2 );
     } else if ( px_bytes > 1 ) {
-        hibuf = (u8 *)try_alloc( (u32)mode->width * 4 );
+        hibuf = (uint8_t *)try_alloc( (unsigned int)mode->width * 4 );
     }
     if ( pic == NULL || linebuf == NULL || dirty_lo == NULL || dirty_hi == NULL
          || (planar && planes == NULL) || (px_bytes > 1 && hibuf == NULL) ) {
         free_picture();
         return DE_NOMEM;
     }
-    if ( !set_mode( planar ? (u32)mode->vmode : ((u32)mode->vmode | VMODE_LFB) ) ) {
+    if ( !set_mode( planar ? (uint32_t)mode->vmode : ((uint32_t)mode->vmode | VMODE_LFB) ) ) {
         free_picture();
         return DE_REFUSED;
     }
@@ -692,8 +692,8 @@ int gfx_enter( const DISPMODE *mode )
         }
     } else {
         if ( !sys_vbe_mode( mode->vmode, tab->info )
-             || vid_pitch < (u32)mode->width * px_bytes
-             || vid_bytes < vid_pitch * (mode->height - 1) + (u32)mode->width * px_bytes ) {
+             || vid_pitch < (uint32_t)mode->width * px_bytes
+             || vid_bytes < vid_pitch * (mode->height - 1) + (uint32_t)mode->width * px_bytes ) {
             free_picture();
             mode_set = NO_MODE;
             return DE_REFUSED;
@@ -758,7 +758,7 @@ void gfx_cell( int row, int col, CELL cell )
     int x = col * CELL_W, y = row * CELL_H, line, px, bits, arms, mid = CELL_H / 2;
     int ch = (int)(cell & 0xFF), fg = (int)((cell >> 8) & 0x0F), bg = (int)((cell >> 12) & 0x0F);
     int near_edge, far_edge;
-    u8 *dst;
+    uint8_t *dst;
 
     if ( pic == NULL || row < 0 || row >= grows || col < 0 || col >= gcols ) {
         return;
@@ -776,18 +776,18 @@ void gfx_cell( int row, int col, CELL cell )
         far_edge = 15;
     }
     for ( line = 0; line < CELL_H; line++ ) {
-        dst = pic + (u32)(y + line) * gw + x;
+        dst = pic + (unsigned int)(y + line) * gw + x;
         if ( arms ) {
             for ( px = 0; px < 8; px++ ) {
-                dst[px] = (u8)bg;
+                dst[px] = (uint8_t)bg;
             }
             if ( (line <= mid && (arms & 1)) || (line >= mid && (arms & 2)) ) {
-                dst[3] = (u8)fg;
+                dst[3] = (uint8_t)fg;
             }
             if ( line == mid ) {
                 for ( px = 0; px < 8; px++ ) {
                     if ( (px <= 3 && (arms & 4)) || (px >= 3 && (arms & 8)) ) {
-                        dst[px] = (u8)fg;
+                        dst[px] = (uint8_t)fg;
                     }
                 }
             }
@@ -797,25 +797,25 @@ void gfx_cell( int row, int col, CELL cell )
                 bits = 0xFF;
             }
             for ( px = 0; px < 8; px++ ) {
-                dst[px] = (bits & (0x80 >> px)) ? (u8)fg : (u8)bg;
+                dst[px] = (bits & (0x80 >> px)) ? (uint8_t)fg : (uint8_t)bg;
             }
         }
         /* the bottom and the right over the top and the left, where
            they meet in a corner */
         if ( (cell & CELLF_TOP) && line == 0 ) {
             for ( px = 0; px < 8; px++ ) {
-                dst[px] = (u8)near_edge;
+                dst[px] = (uint8_t)near_edge;
             }
         }
         if ( cell & CELLF_LEFT ) {
-            dst[0] = (u8)near_edge;
+            dst[0] = (uint8_t)near_edge;
         }
         if ( cell & CELLF_RIGHT ) {
-            dst[7] = (u8)far_edge;
+            dst[7] = (uint8_t)far_edge;
         }
         if ( (cell & CELLF_BOTTOM) && line == CELL_H - 1 ) {
             for ( px = 0; px < 8; px++ ) {
-                dst[px] = (u8)far_edge;
+                dst[px] = (uint8_t)far_edge;
             }
         }
     }
@@ -878,7 +878,7 @@ void gfx_rect( int x, int y, int w, int h, int color )
         return;
     }
     for ( line = y0; line <= y1; line++ ) {
-        mem_set( pic + (u32)line * gw + x0, color, (u32)(x1 - x0 + 1) );
+        mem_set( pic + (unsigned int)line * gw + x0, color, (unsigned int)(x1 - x0 + 1) );
     }
     mark( x0, y0, x1, y1 );
 }
@@ -950,24 +950,24 @@ void gfx_frame( int x, int y, int w, int h, int style )
 void gfx_text( int x, int y, const char *text, int len, int fg, int bg )
 {
     int x0 = x, y0 = y, x1 = x + len * 8 - 1, y1 = y + 15, line, pos, px, at, bits;
-    u8 *dst;
+    uint8_t *dst;
 
     if ( len <= 0 || !cut( &x0, &y0, &x1, &y1 ) ) {
         return;
     }
     for ( line = y0; line <= y1; line++ ) {
-        dst = pic + (u32)line * gw;
+        dst = pic + (unsigned int)line * gw;
         for ( pos = (x0 - x) / 8; pos <= (x1 - x) / 8; pos++ ) {
-            bits = tab->font[(u8)text[pos] * 16 + (line - y)];
+            bits = tab->font[(uint8_t)text[pos] * 16 + (line - y)];
             at = x + pos * 8;
             for ( px = 0; px < 8; px++, at++ ) {
                 if ( at < x0 || at > x1 ) {
                     continue;
                 }
                 if ( bits & (0x80 >> px) ) {
-                    dst[at] = (u8)fg;
+                    dst[at] = (uint8_t)fg;
                 } else if ( bg >= 0 ) {
-                    dst[at] = (u8)bg;
+                    dst[at] = (uint8_t)bg;
                 }
             }
         }
@@ -1003,7 +1003,7 @@ static int icon_color( int ch, int ink )
 static void dot( int x, int y, int color )
 {
     if ( x >= clip_x0 && x <= clip_x1 && y >= clip_y0 && y <= clip_y1 ) {
-        pic[(u32)y * gw + x] = (u8)color;
+        pic[(unsigned int)y * gw + x] = (uint8_t)color;
     }
 }
 
@@ -1040,7 +1040,7 @@ void gfx_icon( int x, int y, const char *const *rows, int ink, int disabled )
     mark( x, y, x + 16, y + 16 );
 }
 
-void gfx_blit( int x, int y, int w, int h, const u8 *src, int stride )
+void gfx_blit( int x, int y, int w, int h, const uint8_t *src, int stride )
 {
     int x0 = x, y0 = y, x1 = x + w - 1, y1 = y + h - 1, line;
 
@@ -1048,18 +1048,18 @@ void gfx_blit( int x, int y, int w, int h, const u8 *src, int stride )
         return;
     }
     for ( line = y0; line <= y1; line++ ) {
-        mem_cpy( pic + (u32)line * gw + x0, src + (long)(line - y) * stride + (x0 - x),
-                 (u32)(x1 - x0 + 1) );
+        mem_cpy( pic + (unsigned int)line * gw + x0, src + (long)(line - y) * stride + (x0 - x),
+                 (unsigned int)(x1 - x0 + 1) );
     }
     mark( x0, y0, x1, y1 );
 }
 
 /* a colour "level" sixteenths of the way from one to another */
-static int mix( u32 from, u32 to, int level )
+static int mix( uint32_t from, uint32_t to, int level )
 {
-    u32 red = (((from >> 16) & 0xFF) * (16 - level) + ((to >> 16) & 0xFF) * level + 8) / 16;
-    u32 green = (((from >> 8) & 0xFF) * (16 - level) + ((to >> 8) & 0xFF) * level + 8) / 16;
-    u32 blue = ((from & 0xFF) * (16 - level) + (to & 0xFF) * level + 8) / 16;
+    uint32_t red = (((from >> 16) & 0xFF) * (16 - level) + ((to >> 16) & 0xFF) * level + 8) / 16;
+    uint32_t green = (((from >> 8) & 0xFF) * (16 - level) + ((to >> 8) & 0xFF) * level + 8) / 16;
+    uint32_t blue = ((from & 0xFF) * (16 - level) + (to & 0xFF) * level + 8) / 16;
 
     return gfx_rgb( (red << 16) | (green << 8) | blue );
 }
@@ -1073,13 +1073,13 @@ void gfx_cover_cut( int level )
     cover_cut = level < 1 ? 1 : level > 255 ? 255 : level;
 }
 
-void gfx_cover( int x, int y, int w, int h, const u8 *cov, int stride, int fg, int bg )
+void gfx_cover( int x, int y, int w, int h, const uint8_t *cov, int stride, int fg, int bg )
 {
     static int ramp_fg = -1, ramp_bg = -1, ramp_colors;
-    static u8 ramp[17];
+    static uint8_t ramp[17];
     int x0 = x, y0 = y, x1 = x + w - 1, y1 = y + h - 1, line, at, level;
-    const u8 *src;
-    u8 *dst;
+    const uint8_t *src;
+    uint8_t *dst;
 
     if ( w <= 0 || h <= 0 || cov == NULL || !cut( &x0, &y0, &x1, &y1 ) ) {
         return;
@@ -1090,32 +1090,32 @@ void gfx_cover( int x, int y, int w, int h, const u8 *cov, int stride, int fg, i
         /* the sixteen steps from the background to the foreground,
            kept for the next run of the same text */
         for ( level = 0; level <= 16; level++ ) {
-            ramp[level] = (u8)mix( tab->rgb[bg & 0xFF], tab->rgb[fg], level );
+            ramp[level] = (uint8_t)mix( tab->rgb[bg & 0xFF], tab->rgb[fg], level );
         }
-        ramp[0] = (u8)bg;
-        ramp[16] = (u8)fg;
+        ramp[0] = (uint8_t)bg;
+        ramp[16] = (uint8_t)fg;
         ramp_fg = fg;
         ramp_bg = bg;
         ramp_colors = gfx_colors;
     }
     for ( line = y0; line <= y1; line++ ) {
         src = cov + (long)(line - y) * stride + (x0 - x);
-        dst = pic + (u32)line * gw + x0;
+        dst = pic + (unsigned int)line * gw + x0;
         for ( at = x0; at <= x1; at++, src++, dst++ ) {
             if ( gfx_colors != 256 ) {
                 if ( *src >= cover_cut ) {
-                    *dst = (u8)fg;
+                    *dst = (uint8_t)fg;
                 } else if ( bg >= 0 ) {
-                    *dst = (u8)bg;
+                    *dst = (uint8_t)bg;
                 }
             } else if ( bg >= 0 ) {
                 *dst = ramp[(*src * 16 + 127) / 255];
             } else {
                 level = (*src * 16 + 127) / 255;
                 if ( level == 16 ) {
-                    *dst = (u8)fg;
+                    *dst = (uint8_t)fg;
                 } else if ( level > 0 ) {
-                    *dst = (u8)mix( tab->rgb[*dst], tab->rgb[fg], level );
+                    *dst = (uint8_t)mix( tab->rgb[*dst], tab->rgb[fg], level );
                 }
             }
         }
@@ -1126,23 +1126,23 @@ void gfx_cover( int x, int y, int w, int h, const u8 *cov, int stride, int fg, i
 void gfx_invert( int x, int y, int w, int h )
 {
     int x0 = x, y0 = y, x1 = x + w - 1, y1 = y + h - 1, line, at;
-    u8 *dst;
+    uint8_t *dst;
 
     if ( w <= 0 || h <= 0 || !cut( &x0, &y0, &x1, &y1 ) ) {
         return;
     }
     for ( line = y0; line <= y1; line++ ) {
-        dst = pic + (u32)line * gw + x0;
+        dst = pic + (unsigned int)line * gw + x0;
         for ( at = x0; at <= x1; at++, dst++ ) {
-            *dst = gfx_colors == 256 ? tab->opposite[*dst] : (u8)((*dst & 15) ^ 15);
+            *dst = gfx_colors == 256 ? tab->opposite[*dst] : (uint8_t)((*dst & 15) ^ 15);
         }
     }
     mark( x0, y0, x1, y1 );
 }
 
-u8 *gfx_row( int y )
+uint8_t *gfx_row( int y )
 {
-    return pic != NULL && y >= 0 && y < gh ? pic + (u32)y * gw : NULL;
+    return pic != NULL && y >= 0 && y < gh ? pic + (unsigned int)y * gw : NULL;
 }
 
 /* ------------------------------------------------------------------ */
@@ -1229,7 +1229,7 @@ void gfx_pointer( int x, int y, int shape, int show )
 /* a scan line as it goes to the screen: the picture's, with the cursor,
    the caret and then the pointer laid over the pixels from "lo" to
    "hi" */
-static const u8 *compose( int line, int lo, int hi )
+static const uint8_t *compose( int line, int lo, int hi )
 {
     int x0 = 0, y0, x1 = 0, y1, px, at;
     const char *shape;
@@ -1248,13 +1248,13 @@ static const u8 *compose( int line, int lo, int hi )
         over |= 4;
     }
     if ( !over ) {
-        return pic + (u32)line * gw;
+        return pic + (unsigned int)line * gw;
     }
-    mem_cpy( linebuf + lo, pic + (u32)line * gw + lo, (u32)(hi - lo + 1) );
+    mem_cpy( linebuf + lo, pic + (unsigned int)line * gw + lo, (unsigned int)(hi - lo + 1) );
     if ( over & 1 ) {
         for ( px = x0; px <= x1; px++ ) {
             if ( px >= lo && px <= hi ) {
-                linebuf[px] = (u8)cur_color;
+                linebuf[px] = (uint8_t)cur_color;
             }
         }
     }
@@ -1262,7 +1262,7 @@ static const u8 *compose( int line, int lo, int hi )
         for ( px = car_x; px <= car_x + 1; px++ ) {
             if ( px >= lo && px <= hi ) {
                 linebuf[px] = gfx_colors == 256 ? tab->opposite[linebuf[px]]
-                                                : (u8)((linebuf[px] & 15) ^ 15);
+                                                : (uint8_t)((linebuf[px] & 15) ^ 15);
             }
         }
     }
@@ -1288,33 +1288,33 @@ static const u8 *compose( int line, int lo, int hi )
    only that plane take the write. */
 static void flush_band( int first, int last, int blo, int bhi )
 {
-    u32 psize = (u32)lbytes * gh;
-    const u8 *src;
-    u8 *out;
-    u32 acc;
+    unsigned int psize = (unsigned int)lbytes * gh;
+    const uint8_t *src;
+    uint8_t *out;
+    uint32_t acc;
     int line, byte, plane;
 
     for ( line = first; line <= last; line++ ) {
         src = compose( line, blo * 8, bhi * 8 + 7 ) + blo * 8;
-        out = planes + (u32)line * lbytes + blo;
+        out = planes + (unsigned int)line * lbytes + blo;
         for ( byte = blo; byte <= bhi; byte++, src += 8, out++ ) {
             acc = c2p_tab[src[0] & 15] | (c2p_tab[src[1] & 15] >> 1)
                   | (c2p_tab[src[2] & 15] >> 2) | (c2p_tab[src[3] & 15] >> 3)
                   | (c2p_tab[src[4] & 15] >> 4) | (c2p_tab[src[5] & 15] >> 5)
                   | (c2p_tab[src[6] & 15] >> 6) | (c2p_tab[src[7] & 15] >> 7);
-            out[0] = (u8)acc;
-            out[psize] = (u8)(acc >> 8);
-            out[2 * psize] = (u8)(acc >> 16);
-            out[3 * psize] = (u8)(acc >> 24);
+            out[0] = (uint8_t)acc;
+            out[psize] = (uint8_t)(acc >> 8);
+            out[2 * psize] = (uint8_t)(acc >> 16);
+            out[3 * psize] = (uint8_t)(acc >> 24);
         }
     }
     for ( plane = 0; plane < 4; plane++ ) {
         port_out( SEQ_INDEX, SEQ_MAPMASK );
         port_out( SEQ_DATA, 1u << plane );
         for ( line = first; line <= last; line++ ) {
-            vid_put( vid_sel, (u32)line * lbytes + blo,
-                     planes + (u32)plane * psize + (u32)line * lbytes + blo,
-                     (u32)(bhi - blo + 1) );
+            vid_put( vid_sel, (uint32_t)line * lbytes + blo,
+                     planes + (unsigned int)plane * psize + (unsigned int)line * lbytes + blo,
+                     (uint32_t)(bhi - blo + 1) );
         }
     }
     port_out( SEQ_INDEX, SEQ_MAPMASK );
@@ -1325,35 +1325,35 @@ static void flush_band( int first, int last, int blo, int bhi )
    four bytes each */
 static void flush_high( int line, int lo, int hi )
 {
-    const u8 *src = compose( line, lo, hi ) + lo;
-    u8 *out = hibuf;
-    u32 pixel;
+    const uint8_t *src = compose( line, lo, hi ) + lo;
+    uint8_t *out = hibuf;
+    uint32_t pixel;
     int count = hi - lo + 1, at;
 
     switch ( px_bytes ) {
     case 2:
         for ( at = 0; at < count; at++ ) {
-            *(u16 *)out = (u16)tab->packed[src[at]];
+            *(uint16_t *)out = (uint16_t)tab->packed[src[at]];
             out += 2;
         }
         break;
     case 3:
         for ( at = 0; at < count; at++ ) {
             pixel = tab->packed[src[at]];
-            out[0] = (u8)pixel;
-            out[1] = (u8)(pixel >> 8);
-            out[2] = (u8)(pixel >> 16);
+            out[0] = (uint8_t)pixel;
+            out[1] = (uint8_t)(pixel >> 8);
+            out[2] = (uint8_t)(pixel >> 16);
             out += 3;
         }
         break;
     default:
         for ( at = 0; at < count; at++ ) {
-            *(u32 *)out = tab->packed[src[at]];
+            *(uint32_t *)out = tab->packed[src[at]];
             out += 4;
         }
         break;
     }
-    vid_put( vid_sel, (u32)line * vid_pitch + (u32)lo * px_bytes, hibuf, (u32)count * px_bytes );
+    vid_put( vid_sel, (uint32_t)line * vid_pitch + (uint32_t)lo * px_bytes, hibuf, (uint32_t)count * px_bytes );
 }
 
 void gfx_flush( void )
@@ -1371,8 +1371,8 @@ void gfx_flush( void )
                 continue;
             }
             if ( px_bytes == 1 ) {
-                vid_put( vid_sel, (u32)line * vid_pitch + lo, compose( line, lo, hi ) + lo,
-                         (u32)(hi - lo + 1) );
+                vid_put( vid_sel, (uint32_t)line * vid_pitch + lo, compose( line, lo, hi ) + lo,
+                         (uint32_t)(hi - lo + 1) );
             } else {
                 flush_high( line, lo, hi );
             }
@@ -1409,12 +1409,12 @@ void gfx_flush( void )
 /* test mode: the picture as a file                                    */
 /* ------------------------------------------------------------------ */
 
-static void put32( u8 *at, u32 val )
+static void put32( uint8_t *at, uint32_t val )
 {
-    at[0] = (u8)val;
-    at[1] = (u8)(val >> 8);
-    at[2] = (u8)(val >> 16);
-    at[3] = (u8)(val >> 24);
+    at[0] = (uint8_t)val;
+    at[1] = (uint8_t)(val >> 8);
+    at[2] = (uint8_t)(val >> 16);
+    at[3] = (uint8_t)(val >> 24);
 }
 
 /* a Windows bitmap, a byte a pixel: what is in the picture, with the
@@ -1423,12 +1423,12 @@ static void put32( u8 *at, u32 val )
    does this. */
 int gfx_snapshot( const char *path )
 {
-    u8 *head;
-    const u8 *src;
-    u32 handle, done;
+    uint8_t *head;
+    const uint8_t *src;
+    uint32_t handle, done;
     int line, color, rc, at;
 
-    if ( pic == NULL || (head = (u8 *)try_alloc( 54 + 1024 )) == NULL ) {
+    if ( pic == NULL || (head = (uint8_t *)try_alloc( 54 + 1024 )) == NULL ) {
         return 0;
     }
     if ( sys_create( path, &handle ) != 0 ) {
@@ -1438,14 +1438,14 @@ int gfx_snapshot( const char *path )
     mem_set( head, 0, 54 + 1024 );
     head[0] = 'B';
     head[1] = 'M';
-    put32( head + 2, 54 + 1024 + (u32)gw * gh );
+    put32( head + 2, 54 + 1024 + (uint32_t)gw * gh );
     put32( head + 10, 54 + 1024 );
     put32( head + 14, 40 );
-    put32( head + 18, (u32)gw );
-    put32( head + 22, (u32)gh );
+    put32( head + 18, (uint32_t)gw );
+    put32( head + 22, (uint32_t)gh );
     head[26] = 1;
     head[28] = 8;
-    put32( head + 34, (u32)gw * gh );
+    put32( head + 34, (uint32_t)gw * gh );
     put32( head + 46, 256 );
     for ( color = 0; color < 256; color++ ) {
         put32( head + 54 + color * 4, tab->rgb[color] );        /* blue first, as the file wants */
@@ -1460,7 +1460,7 @@ int gfx_snapshot( const char *path )
             }
             src = linebuf;
         }
-        rc = sys_write( handle, src, (u32)gw, &done );
+        rc = sys_write( handle, src, (uint32_t)gw, &done );
     }
     if ( sys_close( handle ) != 0 ) {
         rc = 1;

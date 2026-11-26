@@ -93,18 +93,18 @@
 #define RAR_METHOD_STORE 0x30
 #define RAR_SALT_LEN     8
 
-static const unsigned char RAR4_SIG[7] =
+static const uint8_t RAR4_SIG[7] =
     { 0x52, 0x61, 0x72, 0x21, 0x1A, 0x07, 0x00 };
 
 /*---- little-endian field readers ----------------------------------------- */
-static UInt32 Rd16( const Byte *p )
+static uint32_t Rd16( const uint8_t *p )
 {
-    return (UInt32)p[0] | ( (UInt32)p[1] << 8 );
+    return (uint32_t)p[0] | ( (uint32_t)p[1] << 8 );
 }
-static UInt32 Rd32( const Byte *p )
+static uint32_t Rd32( const uint8_t *p )
 {
-    return (UInt32)p[0] | ( (UInt32)p[1] << 8 ) |
-           ( (UInt32)p[2] << 16 ) | ( (UInt32)p[3] << 24 );
+    return (uint32_t)p[0] | ( (uint32_t)p[1] << 8 ) |
+           ( (uint32_t)p[2] << 16 ) | ( (uint32_t)p[3] << 24 );
 }
 
 /*---- archive object ------------------------------------------------------ */
@@ -117,8 +117,8 @@ static UInt32 Rd32( const Byte *p )
  * between them.  That is the whole difference between RAR volumes and the
  * byte-split sets VOLIO joins on its own. */
 typedef struct {
-    long   off;                          /* offset in the joined stream      */
-    UInt32 len;
+    long     off;                        /* offset in the joined stream      */
+    uint32_t len;
 } RarPiece;
 
 struct RarArchive {
@@ -126,10 +126,10 @@ struct RarArchive {
     int       numEntries;
     int       cap;                       /* entries the tables can hold      */
     int       solid;                     /* archive uses solid compression   */
-    UInt16    mainFlags;                 /* the first volume's main header   */
+    uint16_t  mainFlags;                 /* the first volume's main header   */
     RarEntry *entries;
     long     *dataOffset;                /* file offset of the data area     */
-    UInt16   *headFlags;                 /* file-header flags                */
+    uint16_t *headFlags;                 /* file-header flags                */
 
     /* Multi-volume.  pieces is a flat pool; pieceFirst/pieceCount index into
      * it per entry.  volumes is 1 for an ordinary archive, and everything
@@ -140,7 +140,7 @@ struct RarArchive {
     int       pieceN, pieceCap;
     int      *pieceFirst;
     int      *pieceCount;
-    Byte     *salts;                     /* RAR_SALT_LEN bytes per entry     */
+    uint8_t  *salts;                     /* RAR_SALT_LEN bytes per entry     */
     char     *comment;                   /* archive comment, NULL if none    */
 
     /* Encryption.  One password covers the archive, but the salt is per
@@ -149,8 +149,8 @@ struct RarArchive {
      * on era hardware and must not be paid twice for the same entry. */
     char      password[ AC_MAX_PW + 1 ];
     int       havePw;
-    Byte      key[16], iv[16];
-    Byte      cachedSalt[ RAR_SALT_LEN ];
+    uint8_t   key[16], iv[16];
+    uint8_t   cachedSalt[ RAR_SALT_LEN ];
     int       keyValid;
 
     /* Encrypted HEADERS (-hp).  Kept separate from the key above even though
@@ -162,8 +162,8 @@ struct RarArchive {
     int       hdrKeyValid;
     int       hdrPwOk;                   /* some header CRC has validated    */
     int       hdrTrunc;                  /* a block was cut short by EOF     */
-    Byte      hdrKey[16], hdrIv[16];
-    Byte      hdrSalt[ RAR_SALT_LEN ];
+    uint8_t   hdrKey[16], hdrIv[16];
+    uint8_t   hdrSalt[ RAR_SALT_LEN ];
 };
 
 
@@ -202,13 +202,13 @@ struct RarArchive {
  * is the 64 KB minimum instead of a megabyte, which matters on exactly the
  * machines this program exists for.
  *-------------------------------------------------------------------------- */
-static void RarReadSubComment( RarArchive *z, const Byte *hdr, UInt16 headSize,
-                               UInt16 flags, long body )
+static void RarReadSubComment( RarArchive *z, const uint8_t *hdr, uint16_t headSize,
+                               uint16_t flags, long body )
 {
-    UInt32 packSize, unpSize, crc;
-    UInt16 nameSize;
-    int    nameOff, unpVer, method, rc;
-    Byte  *packBuf, *outBuf;
+    uint32_t packSize, unpSize, crc;
+    uint16_t nameSize;
+    int      nameOff, unpVer, method, rc;
+    uint8_t *packBuf, *outBuf;
 
     if ( z->comment ) return;                       /* first one wins */
     if ( headSize < 32 ) return;
@@ -218,7 +218,7 @@ static void RarReadSubComment( RarArchive *z, const Byte *hdr, UInt16 headSize,
     crc      = Rd32( hdr + 16 );
     unpVer   = hdr[24];
     method   = hdr[25];
-    nameSize = (UInt16)Rd16( hdr + 26 );
+    nameSize = (uint16_t)Rd16( hdr + 26 );
     nameOff  = ( flags & LHD_LARGE ) ? 40 : 32;
 
     if ( nameSize != RAR_SUB_CMT_LEN ) return;
@@ -251,18 +251,18 @@ static void RarReadSubComment( RarArchive *z, const Byte *hdr, UInt16 headSize,
      * as text, so the archive reports no comment instead. */
     if ( flags & SUBHEAD_CMT_UNICODE ) return;
 
-    packBuf = (Byte *)malloc( (size_t)packSize );
+    packBuf = (uint8_t *)malloc( (size_t)packSize );
     if ( !packBuf ) return;
     if ( VolSeek( z->fp, body, SEEK_SET ) != 0 ||
          VolRead( packBuf, 1, (size_t)packSize, z->fp ) != (size_t)packSize )
     { free( packBuf ); return; }
 
-    outBuf = (Byte *)malloc( (size_t)unpSize + 1 );
+    outBuf = (uint8_t *)malloc( (size_t)unpSize + 1 );
     if ( !outBuf ) { free( packBuf ); return; }
 
     if ( method == RAR_METHOD_STORE )
     {
-        UInt32 n = ( packSize < unpSize ) ? packSize : unpSize;
+        uint32_t n = ( packSize < unpSize ) ? packSize : unpSize;
         memcpy( outBuf, packBuf, (size_t)n );
         rc = ( n == unpSize ) ? SZ_OK : SZ_ERR_DATA;
     }
@@ -291,7 +291,7 @@ static void RarReadSubComment( RarArchive *z, const Byte *hdr, UInt16 headSize,
     z->comment = (char *)outBuf;
 }
 
-static UInt32 RarWinSize( UInt16 flags )
+static uint32_t RarWinSize( uint16_t flags )
 
 {
     unsigned n = ( flags & LHD_WINDOWMASK ) >> 5;
@@ -306,14 +306,14 @@ static UInt32 RarWinSize( UInt16 flags )
  * chain carries the same bits - the dictionary is an archive-wide setting -
  * but nothing in the format promises it, and a window that is too small for
  * one member in the middle would fail the whole extraction. */
-static UInt32 RarMaxWinSize( RarArchive *z )
+static uint32_t RarMaxWinSize( RarArchive *z )
 {
-    UInt32 best = 0;
-    int    i;
+    uint32_t best = 0;
+    int      i;
 
     for ( i = 0; i < z->numEntries; i++ )
     {
-        UInt32 w = RarWinSize( z->headFlags[i] );
+        uint32_t w = RarWinSize( z->headFlags[i] );
         if ( w > best ) best = w;
     }
     return best;
@@ -339,33 +339,33 @@ static UInt32 RarMaxWinSize( RarArchive *z )
  * largest block, where before the change every RAR of every size peaked at
  * 4.2 MB.  Callers add the slack.
  *-------------------------------------------------------------------------- */
-/* Saturating add.  The three figures below are each a UInt32 read straight
+/* Saturating add.  The three figures below are each a uint32_t read straight
  * out of a header, so a damaged or hostile archive can make them sum past
  * 4 GB - and a silent wrap here would produce a SMALL number, which is the
  * one direction this estimate must never fail in: it would wave the archive
  * past the check and back into the bare malloc failure the check exists to
  * replace.  Saturating reports "more than this machine will ever have",
  * which is the truthful answer for a header claiming that much. */
-static UInt32 RarMemAdd( UInt32 a, UInt32 b )
+static uint32_t RarMemAdd( uint32_t a, uint32_t b )
 {
     if ( a > 0xFFFFFFFFUL - b ) return 0xFFFFFFFFUL;
     return a + b;
 }
 
-UInt32 RarMemNeeded( RarArchive *z )
+uint32_t RarMemNeeded( RarArchive *z )
 {
-    UInt32 best = 0;
-    int    i;
+    uint32_t best = 0;
+    int      i;
 
     if ( !z ) return 0;
 
     if ( z->solid )
     {
-        UInt32 win = RarWindowFor( RarMaxWinSize( z ) );
+        uint32_t win = RarWindowFor( RarMaxWinSize( z ) );
 
         for ( i = 0; i < z->numEntries; i++ )
         {
-            UInt32 need;
+            uint32_t need;
             if ( z->entries[i].isDir ) continue;
             need = RarMemAdd( win, z->entries[i].packed );
             if ( need > best ) best = need;
@@ -377,7 +377,7 @@ UInt32 RarMemNeeded( RarArchive *z )
     for ( i = 0; i < z->numEntries; i++ )
     {
         RarEntry *e = &z->entries[i];
-        UInt32    need;
+        uint32_t  need;
 
         if ( e->isDir ) continue;
         if ( e->methodCode == RAR_METHOD_STORE )
@@ -399,7 +399,7 @@ const char *RarComment( RarArchive *z )
 /* Record one run of data for the entry being built.  Returns 0 out of memory.
  * Entries are finished one at a time, so a piece always belongs to the last
  * entry and the pool only ever grows at the end. */
-static int RarAddPiece( RarArchive *z, int entry, long off, UInt32 len )
+static int RarAddPiece( RarArchive *z, int entry, long off, uint32_t len )
 {
     if ( z->pieceN >= z->pieceCap )
     {
@@ -430,7 +430,7 @@ typedef struct {
     RarArchive *z;
     int         first, count;      /* the entry's slice of the piece pool */
     int         pi;                /* piece being read, relative to first */
-    UInt32      used;              /* bytes taken from that piece         */
+    uint32_t    used;              /* bytes taken from that piece         */
     int         started;
 } RarDataReader;
 
@@ -445,15 +445,15 @@ static void RarDataInit( RarDataReader *r, RarArchive *z, int idx )
 }
 
 /* Fill buf with exactly len bytes, crossing pieces as needed.  1 on success. */
-static int RarDataRead( RarDataReader *r, void *buf, UInt32 len )
+static int RarDataRead( RarDataReader *r, void *buf, uint32_t len )
 {
-    Byte  *p    = (Byte *)buf;
-    UInt32 done = 0;
+    uint8_t *p    = (uint8_t *)buf;
+    uint32_t done = 0;
 
     while ( done < len )
     {
         RarPiece *pc;
-        UInt32    avail, take;
+        uint32_t  avail, take;
 
         if ( r->pi >= r->count ) return 0;      /* ran out of data */
         pc = &r->z->pieces[ r->first + r->pi ];
@@ -486,14 +486,14 @@ static int RarGrow( RarArchive *z )
     int       n;
     RarEntry *ne;
     long     *nd;
-    UInt16   *nf;
-    Byte     *ns;
+    uint16_t *nf;
+    uint8_t  *ns;
 
     if ( z->numEntries < z->cap ) return 1;
-    if ( (UInt32)z->numEntries >= SZ_MAX_FILES ) return -1;
+    if ( (uint32_t)z->numEntries >= SZ_MAX_FILES ) return -1;
 
     n = z->cap ? z->cap * 2 : 32;
-    if ( (UInt32)n > SZ_MAX_FILES ) n = (int)SZ_MAX_FILES;
+    if ( (uint32_t)n > SZ_MAX_FILES ) n = (int)SZ_MAX_FILES;
     if ( n <= z->numEntries ) return 0;
 
     ne = (RarEntry *)realloc( z->entries, (size_t)n * sizeof( RarEntry ) );
@@ -504,11 +504,11 @@ static int RarGrow( RarArchive *z )
     if ( !nd ) return 0;
     z->dataOffset = nd;
 
-    nf = (UInt16 *)realloc( z->headFlags, (size_t)n * sizeof( UInt16 ) );
+    nf = (uint16_t *)realloc( z->headFlags, (size_t)n * sizeof( uint16_t ) );
     if ( !nf ) return 0;
     z->headFlags = nf;
 
-    ns = (Byte *)realloc( z->salts, (size_t)n * RAR_SALT_LEN );
+    ns = (uint8_t *)realloc( z->salts, (size_t)n * RAR_SALT_LEN );
     if ( !ns ) return 0;
     z->salts = ns;
 
@@ -533,8 +533,8 @@ static void RarTrim( RarArchive *z )
     int       n = z->numEntries ? z->numEntries : 1;
     RarEntry *ne;
     long     *nd;
-    UInt16   *nf;
-    Byte     *ns;
+    uint16_t *nf;
+    uint8_t  *ns;
 
     if ( n >= z->cap ) return;
 
@@ -542,9 +542,9 @@ static void RarTrim( RarArchive *z )
     if ( ne ) z->entries = ne;
     nd = (long *)realloc( z->dataOffset, (size_t)n * sizeof( long ) );
     if ( nd ) z->dataOffset = nd;
-    nf = (UInt16 *)realloc( z->headFlags, (size_t)n * sizeof( UInt16 ) );
+    nf = (uint16_t *)realloc( z->headFlags, (size_t)n * sizeof( uint16_t ) );
     if ( nf ) z->headFlags = nf;
-    ns = (Byte *)realloc( z->salts, (size_t)n * RAR_SALT_LEN );
+    ns = (uint8_t *)realloc( z->salts, (size_t)n * RAR_SALT_LEN );
     if ( ns ) z->salts = ns;
     if ( ne && nd && nf && ns ) z->cap = n;
 }
@@ -611,11 +611,11 @@ static void BuildOut( char *dst, int dstSize,
  */
 #define RAR_BLK_END  (-1)
 
-static int RarReadBlock( RarArchive *z, long pos, Byte **hdrOut,
-                         UInt16 *headSizeOut, long *bodyOut )
+static int RarReadBlock( RarArchive *z, long pos, uint8_t **hdrOut,
+                         uint16_t *headSizeOut, long *bodyOut )
 {
-    Byte        *hdr;
-    UInt16       headSize;
+    uint8_t     *hdr;
+    uint16_t     headSize;
     AesCbcState  cbc;
 
     *hdrOut = NULL;
@@ -623,13 +623,13 @@ static int RarReadBlock( RarArchive *z, long pos, Byte **hdrOut,
 
     if ( !z->hdrEncrypted )
     {
-        Byte base[7];
+        uint8_t base[7];
 
         if ( VolRead( base, 1, 7, z->fp ) != 7 ) return RAR_BLK_END;
-        headSize = (UInt16)Rd16( base + 5 );
+        headSize = (uint16_t)Rd16( base + 5 );
         if ( headSize < 7 ) return SZ_ERR_FORMAT;
 
-        hdr = (Byte *)malloc( headSize );
+        hdr = (uint8_t *)malloc( headSize );
         if ( !hdr ) return SZ_ERR_MEMORY;
         memcpy( hdr, base, 7 );
         if ( headSize > 7 &&
@@ -644,8 +644,8 @@ static int RarReadBlock( RarArchive *z, long pos, Byte **hdrOut,
     }
     else
     {
-        Byte salt[ RAR_SALT_LEN ];
-        Byte first[16];
+        uint8_t salt[ RAR_SALT_LEN ];
+        uint8_t first[16];
         long padded;
 
         /* Too little left for a salt, or for the block that must follow it,
@@ -667,11 +667,11 @@ static int RarReadBlock( RarArchive *z, long pos, Byte **hdrOut,
         { z->hdrTrunc = 1; return RAR_BLK_END; }
         AesCbcInit( &cbc, z->hdrKey, 16, z->hdrIv );
         AesCbcDecrypt( &cbc, first, 16 );
-        headSize = (UInt16)Rd16( first + 5 );
+        headSize = (uint16_t)Rd16( first + 5 );
         if ( headSize < 7 ) return SZ_ERR_BADPASS;
 
         padded = ( (long)headSize + 15 ) & ~15L;
-        hdr = (Byte *)malloc( (size_t)padded );
+        hdr = (uint8_t *)malloc( (size_t)padded );
         if ( !hdr ) return SZ_ERR_MEMORY;
         memcpy( hdr, first, 16 );
         if ( padded > 16 )
@@ -679,15 +679,15 @@ static int RarReadBlock( RarArchive *z, long pos, Byte **hdrOut,
             if ( VolRead( hdr + 16, 1, (size_t)( padded - 16 ), z->fp )
                      != (size_t)( padded - 16 ) )
             { free( hdr ); return SZ_ERR_BADPASS; }
-            AesCbcDecrypt( &cbc, hdr + 16, (UInt32)( padded - 16 ) );
+            AesCbcDecrypt( &cbc, hdr + 16, (uint32_t)( padded - 16 ) );
         }
 
         /* THE PASSWORD CHECK, and the only one RAR3 has.  An encrypted ENTRY
          * carries no verifier, so a typo there cannot be named until a CRC
          * fails much later; an encrypted HEADER carries its own CRC, so here
          * a wrong password is caught on the first block. */
-        if ( (UInt16)( Crc32Calc( hdr + 2, (UInt32)headSize - 2 ) & 0xFFFF )
-                 != (UInt16)Rd16( hdr ) )
+        if ( (uint16_t)( Crc32Calc( hdr + 2, (uint32_t)headSize - 2 ) & 0xFFFF )
+                 != (uint16_t)Rd16( hdr ) )
         { free( hdr ); return SZ_ERR_BADPASS; }
 
         z->hdrPwOk   = 1;
@@ -699,10 +699,19 @@ static int RarReadBlock( RarArchive *z, long pos, Byte **hdrOut,
 }
 
 /*---- open + walk the block headers --------------------------------------- */
+/* The next block: "len" bytes on from "body", or the largest long when a
+ * long cannot hold that.  That ends the walk, as any place past the volume
+ * does; a position that wrapped would go back to a block already read. */
+static long RarNextPos( long body, uint32_t len )
+{
+    if ( len > (uint32_t)( 0x7FFFFFFFL - body ) ) return 0x7FFFFFFFL;
+    return body + (long)len;
+}
+
 int RarOpenPw( const char *path, const char *pw, RarArchive **out )
 {
     RarArchive *z;
-    Byte        marker[7];
+    uint8_t     marker[7];
     long        pos;
     int         vol;
     int         rc = SZ_OK;
@@ -801,7 +810,7 @@ int RarOpenPw( const char *path, const char *pw, RarArchive **out )
 
         if ( vol > 0 )
         {
-            Byte m[7];
+            uint8_t m[7];
 
             /* Later volumes repeat the marker.  If one does not, the name
              * matched but the file is not part of this set - stop rather
@@ -816,11 +825,11 @@ int RarOpenPw( const char *path, const char *pw, RarArchive **out )
 
     for ( ;; )
     {
-        Byte  *hdr;
-        Byte   type;
-        UInt16 flags, headSize;
-        long   body;
-        int    brc;
+        uint8_t *hdr;
+        uint8_t  type;
+        uint16_t flags, headSize;
+        long     body;
+        int      brc;
 
         if ( pos >= volEnd ) break;          /* this volume is done */
 
@@ -831,7 +840,7 @@ int RarOpenPw( const char *path, const char *pw, RarArchive **out )
         if ( brc != SZ_OK ) { rc = brc; break; }
 
         type  = hdr[2];
-        flags = (UInt16)Rd16( hdr + 3 );
+        flags = (uint16_t)Rd16( hdr + 3 );
 
         if ( type == RAR_ENDARC ) { free( hdr ); break; }
 
@@ -887,9 +896,9 @@ int RarOpenPw( const char *path, const char *pw, RarArchive **out )
 
         if ( type == RAR_FILE )
         {
-            UInt32 packSize, unpSize, ftime, attr;
-            UInt16 nameSize;
-            int    nameOff;
+            uint32_t packSize, unpSize, ftime, attr;
+            uint16_t nameSize;
+            int      nameOff;
 
             /* The fixed part of a file header is 32 bytes, and every field
              * below is read from it - a shorter block would be read past the
@@ -900,12 +909,12 @@ int RarOpenPw( const char *path, const char *pw, RarArchive **out )
             unpSize  = Rd32( hdr + 11 );
             ftime    = Rd32( hdr + 20 );
             attr     = Rd32( hdr + 28 );
-            nameSize = (UInt16)Rd16( hdr + 26 );
+            nameSize = (uint16_t)Rd16( hdr + 26 );
             nameOff  = 32;
             if ( flags & LHD_LARGE )           /* skip 8 bytes of high sizes */
                 nameOff = 40;
             if ( nameOff + (int)nameSize > (int)headSize )
-                nameSize = ( headSize > nameOff ) ? (UInt16)( headSize - nameOff ) : 0;
+                nameSize = ( headSize > nameOff ) ? (uint16_t)( headSize - nameOff ) : 0;
 
             /* A CONTINUATION rather than a new file: add this volume's bytes
              * to the entry already being built and take its CRC, then move on.
@@ -927,7 +936,7 @@ int RarOpenPw( const char *path, const char *pw, RarArchive **out )
                 z->entries[last].packed += packSize;
                 z->entries[last].crc     = Rd32( hdr + 16 );
                 z->headFlags[last]       = flags;
-                pos = body + (long)packSize;
+                pos = RarNextPos( body, packSize );
                 free( hdr );
                 continue;
             }
@@ -938,7 +947,7 @@ int RarOpenPw( const char *path, const char *pw, RarArchive **out )
                 {
                     free( hdr );
                     rc = ( g < 0 )
-                       ? ArcCheckEntryCount( (UInt32)z->numEntries + 1 )
+                       ? ArcCheckEntryCount( (uint32_t)z->numEntries + 1 )
                        : SZ_ERR_MEMORY;
                     break;
                 }
@@ -946,8 +955,8 @@ int RarOpenPw( const char *path, const char *pw, RarArchive **out )
 
             {
                 RarEntry *e = &z->entries[z->numEntries];
-                const Byte *np = hdr + nameOff;
-                UInt16 j; int k = 0, last;
+                const uint8_t *np = hdr + nameOff;
+                unsigned j; int k = 0, last;
 
                 for ( j = 0; j < nameSize && k < SZ_MAX_NAME - 1; j++ )
                 {
@@ -962,8 +971,8 @@ int RarOpenPw( const char *path, const char *pw, RarArchive **out )
                 e->crc        = Rd32( hdr + 16 );
                 e->unpVer     = hdr[24];
                 e->methodCode = hdr[25];
-                e->modDate    = (UInt16)( ftime >> 16 );
-                e->modTime    = (UInt16)( ftime & 0xFFFF );
+                e->modDate    = (uint16_t)( ftime >> 16 );
+                e->modTime    = (uint16_t)( ftime & 0xFFFF );
                 e->attrib     = attr;
                 e->dosAttr    = ( hdr[15] <= 2 );   /* host MS-DOS, OS/2, Win32 */
                 e->isDir      = ( ( flags & LHD_DIRECTORY ) == LHD_DIRECTORY );
@@ -1000,7 +1009,7 @@ int RarOpenPw( const char *path, const char *pw, RarArchive **out )
                 z->numEntries++;
             }
 
-            pos = body + (long)packSize;
+            pos = RarNextPos( body, packSize );
         }
         else
         {
@@ -1008,10 +1017,10 @@ int RarOpenPw( const char *path, const char *pw, RarArchive **out )
              * headSize, so it is already in hand - it must be read from the
              * decrypted buffer, never re-read from the file, or an -hp
              * archive would take four bytes of ciphertext for a length. */
-            UInt32 addSize = 0;
+            uint32_t addSize = 0;
             if ( ( flags & LONG_BLOCK ) && headSize >= 11 )
                 addSize = Rd32( hdr + 7 );
-            pos = body + (long)addSize;
+            pos = RarNextPos( body, addSize );
         }
 
         free( hdr );
@@ -1115,7 +1124,7 @@ const RarEntry *RarGetEntry( RarArchive *r, int index )
  * because at this point nothing can tell. */
 static int RarEnsureKey( RarArchive *z, int idx )
 {
-    const Byte *salt = z->salts + (size_t)idx * RAR_SALT_LEN;
+    const uint8_t *salt = z->salts + (size_t)idx * RAR_SALT_LEN;
 
     if ( !z->havePw ) return SZ_ERR_PASSWORD;
 
@@ -1151,7 +1160,7 @@ static int RarCouldBeBadPassword( int rc )
  * with no salt is RAR 2.0 era and uses a different scheme entirely. */
 static int RarEntrySupportedCrypt( RarArchive *z, int idx )
 {
-    UInt16 f = z->headFlags[idx];
+    uint16_t f = z->headFlags[idx];
     return ( f & LHD_PASSWORD ) && ( f & LHD_SALT );
 }
 
@@ -1236,10 +1245,10 @@ static int RarExtractIndex( RarArchive *z, int idx, const char *destDir )
 
     if ( e->methodCode == RAR_METHOD_STORE )
     {
-        UInt32        crc = Crc32Init(), remain = e->packed;
-        UInt32        left = e->size;      /* real bytes still owed          */
+        uint32_t      crc = Crc32Init(), remain = e->packed;
+        uint32_t      left = e->size;      /* real bytes still owed          */
         unsigned int  toRead, use;
-        unsigned char buf[512];
+        uint8_t       buf[512];
 
         out = destDir ? fopen( outPath, "wb" ) : NULL;
         if ( destDir && !out ) return SZ_ERR_WRITE;
@@ -1254,7 +1263,7 @@ static int RarExtractIndex( RarArchive *z, int idx, const char *destDir )
              * output nor the CRC.  512 is a multiple of 16, so a chunk never
              * splits a cipher block. */
             if ( encrypted ) AesCbcDecrypt( &cbc, buf, toRead );
-            use = ( left < (UInt32)toRead ) ? (unsigned int)left : toRead;
+            use = ( left < (uint32_t)toRead ) ? (unsigned int)left : toRead;
 
             crc = Crc32Update( crc, buf, use );
             if ( out && use && fwrite( buf, 1, use, out ) != use ) { rc = SZ_ERR_WRITE; break; }
@@ -1267,7 +1276,7 @@ static int RarExtractIndex( RarArchive *z, int idx, const char *destDir )
     }
     else                                           /* compressed */
     {
-        Byte *packBuf, *outBuf;
+        uint8_t *packBuf, *outBuf;
 
         if ( z->headFlags[idx] & LHD_SOLID )
             return SZ_ERR_UNSUPPORTED;             /* needs cross-file window */
@@ -1280,7 +1289,7 @@ static int RarExtractIndex( RarArchive *z, int idx, const char *destDir )
         if ( e->packed > SZ_MAX_BUFFER_SIZE || e->size > SZ_MAX_BUFFER_SIZE )
             return SZ_ERR_NORAM;
 
-        packBuf = (Byte *)malloc( e->packed ? e->packed : 1 );
+        packBuf = (uint8_t *)malloc( e->packed ? e->packed : 1 );
         if ( !packBuf ) return SZ_ERR_MEMORY;
         if ( !RarDataRead( &dr, packBuf, e->packed ) )
         { free( packBuf ); return SZ_ERR_READ; }
@@ -1290,7 +1299,7 @@ static int RarExtractIndex( RarArchive *z, int idx, const char *destDir )
          * exactly like an ordinary one. */
         if ( encrypted ) AesCbcDecrypt( &cbc, packBuf, e->packed & ~15UL );
 
-        outBuf = (Byte *)malloc( e->size ? e->size : 1 );
+        outBuf = (uint8_t *)malloc( e->size ? e->size : 1 );
         if ( !outBuf ) { free( packBuf ); return SZ_ERR_MEMORY; }
 
         rc = ( e->unpVer >= 29 )
@@ -1350,12 +1359,12 @@ typedef struct {
     int         scanNext;        /* next entry index to scan for a chain file */
     int         curIdx;          /* current file's entry index (-1 = none)    */
     int         curReq;          /* current file is requested                 */
-    UInt32      fileRemaining;
-    UInt32      fileCrc;
+    uint32_t    fileRemaining;
+    uint32_t    fileCrc;
     FILE       *out;
     char        outPath[SZ_MAX_NAME * 4];
-    Byte        buf[8192];
-    UInt32      bufLen;
+    uint8_t     buf[8192];
+    uint32_t    bufLen;
     int         rc;
 } SolidSink;
 
@@ -1443,7 +1452,7 @@ static void SolidOpenNext( SolidSink *s )
     s->rc = SZ_ERR_DATA;             /* data left but no chain file to hold it */
 }
 
-static int SolidEmit( void *user, Byte b )
+static int SolidEmit( void *user, uint8_t b )
 {
     SolidSink *s = (SolidSink *)user;
     if ( s->rc != SZ_OK ) return s->rc;
@@ -1468,8 +1477,8 @@ static int SolidExtract( RarArchive *z, const int *indices, int count,
     SolidSink   sink;                /* stack cannot hold one per entry)     */
     Rar2Ctx    *ctx2 = NULL;
     Rar3Ctx    *ctx3 = NULL;
-    Byte       *packBuf = NULL;
-    UInt32      packCap = 0, cum = 0;
+    uint8_t    *packBuf = NULL;
+    uint32_t    packCap = 0, cum = 0;
     int         i, k, lastReqChain = -1, useV3 = 0, rc = SZ_OK;
     int         needTables = 1;      /* v2 only - v3 asks Rar3NeedTables */
 
@@ -1519,7 +1528,7 @@ static int SolidExtract( RarArchive *z, const int *indices, int count,
         /* One window for the whole chain, sized from what the archive says it
          * used rather than from what RAR could possibly have used. */
         {
-            UInt32 win = RarMaxWinSize( z );
+            uint32_t win = RarMaxWinSize( z );
 
             if ( useV3 ) { ctx3 = Rar3CreateSized( win ); if ( !ctx3 ) { free( req ); return SZ_ERR_MEMORY; } }
             else         { ctx2 = Rar2CreateSized( win ); if ( !ctx2 ) { free( req ); return SZ_ERR_MEMORY; } }
@@ -1550,7 +1559,7 @@ static int SolidExtract( RarArchive *z, const int *indices, int count,
 
             if ( e->packed > packCap )
             {
-                Byte *nb = (Byte *)realloc( packBuf, e->packed );
+                uint8_t *nb = (uint8_t *)realloc( packBuf, e->packed );
                 if ( !nb ) { rc = SZ_ERR_MEMORY; break; }
                 packBuf = nb; packCap = e->packed;
             }
@@ -1759,17 +1768,17 @@ void RarClose( RarArchive *r )
 
 typedef struct {
     RarArchive     *z;
-    const Byte     *del;
+    const uint8_t  *del;
     FILE           *out;          /* NULL while deciding                    */
     ArcCompProgress prog;
     void           *user;
-    Byte           *buf;
+    uint8_t        *buf;
     long            fileLen;
     int             keptN;        /* entries to write, from the first pass  */
     int             kept;         /* entries met so far that stay           */
-    UInt32          total;        /* bytes to write, from the first pass    */
-    UInt32          done;         /* bytes written                          */
-    UInt32          nextTick;
+    uint32_t        total;        /* bytes to write, from the first pass    */
+    uint32_t        done;         /* bytes written                          */
+    uint32_t        nextTick;
     const char     *name;         /* entry being copied, for the progress   */
 } RarDel;
 
@@ -1785,7 +1794,7 @@ static int RarDelTick( RarDel *d )
 }
 
 /* Bytes from memory to the new archive (or only counted, while deciding). */
-static int RarDelPut( RarDel *d, const Byte *src, UInt32 len )
+static int RarDelPut( RarDel *d, const uint8_t *src, uint32_t len )
 {
     if ( !d->out ) { d->total += len; return SZ_OK; }
     if ( fwrite( src, 1, (size_t)len, d->out ) != (size_t)len )
@@ -1797,12 +1806,12 @@ static int RarDelPut( RarDel *d, const Byte *src, UInt32 len )
 /* Bytes [from, from + len) of the old archive to the new one, unchanged. */
 static int RarDelCopy( RarDel *d, long from, long len )
 {
-    if ( !d->out ) { d->total += (UInt32)len; return SZ_OK; }
+    if ( !d->out ) { d->total += (uint32_t)len; return SZ_OK; }
     if ( VolSeek( d->z->fp, from, SEEK_SET ) != 0 ) return SZ_ERR_READ;
 
     while ( len > 0 )
     {
-        UInt32 take = ( len > (long)RAR_DEL_BUF ) ? RAR_DEL_BUF : (UInt32)len;
+        uint32_t take = ( len > (long)RAR_DEL_BUF ) ? RAR_DEL_BUF : (uint32_t)len;
 
         if ( VolRead( d->buf, 1, take, d->z->fp ) != take ) return SZ_ERR_READ;
         if ( fwrite( d->buf, 1, (size_t)take, d->out ) != (size_t)take )
@@ -1828,20 +1837,20 @@ static int RarDelCopy( RarDel *d, long from, long len )
  * the fixed 13 or 14 bytes.  Whichever span the old CRC matches is the span
  * the new one is computed over, so the archive stays the shape its own
  * readers expect. */
-static int RarDelMain( RarDel *d, Byte *hdr, UInt16 headSize, long pos )
+static int RarDelMain( RarDel *d, uint8_t *hdr, uint16_t headSize, long pos )
 {
-    UInt16 flags = (UInt16)Rd16( hdr + 3 );
-    UInt16 stored = (UInt16)Rd16( hdr );
-    UInt32 fixed, span = 0, crc;
+    uint16_t flags = (uint16_t)Rd16( hdr + 3 );
+    uint16_t stored = (uint16_t)Rd16( hdr );
+    uint32_t fixed, span = 0, crc;
 
     if ( !( flags & ( MHD_PROTECT | MHD_AV ) ) )
         return RarDelCopy( d, pos, (long)headSize );
 
     fixed = ( flags & MHD_ENCRYPTVER ) ? RAR_MAIN_FIXED + 1 : RAR_MAIN_FIXED;
-    if ( (UInt16)( Crc32Calc( hdr + 2, (UInt32)headSize - 2 ) & 0xFFFF ) == stored )
+    if ( (uint16_t)( Crc32Calc( hdr + 2, (uint32_t)headSize - 2 ) & 0xFFFF ) == stored )
         span = headSize;
     else if ( fixed < headSize &&
-              (UInt16)( Crc32Calc( hdr + 2, fixed - 2 ) & 0xFFFF ) == stored )
+              (uint16_t)( Crc32Calc( hdr + 2, fixed - 2 ) & 0xFFFF ) == stored )
         span = fixed;
     if ( span == 0 ) return SZ_ERR_CRC;
 
@@ -1849,26 +1858,26 @@ static int RarDelMain( RarDel *d, Byte *hdr, UInt16 headSize, long pos )
     if ( ( flags & MHD_AV ) && headSize >= RAR_MAIN_FIXED )
         memset( hdr + 7, 0, 6 );
 
-    flags = (UInt16)( flags & ~( MHD_PROTECT | MHD_AV ) );
-    hdr[3] = (Byte)( flags & 0xFF );
-    hdr[4] = (Byte)( flags >> 8 );
+    flags = (uint16_t)( flags & ~( MHD_PROTECT | MHD_AV ) );
+    hdr[3] = (uint8_t)( flags & 0xFF );
+    hdr[4] = (uint8_t)( flags >> 8 );
 
     crc = Crc32Calc( hdr + 2, span - 2 );
-    hdr[0] = (Byte)( crc & 0xFF );
-    hdr[1] = (Byte)( ( crc >> 8 ) & 0xFF );
+    hdr[0] = (uint8_t)( crc & 0xFF );
+    hdr[1] = (uint8_t)( ( crc >> 8 ) & 0xFF );
     return RarDelPut( d, hdr, headSize );
 }
 
 /* Does a NEWSUB block carry this name?  The name sits where a file header
  * keeps one, and is not terminated. */
-static int RarSubIs( const Byte *hdr, UInt16 headSize, UInt16 flags,
+static int RarSubIs( const uint8_t *hdr, uint16_t headSize, uint16_t flags,
                      const char *name )
 {
-    UInt32 nameSize = Rd16( hdr + 26 );
-    UInt32 nameOff  = ( flags & LHD_LARGE ) ? 40 : 32;
-    UInt32 len      = (UInt32)strlen( name );
+    uint32_t nameSize = Rd16( hdr + 26 );
+    uint32_t nameOff  = ( flags & LHD_LARGE ) ? 40 : 32;
+    uint32_t len      = (uint32_t)strlen( name );
 
-    if ( nameSize != len || nameOff + len > (UInt32)headSize ) return 0;
+    if ( nameSize != len || nameOff + len > (uint32_t)headSize ) return 0;
     return memcmp( hdr + nameOff, name, (size_t)len ) == 0;
 }
 
@@ -1890,21 +1899,21 @@ static int RarDelWalk( RarDel *d, const char **why )
 
     while ( rc == SZ_OK && pos < d->fileLen )
     {
-        Byte  *hdr;
-        Byte   type;
-        UInt16 flags, headSize;
-        UInt32 dataSize = 0;
-        long   body, end;
-        int    keep = !drop;
-        int    stop = 0;
-        int    brc;
+        uint8_t *hdr;
+        uint8_t  type;
+        uint16_t flags, headSize;
+        uint32_t dataSize = 0;
+        long     body, end;
+        int      keep = !drop;
+        int      stop = 0;
+        int      brc;
 
         brc = RarReadBlock( z, pos, &hdr, &headSize, &body );
         if ( brc == RAR_BLK_END ) break;
         if ( brc != SZ_OK ) { rc = brc; break; }
 
         type  = hdr[2];
-        flags = (UInt16)Rd16( hdr + 3 );
+        flags = (uint16_t)Rd16( hdr + 3 );
 
         if ( type == RAR_FILE || type == RAR_NEWSUB )
         {
@@ -1926,7 +1935,7 @@ static int RarDelWalk( RarDel *d, const char **why )
         else if ( ( flags & LONG_BLOCK ) && headSize >= 11 )
             dataSize = Rd32( hdr + 7 );
 
-        if ( dataSize > (UInt32)( 0x7FFFFFFFL - body ) )
+        if ( dataSize > (uint32_t)( 0x7FFFFFFFL - body ) )
         { free( hdr ); rc = SZ_ERR_FORMAT; break; }
         end = body + (long)dataSize;
         if ( end > d->fileLen ) { free( hdr ); rc = SZ_ERR_READ; break; }
@@ -2008,7 +2017,7 @@ static int RarDelWalk( RarDel *d, const char **why )
     return rc;
 }
 
-int RarDeleteWrite( RarArchive *r, const Byte *del, FILE *out,
+int RarDeleteWrite( RarArchive *r, const uint8_t *del, FILE *out,
                     ArcCompProgress prog, void *user, const char **why )
 {
     RarDel d;
@@ -2038,7 +2047,7 @@ int RarDeleteWrite( RarArchive *r, const Byte *del, FILE *out,
     rc = RarDelWalk( &d, why );
     if ( rc != SZ_OK || !out ) return rc;
 
-    d.buf = (Byte *)malloc( RAR_DEL_BUF );
+    d.buf = (uint8_t *)malloc( RAR_DEL_BUF );
     if ( !d.buf ) return SZ_ERR_MEMORY;
     d.out      = out;
     d.prog     = prog;

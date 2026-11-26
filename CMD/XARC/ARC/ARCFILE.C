@@ -47,8 +47,8 @@ struct ArcFile {
     char         pw[ AC_MAX_PW + 1 ];
 };
 
-static const unsigned char SIG_7Z[6]  = { 0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C };
-static const unsigned char SIG_RAR[6] = { 0x52, 0x61, 0x72, 0x21, 0x1A, 0x07 };
+static const uint8_t SIG_7Z[6]  = { 0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C };
+static const uint8_t SIG_RAR[6] = { 0x52, 0x61, 0x72, 0x21, 0x1A, 0x07 };
 
 /*===========================================================================
  * How much memory this program may use (see ARCDEFS.H)
@@ -78,7 +78,7 @@ static const unsigned char SIG_RAR[6] = { 0x52, 0x61, 0x72, 0x21, 0x1A, 0x07 };
 #include <i86.h>            /* int386x, segread - the DOS DPMI query below */
 #endif
 
-static UInt32 g_memBudget = 0;      /* 0 = not measured yet          */
+static uint32_t g_memBudget = 0;    /* 0 = not measured yet          */
 
 /* The two raw readings the budget is derived from, kept so a user can be
  * asked what their machine actually reported instead of only what the
@@ -97,18 +97,18 @@ static UInt32 g_memBudget = 0;      /* 0 = not measured yet          */
  * a 16-bit register, so it saturates at 65535 KB and no extender asking it
  * can ever see past 64 MB.  XMS 3.0 (function 88h, HIMEM.SYS 3.x) has the
  * 32-bit version of the same call.  See ArcMemReport. */
-static UInt32 g_memSysFree = 0;
-static UInt32 g_memProbed  = 0;
+static uint32_t g_memSysFree = 0;
+static uint32_t g_memProbed  = 0;
 
 /* The requirement that was last REFUSED, in KB, so ArcNoRamHint can name both
  * numbers instead of saying "not enough".  Zero means no archive-specific
  * refusal has happened, and the hint falls back to general wording. */
-static UInt32 g_needKB = 0;
-static UInt32 g_haveKB = 0;
+static uint32_t g_needKB = 0;
+static uint32_t g_haveKB = 0;
 
 /* What the system claims is available, in bytes, or 0 when it will not say.
  * Only ever used as the upper bound of the heap probe, never as the answer. */
-static UInt32 ArcMemSystemFree( void )
+static uint32_t ArcMemSystemFree( void )
 {
 #if defined(_WIN32)
     MEMORYSTATUS ms;
@@ -124,7 +124,7 @@ static UInt32 ArcMemSystemFree( void )
     if ( total > 0xFFFFFFFFUL - ms.dwAvailPageFile ) total = 0xFFFFFFFFUL;
     else                                             total += ms.dwAvailPageFile;
     if ( total > ms.dwAvailVirtual ) total = ms.dwAvailVirtual;
-    return (UInt32)total;
+    return (uint32_t)total;
 
 #elif defined(__OS2__)
     /* OS2PLAT.C: DosQuerySysInfo's free-memory and largest-private-allocation
@@ -133,7 +133,7 @@ static UInt32 ArcMemSystemFree( void )
      * 768 MB probe by growing the swap file, so the bound has to come from
      * somewhere other than malloc's willingness. */
     extern unsigned int Os2MemFree( void );
-    return (UInt32)Os2MemFree();
+    return (uint32_t)Os2MemFree();
 
 #elif defined(__PMDOS__)
     /* PMDOSPLT.C: the largest block INT 21h/48h says it could hand over -
@@ -144,7 +144,7 @@ static UInt32 ArcMemSystemFree( void )
      * below (probe to the ceiling, keep this for the report) is the right
      * one here too. */
     extern unsigned int PmMemFree( void );
-    return (UInt32)PmMemFree();
+    return (uint32_t)PmMemFree();
 
 #else
     /* DPMI 0500h "get free memory information": a 48-byte block whose first
@@ -153,7 +153,7 @@ static UInt32 ArcMemSystemFree( void )
      * that does not sets carry, and we fall through to the heap probe. */
     union  REGS  r;
     struct SREGS sr;
-    UInt32       info[12];
+    uint32_t     info[12];
     int          i;
 
     for ( i = 0; i < 12; i++ ) info[i] = 0;
@@ -198,10 +198,10 @@ static UInt32 ArcMemSystemFree( void )
  * same question the CRT's own heap growth will ask later, and VirtualFree
  * gives every byte of it back.
  *-------------------------------------------------------------------------- */
-static UInt32 ArcMemProbeHeap( UInt32 hi )
+static uint32_t ArcMemProbeHeap( uint32_t hi )
 {
-    UInt32 lo = 0, mid, res;
-    void  *p;
+    uint32_t lo = 0, mid, res;
+    void    *p;
 
     for ( ;; )
     {
@@ -224,9 +224,9 @@ static UInt32 ArcMemProbeHeap( UInt32 hi )
 }
 
 /* The measured budget in bytes, decided once. */
-static UInt32 ArcMemBudget( void )
+static uint32_t ArcMemBudget( void )
 {
-    UInt32 sys, hi, got;
+    uint32_t sys, hi, got;
 
     if ( g_memBudget ) return g_memBudget;
 
@@ -298,9 +298,9 @@ static UInt32 ArcMemBudget( void )
     return g_memBudget;
 }
 
-UInt32 ArcMaxDictSize( void )   { return ArcMemBudget(); }
-UInt32 ArcMaxBufferSize( void ) { return ArcMemBudget(); }
-UInt32 ArcMemLimitMB( void )    { return ArcMemBudget() / ( 1024UL * 1024 ); }
+uint32_t ArcMaxDictSize( void )   { return ArcMemBudget(); }
+uint32_t ArcMaxBufferSize( void ) { return ArcMemBudget(); }
+uint32_t ArcMemLimitMB( void )    { return ArcMemBudget() / ( 1024UL * 1024 ); }
 
 /*---- Where the budget came from ------------------------------------------- *
  * The three numbers the decision was made from, so a report of "1 GB of RAM
@@ -308,9 +308,9 @@ UInt32 ArcMemLimitMB( void )    { return ArcMemBudget() / ( 1024UL * 1024 ); }
  * forces the measurement if it has not happened yet, so they always describe
  * the budget in force.
  *-------------------------------------------------------------------------- */
-void ArcMemReport( UInt32 *sysFreeMB, UInt32 *largestMB, UInt32 *budgetMB )
+void ArcMemReport( uint32_t *sysFreeMB, uint32_t *largestMB, uint32_t *budgetMB )
 {
-    UInt32 budget = ArcMemBudget();          /* measures on the first call */
+    uint32_t budget = ArcMemBudget();        /* measures on the first call */
 
     if ( sysFreeMB ) *sysFreeMB = g_memSysFree / ( 1024UL * 1024 );
     if ( largestMB ) *largestMB = g_memProbed / ( 1024UL * 1024 );
@@ -328,9 +328,9 @@ void ArcMemReport( UInt32 *sysFreeMB, UInt32 *largestMB, UInt32 *budgetMB )
  * and not "there is none" - the caller has to distinguish those two, since
  * DPMI 0500h declining to answer is routine on a small machine and is
  * precisely why the heap probe exists. */
-void ArcMemReportKB( UInt32 *sysFreeKB, UInt32 *largestKB, UInt32 *budgetKB )
+void ArcMemReportKB( uint32_t *sysFreeKB, uint32_t *largestKB, uint32_t *budgetKB )
 {
-    UInt32 budget = ArcMemBudget();          /* measures on the first call */
+    uint32_t budget = ArcMemBudget();        /* measures on the first call */
 
     if ( sysFreeKB ) *sysFreeKB = g_memSysFree / 1024;
     if ( largestKB ) *largestKB = g_memProbed / 1024;
@@ -344,7 +344,7 @@ void ArcMemReportKB( UInt32 *sysFreeKB, UInt32 *largestKB, UInt32 *budgetKB )
  * machine do it at all", because both clamps are deliberate departures from
  * the measurement.  This is the measurement.
  *-------------------------------------------------------------------------- */
-UInt32 ArcMemLargest( void )
+uint32_t ArcMemLargest( void )
 {
     (void)ArcMemBudget();               /* measures on the first call */
     return g_memProbed;
@@ -363,15 +363,15 @@ UInt32 ArcMemLargest( void )
  * cannot unpack is still worth something, so the program stays usable and
  * says what it cannot do.
  *-------------------------------------------------------------------------- */
-int ArcMemStartupOk( UInt32 *haveKB, UInt32 *needKB )
+int ArcMemStartupOk( uint32_t *haveKB, uint32_t *needKB )
 {
-    UInt32 have = ArcMemLargest();
+    uint32_t have = ArcMemLargest();
     /* The cheapest extraction in the program, asked of the code that does
      * it rather than written down here a second time.  ZipMemNeeded gives
      * the same answer for every zip, which is why it can be asked with no
      * archive in hand - and asking it is what stops this floor drifting
      * away from the check that actually refuses things. */
-    UInt32 need = ZipMemNeeded( NULL ) + ARC_MEM_SLACK;
+    uint32_t need = ZipMemNeeded( NULL ) + ARC_MEM_SLACK;
 
     if ( haveKB ) *haveKB = have / 1024;
     if ( needKB ) *needKB = ( need + 1023 ) / 1024;
@@ -395,9 +395,9 @@ int ArcMemStartupOk( UInt32 *haveKB, UInt32 *needKB )
  * Returns 0 when nothing can be said (a disk image is already in memory and
  * costs nothing further to read out of).
  *-------------------------------------------------------------------------- */
-UInt32 ArcMemNeeded( ArcFile *a )
+uint32_t ArcMemNeeded( ArcFile *a )
 {
-    UInt32 need;
+    uint32_t need;
 
     if ( !a ) return 0;
 
@@ -430,10 +430,10 @@ UInt32 ArcMemNeeded( ArcFile *a )
  * it speak here would defeat the whole check on exactly the machines it was
  * written for.
  *-------------------------------------------------------------------------- */
-int ArcMemCheck( ArcFile *a, UInt32 *needKB, UInt32 *haveKB )
+int ArcMemCheck( ArcFile *a, uint32_t *needKB, uint32_t *haveKB )
 {
-    UInt32 need = ArcMemNeeded( a );
-    UInt32 have = ArcMemLargest();
+    uint32_t need = ArcMemNeeded( a );
+    uint32_t have = ArcMemLargest();
 
     if ( needKB ) *needKB = ( need + 1023 ) / 1024;
     if ( haveKB ) *haveKB = have / 1024;
@@ -457,16 +457,16 @@ int ArcMemCheck( ArcFile *a, UInt32 *needKB, UInt32 *haveKB )
  * it and the front end's per-row bookkeeping.  Measured from the structs
  * rather than guessed, so it stays right if one of them gains a field.
  *-------------------------------------------------------------------------- */
-static UInt32 ArcEntryCost( void )
+static uint32_t ArcEntryCost( void )
 {
-    UInt32 big = (UInt32)sizeof( SzEntry );
+    uint32_t big = (uint32_t)sizeof( SzEntry );
 
-    if ( (UInt32)sizeof( ZipEntry )  > big ) big = (UInt32)sizeof( ZipEntry );
-    if ( (UInt32)sizeof( RarEntry )  > big ) big = (UInt32)sizeof( RarEntry );
-    if ( (UInt32)sizeof( Rar5Entry ) > big ) big = (UInt32)sizeof( Rar5Entry );
-    if ( (UInt32)sizeof( DiskEntry ) > big ) big = (UInt32)sizeof( DiskEntry );
-    if ( (UInt32)sizeof( CabEntry )  > big ) big = (UInt32)sizeof( CabEntry );
-    if ( (UInt32)sizeof( MslzEntry ) > big ) big = (UInt32)sizeof( MslzEntry );
+    if ( (uint32_t)sizeof( ZipEntry )  > big ) big = (uint32_t)sizeof( ZipEntry );
+    if ( (uint32_t)sizeof( RarEntry )  > big ) big = (uint32_t)sizeof( RarEntry );
+    if ( (uint32_t)sizeof( Rar5Entry ) > big ) big = (uint32_t)sizeof( Rar5Entry );
+    if ( (uint32_t)sizeof( DiskEntry ) > big ) big = (uint32_t)sizeof( DiskEntry );
+    if ( (uint32_t)sizeof( CabEntry )  > big ) big = (uint32_t)sizeof( CabEntry );
+    if ( (uint32_t)sizeof( MslzEntry ) > big ) big = (uint32_t)sizeof( MslzEntry );
 
     /* Generous slack for 7z's ParseState scratch (a substream record plus
      * three bit arrays plus a CRC per entry, all live at once while the
@@ -474,19 +474,19 @@ static UInt32 ArcEntryCost( void )
     return big + 64;
 }
 
-UInt32 ArcMaxEntries( void )
+uint32_t ArcMaxEntries( void )
 {
     /* Half the budget, not all of it: the entry table has to coexist with
      * the dictionary during extraction, and the table lives for the whole
      * time the archive is open while the dictionary comes and goes. */
-    UInt32 n = ( ArcMemBudget() / 2 ) / ArcEntryCost();
+    uint32_t n = ( ArcMemBudget() / 2 ) / ArcEntryCost();
 
     if ( n < ARC_MIN_ENTRIES ) n = ARC_MIN_ENTRIES;
     if ( n > ARC_MAX_ENTRIES ) n = ARC_MAX_ENTRIES;
     return n;
 }
 
-int ArcCheckEntryCount( UInt32 n )
+int ArcCheckEntryCount( uint32_t n )
 {
     if ( n > ARC_MAX_ENTRIES ) return SZ_ERR_TOOBIG;   /* corrupt, not big */
     if ( n > ArcMaxEntries() ) return SZ_ERR_NORAM;    /* real, but too big
@@ -506,8 +506,8 @@ static int TryMountImz( ZipArchive *zip, DiskArchive **outDisk )
 {
     int             i, n, imgIdx = -1, fileCount = 0;
     const ZipEntry *e;
-    unsigned char  *buf;
-    UInt32          len;
+    uint8_t        *buf;
+    uint32_t        len;
 
     *outDisk = NULL;
 
@@ -543,8 +543,8 @@ int ArcOpenPw( const char *path, const char *pw, ArcFile **out )
 {
     ArcFile      *a;
     VolFile      *fp;
-    unsigned char sig[8];
-    UInt32        got;
+    uint8_t       sig[8];
+    uint32_t      got;
     int           fmt  = FMT_ZIP;
     int           isMZ = 0;
     int           rc;
@@ -743,7 +743,7 @@ const char *ArcEntryName( ArcFile *a, int index )
     }
 }
 
-UInt32 ArcEntrySize( ArcFile *a, int index )
+uint32_t ArcEntrySize( ArcFile *a, int index )
 {
     if ( !a ) return 0;
     if ( a->fmt == FMT_7Z )
@@ -813,7 +813,7 @@ int ArcEntryIsDir( ArcFile *a, int index )
     }
 }
 
-UInt32 ArcEntryPacked( ArcFile *a, int index )
+uint32_t ArcEntryPacked( ArcFile *a, int index )
 {
     if ( !a ) return 0xFFFFFFFFUL;
     if ( a->fmt == FMT_7Z )
@@ -886,7 +886,7 @@ void ArcEntryDate( ArcFile *a, int index, char *buf, int buflen )
 
     if ( a->fmt == FMT_7Z || a->fmt == FMT_RAR5 )   /* stored as UTC FILETIME */
     {
-        UInt32     lo = 0, hi = 0;
+        uint32_t   lo = 0, hi = 0;
         int        has = 0;
         FILETIME   ft, lf;
         SYSTEMTIME st;
@@ -953,7 +953,7 @@ void ArcEntryDate( ArcFile *a, int index, char *buf, int buflen )
 }
 
 /* DOS attribute bits (shared low byte of Win attrs and zip external attrs). */
-static void FormatDosAttr( UInt32 attr, char *buf )
+static void FormatDosAttr( uint32_t attr, char *buf )
 {
     char *p = buf;
     if ( attr & 0x10 ) *p++ = 'D';   /* directory */
@@ -1158,7 +1158,7 @@ const char *ArcIntegrityNote( ArcFile *a )
 
     if ( a->fmt == FMT_CAB )
     {
-        UInt32 checked, bare;
+        uint32_t checked, bare;
 
         CabChecksumCount( a->cab, &checked, &bare );
         if ( checked == 0 && bare == 0 )      /* nothing but empty files */
@@ -1204,10 +1204,10 @@ const char *ArcComment( ArcFile *a )
  * cannot use the raw bytes.  Lone CR, lone LF and CRLF all come out as CRLF;
  * swallowing the LF of an existing pair is what stops a comment that was
  * ALREADY correct from gaining a blank line between every line of it. */
-UInt32 ArcCommentText( ArcFile *a, char *buf, UInt32 bufLen )
+uint32_t ArcCommentText( ArcFile *a, char *buf, uint32_t bufLen )
 {
     const char *src = ArcComment( a );
-    UInt32      need = 0, out = 0, i;
+    unsigned    need = 0, out = 0, i;
 
     if ( !src )
     {
@@ -1327,8 +1327,8 @@ const char *ArcNoRamHint( void )
      * backend refusing a declared size.  Quote the budget, and in KB when it
      * is too small to have whole megabytes. */
     {
-        UInt32 budget = ArcMemLimitMB();
-        char   b1[ NUM_FMT_MAX ], b2[ NUM_FMT_MAX ];
+        uint32_t budget = ArcMemLimitMB();
+        char     b1[ NUM_FMT_MAX ], b2[ NUM_FMT_MAX ];
 
         if ( budget )
             sprintf( text,
@@ -1370,7 +1370,7 @@ const char *ArcNoRamHint( void )
 const char *ArcMemWarnText( void )
 {
     static char text[384];
-    UInt32      haveKB = 0, needKB = 0;
+    uint32_t    haveKB = 0, needKB = 0;
     char        b1[ NUM_FMT_MAX ], b2[ NUM_FMT_MAX ];
 
     ArcMemStartupOk( &haveKB, &needKB );
@@ -2231,7 +2231,7 @@ static int DelRefuse( const char *why )
 }
 
 /* The format's own answer, for a whole archive (del NULL) or a selection. */
-static int DelCheck( ArcFile *a, const Byte *del )
+static int DelCheck( ArcFile *a, const uint8_t *del )
 {
     const char *why = NULL;
     int         rc;
@@ -2270,11 +2270,11 @@ int ArcCanDelete( ArcFile *a )
  * added - an archive lists "SRC" and "SRC\MAIN.C" as two entries, and
  * deleting the first alone would leave the second behind under a folder
  * that is no longer listed.  NULL when out of memory. */
-static Byte *DelMarks( ArcFile *a, const int *indices, int count, int *nDel )
+static uint8_t *DelMarks( ArcFile *a, const int *indices, int count, int *nDel )
 {
-    int   n = ArcNumEntries( a );
-    int   i, k;
-    Byte *del = (Byte *)calloc( n > 0 ? (size_t)n : 1, 1 );
+    int      n = ArcNumEntries( a );
+    int      i, k;
+    uint8_t *del = (uint8_t *)calloc( n > 0 ? (size_t)n : 1, 1 );
 
     *nDel = 0;
     if ( !del ) return NULL;
@@ -2313,8 +2313,8 @@ static Byte *DelMarks( ArcFile *a, const int *indices, int count, int *nDel )
 
 int ArcDeleteCheck( ArcFile *a, const int *indices, int count )
 {
-    Byte *del;
-    int   nDel, rc;
+    uint8_t *del;
+    int      nDel, rc;
 
     rc = ArcCanDelete( a );
     if ( rc != SZ_OK ) return rc;
@@ -2435,7 +2435,7 @@ int ArcDeleteItems( ArcFile *a, const int *indices, int count,
 {
     char        temp[SZ_MAX_NAME * 2], old[SZ_MAX_NAME * 2];
     const char *why = NULL;
-    Byte       *del;
+    uint8_t    *del;
     FILE       *f;
     int         nDel, rc;
 

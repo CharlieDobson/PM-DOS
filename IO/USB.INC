@@ -122,7 +122,7 @@ UN_GEN          EQU     02h             ; db - counts up at every attach
 UN_LUN          EQU     03h             ; db
 UN_SECS         EQU     04h             ; dd - capacity, 0 until asked
 UN_ALIAS        EQU     08h             ; db - the BIOS drive this unit took
-                                        ;      the place of (80h/81h), or 0
+                                        ;      the place of (80h-87h), or 0
 UN_BPSLOG       EQU     09h             ; db - log2 of the block size
 UN_SENSE        EQU     0Ah             ; db - the last sense key
 UN_ASC          EQU     0Bh             ; db - ...and its code
@@ -139,8 +139,10 @@ SCR_CBW         EQU     0210h           ; 32
 SCR_CSW         EQU     0230h           ; 32
 SCR_CDB         EQU     0250h           ; 16 - the command block being sent
 SCR_INQ         EQU     0260h           ; 64 - INQUIRY, READ CAPACITY, sense
-SCR_SAVE0       EQU     0300h           ; 512 - BIOS drive 80h's sector 0
-SCR_SAVE1       EQU     0500h           ; 512 - ...and 81h's (usb_adopt)
+SCR_SAVE0       EQU     0300h           ; 512 - a BIOS drive's sector 0, read
+                                        ;      to be hashed (usb_savebios);
+                                        ;      0500h-06FFh are free since
+                                        ;      the second copy went
 SCR_RINGS       EQU     0700h           ; USB_MAXDEV * RING_N * 8 = 1K
 SCR_SECT        EQU     0B00h           ; 512 - a sector for the probes
 SCR_BOUNCE      EQU     1000h           ; 4K - for a buffer the bus cannot see

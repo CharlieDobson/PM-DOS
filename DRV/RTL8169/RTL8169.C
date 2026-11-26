@@ -189,7 +189,7 @@
  */
 #include "netdrv.h"
 
-void copy_dwords( void *to, const void *from, u32 dwords );
+void copy_dwords( void *to, const void *from, unsigned int dwords );
 #pragma aux copy_dwords = "cld" "rep movsd" parm [edi] [esi] [ecx] modify exact [edi esi ecx];
 
 /* ---------------------------------------------------------------- */
@@ -346,12 +346,12 @@ void copy_dwords( void *to, const void *from, u32 dwords );
 #define LINK_WAIT       400     /* 10ms steps for a link at the load: 4s */
 #define TX_WAIT         10000   /* 10us steps for a busy descriptor: 100ms */
 
-typedef struct { u32 opts1, opts2, addr_lo, addr_hi; } DESC;
+typedef struct { uint32_t opts1, opts2, addr_lo, addr_hi; } DESC;
 
 /* the chip table: TxConfig bits 31-26, 23-20, masked, as in Linux's table */
 typedef struct {
-    u16 mask, bits;
-    u8  ver;
+    uint16_t mask, bits;
+    unsigned char ver;
     const char *name;
 } CHIP;
 
@@ -449,7 +449,7 @@ static const PCI_ID rtl_ids[] = {
 /* FreeBSD rgephy's DSP fix for revisions 0 and 1 of the 8169S/8110S PHY.
    OP 0 writes VAL, 1 clears the bits in VAL, 2 sets those bits, 3 keeps the
    low twelve bits and puts VAL's top four in */
-typedef struct { u8 op, reg; u16 val; } PHYOP;
+typedef struct { uint8_t op, reg; uint16_t val; } PHYOP;
 
 static const PHYOP dsp_8169s[] = {
     { 0, 31, 0x0001 }, { 0, 21, 0x1000 }, { 0, 24, 0x65C7 },
@@ -466,29 +466,29 @@ static const PHYOP dsp_8169s[] = {
     { 2, 4, 0x0800 },  { 1, 4, 0x0800 },  { 0, 31, 0x0000 }
 };
 
-static u32  membase;            /* the memory-mapped registers, or 0 */
-static u16  ioport;             /* ...else the first port */
-static u8   ver;                /* Linux's RTL_GIGA_MAC_VER_ number */
-static u16  xid;                /* the version bits */
+static uint32_t membase;        /* the memory-mapped registers, or 0 */
+static uint16_t ioport;         /* ...else the first port */
+static unsigned char ver;       /* Linux's RTL_GIGA_MAC_VER_ number */
+static uint16_t xid;            /* the version bits */
 static const char *chip_name;
-static u16  pci_device;
-static u8   gmii;               /* the PHY does gigabit (not device 8136) */
-static u8   dash;               /* DASH_*, or 0 */
-static u8   dash_on;            /* ...and the BIOS has it switched on */
-static u8   macsleep;           /* FreeBSD's deep-sleep wake applies */
-static u8   gigabyte;           /* the one 8110SC board with a PHY fix */
-static u8   use_io;             /* /IO */
-static u8   loaded;             /* card_find has run: the load is over */
-static u8   cp_seen;            /* cp_base has been read */
-static u16  cp_base;            /* the C+ command, as found and pruned */
-static u32  irq_mask;           /* the causes this driver enables */
-static u8   tx_stuck;           /* sends in a row that found the transmitter stopped */
+static uint16_t pci_device;
+static unsigned char gmii;      /* the PHY does gigabit (not device 8136) */
+static unsigned char dash;      /* DASH_*, or 0 */
+static unsigned char dash_on;   /* ...and the BIOS has it switched on */
+static unsigned char macsleep;  /* FreeBSD's deep-sleep wake applies */
+static unsigned char gigabyte;  /* the one 8110SC board with a PHY fix */
+static unsigned char use_io;    /* /IO */
+static unsigned char loaded;    /* card_find has run: the load is over */
+static unsigned char cp_seen;   /* cp_base has been read */
+static uint16_t cp_base;        /* the C+ command, as found and pruned */
+static uint32_t irq_mask;       /* the causes this driver enables */
+static unsigned char tx_stuck;  /* sends in a row that found the transmitter stopped */
 
 static volatile DESC *rxd;
 static volatile DESC *txd;
-static u8  *rxbuf[RXN];
-static u8  *txbuf[TXN];
-static int  rx_cur, tx_cur;
+static uint8_t *rxbuf[RXN];
+static uint8_t *txbuf[TXN];
+static int      rx_cur, tx_cur;
 
 /* ---------------------------------------------------------------- */
 /* the lines this driver says                                        */
@@ -509,7 +509,7 @@ static void say_begin( const char *text )
     say_text( text );
 }
 
-static void say_hex( u32 value, int digits )
+static void say_hex( uint32_t value, int digits )
 {
     static const char hexdig[] = "0123456789ABCDEF";
     int shift;
@@ -519,7 +519,7 @@ static void say_hex( u32 value, int digits )
     }
 }
 
-static void say_dec( u32 value )
+static void say_dec( unsigned int value )
 {
     char digits[12];
     int  count = 0;
@@ -546,55 +546,55 @@ static void say_line( const char *text )
 /* the registers, memory-mapped or through the ports                 */
 /* ---------------------------------------------------------------- */
 
-static u8 rd8( u32 reg )
+static uint8_t rd8( uint32_t reg )
 {
     if ( membase ) return MMIO8( membase, reg );
-    return inb( (u16)( ioport + reg ) );
+    return inb( (uint16_t)( ioport + reg ) );
 }
 
-static u16 rd16( u32 reg )
+static uint16_t rd16( uint32_t reg )
 {
     if ( membase ) return MMIO16( membase, reg );
-    return inw( (u16)( ioport + reg ) );
+    return inw( (uint16_t)( ioport + reg ) );
 }
 
-static u32 rd32( u32 reg )
+static uint32_t rd32( uint32_t reg )
 {
     if ( membase ) return MMIO32( membase, reg );
-    return inl( (u16)( ioport + reg ) );
+    return inl( (uint16_t)( ioport + reg ) );
 }
 
-static void wr8( u32 reg, u8 value )
+static void wr8( uint32_t reg, uint8_t value )
 {
     if ( membase ) MMIO8( membase, reg ) = value;
-    else outb( (u16)( ioport + reg ), value );
+    else outb( (uint16_t)( ioport + reg ), value );
 }
 
-static void wr16( u32 reg, u16 value )
+static void wr16( uint32_t reg, uint16_t value )
 {
     if ( membase ) MMIO16( membase, reg ) = value;
-    else outw( (u16)( ioport + reg ), value );
+    else outw( (uint16_t)( ioport + reg ), value );
 }
 
-static void wr32( u32 reg, u32 value )
+static void wr32( uint32_t reg, uint32_t value )
 {
     if ( membase ) MMIO32( membase, reg ) = value;
-    else outl( (u16)( ioport + reg ), value );
+    else outl( (uint16_t)( ioport + reg ), value );
 }
 
-static void set8( u32 reg, u8 bits )   { wr8( reg, (u8)( rd8( reg ) | bits ) ); }
-static void clr8( u32 reg, u8 bits )   { wr8( reg, (u8)( rd8( reg ) & ~bits ) ); }
-static void set32( u32 reg, u32 bits ) { wr32( reg, rd32( reg ) | bits ); }
-static void clr32( u32 reg, u32 bits ) { wr32( reg, rd32( reg ) & ~bits ); }
+static void set8( uint32_t reg, uint8_t bits )   { wr8( reg, (uint8_t)( rd8( reg ) | bits ) ); }
+static void clr8( uint32_t reg, uint8_t bits )   { wr8( reg, (uint8_t)( rd8( reg ) & ~bits ) ); }
+static void set32( uint32_t reg, uint32_t bits ) { wr32( reg, rd32( reg ) | bits ); }
+static void clr32( uint32_t reg, uint32_t bits ) { wr32( reg, rd32( reg ) & ~bits ); }
 
 static void unlock( void ) { wr8( R_CFG9346, CFG9346_UNLOCK ); }
 static void lock( void )   { wr8( R_CFG9346, 0x00 ); }
 
 /* Up to COUNT steps of STEP microseconds for the bits in MASK to read
    as WANT; 1 if they did.  Every wait in the driver is one of these */
-static int wait8( u32 reg, u8 mask, u8 want, u32 step, u32 count )
+static int wait8( uint32_t reg, uint8_t mask, uint8_t want, unsigned int step, unsigned int count )
 {
-    u32 i;
+    unsigned int i;
 
     for ( i = 0; i < count; i++ ) {
         if ( ( rd8( reg ) & mask ) == want ) return 1;
@@ -603,9 +603,9 @@ static int wait8( u32 reg, u8 mask, u8 want, u32 step, u32 count )
     return ( rd8( reg ) & mask ) == want;
 }
 
-static int wait16( u32 reg, u16 mask, u16 want, u32 step, u32 count )
+static int wait16( uint32_t reg, uint16_t mask, uint16_t want, unsigned int step, unsigned int count )
 {
-    u32 i;
+    unsigned int i;
 
     for ( i = 0; i < count; i++ ) {
         if ( ( rd16( reg ) & mask ) == want ) return 1;
@@ -614,9 +614,9 @@ static int wait16( u32 reg, u16 mask, u16 want, u32 step, u32 count )
     return ( rd16( reg ) & mask ) == want;
 }
 
-static int wait32( u32 reg, u32 mask, u32 want, u32 step, u32 count )
+static int wait32( uint32_t reg, uint32_t mask, uint32_t want, unsigned int step, unsigned int count )
 {
-    u32 i;
+    unsigned int i;
 
     for ( i = 0; i < count; i++ ) {
         if ( ( rd32( reg ) & mask ) == want ) return 1;
@@ -636,9 +636,9 @@ static int evl_up( void ) { return ver >= 34 && ver != 39 && ver <= 52; }
 
 /* the extended (ERI) registers: TYPE ERI_EXGMAC or ERI_OOB.  The
    8168FP/8117's management registers are F70h << 18 further on */
-static u32 eri_read( u32 addr, u32 type )
+static uint32_t eri_read( uint32_t addr, uint32_t type )
 {
-    u32 cmd = type | ERI_MASK_1111 | addr;
+    uint32_t cmd = type | ERI_MASK_1111 | addr;
 
     if ( ver == 52 && type == ERI_OOB ) cmd |= 0xF70L << 18;
     wr32( R_ERIAR, cmd );
@@ -646,9 +646,9 @@ static u32 eri_read( u32 addr, u32 type )
     return rd32( R_ERIDR );
 }
 
-static void eri_write( u32 addr, u32 mask, u32 value, u32 type )
+static void eri_write( uint32_t addr, uint32_t mask, uint32_t value, uint32_t type )
 {
-    u32 cmd = BIT31 | type | mask | addr;
+    uint32_t cmd = BIT31 | type | mask | addr;
 
     if ( ver == 52 && type == ERI_OOB ) cmd |= 0xF70L << 18;
     wr32( R_ERIDR, value );
@@ -657,30 +657,30 @@ static void eri_write( u32 addr, u32 mask, u32 value, u32 type )
 }
 
 /* the MAC's OCP registers, 8168G and later: no busy bit to wait on */
-static void ocp_write( u32 reg, u16 value )
+static void ocp_write( uint32_t reg, uint16_t value )
 {
     wr32( R_OCPDR, BIT31 | ( reg << 15 ) | value );
 }
 
-static u16 ocp_read( u32 reg )
+static uint16_t ocp_read( uint32_t reg )
 {
     wr32( R_OCPDR, reg << 15 );
-    return (u16)rd32( R_OCPDR );
+    return (uint16_t)rd32( R_OCPDR );
 }
 
-static void ocp_modify( u32 reg, u16 clear, u16 set )
+static void ocp_modify( uint32_t reg, uint16_t clear, uint16_t set )
 {
-    ocp_write( reg, (u16)( ( ocp_read( reg ) & ~clear ) | set ) );
+    ocp_write( reg, (uint16_t)( ( ocp_read( reg ) & ~clear ) | set ) );
 }
 
 /* the PHY's OCP registers, 8168G and later; -1 when it does not answer */
-static void phy_ocp_write( u32 reg, u16 value )
+static void phy_ocp_write( uint32_t reg, uint16_t value )
 {
     wr32( R_GPHYOCP, BIT31 | ( reg << 15 ) | value );
     wait32( R_GPHYOCP, BIT31, 0, 25, 10 );
 }
 
-static int phy_ocp_read( u32 reg )
+static int phy_ocp_read( uint32_t reg )
 {
     wr32( R_GPHYOCP, reg << 15 );
     if ( !wait32( R_GPHYOCP, BIT31, BIT31, 25, 10 ) ) return -1;
@@ -689,18 +689,18 @@ static int phy_ocp_read( u32 reg )
 
 /* a PHY register, the standard ones or (before the 8168G) the page in
    register 1Fh.  The chip wants 20us between two accesses */
-static void phy_write( int reg, u16 value )
+static void phy_write( int reg, uint16_t value )
 {
     /* Linux's rtl8168g_phy_suspend_quirk: on the 8168g a BMCR write
        that leaves the PHY powered sets ERI 1A8h's top six bits (every
        BMCR write here does) */
     if ( ver == 40 && reg == MII_BMCR ) eri_write( 0x1A8, ERI_MASK_1111, eri_read( 0x1A8, ERI_EXGMAC ) | 0xFC000000L, ERI_EXGMAC );
     if ( ver >= 40 ) {
-        phy_ocp_write( OCP_PHY_BASE + (u32)reg * 2, value );
+        phy_ocp_write( OCP_PHY_BASE + (uint32_t)reg * 2, value );
         return;
     }
     if ( ver == 28 || ver == 31 ) clr32( R_DPMDIO, 0x00020000L );
-    wr32( R_PHYAR, BIT31 | ( (u32)( reg & 0x1F ) << 16 ) | value );
+    wr32( R_PHYAR, BIT31 | ( (uint32_t)( reg & 0x1F ) << 16 ) | value );
     wait32( R_PHYAR, BIT31, 0, 25, 20 );
     net_delay_us( 20 );
     if ( ver == 28 || ver == 31 ) set32( R_DPMDIO, 0x00020000L );
@@ -710,9 +710,9 @@ static int phy_read( int reg )
 {
     int value = -1;
 
-    if ( ver >= 40 ) return phy_ocp_read( OCP_PHY_BASE + (u32)reg * 2 );
+    if ( ver >= 40 ) return phy_ocp_read( OCP_PHY_BASE + (uint32_t)reg * 2 );
     if ( ver == 28 || ver == 31 ) clr32( R_DPMDIO, 0x00020000L );
-    wr32( R_PHYAR, (u32)( reg & 0x1F ) << 16 );
+    wr32( R_PHYAR, (uint32_t)( reg & 0x1F ) << 16 );
     if ( wait32( R_PHYAR, BIT31, BIT31, 25, 20 ) ) value = (int)( rd32( R_PHYAR ) & 0xFFFF );
     net_delay_us( 20 );
     if ( ver == 28 || ver == 31 ) set32( R_DPMDIO, 0x00020000L );
@@ -721,16 +721,16 @@ static int phy_read( int reg )
 
 /* the chip's own view of its PCI configuration space, past the 256
    bytes the kernel's mechanism 1 reaches (8126) */
-static u32 csi_func( void ) { return ( ( net_pciaddr >> 8 ) & 7 ) << 16; }
+static uint32_t csi_func( void ) { return ( ( net_pciaddr >> 8 ) & 7 ) << 16; }
 
-static u32 csi_read( u32 addr )
+static uint32_t csi_read( uint32_t addr )
 {
     wr32( R_CSIAR, ( addr & 0x0FFF ) | 0xF000L | csi_func() );
     if ( !wait32( R_CSIAR, BIT31, BIT31, 10, 100 ) ) return 0xFFFFFFFFL;
     return rd32( R_CSIDR );
 }
 
-static void csi_write( u32 addr, u32 value )
+static void csi_write( uint32_t addr, uint32_t value )
 {
     wr32( R_CSIDR, value );
     wr32( R_CSIAR, BIT31 | ( addr & 0x0FFF ) | 0xF000L | csi_func() );
@@ -741,23 +741,23 @@ static void csi_write( u32 addr, u32 value )
 /* DASH: the management controller of the 8168DP/EP, 8117, 8125BP     */
 /* ---------------------------------------------------------------- */
 
-static u32 dp_ocp_read( u32 reg )
+static uint32_t dp_ocp_read( uint32_t reg )
 {
     wr32( R_OCPAR, 0xF000L | ( reg & 0x0FFF ) );
     if ( !wait32( R_OCPAR, BIT31, BIT31, 20, 100 ) ) return 0xFFFFFFFFL;
     return rd32( R_OCPDR );
 }
 
-static void dp_ocp_write( u32 reg, u32 value )
+static void dp_ocp_write( uint32_t reg, uint32_t value )
 {
     wr32( R_OCPDR, value );
     wr32( R_OCPAR, BIT31 | 0x1000L | ( reg & 0x0FFF ) );
     wait32( R_OCPAR, BIT31, 0, 20, 100 );
 }
 
-static u32 dp_flag_reg( void ) { return ver == 31 ? 0xB8 : 0x10; }
+static uint32_t dp_flag_reg( void ) { return ver == 31 ? 0xB8 : 0x10; }
 
-static void ep_ocp_write( u32 reg, u32 value )
+static void ep_ocp_write( uint32_t reg, uint32_t value )
 {
     eri_write( reg, ERI_MASK_0001, value, ERI_OOB );
 }
@@ -783,7 +783,7 @@ static int stop_cmac( void )
 
 /* tell the controller a driver has the chip (OOB_START) or is letting
    go (OOB_STOP), and wait a moment for it to answer if it is on */
-static void dash_notify( u8 cmd )
+static void dash_notify( uint8_t cmd )
 {
     int i;
 
@@ -813,8 +813,8 @@ static void dash_notify( u8 cmd )
 /* the PCI function                                                  */
 /* ---------------------------------------------------------------- */
 
-static u32 cfg_read( int reg, int bytes ) { return net_pci_cfg_read( net_pciaddr, reg, bytes ); }
-static void cfg_write( int reg, int bytes, u32 value ) { net_pci_cfg_write( net_pciaddr, reg, bytes, value ); }
+static uint32_t cfg_read( int reg, int bytes ) { return net_pci_cfg_read( net_pciaddr, reg, bytes ); }
+static void cfg_write( int reg, int bytes, uint32_t value ) { net_pci_cfg_write( net_pciaddr, reg, bytes, value ); }
 
 /* the offset of capability ID in the list, or 0 */
 static int pci_cap( int id )
@@ -836,8 +836,8 @@ static int pci_cap( int id )
    do.  Then I/O, memory and bus mastering on. */
 static void pci_prepare( int first )
 {
-    int  at;
-    u32  value;
+    int      at;
+    uint32_t value;
 
     at = pci_cap( 0x01 );
     if ( at ) {
@@ -913,14 +913,14 @@ static void irq_off( void )
    asserted with nobody answering is shut by the kernel */
 static void irq_on( void )
 {
-    u32 mask = ( net_flags & NICF_POLLED ) ? 0 : irq_mask;
+    uint32_t mask = ( net_flags & NICF_POLLED ) ? 0 : irq_mask;
 
     if ( is_8125() ) {
         wr32( R_ISR_8125, 0xFFFFFFFFL );
         wr32( R_IMR_8125, mask );
     } else {
         wr16( R_ISR, 0xFFFF );
-        wr16( R_IMR, (u16)mask );
+        wr16( R_IMR, (uint16_t)mask );
     }
 }
 
@@ -1021,16 +1021,16 @@ static void chip_quiesce( void )
 /* the station address: where Linux reads it, else the ID registers */
 static int read_mac( void )
 {
-    u32 low, high;
+    uint32_t low, high;
     int i;
 
     net_memzero( net_mac, 6 );
     if ( evl_up() && ver != 34 ) {
         low = eri_read( 0xE0, ERI_EXGMAC );
         high = eri_read( 0xE4, ERI_EXGMAC );
-        for ( i = 0; i < 4; i++ ) net_mac[i] = (u8)( low >> ( i * 8 ) );
-        net_mac[4] = (u8)high;
-        net_mac[5] = (u8)( high >> 8 );
+        for ( i = 0; i < 4; i++ ) net_mac[i] = (uint8_t)( low >> ( i * 8 ) );
+        net_mac[4] = (uint8_t)high;
+        net_mac[5] = (uint8_t)( high >> 8 );
     } else if ( is_8125() ) {
         for ( i = 0; i < 6; i++ ) net_mac[i] = rd8( R_MAC0BKP + i );
     }
@@ -1043,8 +1043,8 @@ static int read_mac( void )
    doublewords with the configuration unlocked (Linux's rtl_rar_set) */
 static void write_mac( void )
 {
-    u32 low = (u32)net_mac[0] | ( (u32)net_mac[1] << 8 ) | ( (u32)net_mac[2] << 16 ) | ( (u32)net_mac[3] << 24 );
-    u32 high = (u32)net_mac[4] | ( (u32)net_mac[5] << 8 );
+    uint32_t low = (uint32_t)net_mac[0] | ( (uint32_t)net_mac[1] << 8 ) | ( (uint32_t)net_mac[2] << 16 ) | ( (uint32_t)net_mac[3] << 24 );
+    uint32_t high = (uint32_t)net_mac[4] | ( (uint32_t)net_mac[5] << 8 );
 
     unlock();
     wr32( R_IDR0 + 4, high );
@@ -1078,7 +1078,7 @@ static void phy_dsp_8169s( void )
         if ( dsp_8169s[i].op == 1 ) value &= ~dsp_8169s[i].val;
         else if ( dsp_8169s[i].op == 2 ) value |= dsp_8169s[i].val;
         else value = ( value & 0x0FFF ) | dsp_8169s[i].val;
-        phy_write( dsp_8169s[i].reg, (u16)value );
+        phy_write( dsp_8169s[i].reg, (uint16_t)value );
     }
     net_delay_us( 40 );
 }
@@ -1137,13 +1137,13 @@ static void phy_start( int first )
     if ( anar >= 0 && ( ( anar & 0x01E0 ) != 0x01E0 || ( anar & 0x001F ) != 0x0001 ) ) {
         /* 10 and 100, half and full, the 802.3 selector; the two pause
            bits kept as they were and nothing else */
-        phy_write( MII_ANAR, (u16)( ( anar & 0x0C00 ) | 0x01E1 ) );
+        phy_write( MII_ANAR, (uint16_t)( ( anar & 0x0C00 ) | 0x01E1 ) );
         restart = 1;
     }
     if ( gmii ) {
         gbcr = phy_read( MII_GBCR );
         if ( gbcr >= 0 && ( gbcr & 0x0300 ) != 0x0300 ) {
-            phy_write( MII_GBCR, (u16)( gbcr | 0x0300 ) );
+            phy_write( MII_GBCR, (uint16_t)( gbcr | 0x0300 ) );
             restart = 1;
         }
     }
@@ -1151,7 +1151,7 @@ static void phy_start( int first )
         want = ( ver == 70 ) ? 0x0180 : 0x0080;         /* 2.5G, and 5G on the 8126 */
         adv = phy_ocp_read( 0xA5D4 );
         if ( adv >= 0 && ( adv & want ) != want ) {
-            phy_ocp_write( 0xA5D4, (u16)( adv | want ) );
+            phy_ocp_write( 0xA5D4, (uint16_t)( adv | want ) );
             restart = 1;
         }
     }
@@ -1159,22 +1159,22 @@ static void phy_start( int first )
     phy_write( MII_BMCR, BMCR_ANENABLE | BMCR_ANRESTART );
     if ( first ) {
         say_begin( "PHY BMCR " );
-        say_hex( (u32)bmcr, 4 );
+        say_hex( (uint32_t)bmcr, 4 );
         say_text( "h ANAR " );
-        say_hex( anar < 0 ? 0 : (u32)anar, 4 );
+        say_hex( anar < 0 ? 0 : (uint32_t)anar, 4 );
         say_text( "h, negotiating again" );
         say_end();
     }
 }
 
-static u32 link_bits( void )
+static uint32_t link_bits( void )
 {
     if ( is_8125() ) return rd16( R_PHYSTATUS );
     return rd8( R_PHYSTATUS );
 }
 
 /* "Realtek RTL8168h, 1000 Mbps": 31 characters at the most */
-static void set_name( u32 phys )
+static void set_name( uint32_t phys )
 {
     char *end;
 
@@ -1198,7 +1198,7 @@ static void rx_give( int entry )
 {
     volatile DESC *desc = &rxd[entry];
 
-    desc->addr_lo = (u32)rxbuf[entry];
+    desc->addr_lo = (uint32_t)rxbuf[entry];
     desc->addr_hi = 0;
     desc->opts2 = 0;
     desc->opts1 = DESC_OWN | ( entry == RXN - 1 ? DESC_EOR : 0 ) | RXBUF;
@@ -1210,7 +1210,7 @@ static void rings_init( void )
 
     for ( i = 0; i < RXN; i++ ) rx_give( i );
     for ( i = 0; i < TXN; i++ ) {
-        txd[i].addr_lo = (u32)txbuf[i];
+        txd[i].addr_lo = (uint32_t)txbuf[i];
         txd[i].addr_hi = 0;
         txd[i].opts2 = 0;
         txd[i].opts1 = ( i == TXN - 1 ) ? DESC_EOR : 0;
@@ -1220,7 +1220,7 @@ static void rings_init( void )
 }
 
 /* RxConfig's FIFO, DMA and early-interrupt bits, per Linux's rtl_init_rxcfg */
-static u32 rx_config( void )
+static uint32_t rx_config( void )
 {
     if ( ver <= 6 || ( ver >= 10 && ver <= 17 ) ) return 0x0000E700L;
     if ( ( ver >= 18 && ver <= 24 ) || ( ver >= 34 && ver <= 36 ) || ver == 38 ) return 0x0000C700L;
@@ -1230,7 +1230,7 @@ static u32 rx_config( void )
     return 0x00008700L;
 }
 
-static u16 rx_max_size( void )
+static uint16_t rx_max_size( void )
 {
     if ( ver <= 6 || ver == 17 ) return 16383;
     if ( is_8125() ) return 16384;
@@ -1289,8 +1289,8 @@ static void start_8168( void )
    ASPM, LTR, EEE timer, statistics and PCIe PHY parts */
 static void start_8125( void )
 {
-    u32 reg, end;
-    u32 value;
+    uint32_t reg, end;
+    uint32_t value;
 
     wr8( R_INTCFG0, 0x00 );
     end = ( ver == 63 || ver == 70 ) ? 0x80 : 0x100;
@@ -1331,7 +1331,7 @@ static void start_8125( void )
     ocp_modify( 0xEB54, 0x0000, 0x0001 );
     net_delay_us( 1 );
     ocp_modify( 0xEB54, 0x0001, 0x0000 );
-    wr16( R_8125_1880, (u16)( rd16( R_8125_1880 ) & ~0x0030 ) );
+    wr16( R_8125_1880, (uint16_t)( rd16( R_8125_1880 ) & ~0x0030 ) );
     ocp_write( 0xE098, 0xC302 );
     for ( reg = 0; reg < 10; reg++ ) {
         if ( !( ocp_read( 0xE00E ) & 0x2000 ) ) break;
@@ -1343,8 +1343,8 @@ static void start_8125( void )
 /* Linux's rtl_hw_start, with the rings already built */
 static void hw_start( void )
 {
-    u16 cp = cp_base;
-    u32 value;
+    uint16_t cp = cp_base;
+    uint32_t value;
 
     unlock();
     chip_aspm_off();
@@ -1361,7 +1361,7 @@ static void hw_start( void )
         wr16( R_INTRMIT, 0x0000 );
     } else if ( !is_8125() ) {
         wr16( R_CPLUSCMD, cp );
-        wr8( R_TXMAXSIZE, (u8)( evl_up() ? 0x27 : 0x3F ) );
+        wr8( R_TXMAXSIZE, (uint8_t)( evl_up() ? 0x27 : 0x3F ) );
         start_8168();
         wr16( R_INTRMIT, 0x0000 );
     } else {
@@ -1370,9 +1370,9 @@ static void hw_start( void )
     }
     wr16( R_RXMAXSIZE, rx_max_size() );
     wr32( R_TXDESC_HI, 0 );                         /* high half first, as Linux */
-    wr32( R_TXDESC_LO, (u32)txd );
+    wr32( R_TXDESC_LO, (uint32_t)txd );
     wr32( R_RXDESC_HI, 0 );
-    wr32( R_RXDESC_LO, (u32)rxd );
+    wr32( R_RXDESC_LO, (uint32_t)rxd );
     if ( is_8125() ) wr32( R_RSSCTRL, 0 );
     jumbo_off();
     lock();
@@ -1410,21 +1410,21 @@ int card_find( void )
 {
     const PCI_ID *which;
     const CHIP *chip;
-    int  first = !loaded;
-    u32  txcfg, at, mem_phys = 0;
-    int  bar, isio, mem_bar = -1;
-    u8  *pool;
-    int  i;
+    int      first = !loaded;
+    uint32_t txcfg, at, mem_phys = 0;
+    int      bar, isio, mem_bar = -1;
+    uint8_t *pool;
+    int      i;
 
     loaded = 1;
     net_strcpy( net_name, "Realtek RTL8169" );
     if ( !net_pci_find( rtl_ids, &which ) ) return 1;
     pci_device = which->device;
-    gmii = (u8)( pci_device != 0x8136 );
+    gmii = (unsigned char)( pci_device != 0x8136 );
     if ( which->vendor == 0x1737 && cfg_read( 0x2E, 2 ) != 0x0024 ) return 1;
     if ( which->vendor == 0x0001 && cfg_read( 0x2E, 2 ) != 0x2410 ) return 1;
-    gigabyte = (u8)( cfg_read( 0x2C, 2 ) == 0x1458 && cfg_read( 0x2E, 2 ) == 0xE000 );
-    if ( first ) use_io = (u8)has_switch( "IO" );
+    gigabyte = (unsigned char)( cfg_read( 0x2C, 2 ) == 0x1458 && cfg_read( 0x2E, 2 ) == 0xE000 );
+    if ( first ) use_io = (unsigned char)has_switch( "IO" );
     pci_prepare( first );
 
     /* the registers: the first memory BAR of 0-2, else the ports */
@@ -1434,7 +1434,7 @@ int card_find( void )
         at = net_pci_bar( net_pciaddr, bar, &isio );
         if ( at == 0 ) continue;
         if ( isio ) {
-            if ( ioport == 0 && at <= 0xFF00 ) ioport = (u16)at;
+            if ( ioport == 0 && at <= 0xFF00 ) ioport = (uint16_t)at;
         } else if ( mem_phys == 0 ) {
             mem_phys = at;
             mem_bar = bar;
@@ -1456,14 +1456,14 @@ int card_find( void )
         if ( first ) say_line( "the chip does not answer (TxConfig reads FFFFFFFFh)" );
         return 1;
     }
-    xid = (u16)( ( txcfg >> 20 ) & 0xFCF );
+    xid = (uint16_t)( ( txcfg >> 20 ) & 0xFCF );
     for ( chip = chips; ( xid & chip->mask ) != chip->bits; chip++ ) ;
     ver = chip->ver;
     chip_name = chip->name;
     if ( ver == 42 && !gmii ) { ver = 43; chip_name = "RTL8106eus"; }
     if ( ver == 46 && !gmii ) { ver = 48; chip_name = "RTL8107e"; }
     if ( ver == 9 && ( xid & 0xF04 ) == 0x304 ) chip_name = "RTL8103e";
-    macsleep = (u8)( ( xid & 0x7CF ) == 0x3C2 || ( xid & 0x7CC ) == 0x3C4 || ( xid & 0x7CC ) == 0x34C );
+    macsleep = (unsigned char)( ( xid & 0x7CF ) == 0x3C2 || ( xid & 0x7CC ) == 0x3C4 || ( xid & 0x7CC ) == 0x34C );
     if ( first ) {
         say_begin( "" );
         say_hex( which->vendor, 4 );
@@ -1478,7 +1478,7 @@ int card_find( void )
         }
         if ( membase ) {
             say_text( ", memory BAR " );
-            say_dec( (u32)mem_bar );
+            say_dec( (unsigned int)mem_bar );
         } else {
             say_text( ", ports " );
             say_hex( ioport, 4 );
@@ -1519,7 +1519,7 @@ int card_find( void )
     if ( !cp_seen ) {
         /* what Linux keeps of the C+ command it finds; receive checksums
            and VLAN stripping off - but the 8110SCd's stripping stays on */
-        cp_base = (u16)( rd16( R_CPLUSCMD ) & CP_KEEP & ~CP_RXCHKSUM );
+        cp_base = (uint16_t)( rd16( R_CPLUSCMD ) & CP_KEEP & ~CP_RXCHKSUM );
         if ( ver != 5 ) cp_base &= ~CP_RXVLAN;
         cp_seen = 1;
     }
@@ -1535,7 +1535,7 @@ int card_find( void )
     else if ( ver == 66 ) dash = DASH_25BP;
     else dash = 0;
     if ( dash ) {
-        dash_on = (u8)dash_enabled();
+        dash_on = (unsigned char)dash_enabled();
         if ( first && dash_on ) say_line( "DASH remote management is on" );
     }
     irq_mask = ISR_RXOK | ISR_RXERR | ISR_TXOK | ISR_TXERR | ISR_RXDU;
@@ -1558,18 +1558,18 @@ int card_find( void )
             if ( first ) say_line( "no memory for the rings" );
             return 1;
         }
-        at = ( (u32)pool + 255 ) & ~255L;
+        at = ( (uint32_t)pool + 255 ) & ~255L;
         rxd = (volatile DESC *)at;  at += RXN * 16;
         txd = (volatile DESC *)at;  at += 256;      /* 128 used, 256-aligned */
-        for ( i = 0; i < RXN; i++ ) { rxbuf[i] = (u8 *)at; at += BUFSTEP; }
-        for ( i = 0; i < TXN; i++ ) { txbuf[i] = (u8 *)at; at += BUFSTEP; }
+        for ( i = 0; i < RXN; i++ ) { rxbuf[i] = (uint8_t *)at; at += BUFSTEP; }
+        for ( i = 0; i < TXN; i++ ) { txbuf[i] = (uint8_t *)at; at += BUFSTEP; }
     }
 
     /* the line the card has, at the DEVICE= load; after a park the line
        is the one nd_init settled on and hooked, and stays */
-    if ( first ) net_irq = (u8)net_pci_irqline( net_pciaddr );
+    if ( first ) net_irq = (uint8_t)net_pci_irqline( net_pciaddr );
     net_bus = NICB_PCI;
-    net_flags = (u8)( NICF_WORD | ( net_flags & NICF_POLLED ) );
+    net_flags = (uint8_t)( NICF_WORD | ( net_flags & NICF_POLLED ) );
     net_port = membase ? 0 : ioport;
     net_mem = membase;
     set_name( 0 );
@@ -1583,7 +1583,7 @@ int card_find( void )
 int card_setup( void )
 {
     int first = ( net_line != 0 );
-    u32 phys;
+    uint32_t phys;
     int i;
 
     irq_off();
@@ -1629,12 +1629,13 @@ void card_stop( void )
 
 static void rx_drain( void );
 
-int card_send( const u8 *frame, u32 len )
+int card_send( const uint8_t *frame, uint32_t len )
 {
     volatile DESC *desc;
-    int  entry;
-    u8  *buf;
-    u32  n, use, eor, flags, whole;
+    int      entry;
+    uint8_t *buf;
+    uint32_t eor, flags;
+    unsigned int n, use, whole;
 
     if ( len > NIC_MAXFRAME ) { net_stats.txerrors++; return 0; }
 
@@ -1682,7 +1683,7 @@ int card_send( const u8 *frame, u32 len )
     if ( use > len ) net_memzero( buf + len, use - len );
 
     eor = ( entry == TXN - 1 ) ? DESC_EOR : 0;
-    desc->addr_lo = (u32)buf;
+    desc->addr_lo = (uint32_t)buf;
     desc->addr_hi = 0;
     desc->opts2 = 0;
     desc->opts1 = eor | DESC_FS | DESC_LS | use;
@@ -1697,9 +1698,10 @@ int card_send( const u8 *frame, u32 len )
    are off */
 static void rx_drain( void )
 {
-    u32 status, len;
+    uint32_t status;
+    unsigned int len;
     int n;
-    u8 *slot;
+    uint8_t *slot;
 
     for ( n = 0; n < RXN; n++ ) {
         status = rxd[rx_cur].opts1;
@@ -1733,7 +1735,7 @@ static int tx_waiting( void )
 
 int card_service( void )
 {
-    u32 status, gone;
+    uint32_t status, gone;
     int mine = 0, pass;
 
     gone = is_8125() ? 0xFFFFFFFFL : 0xFFFFL;
@@ -1741,7 +1743,7 @@ int card_service( void )
         status = is_8125() ? rd32( R_ISR_8125 ) : rd16( R_ISR );
         if ( status == 0 || status == gone ) break;     /* nothing, or no card */
         if ( is_8125() ) wr32( R_ISR_8125, status );    /* acknowledged as read */
-        else wr16( R_ISR, (u16)status );
+        else wr16( R_ISR, (uint16_t)status );
         if ( status & irq_mask ) mine = 1;
         if ( status & ( ISR_RXDU | ISR_FIFOOVER ) ) net_stats.overflows++;
         if ( status & ( ISR_RXOK | ISR_RXERR | ISR_RXDU | ISR_FIFOOVER ) ) rx_drain();

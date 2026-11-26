@@ -31,13 +31,13 @@ VOLUME vol;
 
 #define BAD_MAX 64
 
-static u32 bad_secs[BAD_MAX];
+static uint32_t bad_secs[BAD_MAX];
 static int bad_count;
 
 static void bad_load( int drive )
 {
     const char *list = sys_getenv( "DFBAD" );
-    u32 val;
+    uint32_t val;
 
     bad_count = 0;
     if ( list == NULL || ch_upper( list[0] ) != 'A' + drive || list[1] != ':' ) {
@@ -46,7 +46,7 @@ static void bad_load( int drive )
     list += 2;
     while ( *list >= '0' && *list <= '9' && bad_count < BAD_MAX ) {
         for ( val = 0; *list >= '0' && *list <= '9'; list++ ) {
-            val = val * 10 + (u32)(*list - '0');
+            val = val * 10 + (uint32_t)(*list - '0');
         }
         bad_secs[bad_count++] = val;
         if ( *list == ',' ) {
@@ -55,7 +55,7 @@ static void bad_load( int drive )
     }
 }
 
-static int bad_in( u32 lba, u32 count )
+static int bad_in( uint32_t lba, uint32_t count )
 {
     int index;
 
@@ -71,14 +71,14 @@ static int bad_in( u32 lba, u32 count )
 /* boot sector                                                         */
 /* ------------------------------------------------------------------ */
 
-static int parse_bpb( const u8 *boot )
+static int parse_bpb( const uint8_t *boot )
 {
-    u32 bps = RD16( boot + 11 ), spc = boot[13], rsvd = RD16( boot + 14 );
-    u32 nfats = boot[16], rootents = RD16( boot + 17 );
-    u32 tot16 = RD16( boot + 19 ), fatsz16 = RD16( boot + 22 ),
+    uint32_t bps = RD16( boot + 11 ), spc = boot[13], rsvd = RD16( boot + 14 );
+    uint32_t nfats = boot[16], rootents = RD16( boot + 17 );
+    uint32_t tot16 = RD16( boot + 19 ), fatsz16 = RD16( boot + 22 ),
         tot32 = RD32( boot + 32 );
-    u32 fatsz, fats, tot, rootsecs, data, nclus, cap, maxv, ext;
-    u64 fatbytes;
+    uint32_t fatsz, fats, tot, rootsecs, data, nclus, cap, maxv, ext;
+    uint64_t fatbytes;
 
     if ( bps < 128 || bps > 4096 || (bps & (bps - 1)) ) {
         return -1;
@@ -127,7 +127,7 @@ static int parse_bpb( const u8 *boot )
     } else if ( vol.fattype == 12 ) {
         cap = lo32( fatbytes ) / 3 * 2;
     } else {
-        cap = lo32( fatbytes ) / (u32)(vol.fattype / 8);
+        cap = lo32( fatbytes ) / (uint32_t)(vol.fattype / 8);
     }
     if ( nclus + 1 > maxv ) {
         nclus = maxv - 1;
@@ -191,10 +191,10 @@ static int parse_bpb( const u8 *boot )
  * proper, past the buffer's length word).  Used only when the boot
  * sector itself carries no usable BPB.
  */
-void bpb_from_dpb( const u8 *dpb, u8 *sector )
+void bpb_from_dpb( const uint8_t *dpb, uint8_t *sector )
 {
-    u32 spc = (u32)dpb[0x04] + 1, fat16 = RD16( dpb + 0x0F );
-    u32 first_data, maxclus, tot;
+    uint32_t spc = (uint32_t)dpb[0x04] + 1, fat16 = RD16( dpb + 0x0F );
+    uint32_t first_data, maxclus, tot;
 
     mem_set( sector, 0, 512 );
     if ( fat16 ) {
@@ -206,7 +206,7 @@ void bpb_from_dpb( const u8 *dpb, u8 *sector )
     }
     tot = first_data + (maxclus - 1) * spc;
     WR16( sector + 11, RD16( dpb + 0x02 ) );
-    sector[13] = (u8)spc;
+    sector[13] = (uint8_t)spc;
     WR16( sector + 14, RD16( dpb + 0x06 ) );
     sector[16] = dpb[0x08];
     WR16( sector + 17, RD16( dpb + 0x09 ) );
@@ -226,13 +226,13 @@ void bpb_from_dpb( const u8 *dpb, u8 *sector )
     }
 }
 
-static u8  *sec_dirty;          /* a flag for each sector of the FAT */
-static int  any_dirty;
+static uint8_t *sec_dirty;      /* a flag for each sector of the FAT */
+static int      any_dirty;
 
 int vol_open( int drive )
 {
-    u8 *boot = (u8 *)xzalloc( 4096 );
-    u8 *dpb_bpb = (u8 *)xzalloc( 512 );
+    uint8_t *boot = (uint8_t *)xzalloc( 4096 );
+    uint8_t *dpb_bpb = (uint8_t *)xzalloc( 512 );
     int rc = 0, have_dpb;
 
     mem_set( &vol, 0, sizeof( vol ) );
@@ -276,15 +276,15 @@ void vol_close( void )
 /* sector and cluster I/O                                              */
 /* ------------------------------------------------------------------ */
 
-u32 clus_lba( u32 clus )
+uint32_t clus_lba( uint32_t clus )
 {
     return vol.data_sec + (clus - 2) * vol.spc;
 }
 
-int read_secs( u32 lba, u32 count, void *buf )
+int read_secs( uint32_t lba, uint32_t count, void *buf )
 {
-    u32 per = SYS_MAX_XFER / vol.bps, nsec;
-    u8 *dst = (u8 *)buf;
+    uint32_t per = SYS_MAX_XFER / vol.bps, nsec;
+    uint8_t *dst = (uint8_t *)buf;
     int rc;
 
     if ( per == 0 ) {
@@ -306,10 +306,10 @@ int read_secs( u32 lba, u32 count, void *buf )
     return 0;
 }
 
-int write_secs( u32 lba, u32 count, const void *buf, int kind )
+int write_secs( uint32_t lba, uint32_t count, const void *buf, int kind )
 {
-    u32 per = SYS_MAX_XFER / vol.bps, nsec;
-    const u8 *src = (const u8 *)buf;
+    uint32_t per = SYS_MAX_XFER / vol.bps, nsec;
+    const uint8_t *src = (const uint8_t *)buf;
     int rc;
 
     if ( per == 0 ) {
@@ -335,10 +335,10 @@ int write_secs( u32 lba, u32 count, const void *buf, int kind )
 /* the file allocation table                                           */
 /* ------------------------------------------------------------------ */
 
-u32 fat_get( u32 clus )
+uint32_t fat_get( uint32_t clus )
 {
-    const u8 *src;
-    u32 val;
+    const uint8_t *src;
+    uint32_t val;
 
     if ( clus > vol.maxclus ) {
         return vol.eoc_val;
@@ -346,7 +346,7 @@ u32 fat_get( u32 clus )
     switch ( vol.fattype ) {
     case 12:
         src = vol.fat + clus + (clus >> 1);
-        val = src[0] | ((u32)src[1] << 8);
+        val = src[0] | ((uint32_t)src[1] << 8);
         return (clus & 1) ? val >> 4 : val & 0xFFF;
     case 16:
         return RD16( vol.fat + clus * 2 );
@@ -355,10 +355,10 @@ u32 fat_get( u32 clus )
     }
 }
 
-void fat_set( u32 clus, u32 val )
+void fat_set( uint32_t clus, uint32_t val )
 {
-    u8 *dst;
-    u32 old, off;
+    uint8_t *dst;
+    uint32_t old, off;
 
     if ( clus > vol.maxclus ) {
         return;
@@ -368,11 +368,11 @@ void fat_set( u32 clus, u32 val )
         off = clus + (clus >> 1);
         dst = vol.fat + off;
         if ( clus & 1 ) {
-            dst[0] = (u8)((dst[0] & 0x0F) | ((val & 0x0F) << 4));
-            dst[1] = (u8)(val >> 4);
+            dst[0] = (uint8_t)((dst[0] & 0x0F) | ((val & 0x0F) << 4));
+            dst[1] = (uint8_t)(val >> 4);
         } else {
-            dst[0] = (u8)val;
-            dst[1] = (u8)((dst[1] & 0xF0) | ((val >> 8) & 0x0F));
+            dst[0] = (uint8_t)val;
+            dst[1] = (uint8_t)((dst[1] & 0xF0) | ((val >> 8) & 0x0F));
         }
         sec_dirty[off / vol.bps] = 1;           /* an entry can lie across two */
         sec_dirty[(off + 1) / vol.bps] = 1;
@@ -396,12 +396,12 @@ void fat_set( u32 clus, u32 val )
 /* how much of a FAT describes clusters, in whole sectors */
 static void fat_extent( void )
 {
-    u32 need, secs;
+    uint32_t need, secs;
 
     if ( vol.fattype == 12 ) {
         need = vol.maxclus + (vol.maxclus >> 1) + 2;
     } else {
-        need = (vol.maxclus + 1) * (u32)(vol.fattype / 8);
+        need = (vol.maxclus + 1) * (uint32_t)(vol.fattype / 8);
     }
     secs = (need + vol.bps - 1) / vol.bps;
     if ( secs > vol.fatsz ) {
@@ -411,7 +411,7 @@ static void fat_extent( void )
 }
 
 /* the copies the volume keeps: all of them, or FAT32's one */
-static int copy_kept( u32 copy )
+static int copy_kept( unsigned int copy )
 {
     return vol.mirror || copy == vol.active_fat;
 }
@@ -441,13 +441,14 @@ static void flag_off( void )
 
 int fat_load( void )
 {
-    u32 nsec, copy = vol.mirror ? 0 : vol.active_fat;
+    uint32_t     nsec;
+    unsigned int copy = vol.mirror ? 0 : vol.active_fat;
 
     vol_close();
     fat_extent();
     nsec = vol.fatbytes / vol.bps;
-    vol.fat = (u8 *)try_alloc( vol.fatbytes + 2 );
-    sec_dirty = (u8 *)try_alloc( nsec + 2 );
+    vol.fat = (uint8_t *)try_alloc( vol.fatbytes + 2 );
+    sec_dirty = (uint8_t *)try_alloc( nsec + 2 );
     if ( vol.fat == NULL || sec_dirty == NULL ) {
         out_of_memory();
     }
@@ -462,7 +463,8 @@ int fat_load( void )
 
 int fat_commit( void )
 {
-    u32 copy, index, first, run, nsec = vol.fatbytes / vol.bps;
+    uint32_t index, first, run, nsec = vol.fatbytes / vol.bps;
+    unsigned int copy;
     int bad = 0;
 
     if ( !any_dirty ) {
@@ -494,13 +496,13 @@ int fat_commit( void )
 /* The other copies, a piece at a time, against the one in memory: how
    many sectors of them say something else.  The flags of entry 1 are
    not part of what a FAT says. */
-u32 fat_differing( void )
+uint32_t fat_differing( void )
 {
-    u32 piece = 16384u - 16384u % vol.bps, off, len, copy, sec, nsec, differing = 0;
-    u32 loaded = vol.mirror ? 0 : vol.active_fat;
-    u8 *other, *mine = (u8 *)xalloc( vol.bps );
+    uint32_t     piece = 16384u - 16384u % vol.bps, off, len, sec, nsec, differing = 0;
+    unsigned int copy, loaded = vol.mirror ? 0 : vol.active_fat;
+    uint8_t *other, *mine = (uint8_t *)xalloc( vol.bps );
 
-    other = (u8 *)xalloc( piece );
+    other = (uint8_t *)xalloc( piece );
     for ( copy = 0; copy < vol.nfats; copy++ ) {
         if ( !copy_kept( copy ) || copy == loaded ) {
             continue;
@@ -535,15 +537,15 @@ u32 fat_differing( void )
 /* FAT32: the FSInfo sector's count of free clusters, and where a search
    for one might start - a drive that has been packed has them all
    behind its last file */
-void fsinfo_update( u32 free_clusters, u32 next_free )
+void fsinfo_update( uint32_t free_clusters, uint32_t next_free )
 {
-    u8 *fsi;
+    uint8_t *fsi;
 
     /* the FSInfo layout assumes at least a 512-byte sector */
     if ( vol.fattype != 32 || vol.fsinfo_sec == 0 || vol.bps < 512 ) {
         return;
     }
-    fsi = (u8 *)xalloc( vol.bps );
+    fsi = (uint8_t *)xalloc( vol.bps );
     if ( read_secs( vol.fsinfo_sec, 1, fsi ) == 0 &&
          RD32( fsi ) == 0x41615252ul && RD32( fsi + 484 ) == 0x61417272ul &&
          (RD32( fsi + 488 ) != free_clusters || RD32( fsi + 492 ) != next_free) ) {
@@ -568,7 +570,7 @@ void dir_free( DIRBUF *dir )
 
 int dir_load_list( DIRBUF *dir, const U32LIST *clus )
 {
-    u32 index, nclus = clus->count;
+    unsigned int index, nclus = clus->count;
 
     mem_set( dir, 0, sizeof( *dir ) );
     if ( nclus > MAX_DIR_BYTES / vol.bpc ) {
@@ -578,7 +580,7 @@ int dir_load_list( DIRBUF *dir, const U32LIST *clus )
         list_add( &dir->clus, clus->items[index] );
     }
     dir->nent = nclus * (vol.bpc / 32);
-    dir->data = (u8 *)try_alloc( nclus ? nclus * vol.bpc : 32 );
+    dir->data = (uint8_t *)try_alloc( nclus ? nclus * vol.bpc : 32 );
     if ( dir->data == NULL ) {
         out_of_memory();
     }
@@ -597,7 +599,7 @@ int dir_load_root( DIRBUF *dir )
     mem_set( dir, 0, sizeof( *dir ) );
     dir->fixed_root = 1;
     dir->nent = vol.root_ents;
-    dir->data = (u8 *)try_alloc( vol.root_secs ? vol.root_secs * vol.bps : 32 );
+    dir->data = (uint8_t *)try_alloc( vol.root_secs ? vol.root_secs * vol.bps : 32 );
     if ( dir->data == NULL ) {
         out_of_memory();
     }
@@ -605,9 +607,10 @@ int dir_load_root( DIRBUF *dir )
 }
 
 /* write the sector holding entry idx back to the disk */
-int dir_write_entry( DIRBUF *dir, u32 idx )
+int dir_write_entry( DIRBUF *dir, unsigned int idx )
 {
-    u32 off = idx * 32, lba;
+    unsigned int off = idx * 32;
+    uint32_t lba;
 
     if ( dir->fixed_root ) {
         lba = vol.root_sec + off / vol.bps;
@@ -619,9 +622,9 @@ int dir_write_entry( DIRBUF *dir, u32 idx )
 
 /* one sector of a directory out of "image", which is laid out as the
    directory's own copy is but need not be it */
-int dir_write_sec( DIRBUF *dir, const u8 *image, u32 sec )
+int dir_write_sec( DIRBUF *dir, const uint8_t *image, unsigned int sec )
 {
-    u32 lba, per = vol.spc;
+    uint32_t lba, per = vol.spc;
 
     if ( dir->fixed_root ) {
         lba = vol.root_sec + sec;
@@ -635,7 +638,7 @@ int dir_write_sec( DIRBUF *dir, const u8 *image, u32 sec )
    That order matters: see DIRS.C. */
 int dir_write_all( DIRBUF *dir )
 {
-    u32 index;
+    unsigned int index;
 
     if ( dir->fixed_root ) {
         return write_secs( vol.root_sec, vol.root_secs, dir->data, WR_DIR ) != 0 ? -1 : 0;
@@ -649,17 +652,17 @@ int dir_write_all( DIRBUF *dir )
     return 0;
 }
 
-u32 entry_first( const u8 *ent )
+uint32_t entry_first( const uint8_t *ent )
 {
-    u32 clus = RD16( ent + DE_CLUSLO );
+    uint32_t clus = RD16( ent + DE_CLUSLO );
 
     if ( vol.fattype == 32 ) {
-        clus |= (u32)RD16( ent + DE_CLUSHI ) << 16;
+        clus |= (uint32_t)RD16( ent + DE_CLUSHI ) << 16;
     }
     return clus;
 }
 
-void entry_set_first( u8 *ent, u32 clus )
+void entry_set_first( uint8_t *ent, uint32_t clus )
 {
     WR16( ent + DE_CLUSLO, clus );
     if ( vol.fattype == 32 ) {

@@ -12,7 +12,7 @@
 /* memory and strings                                                  */
 /* ------------------------------------------------------------------ */
 
-static void rep_stos( void *dst, u32 val, u32 len );
+static void rep_stos( void *dst, uint32_t val, unsigned int len );
 #pragma aux rep_stos =  \
     "mov  edx,ecx"      \
     "shr  ecx,2"        \
@@ -22,7 +22,7 @@ static void rep_stos( void *dst, u32 val, u32 len );
     "rep  stosb"        \
     parm [edi] [eax] [ecx] modify [ecx edx edi];
 
-static void rep_movs( void *dst, const void *src, u32 len );
+static void rep_movs( void *dst, const void *src, unsigned int len );
 #pragma aux rep_movs =  \
     "mov  edx,ecx"      \
     "shr  ecx,2"        \
@@ -32,15 +32,15 @@ static void rep_movs( void *dst, const void *src, u32 len );
     "rep  movsb"        \
     parm [edi] [esi] [ecx] modify [ecx edx esi edi];
 
-void mem_set( void *dst, int val, u32 len )
+void mem_set( void *dst, int val, unsigned int len )
 {
-    rep_stos( dst, ((u32)val & 0xFF) * 0x01010101UL, len );
+    rep_stos( dst, ((uint32_t)val & 0xFF) * 0x01010101UL, len );
 }
 
-void mem_cpy( void *dst, const void *src, u32 len )
+void mem_cpy( void *dst, const void *src, unsigned int len )
 {
-    u8 *dcur = (u8 *)dst;
-    const u8 *scur = (const u8 *)src;
+    uint8_t *dcur = (uint8_t *)dst;
+    const uint8_t *scur = (const uint8_t *)src;
 
     if ( dcur <= scur || dcur >= scur + len ) {
         rep_movs( dst, src, len );
@@ -53,9 +53,9 @@ void mem_cpy( void *dst, const void *src, u32 len )
     }
 }
 
-u32 str_len( const char *str )
+unsigned int str_len( const char *str )
 {
-    u32 len = 0;
+    unsigned int len = 0;
 
     while ( str[len] ) {
         len++;
@@ -73,9 +73,9 @@ char *str_cpy( char *dst, const char *src )
 }
 
 /* a copy that stops short of "max" bytes including the NUL */
-int str_cpyn( char *dst, const char *src, u32 max )
+int str_cpyn( char *dst, const char *src, unsigned int max )
 {
-    u32 len = str_len( src );
+    unsigned int len = str_len( src );
 
     if ( len + 1 > max ) {
         return 0;
@@ -84,9 +84,9 @@ int str_cpyn( char *dst, const char *src, u32 max )
     return 1;
 }
 
-int str_catn( char *dst, const char *src, u32 max )
+int str_catn( char *dst, const char *src, unsigned int max )
 {
-    u32 have = str_len( dst );
+    unsigned int have = str_len( dst );
 
     if ( have >= max ) {
         return 0;
@@ -96,9 +96,9 @@ int str_catn( char *dst, const char *src, u32 max )
 
 /* as much of a string as there is room for: for a name that is shown,
    where a cut one is better than none */
-void str_cpyt( char *dst, const char *src, u32 max )
+void str_cpyt( char *dst, const char *src, unsigned int max )
 {
-    u32 len = 0;
+    unsigned int len = 0;
 
     if ( max == 0 ) {
         return;
@@ -144,7 +144,7 @@ int str_icmp( const char *lhs, const char *rhs )
     }
 }
 
-int str_nicmp( const char *lhs, const char *rhs, u32 len )
+int str_nicmp( const char *lhs, const char *rhs, unsigned int len )
 {
     int lch, rch;
 
@@ -189,14 +189,14 @@ int str_cmp( const char *lhs, const char *rhs )
         lhs++;
         rhs++;
     }
-    return (int)(u8)*lhs - (int)(u8)*rhs;
+    return (int)(uint8_t)*lhs - (int)(uint8_t)*rhs;
 }
 
-int str_ncmp( const char *lhs, const char *rhs, u32 len )
+int str_ncmp( const char *lhs, const char *rhs, unsigned int len )
 {
     for ( ; len; len--, lhs++, rhs++ ) {
         if ( *lhs != *rhs ) {
-            return (int)(u8)*lhs - (int)(u8)*rhs;
+            return (int)(uint8_t)*lhs - (int)(uint8_t)*rhs;
         }
         if ( *lhs == 0 ) {
             return 0;
@@ -205,10 +205,10 @@ int str_ncmp( const char *lhs, const char *rhs, u32 len )
     return 0;
 }
 
-int mem_cmp( const void *lhs, const void *rhs, u32 len )
+int mem_cmp( const void *lhs, const void *rhs, unsigned int len )
 {
-    const u8 *lcur = (const u8 *)lhs;
-    const u8 *rcur = (const u8 *)rhs;
+    const uint8_t *lcur = (const uint8_t *)lhs;
+    const uint8_t *rcur = (const uint8_t *)rhs;
 
     for ( ; len; len--, lcur++, rcur++ ) {
         if ( *lcur != *rcur ) {
@@ -218,13 +218,13 @@ int mem_cmp( const void *lhs, const void *rhs, u32 len )
     return 0;
 }
 
-u32 dec_parse( const char *str, int *ok )
+unsigned int dec_parse( const char *str, int *ok )
 {
-    u32 val = 0;
+    unsigned int val = 0;
 
     *ok = 0;
     while ( *str >= '0' && *str <= '9' ) {
-        val = val * 10 + (u32)(*str - '0');
+        val = val * 10 + (unsigned int)(*str - '0');
         *ok = 1;
         str++;
     }
@@ -234,7 +234,7 @@ u32 dec_parse( const char *str, int *ok )
     return val;
 }
 
-char *fmt_dec( u32 val, int width, char *buf )
+char *fmt_dec( unsigned int val, int width, char *buf )
 {
     char digits[12];
     int count = 0, pos = 0;
@@ -258,7 +258,7 @@ char *fmt_dec( u32 val, int width, char *buf )
 /* ------------------------------------------------------------------ */
 
 typedef struct HBLK {
-    u32          size;          /* whole block including this header */
+    uint32_t     size;          /* whole block including this header */
     struct HBLK *next;          /* free list link (free blocks only) */
 } HBLK;
 
@@ -266,8 +266,8 @@ typedef struct HBLK {
 #define MIN_SPLIT   64u
 #define CHUNK       (64u * 1024u)   /* what 48h grows a slot by */
 
-static HBLK *free_list;
-static u32   in_use;
+static HBLK        *free_list;
+static unsigned int in_use;
 
 static void heap_insert( HBLK *blk )
 {
@@ -280,20 +280,20 @@ static void heap_insert( HBLK *blk )
     }
     blk->next = *link;
     *link = blk;
-    if ( blk->next && (u8 *)blk + blk->size == (u8 *)blk->next ) {
+    if ( blk->next && (uint8_t *)blk + blk->size == (uint8_t *)blk->next ) {
         blk->size += blk->next->size;
         blk->next = blk->next->next;
     }
-    if ( prev && (u8 *)prev + prev->size == (u8 *)blk ) {
+    if ( prev && (uint8_t *)prev + prev->size == (uint8_t *)blk ) {
         prev->size += blk->size;
         prev->next = blk->next;
     }
 }
 
-void *try_alloc( u32 size )
+void *try_alloc( unsigned int size )
 {
     HBLK **link, *blk, *rest;
-    u32 need, chunk;
+    unsigned int need, chunk;
     void *mem;
     int pass;
 
@@ -307,7 +307,7 @@ void *try_alloc( u32 size )
                 continue;
             }
             if ( blk->size - need >= MIN_SPLIT ) {
-                rest = (HBLK *)((u8 *)blk + need);
+                rest = (HBLK *)((uint8_t *)blk + need);
                 rest->size = blk->size - need;
                 rest->next = blk->next;
                 *link = rest;
@@ -316,7 +316,7 @@ void *try_alloc( u32 size )
                 *link = blk->next;
             }
             in_use += blk->size;
-            return (u8 *)blk + HDR;
+            return (uint8_t *)blk + HDR;
         }
         if ( pass ) {
             break;
@@ -338,7 +338,7 @@ void *try_alloc( u32 size )
 }
 
 /* out_of_memory() gives up the page being shown and does not return */
-void *xalloc( u32 size )
+void *xalloc( unsigned int size )
 {
     void *ptr;
 
@@ -354,20 +354,20 @@ void *xalloc( u32 size )
 void xfree( void *ptr )
 {
     if ( ptr != NULL ) {
-        in_use -= ((HBLK *)((u8 *)ptr - HDR))->size;
-        heap_insert( (HBLK *)((u8 *)ptr - HDR) );
+        in_use -= ((HBLK *)((uint8_t *)ptr - HDR))->size;
+        heap_insert( (HBLK *)((uint8_t *)ptr - HDR) );
     }
 }
 
-u32 heap_in_use( void )
+unsigned int heap_in_use( void )
 {
     return in_use;
 }
 
 /* what a block can hold, which may be a little more than was asked */
-u32 mem_size( void *ptr )
+unsigned int mem_size( void *ptr )
 {
-    return ptr == NULL ? 0 : ((HBLK *)((u8 *)ptr - HDR))->size - HDR;
+    return ptr == NULL ? 0 : ((HBLK *)((uint8_t *)ptr - HDR))->size - HDR;
 }
 
 /*
@@ -376,10 +376,10 @@ u32 mem_size( void *ptr )
  * still a paragraph.  A block that is big enough already is kept, so a
  * buffer that doubles as it fills is copied a handful of times in all.
  */
-void *try_realloc( void *ptr, u32 size )
+void *try_realloc( void *ptr, unsigned int size )
 {
     void *fresh;
-    u32 have;
+    unsigned int have;
 
     if ( ptr == NULL ) {
         return try_alloc( size );
@@ -404,13 +404,13 @@ void *try_realloc( void *ptr, u32 size )
 typedef struct PCHUNK {
     struct PCHUNK *next, *prev;
     POOL          *pool;
-    u32            size;        /* of the payload */
+    unsigned int   size;        /* of the payload */
 } PCHUNK;
 
 struct POOL {
-    PCHUNK *chunks;             /* every block, the big ones as well */
-    u8     *cur;                /* the small-object chunk being filled */
-    u32     left;
+    PCHUNK      *chunks;        /* every block, the big ones as well */
+    uint8_t     *cur;           /* the small-object chunk being filled */
+    unsigned int left;
 };
 
 #define POOL_CHUNK  (8u * 1024u)
@@ -426,7 +426,7 @@ POOL *pool_new( void )
     return pool;
 }
 
-static void *chunk_new( POOL *pool, u32 size, int must )
+static void *chunk_new( POOL *pool, unsigned int size, int must )
 {
     PCHUNK *chunk;
 
@@ -454,14 +454,14 @@ static void *chunk_new( POOL *pool, u32 size, int must )
     return chunk + 1;
 }
 
-/* up to a whole number of u32s; a size too large to round is left as
+/* up to a multiple of four bytes; a size too large to round is left as
    it is, for chunk_new to turn down */
-static u32 round4( u32 size )
+static unsigned int round4( unsigned int size )
 {
     return size > 0xFFFFFF00UL ? size : (size + 3u) & ~3u;
 }
 
-void *pool_alloc( POOL *pool, u32 size )
+void *pool_alloc( POOL *pool, unsigned int size )
 {
     void *ptr;
 
@@ -470,7 +470,7 @@ void *pool_alloc( POOL *pool, u32 size )
         return chunk_new( pool, size, 1 );
     }
     if ( size > pool->left ) {
-        pool->cur = (u8 *)chunk_new( pool, POOL_CHUNK, 1 );
+        pool->cur = (uint8_t *)chunk_new( pool, POOL_CHUNK, 1 );
         pool->left = POOL_CHUNK;
     }
     ptr = pool->cur;
@@ -479,12 +479,12 @@ void *pool_alloc( POOL *pool, u32 size )
     return ptr;
 }
 
-void *pool_big( POOL *pool, u32 size )
+void *pool_big( POOL *pool, unsigned int size )
 {
     return chunk_new( pool, round4( size ), 1 );
 }
 
-void *pool_try_big( POOL *pool, u32 size )
+void *pool_try_big( POOL *pool, unsigned int size )
 {
     return chunk_new( pool, round4( size ), 0 );
 }
@@ -527,7 +527,7 @@ void pool_free( POOL *pool )
 void pool_reset( POOL *pool )
 {
     PCHUNK *chunk, *next, *small = NULL;
-    u32 used = POOL_CHUNK;
+    unsigned int used = POOL_CHUNK;
 
     for ( chunk = pool->chunks; chunk; chunk = next ) {
         next = chunk->next;
@@ -544,11 +544,11 @@ void pool_reset( POOL *pool )
     }
     if ( small ) {
         /* only what was used needs to be zero again */
-        if ( pool->cur > (u8 *)(small + 1) && pool->cur <= (u8 *)(small + 1) + POOL_CHUNK ) {
-            used = (u32)(pool->cur - (u8 *)(small + 1));
+        if ( pool->cur > (uint8_t *)(small + 1) && pool->cur <= (uint8_t *)(small + 1) + POOL_CHUNK ) {
+            used = (unsigned int)(pool->cur - (uint8_t *)(small + 1));
         }
         small->next = small->prev = NULL;
-        pool->cur = (u8 *)(small + 1);
+        pool->cur = (uint8_t *)(small + 1);
         pool->left = POOL_CHUNK;
         mem_set( pool->cur, 0, used );
     }
@@ -556,7 +556,7 @@ void pool_reset( POOL *pool )
 
 char *pool_str( POOL *pool, const char *str )
 {
-    u32 len = str_len( str ) + 1;
+    unsigned int len = str_len( str ) + 1;
     char *copy = (char *)pool_alloc( pool, len );
 
     mem_cpy( copy, str, len );
@@ -567,9 +567,9 @@ char *pool_str( POOL *pool, const char *str )
 /* searching memory                                                    */
 /* ------------------------------------------------------------------ */
 
-int mem_ifind( const u8 *hay, u32 len, const char *needle )
+int mem_ifind( const uint8_t *hay, unsigned int len, const char *needle )
 {
-    u32 nlen = str_len( needle ), pos, at;
+    unsigned int nlen = str_len( needle ), pos, at;
     int first;
 
     if ( nlen == 0 || nlen > len ) {
@@ -589,15 +589,15 @@ int mem_ifind( const u8 *hay, u32 len, const char *needle )
     return -1;
 }
 
-int mem_find( const u8 *hay, u32 len, const char *needle )
+int mem_find( const uint8_t *hay, unsigned int len, const char *needle )
 {
-    u32 nlen = str_len( needle ), pos;
+    unsigned int nlen = str_len( needle ), pos;
 
     if ( nlen == 0 || nlen > len ) {
         return -1;
     }
     for ( pos = 0; pos + nlen <= len; pos++ ) {
-        if ( hay[pos] == (u8)needle[0] && mem_cmp( hay + pos, needle, nlen ) == 0 ) {
+        if ( hay[pos] == (uint8_t)needle[0] && mem_cmp( hay + pos, needle, nlen ) == 0 ) {
             return (int)pos;
         }
     }
@@ -616,8 +616,8 @@ void fmt_group_set( int ch )
 }
 
 typedef struct {
-    char *buf;
-    u32   max, len;
+    char        *buf;
+    unsigned int max, len;
 } FOUT;
 
 static void out_ch( FOUT *out, int ch )
@@ -650,7 +650,7 @@ static void out_text( FOUT *out, const char *text, int len, int width, int left,
 }
 
 /* a number into "digits", backwards; returns how many characters */
-static int num_digits( u32 val, u32 base, int upper, int group, char *digits )
+static int num_digits( unsigned int val, unsigned int base, int upper, int group, char *digits )
 {
     static const char lower_set[] = "0123456789abcdef";
     static const char upper_set[] = "0123456789ABCDEF";
@@ -668,13 +668,13 @@ static int num_digits( u32 val, u32 base, int upper, int group, char *digits )
     return count;
 }
 
-int vfmt( char *buf, u32 max, const char *fmt, char *args )
+int vfmt( char *buf, unsigned int max, const char *fmt, char *args )
 {
     FOUT out;
     char digits[20], text[20];
     const char *str;
     int left, zero, group, width, count, index, neg;
-    u32 val;
+    unsigned int val;
 
     out.buf = buf;
     out.max = max;
@@ -731,11 +731,11 @@ int vfmt( char *buf, u32 max, const char *fmt, char *args )
         case 'u':
         case 'x':
         case 'X':
-            val = VA_NEXT( args, u32 );
+            val = VA_NEXT( args, unsigned int );
             neg = 0;
-            if ( *fmt == 'd' && (s32)val < 0 ) {
+            if ( *fmt == 'd' && (int)val < 0 ) {
                 neg = 1;
-                val = (u32)(-(s32)val);
+                val = (unsigned int)(-(int)val);
             }
             count = num_digits( val, *fmt == 'x' || *fmt == 'X' ? 16 : 10, *fmt == 'X',
                                 group && *fmt != 'x' && *fmt != 'X', digits );
@@ -765,7 +765,7 @@ int vfmt( char *buf, u32 max, const char *fmt, char *args )
     return (int)out.len;
 }
 
-int __cdecl sfmt( char *buf, u32 max, const char *fmt, ... )
+int __cdecl sfmt( char *buf, unsigned int max, const char *fmt, ... )
 {
     return vfmt( buf, max, fmt, VA_START( fmt ) );
 }

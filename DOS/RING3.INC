@@ -806,9 +806,19 @@ r3_pflags:
         je      rpf_netuse
         cmp     ax,29h * 256 + 0F1h
         je      rpf_dbg
+        cmp     ax,2Bh * 256 + 0F1h
+        je      rpf_imem
         cmp     ax,0Dh * 256 + 44h
         je      rpf_genblk
+        cmp     ax,10h * 256 + 0F0h
+        je      rpf_rawkeys
         call    vdm_flags
+        ret
+
+; F0h/10h, the scan codes a program reads itself: they are answered
+; into EDI, ECX bytes of it (INT21.INC, fF0_rawrd).
+rpf_rawkeys:
+        mov     bl,P_DI
         ret
 
 ; 44h/0Dh, the generic block IOCTL: 0860h's block is at EDX, but the
@@ -828,6 +838,21 @@ rpf_genblk:
         cmp     byte ptr [ebp+F_ECX],6Bh
         jne     rpf_out
 rpf_nolock:
+        xor     bl,bl
+        ret
+
+; F1h/2Bh, an image held in memory: IMEM_LOAD reads the image at ESI
+; and the name of its file at EDX, and IMEM_COPY answers into EDI.  EBX
+; is a drive letter and ECX a length - numbers both.  (F1h/10h has no
+; row anywhere because its EDX is a number too: the write count a
+; loaded image was saved at.)
+rpf_imem:
+        mov     bl,P_SI OR P_DX
+        cmp     byte ptr [ebp+F_EAX+2],IMEM_LOAD
+        je      rpf_out
+        mov     bl,P_DI
+        cmp     byte ptr [ebp+F_EAX+2],IMEM_COPY
+        je      rpf_out
         xor     bl,bl
         ret
 

@@ -24,34 +24,34 @@
 #define TICK_MS     54.9254
 
 typedef struct {
-    u16 freq;                   /* 0: silence */
-    u32 on_ms, off_ms;
+    uint16_t freq;              /* 0: silence */
+    uint32_t on_ms, off_ms;
 } NOTE;
 
-static NOTE queue[QMAX + 1];
-static int  q_head, q_count;
-static int  sounding;           /* a note (or its gap) is under way */
-static int  in_gap;
-static u32  phase_end;
-static u32  gap_left;
-static int  background;         /* MB */
-static int  octave = 4, length = 4, tempo = 120, style = 7;     /* style in eighths */
+static NOTE     queue[QMAX + 1];
+static int      q_head, q_count;
+static int      sounding;       /* a note (or its gap) is under way */
+static int      in_gap;
+static uint32_t phase_end;
+static uint32_t gap_left;
+static int      background;     /* MB */
+static int      octave = 4, length = 4, tempo = 120, style = 7; /* style in eighths */
 
-static u32 now_ms( void )
+static uint32_t now_ms( void )
 {
     return sys_hundredths() * 10UL;
 }
 
 static void speaker( int freq )
 {
-    u32 divisor;
+    uint32_t divisor;
     int bits;
 
     if ( freq <= 0 ) {
         port_out( 0x61, port_in( 0x61 ) & 0xFC );
         return;
     }
-    divisor = 1193182UL / (u32)freq;
+    divisor = 1193182UL / (uint32_t)freq;
     if ( divisor > 0xFFFF ) {
         divisor = 0xFFFF;
     }
@@ -59,7 +59,7 @@ static void speaker( int freq )
     port_out( 0x42, divisor & 0xFF );
     port_out( 0x42, divisor >> 8 );
     bits = (int)port_in( 0x61 );
-    port_out( 0x61, (u32)(bits | 3) );
+    port_out( 0x61, (uint32_t)(bits | 3) );
 }
 
 int snd_queued( void )
@@ -70,7 +70,7 @@ int snd_queued( void )
 /* the music, moved on to where the clock says it should be */
 void snd_service( void )
 {
-    u32 now;
+    uint32_t now;
     NOTE *note;
 
     if ( !sounding && q_count == 0 ) {
@@ -137,7 +137,7 @@ static void snd_wait( int want_empty )
     }
 }
 
-static void enqueue( int freq, u32 on_ms, u32 off_ms )
+static void enqueue( int freq, uint32_t on_ms, uint32_t off_ms )
 {
     NOTE *note;
 
@@ -145,7 +145,7 @@ static void enqueue( int freq, u32 on_ms, u32 off_ms )
         snd_wait( 0 );
     }
     note = &queue[(q_head + q_count) % (QMAX + 1)];
-    note->freq = (u16)freq;
+    note->freq = (uint16_t)freq;
     note->on_ms = on_ms;
     note->off_ms = off_ms;
     q_count++;
@@ -180,7 +180,7 @@ void rtf_SOUND( void )
         speaker( 0 );
         return;
     }
-    enqueue( (int)freq, (u32)(duration * TICK_MS), 0 );
+    enqueue( (int)freq, (uint32_t)(duration * TICK_MS), 0 );
     if ( !background ) {
         snd_wait( 1 );
     }
@@ -193,7 +193,7 @@ static int note_freq( int n )
 }
 
 /* a note's or a pause's length in ms: 1 = a whole note */
-static u32 length_ms( int len, int dots )
+static uint32_t length_ms( int len, int dots )
 {
     double ms = 240000.0 / tempo / len, extra = ms;
 
@@ -201,7 +201,7 @@ static u32 length_ms( int len, int dots )
         extra /= 2;
         ms += extra;
     }
-    return (u32)ms;
+    return (uint32_t)ms;
 }
 
 static int read_num( MACRO *cur, int *out )
@@ -228,17 +228,17 @@ static int read_dots( MACRO *cur )
 
 static void play_note( int n, int len, int dots )
 {
-    u32 total = length_ms( len, dots ), on;
+    uint32_t total = length_ms( len, dots ), on;
 
     if ( n == 0 ) {
         enqueue( 0, total, 0 );
         return;
     }
-    on = total * (u32)style / 8;
+    on = total * (uint32_t)style / 8;
     enqueue( note_freq( n ), on, total - on );
 }
 
-static void play_string( const char *text, u32 len, int depth )
+static void play_string( const char *text, unsigned int len, int depth )
 {
     static const int semis[7] = { 9, 11, 0, 2, 4, 5, 7 };      /* A B C D E F G */
     MACRO cur;
@@ -338,7 +338,7 @@ static void play_string( const char *text, u32 len, int depth )
             if ( cur.pos + 3 > cur.len ) {
                 vm_error( E_ILLEGAL_CALL );
             }
-            slot = mem_varptr_string( (const u8 *)cur.text + cur.pos, &type, &addr );
+            slot = mem_varptr_string( (const uint8_t *)cur.text + cur.pos, &type, &addr );
             cur.pos += 3;
             if ( slot == NULL ) {
                 vm_error( E_ILLEGAL_CALL );

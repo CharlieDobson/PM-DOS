@@ -19,7 +19,7 @@ static FINDREC rec;
 /* sizes past four gigabytes: kilobytes, and the bytes left over       */
 /* ------------------------------------------------------------------ */
 
-void big_add( BIGSIZE *sum, u32 bytes )
+void big_add( BIGSIZE *sum, uint32_t bytes )
 {
     sum->kb += bytes >> 10;
     sum->rest += bytes & 1023;
@@ -42,12 +42,12 @@ char *big_fmt( const BIGSIZE *sum, char *buf )
 /* dates and times, the country's way                                  */
 /* ------------------------------------------------------------------ */
 
-void fmt_date( u16 date, char *buf )
+void fmt_date( uint16_t date, char *buf )
 {
-    u32 part[3];
+    unsigned int part[3];
     char two[4];
     int index;
-    u32 day = date & 31, month = (date >> 5) & 15, year = ((date >> 9) + 80) % 100;
+    unsigned int day = date & 31, month = (date >> 5) & 15, year = ((date >> 9) + 80) % 100;
 
     switch ( country.date_order ) {
     case 1:  part[0] = day;   part[1] = month; part[2] = year; break;
@@ -65,9 +65,9 @@ void fmt_date( u16 date, char *buf )
     }
 }
 
-void fmt_time( u16 time, char *buf )
+void fmt_time( uint16_t time, char *buf )
 {
-    u32 hour = time >> 11, minute = (time >> 5) & 63;
+    unsigned int hour = time >> 11, minute = (time >> 5) & 63;
     char two[4];
     int pm = hour >= 12;
 
@@ -108,12 +108,12 @@ static int flist_add( FLIST *list, int dir )
     char *name;
 
     if ( list->count == list->cap ) {
-        bigger = (FENT *)try_alloc( (u32)(list->cap + 128) * sizeof( FENT ) );
+        bigger = (FENT *)try_alloc( (unsigned int)(list->cap + 128) * sizeof( FENT ) );
         if ( bigger == NULL ) {
             return 0;
         }
         if ( list->count ) {
-            mem_cpy( bigger, list->ent, (u32)list->count * sizeof( FENT ) );
+            mem_cpy( bigger, list->ent, (unsigned int)list->count * sizeof( FENT ) );
         }
         xfree( list->ent );
         list->ent = bigger;
@@ -132,7 +132,7 @@ static int flist_add( FLIST *list, int dir )
     ent->attr = rec.attr;
     ent->sel = 0;
     ent->dir = dir;
-    ent->order = (u32)list->count;
+    ent->order = (unsigned int)list->count;
     list->count++;
     big_add( &list->total, rec.size );
     return 1;
@@ -143,10 +143,10 @@ static int flist_add( FLIST *list, int dir )
 static int read_into( FLIST *list, DTREE *tree, int node, const char *filter )
 {
     char path[PATH_MAX + 8];
-    u32 handle;
+    uint32_t handle;
     int rc;
-    u16 attrs = (u16)(ATTR_READONLY | ATTR_ARCHIVE
-                      | (opt.show_hidden ? ATTR_HIDDEN | ATTR_SYSTEM : 0));
+    uint16_t attrs = (uint16_t)(ATTR_READONLY | ATTR_ARCHIVE
+                                | (opt.show_hidden ? ATTR_HIDDEN | ATTR_SYSTEM : 0));
 
     tree_path( tree, node, path );
     if ( !path_join( path, path, "*.*", sizeof( path ) ) ) {
@@ -202,7 +202,7 @@ int flist_read_all( FLIST *list, DTREE *tree, const char *filter, int from_node 
         rc = read_into( list, tree, index, filter );
         if ( (index & 15) == 0 ) {
             str_cpy( line, "Files read: " );
-            str_catn( line, fmt_num( (u32)list->count, 0, num ), sizeof( line ) );
+            str_catn( line, fmt_num( (unsigned int)list->count, 0, num ), sizeof( line ) );
             busy_show( "Reading disk information...", line );
         }
     }

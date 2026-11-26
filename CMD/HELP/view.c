@@ -63,7 +63,7 @@ static int scroll_rows( void )
     return view_rows() - frozen();
 }
 
-static void render( u32 line )
+static void render( unsigned int line )
 {
     if ( view.topic < 0 || line >= topics[view.topic].count ) {
         rl.len = 0;
@@ -100,9 +100,9 @@ static void draw_title( void )
 static int vthumb( void )
 {
     int rows = view_rows();
-    u32 count = (u32)view_lines();
+    unsigned int count = (unsigned int)view_lines();
 
-    return 1 + (count > 1 ? (int)(view.line * (u32)(rows - 3) / (count - 1)) : 0);
+    return 1 + (count > 1 ? (int)(view.line * (unsigned int)(rows - 3) / (count - 1)) : 0);
 }
 
 static void draw_vscroll( void )
@@ -121,7 +121,7 @@ static void draw_vscroll( void )
     }
 }
 
-static void draw_line( int row, u32 line )
+static void draw_line( int row, unsigned int line )
 {
     int cols = view_cols(), len;
 
@@ -143,10 +143,10 @@ void view_draw( void )
 
     draw_title();
     for ( row = 0; row < freeze; row++ ) {
-        draw_line( FIRST_ROW + row, (u32)row );
+        draw_line( FIRST_ROW + row, (unsigned int)row );
     }
     for ( ; row < rows; row++ ) {
-        draw_line( FIRST_ROW + row, view.top + (u32)(row - freeze) );
+        draw_line( FIRST_ROW + row, view.top + (unsigned int)(row - freeze) );
     }
     draw_vscroll();
 }
@@ -156,10 +156,10 @@ static int cursor_row( void )
 {
     int freeze = frozen();
 
-    if ( view.line < (u32)freeze ) {
+    if ( view.line < (unsigned int)freeze ) {
         return FIRST_ROW + (int)view.line;
     }
-    if ( view.line < view.top || view.line >= view.top + (u32)scroll_rows() ) {
+    if ( view.line < view.top || view.line >= view.top + (unsigned int)scroll_rows() ) {
         return -1;
     }
     return FIRST_ROW + freeze + (int)(view.line - view.top);
@@ -177,7 +177,7 @@ void view_place_cursor( void )
 }
 
 /* test mode: what the window is showing, on the dump's last line */
-void view_dump( char *buf, u32 max )
+void view_dump( char *buf, unsigned int max )
 {
     sfmt( buf, max, " [view topic %d top %u line %u col %u freeze %d count %d]",
           view.topic, view.top, view.line, view.col, frozen(), view_lines() );
@@ -187,14 +187,14 @@ void view_dump( char *buf, u32 max )
 /* scrolling and the cursor                                            */
 /* ------------------------------------------------------------------ */
 
-static u32 min_top( void )
+static unsigned int min_top( void )
 {
-    return (u32)frozen();
+    return (unsigned int)frozen();
 }
 
-static u32 max_top( void )
+static unsigned int max_top( void )
 {
-    u32 count = (u32)view_lines(), least = min_top();
+    unsigned int count = (unsigned int)view_lines(), least = min_top();
 
     return count > least ? count - 1 : least;      /* the last line can reach the top */
 }
@@ -212,7 +212,7 @@ static void clamp_top( void )
 void view_keep_visible( void )
 {
     int rows = scroll_rows();
-    u32 freeze = min_top();
+    unsigned int freeze = min_top();
 
     if ( view.line < freeze ) {
         clamp_top();
@@ -221,17 +221,17 @@ void view_keep_visible( void )
     if ( view.line < view.top ) {
         view.top = view.line;
     }
-    if ( view.line >= view.top + (u32)rows ) {
-        view.top = view.line - (u32)rows + 1;
+    if ( view.line >= view.top + (unsigned int)rows ) {
+        view.top = view.line - (unsigned int)rows + 1;
     }
     clamp_top();
 }
 
 /* a far jump puts the line a few rows down from the top, as a jump to
    a found word does in the original */
-void view_goto( u32 line, u32 col )
+void view_goto( unsigned int line, unsigned int col )
 {
-    u32 count = (u32)view_lines(), freeze = min_top();
+    unsigned int count = (unsigned int)view_lines(), freeze = min_top();
     int rows = scroll_rows();
 
     if ( count == 0 ) {
@@ -244,10 +244,10 @@ void view_goto( u32 line, u32 col )
         line = count - 1;
     }
     view.line = line;
-    view.col = col < (u32)view_cols() ? col : (u32)view_cols() - 1;
+    view.col = col < (unsigned int)view_cols() ? col : (unsigned int)view_cols() - 1;
     view.want = view.col;
     if ( view.line >= freeze
-         && (view.line < view.top || view.line >= view.top + (u32)rows) ) {
+         && (view.line < view.top || view.line >= view.top + (unsigned int)rows) ) {
         view.top = view.line > freeze + 4 ? view.line - 4 : freeze;
     }
     view_keep_visible();
@@ -255,13 +255,13 @@ void view_goto( u32 line, u32 col )
 
 void view_scroll( int lines )
 {
-    u32 was = view.top;
+    unsigned int was = view.top;
     int rows = scroll_rows();
 
     if ( lines < 0 ) {
-        view.top = view.top > (u32)-lines ? view.top - (u32)-lines : 0;
+        view.top = view.top > (unsigned int)-lines ? view.top - (unsigned int)-lines : 0;
     } else {
-        view.top += (u32)lines;
+        view.top += (unsigned int)lines;
     }
     clamp_top();
     /* the cursor stays on the screen: it moves with the text */
@@ -269,8 +269,8 @@ void view_scroll( int lines )
         if ( view.line >= min_top() && view.line < view.top ) {
             view.line = view.top;
         }
-        if ( view.line >= view.top + (u32)rows ) {
-            view.line = view.top + (u32)rows - 1;
+        if ( view.line >= view.top + (unsigned int)rows ) {
+            view.line = view.top + (unsigned int)rows - 1;
         }
     }
 }
@@ -288,7 +288,7 @@ void view_show( int topic )
         if ( !view_next_link( 1, 0 ) ) {
             view.line = 0;
             view.col = 0;
-        } else if ( view.line >= min_top() + (u32)scroll_rows() ) {
+        } else if ( view.line >= min_top() + (unsigned int)scroll_rows() ) {
             view.line = 0;                      /* too far down: start at the top */
             view.col = 0;
             view.top = min_top();
@@ -336,7 +336,7 @@ static int link_starts_with( HLINK *link, int letter )
    the cursor, 1; or 0 when there is none */
 int view_next_link( int step, int letter )
 {
-    u32 count = (u32)view_lines(), line = view.line, tries;
+    unsigned int count = (unsigned int)view_lines(), line = view.line, tries;
     int index, found;
 
     if ( count == 0 ) {
@@ -383,7 +383,7 @@ int view_next_link( int step, int letter )
         return 0;
     }
     view.line = line;
-    view.col = (u32)rl.links[found].start;
+    view.col = (unsigned int)rl.links[found].start;
     view.want = view.col;
     view_keep_visible();
     return 1;
@@ -402,7 +402,7 @@ static int word_ch( int ch )
 static void word_left( void )
 {
     render( view.line );
-    while ( view.col > 0 && (view.col > (u32)rl.len || !word_ch( rl.ch[view.col - 1] )) ) {
+    while ( view.col > 0 && (view.col > (unsigned int)rl.len || !word_ch( rl.ch[view.col - 1] )) ) {
         view.col--;
     }
     while ( view.col > 0 && word_ch( rl.ch[view.col - 1] ) ) {
@@ -422,13 +422,13 @@ static void word_right( void )
         view.col++;
     }
     if ( (int)view.col >= cols ) {
-        view.col = (u32)cols - 1;
+        view.col = (unsigned int)cols - 1;
     }
 }
 
 int view_key( int key )
 {
-    u32 count = (u32)view_lines();
+    unsigned int count = (unsigned int)view_lines();
     int rows = scroll_rows(), cols = view_cols();
     int shift = key_shift() & SH_SHIFT;
 
@@ -466,13 +466,13 @@ int view_key( int key )
         break;
     case K_END:
         render( view.line );
-        view.col = rl.len ? (u32)(rl.len < cols ? rl.len : cols) - 1 : 0;
+        view.col = rl.len ? (unsigned int)(rl.len < cols ? rl.len : cols) - 1 : 0;
         view.want = view.col;
         break;
     case K_PGUP:
         view_scroll( -(rows - 1) );
-        if ( view.line >= (u32)(rows - 1) ) {
-            view.line -= (u32)(rows - 1);
+        if ( view.line >= (unsigned int)(rows - 1) ) {
+            view.line -= (unsigned int)(rows - 1);
         } else {
             view.line = 0;
         }
@@ -480,7 +480,7 @@ int view_key( int key )
         break;
     case K_PGDN:
         view_scroll( rows - 1 );
-        view.line += (u32)(rows - 1);
+        view.line += (unsigned int)(rows - 1);
         if ( view.line >= count ) {
             view.line = count ? count - 1 : 0;
         }
@@ -568,7 +568,7 @@ int view_hit( int row, int col )
 void view_scroll_part( int part, int row, int col )
 {
     int rows = view_rows();
-    u32 count = (u32)view_lines(), line;
+    unsigned int count = (unsigned int)view_lines(), line;
 
     (void)col;
     switch ( part ) {
@@ -595,7 +595,7 @@ void view_scroll_part( int part, int row, int col )
         if ( row > rows - 3 ) {
             row = rows - 3;
         }
-        line = (u32)row * (count - 1) / (u32)(rows - 3);
+        line = (unsigned int)row * (count - 1) / (unsigned int)(rows - 3);
         view_goto( line, view.want );
         break;
     }
@@ -605,18 +605,18 @@ void view_scroll_part( int part, int row, int col )
 void view_mouse_to( int row, int col )
 {
     int freeze = frozen();
-    u32 line;
+    unsigned int line;
 
     row -= FIRST_ROW;
     if ( row < freeze ) {
-        line = (u32)row;
+        line = (unsigned int)row;
     } else {
-        line = view.top + (u32)(row - freeze);
+        line = view.top + (unsigned int)(row - freeze);
     }
-    if ( line >= (u32)view_lines() ) {
+    if ( line >= (unsigned int)view_lines() ) {
         return;
     }
     view.line = line;
-    view.col = (u32)(col - 1);
+    view.col = (unsigned int)(col - 1);
     view.want = view.col;
 }

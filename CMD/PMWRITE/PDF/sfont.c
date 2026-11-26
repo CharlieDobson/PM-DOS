@@ -51,7 +51,7 @@
 
 /* each: its width, then the pen's path.  The first 95 are ASCII from
    '!' on. */
-static const s8 strokes[] = {
+static const int8_t strokes[] = {
     /* ! */ 6, 3,14, 3,4, MV, 3,0, 3,1, EN,
     /* " */ 8, 2,14, 2,10, MV, 6,14, 6,10, EN,
     /* # */ 12, 5,14, 3,0, MV, 9,14, 7,0, MV, 1,9, 11,9, MV, 1,5, 11,5, EN,
@@ -246,7 +246,7 @@ static const s8 strokes[] = {
 
 /* which character each of the later drawings is: Latin-1 in its own
    order, then the rest of what Windows' code page 1252 has */
-static const u16 more_uni[] = {
+static const uint16_t more_uni[] = {
     0x00A1, 0x00A2, 0x00A3, 0x00A4, 0x00A5, 0x00A6, 0x00A7, 0x00A8, 0x00A9, 0x00AA,
     0x00AB, 0x00AC, 0x00AE, 0x00AF, 0x00B0, 0x00B1, 0x00B2, 0x00B3, 0x00B4, 0x00B5,
     0x00B6, 0x00B8, 0x00B9, 0x00BA, 0x00BB, 0x00BC, 0x00BD, 0x00BE, 0x00BF, 0x00D0,
@@ -285,7 +285,7 @@ enum {
 };
 #define LATE_ALL    (LATE_MARKS + LATE_COUNT)
 
-static const s8 late_strokes[] = {
+static const int8_t late_strokes[] = {
     /* the accents, drawn about the middle of a small letter */
     /* macron */ 0, -3,13, 3,13, EN,
     /* breve */ 0, -3,14, AR, -3,12, 0,12, AR, 3,12, 3,14, EN,
@@ -431,7 +431,7 @@ static const char late_like[LATE_COUNT + 1] =
 /* where an accent from 9 on goes: 0 over the middle of the letter, 1 at
    its right edge, 2 at its left; and 1 if it is drawn higher over a
    tall letter */
-static const u8 mark_at[LATE_MARKS][2] = {
+static const uint8_t mark_at[LATE_MARKS][2] = {
     { 0, 1 }, { 0, 1 }, { 0, 1 }, { 0, 0 }, { 0, 1 }, { 0, 0 }, { 1, 0 }, { 2, 0 }
 };
 
@@ -440,7 +440,7 @@ static const u8 mark_at[LATE_MARKS][2] = {
 /* Latin Extended-A, 0100h to 017Fh: the letter - one of ASCII's, or a
    drawing above - and the accent on it.  0 0 is a character made some
    other way, or not at all. */
-static const u8 pair_latin[128][2] = {
+static const uint8_t pair_latin[128][2] = {
     { 'A', 9 }, { 'a', 9 }, { 'A', 10 }, { 'a', 10 }, { 'A', 12 }, { 'a', 12 }, { 'C', 2 }, { 'c', 2 },
     { 'C', 3 }, { 'c', 3 }, { 'C', 11 }, { 'c', 11 }, { 'C', 8 }, { 'c', 8 }, { 'D', 8 }, { 'd', 15 },
     { LD( ETH_U ), 0 }, { LD( DBAR ), 0 }, { 'E', 9 }, { 'e', 9 }, { 'E', 10 }, { 'e', 10 }, { 'E', 11 }, { 'e', 11 },
@@ -460,10 +460,10 @@ static const u8 pair_latin[128][2] = {
 };
 
 /* S and T with a comma below, 0218h to 021Bh */
-static const u8 pair_comma[4][2] = { { 'S', 14 }, { 's', 14 }, { 'T', 14 }, { 't', 14 } };
+static const uint8_t pair_comma[4][2] = { { 'S', 14 }, { 's', 14 }, { 'T', 14 }, { 't', 14 } };
 
 /* Greek, 0384h to 03CEh */
-static const u8 pair_greek[75][2] = {
+static const uint8_t pair_greek[75][2] = {
     { 0, 0 }, { 0, 0 }, { 'A', 16 }, { 0, 0 }, { 'E', 16 }, { 'H', 16 }, { 'I', 16 }, { 0, 0 },
     { 'O', 16 }, { 0, 0 }, { 'Y', 16 }, { LD( OMEGA_U ), 16 },
     { LD( IOTA ), 5 }, { 'A', 0 }, { 'B', 0 }, { LD( GAMMA_U ), 0 }, { LD( DELTA_U ), 0 }, { 'E', 0 }, { 'Z', 0 }, { 'H', 0 },
@@ -477,7 +477,7 @@ static const u8 pair_greek[75][2] = {
 };
 
 /* Cyrillic, 0400h to 045Fh */
-static const u8 pair_cyrillic[96][2] = {
+static const uint8_t pair_cyrillic[96][2] = {
     { 'E', 1 }, { 'E', 5 }, { LD( DJE_U ), 0 }, { LD( GAMMA_U ), 2 }, { LD( YE_U ), 0 }, { 'S', 0 }, { 'I', 0 }, { 'I', 5 },
     { 'J', 0 }, { LD( LJE_U ), 0 }, { LD( NJE_U ), 0 }, { LD( TSHE_U ), 0 }, { 'K', 2 }, { LD( I_U ), 1 }, { LD( U_U ), 10 }, { LD( DZHE_U ), 0 },
     { 'A', 0 }, { LD( BE_U ), 0 }, { 'B', 0 }, { LD( GAMMA_U ), 0 }, { LD( DE_U ), 0 }, { 'E', 0 }, { LD( ZHE_U ), 0 }, { LD( ZE_U ), 0 },
@@ -492,13 +492,13 @@ static const u8 pair_cyrillic[96][2] = {
     { 'j', 0 }, { LD( LJE ), 0 }, { LD( NJE ), 0 }, { LD( TSHE ), 0 }, { LD( KRA ), 2 }, { LD( I ), 1 }, { 'y', 10 }, { LD( DZHE ), 0 }
 };
 
-static const u8 pair_ghe[2][2] = { { LD( GHEUP_U ), 0 }, { LD( GHEUP ), 0 } };
-static const u8 pair_theta[2] = { LD( THETA ), 0 };
-static const u8 pair_phi[2] = { LD( PHI ), 0 };
+static const uint8_t pair_ghe[2][2] = { { LD( GHEUP_U ), 0 }, { LD( GHEUP ), 0 } };
+static const uint8_t pair_theta[2] = { LD( THETA ), 0 };
+static const uint8_t pair_phi[2] = { LD( PHI ), 0 };
 
 /* which drawing and accent a character past Latin-1 is: NULL if it is
    in none of the tables */
-static const u8 *late_pair( u16 uni )
+static const uint8_t *late_pair( uint16_t uni )
 {
     if ( uni >= 0x0100 && uni <= 0x017F ) {
         return pair_latin[uni - 0x0100];
@@ -524,19 +524,19 @@ static const u8 *late_pair( u16 uni )
     return NULL;
 }
 
-static u16 starts[G_COUNT];
-static u16 late_starts[LATE_ALL];
+static uint16_t starts[G_COUNT];
+static uint16_t late_starts[LATE_ALL];
 static int starts_made;
 
 int sfont_as_acroread = 1;          /* where(), below, says what this is */
 
 static void starts_make( void )
 {
-    u32 pos = 0;
+    unsigned int pos = 0;
     int index;
 
     for ( index = 0; index < G_COUNT && pos < sizeof( strokes ); index++ ) {
-        starts[index] = (u16)pos;
+        starts[index] = (uint16_t)pos;
         while ( pos < sizeof( strokes ) && strokes[pos] != EN ) {
             pos++;
         }
@@ -544,7 +544,7 @@ static void starts_make( void )
     }
     pos = 0;
     for ( index = 0; index < LATE_ALL && pos < sizeof( late_strokes ); index++ ) {
-        late_starts[index] = (u16)pos;
+        late_starts[index] = (uint16_t)pos;
         while ( pos < sizeof( late_strokes ) && late_strokes[pos] != EN ) {
             pos++;
         }
@@ -568,7 +568,7 @@ static void starts_make( void )
  * drawn as ACROREAD drew it, mistake and all, so that the two can be
  * compared byte for byte.
  */
-static const s8 *where( int glyph, int flags )
+static const int8_t *where( int glyph, int flags )
 {
     if ( glyph >= G_COUNT ) {
         /* one of the latest drawings, which were never numbered wrongly */
@@ -593,7 +593,7 @@ static const char latin_mark[] =
 
 /* what to draw for a character: up to three drawings side by side, and
    an accent over the first.  0 if it is drawn as nothing. */
-static int pick( u16 uni, int flags, int *parts, int *mark )
+static int pick( uint16_t uni, int flags, int *parts, int *mark )
 {
     const char *seq = NULL;
     int count = 0;
@@ -604,7 +604,7 @@ static int pick( u16 uni, int flags, int *parts, int *mark )
         return 1;
     }
     if ( (flags & FF_MORE) || !sfont_as_acroread ) {
-        const u8 *pair = late_pair( uni );
+        const uint8_t *pair = late_pair( uni );
 
         if ( pair != NULL && pair[0] != 0 ) {
             parts[0] = pair[0] >= 0x80 ? G_COUNT + LATE_MARKS + (pair[0] - 0x80) : pair[0] - 0x21;
@@ -742,7 +742,7 @@ static void put( const SLANT *sl, int first, fx gx, fx gy )
    drawn that much higher. */
 static int is_tall( int glyph, int flags )
 {
-    const s8 *cur = where( glyph, flags ) + 1;
+    const int8_t *cur = where( glyph, flags ) + 1;
 
     while ( *cur != EN ) {
         if ( *cur == MV ) {
@@ -765,7 +765,7 @@ static int is_tall( int glyph, int flags )
 /* one drawing, its grid shifted by (dx, dy) */
 static void draw( const SLANT *sl, int glyph, fx dx, fx dy )
 {
-    const s8 *cur = where( glyph, sl->flags ) + 1;
+    const int8_t *cur = where( glyph, sl->flags ) + 1;
     fx px = 0, py = 0, cx, cy, ex, ey, sine, cosine;
     int first = 1, step;
 
@@ -802,7 +802,7 @@ static void draw( const SLANT *sl, int glyph, fx dx, fx dy )
 /* The character, as a pen's path in thousandths of an em, drawn to be
    "advance" wide (0 for as wide as it is).  2 and the pen's width if
    there is something to stroke, 0 if the character is a space. */
-int sfont_outline( u16 uni, int flags, int advance, fx *pen )
+int sfont_outline( uint16_t uni, int flags, int advance, fx *pen )
 {
     SLANT sl;
     int parts[3], mark, count, index, natural = 0, upper;
@@ -827,7 +827,7 @@ int sfont_outline( u16 uni, int flags, int advance, fx *pen )
     sl.left = 0;
     sl.flags = flags;
     if ( advance > 0 ) {
-        sl.scale_x = (fx)(((s32)advance << 16) / natural);
+        sl.scale_x = (fx)(((int32_t)advance << 16) / natural);
         if ( sl.scale_x > 70 * FX_ONE ) {
             sl.scale_x = 70 * FX_ONE;
         }
@@ -868,35 +868,35 @@ int sfont_outline( u16 uni, int flags, int advance, fx *pen )
 /* ------------------------------------------------------------------ */
 
 /* ASCII 32 to 126, in thousandths of an em */
-static const u16 helvetica[95] = {
+static const uint16_t helvetica[95] = {
     278, 278, 355, 556, 556, 889, 667, 191, 333, 333, 389, 584, 278, 333, 278, 278,
     556, 556, 556, 556, 556, 556, 556, 556, 556, 556, 278, 278, 584, 584, 584, 556, 1015,
     667, 667, 722, 722, 667, 611, 778, 722, 278, 500, 667, 556, 833, 722, 778, 667, 778, 722, 667,
     611, 722, 667, 944, 667, 667, 611, 278, 278, 278, 469, 556, 333,
     556, 556, 500, 556, 556, 278, 556, 556, 222, 222, 500, 222, 833, 556, 556, 556, 556, 333, 500,
     278, 556, 500, 722, 500, 500, 500, 334, 260, 334, 584 };
-static const u16 helvetica_bold[95] = {
+static const uint16_t helvetica_bold[95] = {
     278, 333, 474, 556, 556, 889, 722, 238, 333, 333, 389, 584, 278, 333, 278, 278,
     556, 556, 556, 556, 556, 556, 556, 556, 556, 556, 333, 333, 584, 584, 584, 611, 975,
     722, 722, 722, 722, 667, 611, 778, 722, 278, 556, 722, 611, 833, 722, 778, 667, 778, 722, 667,
     611, 722, 667, 944, 667, 667, 611, 333, 278, 333, 584, 556, 333,
     556, 611, 556, 611, 556, 333, 611, 611, 278, 278, 556, 278, 889, 611, 611, 611, 611, 389, 556,
     333, 611, 556, 778, 556, 556, 500, 389, 280, 389, 584 };
-static const u16 times_roman[95] = {
+static const uint16_t times_roman[95] = {
     250, 333, 408, 500, 500, 833, 778, 180, 333, 333, 500, 564, 250, 333, 250, 278,
     500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 278, 278, 564, 564, 564, 444, 921,
     722, 667, 667, 722, 611, 556, 722, 722, 333, 389, 722, 611, 889, 722, 722, 556, 722, 667, 556,
     611, 722, 722, 944, 722, 722, 611, 333, 278, 333, 469, 500, 333,
     444, 500, 444, 500, 444, 333, 500, 500, 278, 278, 500, 278, 778, 500, 500, 500, 500, 333, 389,
     278, 500, 500, 722, 500, 500, 444, 480, 200, 480, 541 };
-static const u16 times_bold[95] = {
+static const uint16_t times_bold[95] = {
     250, 333, 555, 500, 500, 1000, 833, 278, 333, 333, 500, 570, 250, 333, 250, 278,
     500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 333, 333, 570, 570, 570, 500, 930,
     722, 667, 722, 722, 667, 611, 778, 778, 389, 500, 778, 667, 944, 722, 778, 611, 778, 722, 556,
     667, 722, 722, 1000, 722, 722, 667, 333, 278, 333, 581, 500, 333,
     500, 556, 444, 556, 444, 333, 500, 556, 278, 333, 556, 278, 833, 556, 500, 556, 556, 444, 389,
     333, 556, 500, 722, 500, 500, 444, 394, 220, 394, 520 };
-static const u16 times_italic[95] = {
+static const uint16_t times_italic[95] = {
     250, 333, 420, 500, 500, 833, 778, 214, 333, 333, 500, 675, 250, 333, 250, 278,
     500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 333, 333, 675, 675, 675, 500, 920,
     611, 611, 667, 722, 611, 611, 722, 722, 333, 444, 667, 556, 833, 667, 722, 611, 722, 611, 500,
@@ -906,9 +906,9 @@ static const u16 times_italic[95] = {
 
 /* how wide the standard font of these flags makes a character, for a
    file that leaves the widths to the reader */
-int sfont_width( u16 uni, int flags )
+int sfont_width( uint16_t uni, int flags )
 {
-    const u16 *table;
+    const uint16_t *table;
     int parts[3], mark, count, index, total = 0;
 
     if ( flags & FF_FIXED ) {
@@ -957,12 +957,12 @@ int sfont_width( u16 uni, int flags )
  * them, or is made of several drawings.  TF.C fills its widths with
  * this: a face's own figures for ASCII then serve for every alphabet.
  */
-u16 sfont_like( u16 uni )
+uint16_t sfont_like( uint16_t uni )
 {
-    const u8 *pair = late_pair( uni );
+    const uint8_t *pair = late_pair( uni );
 
     if ( pair == NULL || pair[0] == 0 ) {
         return 0;
     }
-    return (u16)(pair[0] >= 0x80 ? late_like[pair[0] - 0x80] : pair[0]);
+    return (uint16_t)(pair[0] >= 0x80 ? late_like[pair[0] - 0x80] : pair[0]);
 }

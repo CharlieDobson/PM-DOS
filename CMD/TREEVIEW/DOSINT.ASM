@@ -179,7 +179,7 @@ _vid_put proc   near
         ret
 _vid_put endp
 
-; void port_out( unsigned port, unsigned value ) - one byte
+; void port_out( uint16_t port, uint8_t value ) - one byte
         public  _port_out
 _port_out proc  near
         mov     edx,[esp+4]

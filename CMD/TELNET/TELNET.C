@@ -25,36 +25,36 @@
 #define OPT_ECHO 1
 #define OPT_SGA  3
 
-static int  sock;
-static u8   netbuf[2048];
-static u8   outbuf[2048];
-static u32  outlen;
+static int      sock;
+static uint8_t  netbuf[2048];
+static uint8_t  outbuf[2048];
+static unsigned outlen;
 
 static void out_flush( void )
 {
     REGS regs;
     if ( outlen ) {
         sl_memzero( &regs, sizeof( regs ) );
-        regs.eax = 0x4000; regs.ebx = 1; regs.ecx = outlen; regs.edx = (u32)outbuf;
+        regs.eax = 0x4000; regs.ebx = 1; regs.ecx = outlen; regs.edx = (uint32_t)outbuf;
         int21( &regs );
         outlen = 0;
     }
 }
 
-static void out_byte( u8 ch )
+static void out_byte( uint8_t ch )
 {
     if ( outlen == sizeof( outbuf ) ) out_flush();
     outbuf[outlen++] = ch;
 }
 
-static void send_bytes( const u8 *data, u32 len )
+static void send_bytes( const uint8_t *data, unsigned int len )
 {
     sl_send( sock, data, len, 1500 );
 }
 
-static void reply_opt( u8 verb, u8 opt )
+static void reply_opt( uint8_t verb, uint8_t opt )
 {
-    u8 three[3];
+    uint8_t three[3];
     three[0] = IAC;
     three[1] = verb;
     three[2] = opt;
@@ -62,14 +62,14 @@ static void reply_opt( u8 verb, u8 opt )
 }
 
 /* the incoming stream, IAC stripped and answered, the rest shown */
-static int iac_state;           /* 0 data, 1 saw IAC, 2 saw verb(need opt), 3 in SB, 4 SB+IAC */
-static u8  iac_verb;
+static int     iac_state;       /* 0 data, 1 saw IAC, 2 saw verb(need opt), 3 in SB, 4 SB+IAC */
+static uint8_t iac_verb;
 
-static void feed( const u8 *data, int len )
+static void feed( const uint8_t *data, int len )
 {
     int i;
     for ( i = 0; i < len; i++ ) {
-        u8 ch = data[i];
+        uint8_t ch = data[i];
         switch ( iac_state ) {
         case 0:
             if ( ch == IAC ) iac_state = 1;
@@ -110,10 +110,10 @@ static void feed( const u8 *data, int len )
 
 static void send_key( int key )
 {
-    u8 seq[3];
+    uint8_t seq[3];
     if ( key < 0x100 ) {
         if ( key == '\r' ) { seq[0] = '\r'; seq[1] = '\n'; send_bytes( seq, 2 ); }
-        else { seq[0] = (u8)key; send_bytes( seq, 1 ); }
+        else { seq[0] = (uint8_t)key; send_bytes( seq, 1 ); }
     } else {
         /* an extended key: the arrows as ANSI cursor sequences */
         int scan = key & 0xFF;
@@ -122,16 +122,16 @@ static void send_key( int key )
         else if ( scan == 0x50 ) dir = 'B';
         else if ( scan == 0x4D ) dir = 'C';
         else if ( scan == 0x4B ) dir = 'D';
-        if ( dir ) { seq[0] = 0x1B; seq[1] = '['; seq[2] = (u8)dir; send_bytes( seq, 3 ); }
+        if ( dir ) { seq[0] = 0x1B; seq[1] = '['; seq[2] = (uint8_t)dir; send_bytes( seq, 3 ); }
     }
 }
 
 void __cdecl dos_entry( void )
 {
-    char **argv;
-    int   argc, got, i;
-    u16   port = 23;
-    u32   ip, idle = 0, last;
+    char   **argv;
+    int      argc, got, i;
+    uint16_t port = 23;
+    uint32_t ip, idle = 0, last;
     const char *host = NULL;
 
     argc = sl_args( &argv );
@@ -142,7 +142,7 @@ void __cdecl dos_entry( void )
         } else if ( host == NULL ) {
             host = argv[i];
         } else {
-            port = (u16)sl_atou( argv[i] );
+            port = (uint16_t)sl_atou( argv[i] );
         }
     }
     if ( host == NULL ) { sl_puts( "usage: TELNET host [port] [/T:idle-seconds]\r\n" ); sl_flush(); return; }

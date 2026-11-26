@@ -15,28 +15,28 @@
 #include <string.h>
 
 /* ---- little-endian scalars ---- */
-static void put16( unsigned char *p, unsigned int v ) { p[0] = (unsigned char)v; p[1] = (unsigned char)( v >> 8 ); }
-static void put32( unsigned char *p, unsigned long v ) { p[0] = (unsigned char)v; p[1] = (unsigned char)( v >> 8 ); p[2] = (unsigned char)( v >> 16 ); p[3] = (unsigned char)( v >> 24 ); }
-static unsigned int  get16( const unsigned char *p ) { return (unsigned int)p[0] | ( (unsigned int)p[1] << 8 ); }
-static unsigned long get32( const unsigned char *p ) { return (unsigned long)p[0] | ( (unsigned long)p[1] << 8 ) | ( (unsigned long)p[2] << 16 ) | ( (unsigned long)p[3] << 24 ); }
+static void put16( uint8_t *p, unsigned int v ) { p[0] = (uint8_t)v; p[1] = (uint8_t)( v >> 8 ); }
+static void put32( uint8_t *p, uint32_t v ) { p[0] = (uint8_t)v; p[1] = (uint8_t)( v >> 8 ); p[2] = (uint8_t)( v >> 16 ); p[3] = (uint8_t)( v >> 24 ); }
+static unsigned int  get16( const uint8_t *p ) { return (unsigned int)p[0] | ( (unsigned int)p[1] << 8 ); }
+static uint32_t      get32( const uint8_t *p ) { return (uint32_t)p[0] | ( (uint32_t)p[1] << 8 ) | ( (uint32_t)p[2] << 16 ) | ( (uint32_t)p[3] << 24 ); }
 
 /* ---- a small PRNG for challenges / GUID / salt (not for keys) ---- */
-static unsigned long prng( smb2_client *cl )
+static uint32_t prng( smb2_client *cl )
 {
-    unsigned long seed = cl->seed;
+    uint32_t seed = cl->seed;
     seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5;
     if ( seed == 0 ) seed = 0x1234567UL;
     cl->seed = seed;
     return seed;
 }
-static void fill_random( smb2_client *cl, unsigned char *out, int len )
+static void fill_random( smb2_client *cl, uint8_t *out, int len )
 {
     int i;
-    for ( i = 0; i < len; i++ ) out[i] = (unsigned char)( prng( cl ) >> ( ( i & 3 ) * 8 ) );
+    for ( i = 0; i < len; i++ ) out[i] = (uint8_t)( prng( cl ) >> ( ( i & 3 ) * 8 ) );
 }
 
 /* ---- Direct TCP transport ---- */
-static int send_all( smb2_client *cl, const unsigned char *buf, int len )
+static int send_all( smb2_client *cl, const uint8_t *buf, int len )
 {
     int off = 0, n;
     while ( off < len ) {
@@ -47,7 +47,7 @@ static int send_all( smb2_client *cl, const unsigned char *buf, int len )
     return 0;
 }
 
-static int read_n( smb2_client *cl, unsigned char *buf, int n )
+static int read_n( smb2_client *cl, uint8_t *buf, int n )
 {
     int off = 0, got;
     while ( off < n ) {
@@ -59,7 +59,7 @@ static int read_n( smb2_client *cl, unsigned char *buf, int n )
 }
 
 /* fold one SMB2 message into the running 3.1.1 pre-auth integrity hash */
-static void preauth_update( smb2_client *cl, const unsigned char *msg, int len )
+static void preauth_update( smb2_client *cl, const uint8_t *msg, int len )
 {
     SHA384_CTX ctx;
     sha512_init( &ctx );
@@ -73,9 +73,9 @@ static void preauth_update( smb2_client *cl, const unsigned char *msg, int len )
 static int send_msg( smb2_client *cl, int len )
 {
     if ( cl->signing_active ) {
-        unsigned char *msg = cl->sendbuf + 4;
-        unsigned char  mac[32];
-        unsigned long  flags = get32( msg + 16 );
+        uint8_t       *msg = cl->sendbuf + 4;
+        uint8_t        mac[32];
+        uint32_t       flags = get32( msg + 16 );
         put32( msg + 16, flags | 0x00000008UL );        /* SMB2_FLAGS_SIGNED */
         memset( msg + 48, 0, 16 );                      /* zero the signature */
         if ( cl->signing_mode == 3 ) {
@@ -86,16 +86,16 @@ static int send_msg( smb2_client *cl, int len )
         memcpy( msg + 48, mac, 16 );
     }
     cl->sendbuf[0] = 0;                                 /* Direct TCP: 0 then 24-bit length */
-    cl->sendbuf[1] = (unsigned char)( ( len >> 16 ) & 0xFF );
-    cl->sendbuf[2] = (unsigned char)( ( len >> 8 ) & 0xFF );
-    cl->sendbuf[3] = (unsigned char)( len & 0xFF );
+    cl->sendbuf[1] = (uint8_t)( ( len >> 16 ) & 0xFF );
+    cl->sendbuf[2] = (uint8_t)( ( len >> 8 ) & 0xFF );
+    cl->sendbuf[3] = (uint8_t)( len & 0xFF );
     return send_all( cl, cl->sendbuf, len + 4 );
 }
 
 /* read one SMB2 message into cl->recvbuf; cl->recvlen set */
 static int recv_msg( smb2_client *cl )
 {
-    unsigned char hdr[4];
+    uint8_t hdr[4];
     int len;
     cl->last_status = 0;                    /* no answer stays "no status" */
     if ( read_n( cl, hdr, 4 ) != 0 ) return -1;
@@ -125,9 +125,9 @@ static int recv_msg( smb2_client *cl )
 #define ST_MORE_PROCESSING   0xC0000016UL
 #define ST_NO_MORE_FILES     0x80000006UL
 
-static unsigned char *build_header( smb2_client *cl, int cmd )
+static uint8_t *build_header( smb2_client *cl, int cmd )
 {
-    unsigned char *msg = cl->sendbuf + 4;
+    uint8_t *msg = cl->sendbuf + 4;
     memset( msg, 0, 64 );
     msg[0] = 0xFE; msg[1] = 'S'; msg[2] = 'M'; msg[3] = 'B';
     put16( msg + 4, 64 );                   /* StructureSize */
@@ -155,8 +155,8 @@ static unsigned char *build_header( smb2_client *cl, int cmd )
 static int do_opening( smb2_client *cl )
 {
     static const char dialects[] = "\002SMB 2.002\000\002SMB 2.\?\?\?";
-    unsigned char *msg = cl->sendbuf + 4;
-    unsigned char hdr[4];
+    uint8_t *msg = cl->sendbuf + 4;
+    uint8_t hdr[4];
     int dlen = (int)sizeof( dialects );         /* the last NUL counts */
     int len, dialect;
 
@@ -198,8 +198,8 @@ static int do_opening( smb2_client *cl )
  * ========================================================================== */
 static int do_negotiate( smb2_client *cl )
 {
-    unsigned char *msg = build_header( cl, CMD_NEGOTIATE );
-    unsigned char *b = msg + 64;
+    uint8_t *msg = build_header( cl, CMD_NEGOTIATE );
+    uint8_t *b = msg + 64;
     int off, ctxoff, msglen;
 
     cl->stage = "negotiate";
@@ -242,7 +242,7 @@ static int do_negotiate( smb2_client *cl )
     put16( b + off + 12, 0x0001 );          /* AES-128-CCM */
     off += 8 + 6;
 
-    put32( b + 28, (unsigned long)ctxoff ); /* NegotiateContextOffset */
+    put32( b + 28, (uint32_t)ctxoff ); /* NegotiateContextOffset */
     put16( b + 32, 2 );                     /* NegotiateContextCount */
     put16( b + 34, 0 );                     /* Reserved2 */
 
@@ -272,7 +272,7 @@ static int do_negotiate( smb2_client *cl )
 #define NTLMF_128            0x20000000UL
 #define NTLMF_56             0x80000000UL
 
-static int build_ntlm_negotiate( smb2_client *cl, unsigned char *out )
+static int build_ntlm_negotiate( smb2_client *cl, uint8_t *out )
 {
     memset( out, 0, 40 );
     memcpy( out, "NTLMSSP", 8 );            /* includes the NUL */
@@ -286,7 +286,7 @@ static int build_ntlm_negotiate( smb2_client *cl, unsigned char *out )
 }
 
 /* find an AV pair in the CHALLENGE target info; returns value ptr+len or 0 */
-static const unsigned char *av_find( const unsigned char *ti, int tilen, int id, int *vlen )
+static const uint8_t *av_find( const uint8_t *ti, int tilen, int id, int *vlen )
 {
     int pos = 0;
     while ( pos + 4 <= tilen ) {
@@ -297,34 +297,34 @@ static const unsigned char *av_find( const unsigned char *ti, int tilen, int id,
         if ( avid == id ) { *vlen = avlen; return ti + pos + 4; }
         pos += 4 + avlen;
     }
-    return (const unsigned char *)0;
+    return (const uint8_t *)0;
 }
 
 /* Build the NTLMv2 AUTHENTICATE (type 3) with a MIC into 'out'; returns len.
    Needs the stored NEGOTIATE and CHALLENGE messages for the MIC. */
-static int build_ntlm_authenticate( smb2_client *cl, unsigned char *out,
+static int build_ntlm_authenticate( smb2_client *cl, uint8_t *out,
                                      const char *user, const char *password, const char *domain )
 {
-    const unsigned char *chal = cl->ntlm_challenge;
+    const uint8_t *chal = cl->ntlm_challenge;
     int   challen = cl->ntlm_challenge_len;
-    const unsigned char *server_chal;
-    const unsigned char *ti;
+    const uint8_t *server_chal;
+    const uint8_t *ti;
     int   tilen, tioff;
-    const unsigned char *ts;
+    const uint8_t *ts;
     int   tslen = 0;
-    unsigned char respkey[16];
-    unsigned char client_chal[8];
-    unsigned char temp[1024];
+    uint8_t respkey[16];
+    uint8_t client_chal[8];
+    uint8_t temp[1024];
     int   templen;
-    unsigned char ntproof[16];
-    unsigned char ntresp[16 + 1024];
+    uint8_t ntproof[16];
+    uint8_t ntresp[16 + 1024];
     int   ntresp_len;
-    unsigned char session_base[16];
-    unsigned char exported_key[16];
-    unsigned char timestamp[8];
+    uint8_t session_base[16];
+    uint8_t exported_key[16];
+    uint8_t timestamp[8];
     int   pos, payload;
     int   dlen, ulen, nt_off, payoff;
-    unsigned char dwide[512], uwide[512];
+    uint8_t dwide[512], uwide[512];
     int   dwlen, uwlen;
 
     if ( challen < 56 ) return -1;
@@ -374,7 +374,7 @@ static int build_ntlm_authenticate( smb2_client *cl, unsigned char *out,
 
     /* NTProofStr = HMAC-MD5(respkey, server_chal || temp) */
     {
-        unsigned char cat[8 + 1024];
+        uint8_t cat[8 + 1024];
         memcpy( cat, server_chal, 8 );
         memcpy( cat + 8, temp, templen );
         hmac_md5( respkey, 16, cat, 8 + templen, ntproof );
@@ -403,32 +403,32 @@ static int build_ntlm_authenticate( smb2_client *cl, unsigned char *out,
     payload = payoff;
 
     /* LmChallengeResponse: 24 zero bytes (timestamp present) */
-    put16( out + 12, 24 ); put16( out + 14, 24 ); put32( out + 16, (unsigned long)payload );
+    put16( out + 12, 24 ); put16( out + 14, 24 ); put32( out + 16, (uint32_t)payload );
     memset( out + payload, 0, 24 ); payload += 24;
 
     /* NtChallengeResponse */
     nt_off = payload;
     put16( out + 20, (unsigned int)ntresp_len ); put16( out + 22, (unsigned int)ntresp_len );
-    put32( out + 24, (unsigned long)nt_off );
+    put32( out + 24, (uint32_t)nt_off );
     memcpy( out + payload, ntresp, ntresp_len ); payload += ntresp_len;
 
     /* DomainName */
-    put16( out + 28, (unsigned int)dlen ); put16( out + 30, (unsigned int)dlen ); put32( out + 32, (unsigned long)payload );
+    put16( out + 28, (unsigned int)dlen ); put16( out + 30, (unsigned int)dlen ); put32( out + 32, (uint32_t)payload );
     memcpy( out + payload, dwide, dlen ); payload += dlen;
 
     /* UserName */
-    put16( out + 36, (unsigned int)ulen ); put16( out + 38, (unsigned int)ulen ); put32( out + 40, (unsigned long)payload );
+    put16( out + 36, (unsigned int)ulen ); put16( out + 38, (unsigned int)ulen ); put32( out + 40, (uint32_t)payload );
     memcpy( out + payload, uwide, ulen ); payload += ulen;
 
     /* Workstation (empty) */
-    put16( out + 44, 0 ); put16( out + 46, 0 ); put32( out + 48, (unsigned long)payload );
+    put16( out + 44, 0 ); put16( out + 46, 0 ); put32( out + 48, (uint32_t)payload );
 
     /* EncryptedRandomSessionKey (empty, no key exchange) */
-    put16( out + 52, 0 ); put16( out + 54, 0 ); put32( out + 56, (unsigned long)payload );
+    put16( out + 52, 0 ); put16( out + 54, 0 ); put32( out + 56, (uint32_t)payload );
 
     /* MIC = HMAC-MD5(exported_key, NEGOTIATE || CHALLENGE || AUTHENTICATE(MIC=0)) */
     {
-        static unsigned char mbuf[4096];    /* >= negotiate(<=64) + challenge(<=1024) + authenticate(<=2172) */
+        static uint8_t mbuf[4096];          /* >= negotiate(<=64) + challenge(<=1024) + authenticate(<=2172) */
         int mlen = 0;
         memset( out + 72, 0, 16 );          /* MIC field zeroed for the computation */
         memcpy( mbuf + mlen, cl->ntlm_negotiate, cl->ntlm_negotiate_len ); mlen += cl->ntlm_negotiate_len;
@@ -444,12 +444,12 @@ static int build_ntlm_authenticate( smb2_client *cl, unsigned char *out,
 static void derive_signing( smb2_client *cl )
 {
     if ( cl->dialect == 0x0311 ) {
-        smb3_kdf( cl->session_key, (const unsigned char *)"SMBSigningKey", 14,
+        smb3_kdf( cl->session_key, (const uint8_t *)"SMBSigningKey", 14,
                   cl->preauth, 64, cl->signing_key );
         cl->signing_mode = 3;
     } else if ( cl->dialect == 0x0300 || cl->dialect == 0x0302 ) {
-        smb3_kdf( cl->session_key, (const unsigned char *)"SMB2AESCMAC", 12,
-                  (const unsigned char *)"SmbSign", 8, cl->signing_key );
+        smb3_kdf( cl->session_key, (const uint8_t *)"SMB2AESCMAC", 12,
+                  (const uint8_t *)"SmbSign", 8, cl->signing_key );
         cl->signing_mode = 3;
     } else {                                    /* 2.0.2 / 2.1: HMAC-SHA256 */
         memcpy( cl->signing_key, cl->session_key, 16 );
@@ -463,8 +463,8 @@ static void derive_signing( smb2_client *cl )
  * ========================================================================== */
 static int do_session_setup( smb2_client *cl, const char *user, const char *password, const char *domain )
 {
-    unsigned char *msg, *b;
-    unsigned char ntlm[4096];           /* holds the NTLMv2 AUTHENTICATE, bounded by the <=1024 challenge */
+    uint8_t *msg, *b;
+    uint8_t ntlm[4096];                 /* holds the NTLMv2 AUTHENTICATE, bounded by the <=1024 challenge */
     int ntlmlen, secoff, msglen, blen;
 
     cl->stage = "session-setup(1)";
@@ -504,7 +504,7 @@ static int do_session_setup( smb2_client *cl, const char *user, const char *pass
        server that wraps it in SPNEGO puts it further in.  Its offsets
        count from its own "NTLMSSP" signature, so start there. */
     {
-        const unsigned char *blob = cl->recvbuf + secoff;
+        const uint8_t *blob = cl->recvbuf + secoff;
         int at;
         for ( at = 0; at + 12 <= blen; at++ ) {
             if ( blob[at] == 'N' && blob[at + 1] == 'T' && blob[at + 2] == 'L' && blob[at + 3] == 'M' &&
@@ -560,9 +560,9 @@ static int do_session_setup( smb2_client *cl, const char *user, const char *pass
  * ========================================================================== */
 static int do_tree_connect( smb2_client *cl, const char *server, const char *share )
 {
-    unsigned char *msg, *b;
+    uint8_t *msg, *b;
     char path[300];
-    unsigned char wide[600];
+    uint8_t wide[600];
     int widelen, pathoff, msglen, pos = 0;
 
     cl->stage = "tree-connect";
@@ -599,12 +599,12 @@ static int do_tree_connect( smb2_client *cl, const char *server, const char *sha
    share root) with the given access/options/disposition.  Fills file_id and,
    when asked, the EndOfFile size and attributes from the response. */
 static int do_create( smb2_client *cl, const char *path,
-                      unsigned long access, unsigned long options, unsigned long disposition,
-                      unsigned char file_id[16],
-                      unsigned long *size_lo, unsigned long *size_hi, unsigned long *attr )
+                      uint32_t access, uint32_t options, uint32_t disposition,
+                      uint8_t file_id[16],
+                      uint32_t *size_lo, uint32_t *size_hi, uint32_t *attr )
 {
-    unsigned char *msg, *b;
-    unsigned char wide[600];
+    uint8_t *msg, *b;
+    uint8_t wide[600];
     int namelen, msglen;
 
     namelen = utf16le( path, wide, sizeof( wide ) );
@@ -640,9 +640,9 @@ static int do_create( smb2_client *cl, const char *path,
 }
 
 int smb2_open_disp( smb2_client *cl, const char *path, int write,
-                    unsigned long disposition, smb2_fh *fh )
+                    uint32_t disposition, smb2_fh *fh )
 {
-    unsigned long access = 0x00100081UL;    /* FILE_READ_DATA|READ_ATTRIBUTES|SYNCHRONIZE */
+    uint32_t access = 0x00100081UL;         /* FILE_READ_DATA|READ_ATTRIBUTES|SYNCHRONIZE */
 
     cl->stage = "open";
     if ( write )  access |= 0x00000002UL | 0x00000004UL;    /* FILE_WRITE_DATA|FILE_APPEND_DATA */
@@ -656,10 +656,10 @@ int smb2_open_file( smb2_client *cl, const char *path, int write, int create, sm
     return smb2_open_disp( cl, path, write, create ? 0x00000003UL : 0x00000001UL, fh );
 }
 
-int smb2_read( smb2_client *cl, const smb2_fh *fh, unsigned long off_lo, unsigned long off_hi,
-               unsigned char *buf, int len )
+int smb2_read( smb2_client *cl, const smb2_fh *fh, uint32_t off_lo, uint32_t off_hi,
+               uint8_t *buf, int len )
 {
-    unsigned char *msg, *b;
+    uint8_t *msg, *b;
     int msglen, dataoff, datalen, maxlen;
 
     maxlen = SMB2_RECVBUF - 512;
@@ -671,7 +671,7 @@ int smb2_read( smb2_client *cl, const smb2_fh *fh, unsigned long off_lo, unsigne
     b = msg + 64;
     memset( b, 0, 48 );
     put16( b + 0, 49 );                     /* StructureSize (48 fixed + 1 buffer) */
-    put32( b + 4, (unsigned long)len );     /* Length */
+    put32( b + 4, (uint32_t)len );          /* Length */
     put32( b + 8, off_lo );                  /* Offset low */
     put32( b + 12, off_hi );                 /* Offset high */
     memcpy( b + 16, fh->file_id, 16 );
@@ -692,10 +692,10 @@ int smb2_read( smb2_client *cl, const smb2_fh *fh, unsigned long off_lo, unsigne
     return datalen;
 }
 
-int smb2_write( smb2_client *cl, const smb2_fh *fh, unsigned long off_lo, unsigned long off_hi,
-                const unsigned char *buf, int len )
+int smb2_write( smb2_client *cl, const smb2_fh *fh, uint32_t off_lo, uint32_t off_hi,
+                const uint8_t *buf, int len )
 {
-    unsigned char *msg, *b;
+    uint8_t *msg, *b;
     int msglen, dataoff, maxlen;
 
     maxlen = SMB2_SENDBUF - 128;
@@ -709,7 +709,7 @@ int smb2_write( smb2_client *cl, const smb2_fh *fh, unsigned long off_lo, unsign
     dataoff = 64 + 48;
     put16( b + 0, 49 );                     /* StructureSize */
     put16( b + 2, (unsigned int)dataoff );  /* DataOffset */
-    put32( b + 4, (unsigned long)len );     /* Length */
+    put32( b + 4, (uint32_t)len );          /* Length */
     put32( b + 8, off_lo );
     put32( b + 12, off_hi );
     memcpy( b + 16, fh->file_id, 16 );
@@ -720,8 +720,8 @@ int smb2_write( smb2_client *cl, const smb2_fh *fh, unsigned long off_lo, unsign
     if ( cl->last_status != ST_SUCCESS ) return -1;
     if ( cl->recvlen < 64 + 8 ) return -1;
     {
-        unsigned long count = get32( cl->recvbuf + 64 + 4 );   /* Count written */
-        if ( count > (unsigned long)len ) count = (unsigned long)len;
+        uint32_t count = get32( cl->recvbuf + 64 + 4 );        /* Count written */
+        if ( count > (uint32_t)len ) count = (uint32_t)len;
         return (int)count;
     }
 }
@@ -733,7 +733,7 @@ int smb2_delete( smb2_client *cl, const char *path )
     memset( &fh, 0, sizeof( fh ) );
     /* DELETE access, FILE_NON_DIRECTORY_FILE | FILE_DELETE_ON_CLOSE, FILE_OPEN */
     if ( do_create( cl, path, 0x00010000UL, 0x00001040UL, 0x00000001UL,
-                    fh.file_id, (unsigned long *)0, (unsigned long *)0, (unsigned long *)0 ) != 0 )
+                    fh.file_id, (uint32_t *)0, (uint32_t *)0, (uint32_t *)0 ) != 0 )
         return -1;
     return smb2_close_file( cl, &fh );
 }
@@ -745,7 +745,7 @@ int smb2_mkdir( smb2_client *cl, const char *path )
     memset( &fh, 0, sizeof( fh ) );
     /* GENERIC-ish access, FILE_DIRECTORY_FILE, FILE_CREATE (fail if exists) */
     if ( do_create( cl, path, 0x00100081UL, 0x00000001UL, 0x00000002UL,
-                    fh.file_id, (unsigned long *)0, (unsigned long *)0, (unsigned long *)0 ) != 0 )
+                    fh.file_id, (uint32_t *)0, (uint32_t *)0, (uint32_t *)0 ) != 0 )
         return -1;
     return smb2_close_file( cl, &fh );
 }
@@ -757,7 +757,7 @@ int smb2_rmdir( smb2_client *cl, const char *path )
     memset( &fh, 0, sizeof( fh ) );
     /* DELETE access, FILE_DIRECTORY_FILE | FILE_DELETE_ON_CLOSE, FILE_OPEN */
     if ( do_create( cl, path, 0x00010000UL, 0x00001001UL, 0x00000001UL,
-                    fh.file_id, (unsigned long *)0, (unsigned long *)0, (unsigned long *)0 ) != 0 )
+                    fh.file_id, (uint32_t *)0, (uint32_t *)0, (uint32_t *)0 ) != 0 )
         return -1;
     return smb2_close_file( cl, &fh );
 }
@@ -770,7 +770,7 @@ int smb2_isdir( smb2_client *cl, const char *path )
     /* READ_ATTRIBUTES|SYNCHRONIZE, FILE_DIRECTORY_FILE, FILE_OPEN: a file
        by that name is refused (NOT_A_DIRECTORY), as is no name at all */
     if ( do_create( cl, path, 0x00100080UL, 0x00000001UL, 0x00000001UL,
-                    fh.file_id, (unsigned long *)0, (unsigned long *)0, (unsigned long *)0 ) != 0 )
+                    fh.file_id, (uint32_t *)0, (uint32_t *)0, (uint32_t *)0 ) != 0 )
         return -1;
     return smb2_close_file( cl, &fh );
 }
@@ -781,14 +781,14 @@ int smb2_isdir( smb2_client *cl, const char *path )
 int smb2_fs_size( smb2_client *cl, smb_fs_size *fs )
 {
     smb2_fh fh;
-    unsigned char *msg, *b;
+    uint8_t *msg, *b;
     int outoff, outlen, rc = -1;
 
     cl->stage = "fs-size";
     memset( fs, 0, sizeof( *fs ) );
     memset( &fh, 0, sizeof( fh ) );
     if ( do_create( cl, "", 0x00100080UL, 0x00000001UL, 0x00000001UL,
-                    fh.file_id, (unsigned long *)0, (unsigned long *)0, (unsigned long *)0 ) != 0 )
+                    fh.file_id, (uint32_t *)0, (uint32_t *)0, (uint32_t *)0 ) != 0 )
         return -1;
 
     msg = build_header( cl, CMD_QUERY_INFO );
@@ -827,8 +827,8 @@ int smb2_fs_size( smb2_client *cl, smb_fs_size *fs )
 int smb2_rename( smb2_client *cl, const char *oldpath, const char *newpath )
 {
     smb2_fh fh;
-    unsigned char *msg, *b, *rbuf;
-    unsigned char wide[600];
+    uint8_t *msg, *b, *rbuf;
+    uint8_t wide[600];
     const char *nm = newpath;
     int namelen, msglen, buflen;
 
@@ -836,7 +836,7 @@ int smb2_rename( smb2_client *cl, const char *oldpath, const char *newpath )
     memset( &fh, 0, sizeof( fh ) );
     /* DELETE | SYNCHRONIZE access, no special options (file or dir), FILE_OPEN */
     if ( do_create( cl, oldpath, 0x00010000UL | 0x00100000UL, 0x00000000UL, 0x00000001UL,
-                    fh.file_id, (unsigned long *)0, (unsigned long *)0, (unsigned long *)0 ) != 0 )
+                    fh.file_id, (uint32_t *)0, (uint32_t *)0, (uint32_t *)0 ) != 0 )
         return -1;
 
     while ( *nm == '\\' || *nm == '/' ) nm++;
@@ -849,14 +849,14 @@ int smb2_rename( smb2_client *cl, const char *oldpath, const char *newpath )
     put16( b + 0, 33 );                     /* StructureSize (32 fixed + 1 buffer) */
     b[2] = 0x01;                            /* InfoType = SMB2_0_INFO_FILE */
     b[3] = 10;                              /* FileInfoClass = FileRenameInformation */
-    put32( b + 4, (unsigned long)buflen );  /* BufferLength */
+    put32( b + 4, (uint32_t)buflen );       /* BufferLength */
     put16( b + 8, (unsigned int)( 64 + 32 ) );  /* BufferOffset (from header start) */
     memcpy( b + 16, fh.file_id, 16 );       /* FileId */
 
     rbuf = msg + 64 + 32;
     memset( rbuf, 0, 20 );
     rbuf[0] = 1;                            /* ReplaceIfExists */
-    put32( rbuf + 16, (unsigned long)namelen ); /* FileNameLength (bytes) */
+    put32( rbuf + 16, (uint32_t)namelen ); /* FileNameLength (bytes) */
     memcpy( rbuf + 20, wide, namelen );
 
     msglen = 64 + 32 + buflen;
@@ -868,7 +868,7 @@ int smb2_rename( smb2_client *cl, const char *oldpath, const char *newpath )
 
 int smb2_close_file( smb2_client *cl, const smb2_fh *fh )
 {
-    unsigned char *msg, *b;
+    uint8_t *msg, *b;
 
     cl->stage = "close-file";
     msg = build_header( cl, CMD_CLOSE );
@@ -886,9 +886,9 @@ int smb2_list_dir( smb2_client *cl, const char *dir, const char *pattern,
                    void ( *emit )( void *user, const smb2_dirent *entry ),
                    void *user )
 {
-    unsigned char file_id[16];
-    unsigned char *msg, *b;
-    unsigned char wide[520];                /* a whole name as the pattern */
+    uint8_t file_id[16];
+    uint8_t *msg, *b;
+    uint8_t wide[520];                      /* a whole name as the pattern */
     smb2_fh dirfh;
     int widelen, patoff, msglen, restart = 1, rc = 0;
 
@@ -896,7 +896,7 @@ int smb2_list_dir( smb2_client *cl, const char *dir, const char *pattern,
        FILE_DIRECTORY_FILE, FILE_OPEN */
     cl->stage = "create";
     if ( do_create( cl, dir, 0x00100081UL, 0x00000001UL, 0x00000001UL,
-                    file_id, (unsigned long *)0, (unsigned long *)0, (unsigned long *)0 ) != 0 )
+                    file_id, (uint32_t *)0, (uint32_t *)0, (uint32_t *)0 ) != 0 )
         return -1;
     widelen = utf16le( pattern, wide, sizeof( wide ) );
 
@@ -909,7 +909,7 @@ int smb2_list_dir( smb2_client *cl, const char *dir, const char *pattern,
         memset( b, 0, 32 );
         put16( b + 0, 33 );                 /* StructureSize */
         b[2] = 0x03;                        /* FileBothDirectoryInformation */
-        b[3] = (unsigned char)( restart ? 0x01 : 0x00 );   /* RESTART_SCANS */
+        b[3] = (uint8_t)( restart ? 0x01 : 0x00 );         /* RESTART_SCANS */
         put32( b + 4, 0 );                  /* FileIndex */
         memcpy( b + 8, file_id, 16 );
         patoff = 64 + 32;
@@ -939,10 +939,10 @@ int smb2_list_dir( smb2_client *cl, const char *dir, const char *pattern,
            name's length at 68 and its 24 bytes at 70 - then the name */
         pos = outoff;
         while ( pos + 94 <= outoff + outlen ) {
-            const unsigned char *e = cl->recvbuf + pos;
-            unsigned long nextoff = get32( e + 0 );
-            unsigned long namelen = get32( e + 60 );
-            unsigned long avail   = (unsigned long)( outoff + outlen - pos - 94 );
+            const uint8_t *e = cl->recvbuf + pos;
+            uint32_t      nextoff = get32( e + 0 );
+            uint32_t      namelen = get32( e + 60 );
+            unsigned int  avail   = (unsigned int)( outoff + outlen - pos - 94 );
             unsigned int  shortlen = e[68];
             smb2_dirent ent;
             unsigned int i, j = 0;
@@ -962,7 +962,7 @@ int smb2_list_dir( smb2_client *cl, const char *dir, const char *pattern,
             ent.short_name[j] = 0;
             emit( user, &ent );
 
-            if ( nextoff == 0 || nextoff > (unsigned long)outlen ) break;   /* last, or out of range */
+            if ( nextoff == 0 || nextoff > (uint32_t)outlen ) break;        /* last, or out of range */
             pos += (int)nextoff;                         /* forward (nextoff <= outlen); while re-bounds */
         }
     }
@@ -976,7 +976,7 @@ int smb2_list_dir( smb2_client *cl, const char *dir, const char *pattern,
 
 /* the old name: list the share root, with the plain (name, isdir, size)
    callback the host harness and SMBTEST use */
-typedef struct { void ( *emit )( void *, const char *, int, unsigned long ); void *user; } list_shim_ctx;
+typedef struct { void ( *emit )( void *, const char *, int, uint32_t ); void *user; } list_shim_ctx;
 
 static void list_shim( void *user, const smb2_dirent *entry )
 {
@@ -985,7 +985,7 @@ static void list_shim( void *user, const smb2_dirent *entry )
 }
 
 int smb2_list( smb2_client *cl, const char *pattern,
-               void ( *emit )( void *user, const char *name, int isdir, unsigned long size ),
+               void ( *emit )( void *user, const char *name, int isdir, uint32_t size ),
                void *user )
 {
     list_shim_ctx ctx;
@@ -998,7 +998,7 @@ int smb2_list( smb2_client *cl, const char *pattern,
  * connect / disconnect
  * ========================================================================== */
 int smb2_connect( smb2_client *cl, smb_send_fn send, smb_recv_fn recv, void *ioctx,
-                  unsigned long seed,
+                  uint32_t seed,
                   const char *server, const char *share,
                   const char *user, const char *password, const char *domain )
 {
@@ -1028,7 +1028,7 @@ int smb2_tree_connect( smb2_client *cl, const char *server, const char *share )
 
 void smb2_tree_disconnect( smb2_client *cl )
 {
-    unsigned char *msg, *b;
+    uint8_t *msg, *b;
 
     if ( cl->tree_id ) {
         msg = build_header( cl, CMD_TREE_DISCONNECT );
@@ -1041,7 +1041,7 @@ void smb2_tree_disconnect( smb2_client *cl )
 
 void smb2_disconnect( smb2_client *cl )
 {
-    unsigned char *msg, *b;
+    uint8_t *msg, *b;
 
     smb2_tree_disconnect( cl );
     if ( cl->session_id[0] || cl->session_id[1] || cl->session_id[2] || cl->session_id[3] ) {
@@ -1055,5 +1055,5 @@ void smb2_disconnect( smb2_client *cl )
 
 int           smb2_dialect( const smb2_client *cl ) { return cl->dialect; }
 const char   *smb2_stage( const smb2_client *cl )   { return cl->stage ? cl->stage : "?"; }
-unsigned long smb2_status( const smb2_client *cl )  { return cl->last_status; }
+uint32_t      smb2_status( const smb2_client *cl )  { return cl->last_status; }
 int           smb2_smb1_only( const smb2_client *cl ) { return cl->smb1_only; }

@@ -13,25 +13,22 @@
 #ifndef NETSPLOR_BIGNUM_H
 #define NETSPLOR_BIGNUM_H
 
-#ifndef NST_U32_DEFINED
-#define NST_U32_DEFINED
-typedef unsigned int u32;           /* 32-bit on all Win32 targets */
-#endif
+#include <stdint.h>
 
 #define BN_WORDS  128               /* up to 4096-bit modulus */
 
 typedef struct {
-    u32 w[BN_WORDS];                /* w[0] = least-significant limb */
+    uint32_t w[BN_WORDS];           /* w[0] = least-significant limb */
 } bignum;
 
 void bn_zero(bignum *a);
-void bn_set_word(bignum *a, u32 v);
+void bn_set_word(bignum *a, uint32_t v);
 int  bn_cmp(const bignum *a, const bignum *b);   /* -1 / 0 / 1 */
 int  bn_bitlen(const bignum *a);                 /* index of highest set bit +1 */
 
 /* Big-endian byte <-> bignum (len bytes; len <= BN_WORDS*4). */
-void bn_from_bytes(bignum *a, const unsigned char *bytes, int len);
-void bn_to_bytes(const bignum *a, unsigned char *bytes, int len);
+void bn_from_bytes(bignum *a, const uint8_t *bytes, int len);
+void bn_to_bytes(const bignum *a, uint8_t *bytes, int len);
 
 /* out = base^exp mod mod   (mod must be nonzero). */
 void bn_modexp(bignum *out, const bignum *base,
@@ -50,19 +47,19 @@ void bn_mod(bignum *out, const bignum *a, const bignum *m);   /* out = a mod m *
 /* Word arrays: nw 32-bit words (up to BN_WORDS), w[0] least significant.
    The curves keep their coordinates this way, in Montgomery form (x R mod p,
    R = 2^(32 nw)), and bn_modexp uses the same multiply for odd moduli. */
-void bn_w_from_bytes(u32 *w, int nw, const unsigned char *bytes, int len);
-void bn_w_to_bytes(const u32 *w, int nw, unsigned char *bytes, int len);
-int  bn_w_cmp(const u32 *a, const u32 *b, int nw);           /* -1 / 0 / 1 */
-int  bn_w_is_zero(const u32 *a, int nw);
+void     bn_w_from_bytes(uint32_t *w, int nw, const uint8_t *bytes, int len);
+void     bn_w_to_bytes(const uint32_t *w, int nw, uint8_t *bytes, int len);
+int      bn_w_cmp(const uint32_t *a, const uint32_t *b, int nw); /* -1 / 0 / 1 */
+int      bn_w_is_zero(const uint32_t *a, int nw);
 /* r = a + b or a - b mod m, for a, b < m; r may be a or b. */
-void bn_w_addmod(u32 *r, const u32 *a, const u32 *b, const u32 *m, int nw);
-void bn_w_submod(u32 *r, const u32 *a, const u32 *b, const u32 *m, int nw);
+void     bn_w_addmod(uint32_t *r, const uint32_t *a, const uint32_t *b, const uint32_t *m, int nw);
+void     bn_w_submod(uint32_t *r, const uint32_t *a, const uint32_t *b, const uint32_t *m, int nw);
 /* minv = -m^-1 mod 2^32 (m odd): bn_w_minv(m[0]).  bn_w_mont: r = a b / R
    mod m, for a, b < m; r may be a or b.  bn_w_mont_pow: r = a^e over e's
    low ebits bits, a and one (R mod m) in Montgomery form; r may be a. */
-u32  bn_w_minv(u32 m0);
-void bn_w_mont(u32 *r, const u32 *a, const u32 *b, const u32 *m, int nw, u32 minv);
-void bn_w_mont_pow(u32 *r, const u32 *a, const u32 *e, int ebits,
-                   const u32 *m, int nw, u32 minv, const u32 *one);
+uint32_t bn_w_minv(uint32_t m0);
+void     bn_w_mont(uint32_t *r, const uint32_t *a, const uint32_t *b, const uint32_t *m, int nw, uint32_t minv);
+void     bn_w_mont_pow(uint32_t *r, const uint32_t *a, const uint32_t *e, int ebits,
+                       const uint32_t *m, int nw, uint32_t minv, const uint32_t *one);
 
 #endif /* NETSPLOR_BIGNUM_H */

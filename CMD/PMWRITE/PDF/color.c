@@ -75,7 +75,7 @@ static const char *const calc_names[OP_COUNT] = {
 };
 
 /* how many each one wants on the stack */
-static const u8 calc_arity[OP_COUNT] = {
+static const uint8_t calc_arity[OP_COUNT] = {
     0, 1, 0,
     1, 2, 2, 1, 1, 1, 1, 2, 2, 1,
     2, 1, 1, 2, 2, 1, 1, 1, 1, 2,
@@ -84,29 +84,29 @@ static const u8 calc_arity[OP_COUNT] = {
 };
 
 typedef struct {
-    u8  op;
-    fx  val;                    /* OP_NUM: the number; a jump: where to */
+    uint8_t op;
+    fx      val;                /* OP_NUM: the number; a jump: where to */
 } CALC;
 
 struct FUNC {
-    u8    type;
-    u8    nin, nout;
-    u8    has_range;
-    fx    domain[MAX_IN * 2];
-    fx    range[MAX_COMPS * 2];
+    uint8_t  type;
+    uint8_t  nin, nout;
+    uint8_t  has_range;
+    fx       domain[MAX_IN * 2];
+    fx       range[MAX_COMPS * 2];
     /* sampled */
-    u8   *samples;
-    u32   sample_len;
-    int   bps;
-    s32   size[MAX_IN];
-    fx    encode[MAX_IN * 2];
-    fx    decode[MAX_COMPS * 2];
+    uint8_t *samples;
+    uint32_t sample_len;
+    int      bps;
+    int32_t  size[MAX_IN];
+    fx       encode[MAX_IN * 2];
+    fx       decode[MAX_COMPS * 2];
     /* exponential */
-    fx    c0[MAX_COMPS], c1[MAX_COMPS];
-    fx    expo;
+    fx       c0[MAX_COMPS], c1[MAX_COMPS];
+    fx       expo;
     /* stitching, and an array */
     int    count;
-    FUNC **parts;
+    FUNC   **parts;
     fx    *bounds;
     fx    *part_encode;
     /* calculator */
@@ -123,8 +123,8 @@ static void fx_array( DICT *dict, const char *key, fx *out, int max, int *got )
     if ( arr == NULL ) {
         return;
     }
-    for ( index = 0; index < max && (u32)index < arr->count; index++ ) {
-        out[index] = obj_fx( arr_get( arr, (u32)index ) );
+    for ( index = 0; index < max && (unsigned int)index < arr->count; index++ ) {
+        out[index] = obj_fx( arr_get( arr, (unsigned int)index ) );
     }
     *got = index;
 }
@@ -145,7 +145,7 @@ static int calc_compile( LEX *lex, CALC *code, int at, int max, int depth )
             continue;
         }
         if ( type == T_BOOL ) {
-            code[at++].op = (u8)(tok.u.ival ? OP_TRUE : OP_FALSE);
+            code[at++].op = (uint8_t)(tok.u.ival ? OP_TRUE : OP_FALSE);
             continue;
         }
         if ( type != T_OP ) {
@@ -177,7 +177,7 @@ static int calc_compile( LEX *lex, CALC *code, int at, int max, int depth )
         }
         for ( op = OP_ABS; op < OP_COUNT; op++ ) {
             if ( str_cmp( lex->word, calc_names[op] ) == 0 ) {
-                code[at++].op = (u8)op;
+                code[at++].op = (uint8_t)op;
                 break;
             }
         }
@@ -192,7 +192,7 @@ FUNC *func_load( OBJ *obj )
     IN *in;
     LEX lex;
     OBJ tok;
-    u32 total;
+    uint32_t total;
     int index, got, type;
 
     obj = obj_resolve( obj );
@@ -205,8 +205,8 @@ FUNC *func_load( OBJ *obj )
         fn->type = FN_ARRAY;
         fn->nin = 1;
         fn->count = arr->count > MAX_COMPS ? MAX_COMPS : (int)arr->count;
-        fn->nout = (u8)fn->count;
-        fn->parts = (FUNC **)pool_alloc( doc.page_pool, (u32)fn->count * sizeof( FUNC * ) );
+        fn->nout = (uint8_t)fn->count;
+        fn->parts = (FUNC **)pool_alloc( doc.page_pool, (uint32_t)fn->count * sizeof( FUNC * ) );
         func_depth++;
         for ( index = 0; index < fn->count; index++ ) {
             fn->parts[index] = func_load( &arr->items[index] );
@@ -224,12 +224,12 @@ FUNC *func_load( OBJ *obj )
         return NULL;
     }
     type = (int)dict_int( dict, "FunctionType", -1 );
-    fn->type = (u8)type;
+    fn->type = (uint8_t)type;
     fx_array( dict, "Domain", fn->domain, MAX_IN * 2, &got );
-    fn->nin = (u8)(got / 2);
+    fn->nin = (uint8_t)(got / 2);
     fx_array( dict, "Range", fn->range, MAX_COMPS * 2, &got );
-    fn->has_range = (u8)(got >= 2);
-    fn->nout = (u8)(got / 2);
+    fn->has_range = (uint8_t)(got >= 2);
+    fn->nout = (uint8_t)(got / 2);
     if ( fn->nin == 0 ) {
         return NULL;
     }
@@ -247,11 +247,11 @@ FUNC *func_load( OBJ *obj )
         arr = dict_arr( dict, "Size" );
         total = fn->nout;
         for ( index = 0; index < fn->nin; index++ ) {
-            fn->size[index] = obj_int( arr_get( arr, (u32)index ) );
+            fn->size[index] = obj_int( arr_get( arr, (unsigned int)index ) );
             if ( fn->size[index] < 1 || fn->size[index] > 65536L ) {
                 return NULL;
             }
-            total *= (u32)fn->size[index];
+            total *= (uint32_t)fn->size[index];
             if ( total > 4UL * 1024 * 1024 ) {
                 return NULL;
             }
@@ -262,7 +262,7 @@ FUNC *func_load( OBJ *obj )
         mem_cpy( fn->decode, fn->range, sizeof( fn->decode ) );
         fx_array( dict, "Decode", fn->decode, fn->nout * 2, &got );
         fn->samples = pdf_stream_all( obj, &fn->sample_len, total * 4 );
-        if ( fn->samples == NULL || fn->sample_len < (total * (u32)fn->bps + 7) / 8 ) {
+        if ( fn->samples == NULL || fn->sample_len < (total * (uint32_t)fn->bps + 7) / 8 ) {
             return NULL;
         }
         break;
@@ -273,7 +273,7 @@ FUNC *func_load( OBJ *obj )
         fx_array( dict, "C0", fn->c0, MAX_COMPS, &got );
         index = got ? got : 1;
         fx_array( dict, "C1", fn->c1, MAX_COMPS, &got );
-        fn->nout = (u8)index;
+        fn->nout = (uint8_t)index;
         fn->expo = dict_fx( dict, "N", FX_ONE );
         break;
 
@@ -283,9 +283,9 @@ FUNC *func_load( OBJ *obj )
             return NULL;
         }
         fn->count = (int)arr->count;
-        fn->parts = (FUNC **)pool_alloc( doc.page_pool, (u32)fn->count * sizeof( FUNC * ) );
-        fn->bounds = (fx *)pool_alloc( doc.page_pool, (u32)(fn->count + 1) * sizeof( fx ) );
-        fn->part_encode = (fx *)pool_alloc( doc.page_pool, (u32)fn->count * 2 * sizeof( fx ) );
+        fn->parts = (FUNC **)pool_alloc( doc.page_pool, (uint32_t)fn->count * sizeof( FUNC * ) );
+        fn->bounds = (fx *)pool_alloc( doc.page_pool, (uint32_t)(fn->count + 1) * sizeof( fx ) );
+        fn->part_encode = (fx *)pool_alloc( doc.page_pool, (uint32_t)fn->count * 2 * sizeof( fx ) );
         func_depth++;
         for ( index = 0; index < fn->count; index++ ) {
             fn->parts[index] = func_load( &arr->items[index] );
@@ -329,16 +329,16 @@ int func_outputs( FUNC *fn )
     return fn ? fn->nout : 0;
 }
 
-static u32 sample_at( const FUNC *fn, u32 index )
+static uint32_t sample_at( const FUNC *fn, uint32_t index )
 {
-    u32 bit = index * (u32)fn->bps, val = 0;
+    uint32_t bit = index * (uint32_t)fn->bps, val = 0;
     int left = fn->bps;
 
     if ( fn->bps == 8 ) {
         return fn->samples[index];
     }
     if ( fn->bps == 16 ) {
-        return ((u32)fn->samples[index * 2] << 8) | fn->samples[index * 2 + 1];
+        return ((uint32_t)fn->samples[index * 2] << 8) | fn->samples[index * 2 + 1];
     }
     while ( left-- ) {
         val = (val << 1) | ((fn->samples[bit >> 3] >> (7 - (bit & 7))) & 1);
@@ -357,10 +357,10 @@ static fx interp( fx val, fx lo0, fx hi0, fx lo1, fx hi1 )
 
 static void eval_sampled( const FUNC *fn, const fx *in, fx *out )
 {
-    u32 base = 0, stride = 1, peak = fn->bps >= 31 ? 0x7FFFFFFFUL : (1UL << fn->bps) - 1;
-    u32 low, high;
+    uint32_t base = 0, stride = 1, peak = fn->bps >= 31 ? 0x7FFFFFFFUL : (1UL << fn->bps) - 1;
+    uint32_t low, high;
     fx pos, frac = 0, cell;
-    s32 whole;
+    int32_t whole;
     int index, comp;
 
     /* the first input is interpolated along; the others pick the
@@ -383,15 +383,15 @@ static void eval_sampled( const FUNC *fn, const fx *in, fx *out )
         if ( whole > fn->size[index] - 1 ) {
             whole = fn->size[index] - 1;
         }
-        base += (u32)whole * stride;
-        stride *= (u32)fn->size[index];
+        base += (uint32_t)whole * stride;
+        stride *= (uint32_t)fn->size[index];
     }
     for ( comp = 0; comp < fn->nout; comp++ ) {
-        low = sample_at( fn, base * fn->nout + (u32)comp );
+        low = sample_at( fn, base * fn->nout + (uint32_t)comp );
         cell = (fx)(((low >> (fn->bps > 16 ? fn->bps - 16 : 0)) << 16) /
                     (fn->bps > 16 ? 65535UL : peak));
-        if ( frac && (s32)(base % (u32)fn->size[0]) < fn->size[0] - 1 ) {
-            high = sample_at( fn, (base + 1) * fn->nout + (u32)comp );
+        if ( frac && (int32_t)(base % (uint32_t)fn->size[0]) < fn->size[0] - 1 ) {
+            high = sample_at( fn, (base + 1) * fn->nout + (uint32_t)comp );
             cell += fx_mul( (fx)(((high >> (fn->bps > 16 ? fn->bps - 16 : 0)) << 16) /
                                  (fn->bps > 16 ? 65535UL : peak)) - cell, frac );
         }
@@ -484,7 +484,7 @@ static void eval_calc( const FUNC *fn, const fx *in, fx *out )
             count = (int)FX_FLOOR( rhs );
             top--;
             if ( count > 0 && count <= top && top + count < CALC_STACK ) {
-                mem_cpy( stack + top, stack + top - count, (u32)count * sizeof( fx ) );
+                mem_cpy( stack + top, stack + top - count, (uint32_t)count * sizeof( fx ) );
                 top += count;
             }
             break;
@@ -583,12 +583,12 @@ void func_eval( FUNC *fn, const fx *in, fx *out )
 /* colour spaces                                                       */
 /* ------------------------------------------------------------------ */
 
-static u32 pack_rgb( int red, int green, int blue )
+static uint32_t pack_rgb( int red, int green, int blue )
 {
-    return ((u32)red << 16) | ((u32)green << 8) | (u32)blue;
+    return ((uint32_t)red << 16) | ((uint32_t)green << 8) | (uint32_t)blue;
 }
 
-static u32 cmyk_rgb( fx cyan, fx magenta, fx yellow, fx black )
+static uint32_t cmyk_rgb( fx cyan, fx magenta, fx yellow, fx black )
 {
     int keep = 255 - unit255( black );
 
@@ -616,7 +616,7 @@ static int gamma255( fx lin )
     return unit255( fx_pow( lin, 29789L ) );        /* 1 / 2.2 */
 }
 
-static u32 lab_rgb( fx light, fx aa, fx bb )
+static uint32_t lab_rgb( fx light, fx aa, fx bb )
 {
     fx fy = (light + 16 * FX_ONE) / 116, fxx = fy + aa / 500, fz = fy - bb / 200;
     fx xx = fx_mul( 63190L, lab_inv( fxx ) );       /* the D50 white */
@@ -628,10 +628,10 @@ static u32 lab_rgb( fx light, fx aa, fx bb )
                      gamma255( fx_mul( 4712L, xx ) - fx_mul( 15008L, yy ) + fx_mul( 92091L, zz ) ) );
 }
 
-u32 cs_rgb( CSPACE *cs, const fx *comps )
+uint32_t cs_rgb( CSPACE *cs, const fx *comps )
 {
     fx alt[MAX_COMPS];
-    s32 index;
+    int index;
     int grey;
 
     switch ( cs->kind ) {
@@ -680,20 +680,20 @@ void cs_initial( CSPACE *cs, fx *comps )
 }
 
 /* an Indexed space's table, as finished colours */
-static void index_table( CSPACE *cs, const u8 *data, u32 len )
+static void index_table( CSPACE *cs, const uint8_t *data, uint32_t len )
 {
     CSPACE *base = cs->base;
     fx comps[MAX_COMPS];
-    u32 need = (u32)base->ncomp;
+    uint32_t need = (uint32_t)base->ncomp;
     int entry, comp;
 
-    cs->table = (u32 *)pool_alloc( doc.page_pool, (u32)(cs->hival + 1) * sizeof( u32 ) );
+    cs->table = (uint32_t *)pool_alloc( doc.page_pool, (uint32_t)(cs->hival + 1) * sizeof( uint32_t ) );
     for ( entry = 0; entry <= cs->hival; entry++ ) {
-        if ( ((u32)entry + 1) * need > len ) {
+        if ( ((uint32_t)entry + 1) * need > len ) {
             break;
         }
         for ( comp = 0; comp < base->ncomp; comp++ ) {
-            comps[comp] = (fx)(((u32)data[(u32)entry * need + (u32)comp] << 16) / 255);
+            comps[comp] = (fx)(((uint32_t)data[(uint32_t)entry * need + (uint32_t)comp] << 16) / 255);
         }
         if ( base->kind == CS_LAB ) {
             comps[0] *= 100;
@@ -715,8 +715,9 @@ CSPACE *cs_load( OBJ *obj, DICT *res )
     ARR *arr, *names;
     OBJ *item, *named;
     const char *name;
-    u8 *data;
-    u32 len, index;
+    uint8_t *data;
+    uint32_t len;
+    unsigned int index;
     int got, all_none;
 
     obj = obj_resolve( obj );
@@ -804,16 +805,16 @@ CSPACE *cs_load( OBJ *obj, DICT *res )
         item = arr_get( arr, 1 );
         if ( item->type == T_ARR ) {
             names = item->u.arr;
-            cs->ncomp = (u8)(names->count > MAX_COMPS ? MAX_COMPS : names->count);
+            cs->ncomp = (uint8_t)(names->count > MAX_COMPS ? MAX_COMPS : names->count);
             all_none = names->count != 0;
             for ( index = 0; index < names->count; index++ ) {
                 if ( !obj_is_name( arr_get( names, index ), "None" ) ) {
                     all_none = 0;
                 }
             }
-            cs->none = (u8)all_none;
+            cs->none = (uint8_t)all_none;
         } else {
-            cs->none = (u8)obj_is_name( item, "None" );
+            cs->none = (uint8_t)obj_is_name( item, "None" );
         }
         cs->base = cs_load( arr_get( arr, 2 ), res );
         cs->tint = func_load( arr_get( arr, 3 ) );

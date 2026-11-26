@@ -145,9 +145,9 @@ static long ceil_div( long a, long b )
     return q;
 }
 
-static u32 isqrt( u32 val )
+static uint32_t isqrt( uint32_t val )
 {
-    u32 root = 0, bit = 1UL << 30;
+    uint32_t root = 0, bit = 1UL << 30;
 
     while ( bit > val ) {
         bit >>= 2;
@@ -400,7 +400,7 @@ static void pie_line( int x0, int y0, int x1, int y1, int color )
 /* the pie into cells (top, left)-(bottom, right), 1-based; 0 if the
    screen gave no picture, and the caller draws the bar */
 static int draw_pie( int top, int left, int bottom, int right,
-                     u64 other_used, u64 sel_size, int have_sel )
+                     uint64_t other_used, uint64_t sel_size, int have_sel )
 {
     static PIEGEOM g;
     PIESLICE sl[3];
@@ -437,17 +437,17 @@ static int draw_pie( int top, int left, int bottom, int right,
        with D = 2ry + 1 that is sqrt( rx^2 (D^2 - 4k^2) ) / D. */
     two_d = 2 * (2 * g.ry + 1);
     for ( k = 0; k <= g.ry; k++ ) {
-        u32 d = (u32)(2 * g.ry + 1);
-        u32 under = (u32)g.rx * (u32)g.rx * (d * d - 4UL * (u32)k * (u32)k);
+        uint32_t d = (uint32_t)(2 * g.ry + 1);
+        uint32_t under = (uint32_t)g.rx * (uint32_t)g.rx * (d * d - 4UL * (uint32_t)k * (uint32_t)k);
 
-        g.hw[k] = (int)((2 * isqrt( under ) + d) / (u32)two_d);
+        g.hw[k] = (int)((2 * isqrt( under ) + d) / (uint32_t)two_d);
     }
 
     /* the angles, as the Windows pie works them out */
-    a_free = PIE_TURN - (long)per_whole( used_disk_space, total_disk_space, (u32)PIE_TURN );
+    a_free = PIE_TURN - (long)per_whole( used_disk_space, total_disk_space, (uint32_t)PIE_TURN );
     a_sel = 0;
     if ( have_sel && sel_size > 0 ) {
-        a_sel = (long)per_whole( sel_size, total_disk_space, (u32)PIE_TURN );
+        a_sel = (long)per_whole( sel_size, total_disk_space, (uint32_t)PIE_TURN );
         if ( a_sel < PIE_MIN_SEL ) {
             a_sel = PIE_MIN_SEL;
         }
@@ -549,7 +549,7 @@ static int draw_pie( int top, int left, int bottom, int right,
 /* "{swatch} Label  xx.x%  (1.2 MB)" on one row: the label is cut where
    it would push the line past the pane, which the DOS pane let a long
    folder name do */
-static void legend_entry( int row, int col, int width, int swatch, const char *label, u64 size )
+static void legend_entry( int row, int col, int width, int swatch, const char *label, uint64_t size )
 {
     char pct[16], sz[24], line[80], name[40], glyph[2];
     int room;
@@ -584,7 +584,7 @@ void usage_draw( void )
     int top1 = region.row + 1, left1 = region.col + 1;
     int bot1 = region.end_row + 1, right1 = region.end_col + 1;
     int in_left = left1 + 1, in_w = right1 - left1 - 1, have_sel, lrow;
-    u64 sel_size, other_used;
+    uint64_t sel_size, other_used;
 
     if ( region.end_row <= region.row || region.end_col <= region.col ) {
         return;
@@ -630,8 +630,8 @@ void usage_draw( void )
             bar_w = (int)sizeof( run ) - 1;
         }
         /* to the nearest cell */
-        sel_cells = (int)((per_whole( sel_size, total_disk_space, (u32)bar_w * 2 ) + 1) / 2);
-        free_cells = (int)((per_whole( free_disk_space, total_disk_space, (u32)bar_w * 2 ) + 1) / 2);
+        sel_cells = (int)((per_whole( sel_size, total_disk_space, (uint32_t)bar_w * 2 ) + 1) / 2);
+        free_cells = (int)((per_whole( free_disk_space, total_disk_space, (uint32_t)bar_w * 2 ) + 1) / 2);
 
         /* a sliver at least for a folder with anything in it, and what is
            left over to the rest of the used part */

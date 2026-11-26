@@ -64,54 +64,54 @@
 #define ONE_SERIAL      1
 
 typedef struct {
-    u32  offset;                /* the link's first page */
-    u32  end;                   /* the next link's first page, or the end of the file */
-    u32  serial;                /* its Vorbis stream */
-    u32  group[MAX_GROUP];      /* every stream that starts with it */
-    int  ngroup;
-    u32  rate;
-    u32  base_lo, base_hi;      /* the granule position of its first sample */
-    u32  start;                 /* that sample, counted from the start of the file */
-    u32  frames;                /* its length, 0 when not known */
+    uint32_t offset;            /* the link's first page */
+    uint32_t end;               /* the next link's first page, or the end of the file */
+    uint32_t serial;            /* its Vorbis stream */
+    uint32_t group[MAX_GROUP];  /* every stream that starts with it */
+    int      ngroup;
+    uint32_t rate;
+    uint32_t base_lo, base_hi;  /* the granule position of its first sample */
+    uint32_t start;             /* that sample, counted from the start of the file */
+    uint32_t frames;            /* its length, 0 when not known */
 } LINK;
 
 typedef struct {
-    SRC       *src;
-    u32        size;
-    u32        crc[256];
+    SRC           *src;
+    uint32_t       size;
+    uint32_t       crc[256];
     /* the page in hand */
-    u8        *page;
-    u32        ppos, plen, pnseg, pserial, pseq, glo, ghi;
-    u8         pflags;
-    u32        work, work_max;
+    uint8_t       *page;
+    uint32_t       ppos, plen, pnseg, pserial, pseq, glo, ghi;
+    uint8_t        pflags;
+    uint32_t       work, work_max;
     /* packets: the one being put together follows those queued from the page */
-    u8        *buf;
-    u32        buf_size, buf_used, part_at;
-    int        dropping;
-    u32        nq, qi;          /* packets queued, the next to decode */
-    u32        ntimed, nplaced; /* how many have their length, their place in time */
-    u32        q_at[QMAX], q_len[QMAX], q_dur[QMAX];
-    s32        q_pos[QMAX];
-    u8         q_fresh[QMAX];   /* after lost pages: the decoder starts afresh here */
-    int        gap;
-    s32        q_end;
-    int        have_seq;
-    u32        next_seq;
+    uint8_t       *buf;
+    unsigned int   buf_size, buf_used, part_at;
+    int            dropping;
+    unsigned int   nq, qi;          /* packets queued, the next to decode */
+    unsigned int   ntimed, nplaced; /* how many have their length, their place in time */
+    unsigned int   q_at[QMAX], q_len[QMAX], q_dur[QMAX];
+    int32_t        q_pos[QMAX];
+    uint8_t        q_fresh[QMAX];   /* after lost pages: the decoder starts afresh here */
+    int            gap;
+    int32_t        q_end;
+    int            have_seq;
+    uint32_t       next_seq;
     /* the stream playing */
-    VB        *vb;
-    VBID       id;
-    VBOPT      opt;
-    DECOPT     ask;
-    u32        rate;            /* the first link's: every link must have it */
-    int        link;
-    u32        last_bs;
-    int        pos_known, at_start, base_set;
-    s32        pos, keep_from;
-    int        ended, eos_seen;
-    const s16 *out;
-    u32        out_left;
-    LINK       links[MAX_LINKS];
-    int        nlinks;
+    VB            *vb;
+    VBID           id;
+    VBOPT          opt;
+    DECOPT         ask;
+    uint32_t       rate;            /* the first link's: every link must have it */
+    int            link;
+    unsigned int   last_bs;
+    int            pos_known, at_start, base_set;
+    int32_t        pos, keep_from;
+    int            ended, eos_seen;
+    const int16_t *out;
+    unsigned int   out_left;
+    LINK           links[MAX_LINKS];
+    int            nlinks;
 } OGG;
 
 /* ------------------------------------------------------------------ */
@@ -119,7 +119,7 @@ typedef struct {
 /* ------------------------------------------------------------------ */
 static void crc_init( OGG *og )
 {
-    u32 i, r;
+    uint32_t i, r;
     int k;
 
     for ( i = 0; i < 256; i++ ) {
@@ -132,9 +132,10 @@ static void crc_init( OGG *og )
 }
 
 /* the CRC of a page with its own CRC field taken as zero */
-static u32 page_crc( const OGG *og, const u8 *page, u32 len )
+static uint32_t page_crc( const OGG *og, const uint8_t *page, unsigned int len )
 {
-    u32 crc = 0, i;
+    uint32_t crc = 0;
+    unsigned int i;
 
     for ( i = 0; i < 22; i++ ) {
         crc = (crc << 8) ^ og->crc[((crc >> 24) ^ page[i]) & 255];
@@ -151,11 +152,12 @@ static u32 page_crc( const OGG *og, const u8 *page, u32 len )
 /* The next good page that starts before "limit", into og->page.
    -> 1, 0 (none), -1 (the file could not be read), -2 (too much
    damage for one call: og->work passed og->work_max) */
-static int page_next( OGG *og, u32 limit )
+static int page_next( OGG *og, uint32_t limit )
 {
     SRC *src = og->src;
-    const u8 *head;
-    u32 pos, left, want, hlen, body, i;
+    const uint8_t *head;
+    uint32_t pos, left;
+    unsigned int want, hlen, body, i;
     int at;
 
     for ( ;; ) {
@@ -179,11 +181,11 @@ static int page_next( OGG *og, u32 limit )
                 return src->error ? -1 : 0;
             }
             at = mem_find( head + 1, want - 1, "OggS" );
-            src_skip( src, at >= 0 ? (u32)at + 1 : want - 3 );
+            src_skip( src, at >= 0 ? (uint32_t)at + 1 : want - 3 );
             og->work += want;
             continue;
         }
-        hlen = 27 + (u32)head[26];
+        hlen = 27 + (unsigned int)head[26];
         head = left >= hlen ? src_peek( src, hlen ) : NULL;
         body = 0;
         if ( head != NULL ) {
@@ -221,10 +223,10 @@ static int page_next( OGG *og, u32 limit )
     }
 }
 
-/* a * b / c, or the largest u32 when that does not fit: the divide
+/* a * b / c, or the largest uint32_t when that does not fit: the divide
    would fault on a quotient over 32 bits, and a, b and c can all come
    from the file or the player */
-static u32 safe_muldiv( u32 a, u32 b, u32 c )
+static uint32_t safe_muldiv( uint32_t a, uint32_t b, uint32_t c )
 {
     if ( c == 0 || vb_umulhi( a, b ) >= c ) {
         return 0xFFFFFFFFUL;
@@ -232,27 +234,27 @@ static u32 safe_muldiv( u32 a, u32 b, u32 c )
     return fx_umuldiv( a, b, c );
 }
 
-static int gran_none( u32 lo, u32 hi )
+static int gran_none( uint32_t lo, uint32_t hi )
 {
     return lo == 0xFFFFFFFFUL && hi == 0xFFFFFFFFUL;
 }
 
 /* a granule position less the link's base, as a signed count that
    saturates */
-static s32 gran_rel( const LINK *ln, u32 lo, u32 hi )
+static int32_t gran_rel( const LINK *ln, uint32_t lo, uint32_t hi )
 {
-    u32 dlo = lo - ln->base_lo, dhi = hi - ln->base_hi - (lo < ln->base_lo ? 1 : 0);
+    uint32_t dlo = lo - ln->base_lo, dhi = hi - ln->base_hi - (lo < ln->base_lo ? 1 : 0);
 
     if ( dhi == 0 ) {
-        return dlo > 0x7FFFFFFFUL ? NO_END : (s32)dlo;
+        return dlo > 0x7FFFFFFFUL ? NO_END : (int32_t)dlo;
     }
     if ( dhi == 0xFFFFFFFFUL ) {
-        return dlo < 0x80000000UL ? -NO_END : (s32)dlo;
+        return dlo < 0x80000000UL ? -NO_END : (int32_t)dlo;
     }
     return (dhi & 0x80000000UL) ? -NO_END : NO_END;
 }
 
-static int in_group( const LINK *ln, u32 serial )
+static int in_group( const LINK *ln, uint32_t serial )
 {
     int i;
 
@@ -267,7 +269,7 @@ static int in_group( const LINK *ln, u32 serial )
 /* the page in hand begins a Vorbis stream */
 static int vorbis_bos( const OGG *og )
 {
-    const u8 *body = og->page + 27 + og->pnseg;
+    const uint8_t *body = og->page + 27 + og->pnseg;
 
     return (og->pflags & F_BOS) && !(og->pflags & F_CONT) && og->pnseg > 0 && og->page[27] >= 30
            && body[0] == 1 && mem_cmp( body + 1, "vorbis", 6 ) == 0;
@@ -276,10 +278,10 @@ static int vorbis_bos( const OGG *og )
 /* ------------------------------------------------------------------ */
 /* packets                                                             */
 /* ------------------------------------------------------------------ */
-static int buf_room( OGG *og, u32 need )
+static int buf_room( OGG *og, unsigned int need )
 {
-    u32 size = og->buf_size, most = PKT_MAX + PAGE_MAX;
-    u8 *grown;
+    unsigned int size = og->buf_size, most = PKT_MAX + PAGE_MAX;
+    uint8_t *grown;
 
     if ( og->buf_used + need <= og->buf_size ) {
         return 1;
@@ -293,7 +295,7 @@ static int buf_room( OGG *og, u32 need )
     if ( size < og->buf_used + need ) {
         return 0;
     }
-    grown = (u8 *)try_realloc( og->buf, size );
+    grown = (uint8_t *)try_realloc( og->buf, size );
     if ( grown == NULL ) {
         return 0;
     }
@@ -320,8 +322,8 @@ static void packets_reset( OGG *og )
    for the next page */
 static void page_take( OGG *og )
 {
-    const u8 *seg = og->page + 27, *body = og->page + 27 + og->pnseg;
-    u32 i, k, lace, keep, done = og->qi;
+    const uint8_t *seg = og->page + 27, *body = og->page + 27 + og->pnseg;
+    unsigned int i, k, lace, keep, done = og->qi;
     int skip = 0;
 
     /* the packets decoded go, and the rest move down */
@@ -380,7 +382,7 @@ static void page_take( OGG *og )
             if ( !og->dropping && og->buf_used > og->part_at && og->nq < QMAX ) {
                 og->q_at[og->nq] = og->part_at;
                 og->q_len[og->nq] = og->buf_used - og->part_at;
-                og->q_fresh[og->nq] = (u8)og->gap;
+                og->q_fresh[og->nq] = (uint8_t)og->gap;
                 og->gap = 0;
                 og->nq++;
             }
@@ -399,8 +401,8 @@ static void page_take( OGG *og )
 static void queue_times( OGG *og, int final )
 {
     LINK *ln = &og->links[og->link];
-    u32 k, bs, total = 0;
-    s32 g, start;
+    unsigned int k, bs, total = 0;
+    int32_t g, start;
     int has_g = !final && !gran_none( og->glo, og->ghi );
 
     for ( k = og->ntimed; k < og->nq; k++ ) {
@@ -437,13 +439,13 @@ static void queue_times( OGG *og, int final )
         g = gran_rel( ln, og->glo, og->ghi );
         if ( og->pos_known ) {
             start = og->pos;
-            if ( !(og->pflags & F_EOS) && start + (s32)total != g ) {
-                start = g - (s32)total;         /* a gap: the granule position is right */
+            if ( !(og->pflags & F_EOS) && start + (int32_t)total != g ) {
+                start = g - (int32_t)total;     /* a gap: the granule position is right */
             }
         } else if ( og->at_start && (og->pflags & F_EOS) ) {
             start = 0;                  /* the only page: it is the end that is cut */
         } else {
-            start = g - (s32)total;
+            start = g - (int32_t)total;
         }
         if ( og->pflags & F_EOS ) {
             og->q_end = g;
@@ -455,7 +457,7 @@ static void queue_times( OGG *og, int final )
     og->at_start = 0;
     for ( k = og->nplaced; k < og->nq; k++ ) {
         og->q_pos[k] = start;
-        start += (s32)og->q_dur[k];
+        start += (int32_t)og->q_dur[k];
     }
     og->nplaced = og->nq;
     og->pos = start;
@@ -473,8 +475,8 @@ static int link_open( OGG *og, int held, DECINFO *info )
     LINK *ln = &og->links[og->link];
     VB *vb = NULL;
     int got = 0, rc, chosen = 0, first = og->rate == 0, plain = 0;
-    const u8 *pkt;
-    u32 len, down;
+    const uint8_t *pkt;
+    unsigned int len, down;
 
     vb_close( og->vb );
     og->vb = NULL;
@@ -625,10 +627,10 @@ static int page_fetch( OGG *og )
 
 /* the last page, of one stream or any, that starts between "low" and
    "end": found by reading back from the end a stretch at a time */
-static int last_page( OGG *og, u32 low, u32 end, int which, u32 serial, u32 *glo, u32 *ghi,
-                      u32 *spos )
+static int last_page( OGG *og, uint32_t low, uint32_t end, int which, uint32_t serial, uint32_t *glo, uint32_t *ghi,
+                      uint32_t *spos )
 {
-    u32 hi = end, from, floor = end > TAIL_MAX ? end - TAIL_MAX : 0;
+    uint32_t hi = end, from, floor = end > TAIL_MAX ? end - TAIL_MAX : 0;
     int found;
 
     if ( floor < low ) {
@@ -656,9 +658,9 @@ static int last_page( OGG *og, u32 low, u32 end, int which, u32 serial, u32 *glo
 }
 
 /* a page of stream "serial" starts within a few stretches after "at" */
-static int serial_after( OGG *og, u32 at, u32 top, u32 serial )
+static int serial_after( OGG *og, uint32_t at, uint32_t top, uint32_t serial )
 {
-    u32 end = top - at > 4 * STRETCH ? at + 4 * STRETCH : top;
+    uint32_t end = top - at > 4 * STRETCH ? at + 4 * STRETCH : top;
 
     src_seek( og->src, at );
     while ( page_next( og, end ) == 1 ) {
@@ -673,9 +675,9 @@ static int serial_after( OGG *og, u32 at, u32 top, u32 serial )
    before hi because another stream of its link goes on: by halving,
    taking the stream to have ended where none of its pages follows
    within a few stretches. */
-static int serial_last( OGG *og, u32 lo, u32 hi, u32 serial, u32 *glo, u32 *ghi )
+static int serial_last( OGG *og, uint32_t lo, uint32_t hi, uint32_t serial, uint32_t *glo, uint32_t *ghi )
 {
-    u32 mid, top = hi;
+    uint32_t mid, top = hi;
     int i, found = 0;
 
     for ( i = 0; i < 40 && hi - lo > STRETCH; i++ ) {
@@ -698,9 +700,9 @@ static int serial_last( OGG *og, u32 lo, u32 hi, u32 serial, u32 *glo, u32 *ghi 
 }
 
 /* the BOS pages at "at": a link's streams, its Vorbis serial and rate */
-static int link_peek( OGG *og, u32 at, LINK *ln )
+static int link_peek( OGG *og, uint32_t at, LINK *ln )
 {
-    const u8 *body;
+    const uint8_t *body;
     VBID id;
 
     mem_set( ln, 0, sizeof( LINK ) );
@@ -723,9 +725,9 @@ static int link_peek( OGG *og, u32 at, LINK *ln )
 
 /* where link "ln" ends: the first page after it that is not one of its
    streams', by halving and then page by page */
-static u32 link_end( OGG *og, const LINK *ln )
+static uint32_t link_end( OGG *og, const LINK *ln )
 {
-    u32 lo = ln->offset, hi = og->size, mid;
+    uint32_t lo = ln->offset, hi = og->size, mid;
     int i;
 
     for ( i = 0; i < 40 && hi - lo > STRETCH; i++ ) {
@@ -752,8 +754,8 @@ static u32 link_end( OGG *og, const LINK *ln )
 static void measure( OGG *og )
 {
     LINK *ln;
-    u32 glo, ghi, serial;
-    s32 rel;
+    uint32_t glo, ghi, serial;
+    int32_t rel;
     int k;
 
     og->nlinks = 1;
@@ -770,7 +772,7 @@ static void measure( OGG *og )
             return;
         }
         rel = gran_rel( ln, glo, ghi );
-        ln->frames = rel > 0 && rel != NO_END ? (u32)rel : 0;
+        ln->frames = rel > 0 && rel != NO_END ? (uint32_t)rel : 0;
         return;
     }
     for ( k = 0; k < MAX_LINKS; k++ ) {
@@ -779,7 +781,7 @@ static void measure( OGG *og )
         if ( last_page( og, ln->offset, ln->end, ONE_SERIAL, ln->serial, &glo, &ghi, &serial )
              || serial_last( og, ln->offset, ln->end, ln->serial, &glo, &ghi ) ) {
             rel = gran_rel( ln, glo, ghi );
-            ln->frames = rel > 0 && rel != NO_END ? (u32)rel : 0;
+            ln->frames = rel > 0 && rel != NO_END ? (uint32_t)rel : 0;
         }
         og->nlinks = k + 1;
         if ( ln->end >= og->size || k + 1 >= MAX_LINKS
@@ -791,7 +793,7 @@ static void measure( OGG *og )
     }
 }
 
-static u32 total_frames( const OGG *og )
+static uint32_t total_frames( const OGG *og )
 {
     const LINK *ln = &og->links[og->nlinks - 1];
 
@@ -801,7 +803,7 @@ static u32 total_frames( const OGG *og )
 /* ------------------------------------------------------------------ */
 /* the codec                                                           */
 /* ------------------------------------------------------------------ */
-static int ogg_detect( SRC *src, const u8 *head, u32 len, const char *ext )
+static int ogg_detect( SRC *src, const uint8_t *head, unsigned int len, const char *ext )
 {
     int at;
 
@@ -810,7 +812,7 @@ static int ogg_detect( SRC *src, const u8 *head, u32 len, const char *ext )
         return mem_find( head, len, "vorbis" ) >= 0 ? 100 : 40;
     }
     at = mem_find( head, len, "OggS" );
-    if ( at >= 0 && mem_find( head + at, len - (u32)at, "vorbis" ) >= 0 ) {
+    if ( at >= 0 && mem_find( head + at, len - (unsigned int)at, "vorbis" ) >= 0 ) {
         return 60;                      /* something stuck on before the first page */
     }
     return str_icmp( ext, "OGG" ) == 0 || str_icmp( ext, "OGA" ) == 0 ? 5 : 0;
@@ -832,7 +834,7 @@ static int ogg_open( SRC *src, const DECOPT *opt, DECINFO *info, void **state )
 {
     OGG *og;
     int rc;
-    u32 resume, frames, ms;
+    uint32_t resume, frames, ms;
     const char *chans;
 
     *state = NULL;
@@ -845,8 +847,8 @@ static int ogg_open( SRC *src, const DECOPT *opt, DECINFO *info, void **state )
     og->size = src->size;
     og->ask = *opt;
     crc_init( og );
-    og->page = (u8 *)try_alloc( PAGE_MAX );
-    og->buf = (u8 *)try_alloc( BUF_START );
+    og->page = (uint8_t *)try_alloc( PAGE_MAX );
+    og->buf = (uint8_t *)try_alloc( BUF_START );
     og->buf_size = BUF_START;
     if ( og->page == NULL || og->buf == NULL ) {
         ogg_close( og );
@@ -876,8 +878,8 @@ static int ogg_open( SRC *src, const DECOPT *opt, DECINFO *info, void **state )
     ms = frames ? safe_muldiv( frames, 1000, og->rate ) : 0;
     info->file_rate = og->rate;
     info->rate = og->rate >> og->opt.down;
-    info->file_channels = (u8)og->id.channels;
-    info->channels = (u8)og->opt.out_ch;
+    info->file_channels = (uint8_t)og->id.channels;
+    info->channels = (uint8_t)og->opt.out_ch;
     info->bits = 0;
     info->length_ms = ms;
     info->flags = DIF_EQ | (ms ? DIF_SEEK : 0);
@@ -888,7 +890,7 @@ static int ogg_open( SRC *src, const DECOPT *opt, DECINFO *info, void **state )
     if ( ms > 0 ) {
         info->kbps = safe_muldiv( og->size, 8, ms );
     } else {
-        info->kbps = og->id.br_nom > 0 ? (u32)og->id.br_nom / 1000 : 0;
+        info->kbps = og->id.br_nom > 0 ? (uint32_t)og->id.br_nom / 1000 : 0;
     }
     chans = og->id.channels == 1 ? "mono" : og->id.channels == 2 ? "stereo" : NULL;
     if ( chans != NULL ) {
@@ -907,9 +909,9 @@ static int ogg_open( SRC *src, const DECOPT *opt, DECINFO *info, void **state )
    -> 1, 0 at the end, -2 for too much damage */
 static int packet_next( OGG *og )
 {
-    u32 k, frames, skip, stop;
-    s32 from, to, start;
-    const s16 *pcm;
+    unsigned int k, frames, skip, stop;
+    int32_t from, to, start;
+    const int16_t *pcm;
     int rc, down = og->opt.down;
 
     if ( og->qi >= og->nplaced ) {
@@ -927,20 +929,20 @@ static int packet_next( OGG *og )
     frames = vb_decode( og->vb, og->buf + og->q_at[k], og->q_len[k], &pcm );
     start = og->q_pos[k];
     from = start > og->keep_from ? start : og->keep_from;
-    to = start + (s32)og->q_dur[k];
+    to = start + (int32_t)og->q_dur[k];
     if ( to > og->q_end ) {
         to = og->q_end;
     }
     if ( to <= from || frames == 0 ) {
         return 1;
     }
-    skip = (u32)(from - start) >> down;
-    stop = (u32)(to - start) >> down;
+    skip = (unsigned int)(from - start) >> down;
+    stop = (unsigned int)(to - start) >> down;
     if ( stop > frames ) {
         stop = frames;
     }
     if ( skip < stop ) {
-        og->out = pcm + skip * (u32)og->opt.out_ch;
+        og->out = pcm + skip * (unsigned int)og->opt.out_ch;
         og->out_left = stop - skip;
     }
     return 1;
@@ -949,8 +951,8 @@ static int packet_next( OGG *og )
 static int ogg_decode( void *state, DECBUF *buf )
 {
     OGG *og = (OGG *)state;
-    u32 take, ch = (u32)og->opt.out_ch;
-    s16 *dst = buf->pcm;
+    unsigned int take, ch = (unsigned int)og->opt.out_ch;
+    int16_t *dst = buf->pcm;
     int rc;
 
     buf->frames = 0;
@@ -963,7 +965,7 @@ static int ogg_decode( void *state, DECBUF *buf )
             if ( take > og->out_left ) {
                 take = og->out_left;
             }
-            mem_cpy( dst, og->out, take * ch * sizeof( s16 ) );
+            mem_cpy( dst, og->out, take * ch * sizeof( int16_t ) );
             dst += take * ch;
             og->out += take * ch;
             og->out_left -= take;
@@ -984,7 +986,7 @@ static int ogg_decode( void *state, DECBUF *buf )
         }
         if ( rc == -2 ) {
             if ( buf->frames == 0 ) {
-                mem_set( dst, 0, SILENCE * ch * sizeof( s16 ) );
+                mem_set( dst, 0, SILENCE * ch * sizeof( int16_t ) );
                 buf->frames = SILENCE;
             }
             break;
@@ -999,10 +1001,10 @@ static int ogg_decode( void *state, DECBUF *buf )
 /* the page to start reading from for a target "t" samples into link
    "ln": the last page of its stream whose granule position is at or
    before t */
-static u32 find_page( OGG *og, const LINK *ln, s32 t )
+static uint32_t find_page( OGG *og, const LINK *ln, int32_t t )
 {
-    u32 lo = ln->offset, hi = ln->end, mid, best = ln->offset;
-    s32 g;
+    uint32_t lo = ln->offset, hi = ln->end, mid, best = ln->offset;
+    int32_t g;
     int i, rc;
 
     if ( t <= 0 ) {
@@ -1039,10 +1041,10 @@ static u32 find_page( OGG *og, const LINK *ln, s32 t )
     return best;
 }
 
-static int ogg_seek( void *state, u32 ms, u32 *at_ms )
+static int ogg_seek( void *state, uint32_t ms, uint32_t *at_ms )
 {
     OGG *og = (OGG *)state;
-    u32 target, total = total_frames( og ), page;
+    uint32_t target, total = total_frames( og ), page;
     int k;
     LINK *ln;
 
@@ -1067,7 +1069,7 @@ static int ogg_seek( void *state, u32 ms, u32 *at_ms )
         }
     }
     ln = &og->links[k];
-    page = find_page( og, ln, (s32)(target - ln->start) - PREROLL );
+    page = find_page( og, ln, (int32_t)(target - ln->start) - PREROLL );
     src_seek( og->src, page );
     packets_reset( og );
     vb_restart( og->vb );
@@ -1075,7 +1077,7 @@ static int ogg_seek( void *state, u32 ms, u32 *at_ms )
     og->pos_known = 0;
     og->at_start = page == ln->offset;
     og->base_set = 1;
-    og->keep_from = (s32)(target - ln->start);
+    og->keep_from = (int32_t)(target - ln->start);
     og->ended = 0;
     og->work = 0;
     *at_ms = safe_muldiv( target, 1000, og->rate );

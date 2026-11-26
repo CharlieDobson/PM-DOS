@@ -81,11 +81,11 @@ int ui_common_key( int key )
 }
 
 /* a label without the '&' that marks its letter */
-static void put_label( int row, int col, const char *label, u8 attr )
+static void put_label( int row, int col, const char *label, uint8_t attr )
 {
     for ( ; *label; label++ ) {
         if ( *label != '&' ) {
-            scr_ch( row, col++, (u8)*label, attr );
+            scr_ch( row, col++, (uint8_t)*label, attr );
         }
     }
 }
@@ -114,7 +114,7 @@ static void place( int width, int height, int *top, int *left )
 
 void ui_frame( int top, int left, int bottom, int right, const char *title, int error )
 {
-    u8 attr = error ? pal.err : pal.dlg, title_attr = error ? pal.err_title : pal.dlg_title;
+    uint8_t attr = error ? pal.err : pal.dlg, title_attr = error ? pal.err_title : pal.dlg_title;
     int wide = right - left + 1, len = title ? (int)str_len( title ) : 0, row;
 
     if ( gfx_on ) {
@@ -165,13 +165,13 @@ void btn_set( BTNROW *row, const BTN *btn, int count, int width, int chosen )
     row->armed = -1;
 }
 
-void btn_draw_at( BTNROW *row, int index, int at_row, int col, u8 ground )
+void btn_draw_at( BTNROW *row, int index, int at_row, int col, uint8_t ground )
 {
     const char *label = row->btn[index].label;
     int len = scr_hotlen( label ), wide = row->width;
     int lit = index == row->chosen, down = index == row->armed, face = col + (down ? 1 : 0);
-    u8 attr = lit ? (row->focus ? pal.btn_focus : pal.btn_default) : pal.btn;
-    u8 shade = (u8)(ground & 0xF0);
+    uint8_t attr = lit ? (row->focus ? pal.btn_focus : pal.btn_default) : pal.btn;
+    uint8_t shade = (uint8_t)(ground & 0xF0);
 
     row->row[index] = at_row;
     row->col[index] = col;
@@ -190,7 +190,7 @@ void btn_draw_at( BTNROW *row, int index, int at_row, int col, u8 ground )
     }
 }
 
-void btn_draw( BTNROW *row, int at_row, int left, int width, int gap, u8 ground )
+void btn_draw( BTNROW *row, int at_row, int left, int width, int gap, uint8_t ground )
 {
     int total = row->count * row->width + (row->count - 1) * gap;
     int col = left + (width - total) / 2, index;
@@ -270,10 +270,10 @@ int btn_key( BTNROW *row, int key )
 /* round buttons                                                       */
 /* ------------------------------------------------------------------ */
 
-void radio_draw( const RADIO *grp, int focus, u8 attr )
+void radio_draw( const RADIO *grp, int focus, uint8_t attr )
 {
     int index, row, on;
-    u8 mark;
+    uint8_t mark;
 
     for ( index = 0; index < grp->count; index++ ) {
         row = grp->row + index * grp->step;
@@ -371,7 +371,7 @@ int ui_menu( int open )
 {
     int bottom = MENU_TOP + MENU_ITEMS + 1, index, row, key, letter;
     const MENUTEXT *item;
-    u8 attr;
+    uint8_t attr;
 
     (void)open;
     for ( ;; ) {
@@ -457,7 +457,7 @@ int ui_ask( const char *title, const char *text, const BTN *btn, int count, int 
 {
     BTNROW row;
     TEXT lines;
-    u8 attr = error ? pal.err : pal.dlg;
+    uint8_t attr = error ? pal.err : pal.dlg;
     int wide = count * width + (count - 1) * 3 + 2, high, top, left, index, len, key, answer = 0;
 
     tx_init( &lines );

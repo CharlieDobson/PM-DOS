@@ -20,11 +20,11 @@
  */
 #include "gfx.h"
 
-static FONT *fonts;                 /* kept: each has its own pool */
-static FONT *page_fonts;            /* the page's own */
-static int   page_drawn;            /* ...and one of them has glyphs to keep */
-static u32   stamp = 1;
-static POOL *loading;               /* the pool of a font being read */
+static FONT    *fonts;              /* kept: each has its own pool */
+static FONT    *page_fonts;         /* the page's own */
+static int      page_drawn;         /* ...and one of them has glyphs to keep */
+static uint32_t stamp = 1;
+static POOL    *loading;            /* the pool of a font being read */
 
 static POOL *words;                 /* the strings of a character map being read */
 
@@ -32,9 +32,10 @@ static POOL *words;                 /* the strings of a character map being read
 /* character maps                                                      */
 /* ------------------------------------------------------------------ */
 
-static u32 code_of( const OBJ *str )
+static uint32_t code_of( const OBJ *str )
 {
-    u32 val = 0, index;
+    uint32_t val = 0;
+    unsigned int index;
 
     for ( index = 0; index < str->u.str.len && index < 4; index++ ) {
         val = (val << 8) | str->u.str.ptr[index];
@@ -45,10 +46,10 @@ static u32 code_of( const OBJ *str )
 /* a string of UTF-16 into a range's value and what follows it */
 static void unicode_of( const OBJ *str, CMRANGE *range )
 {
-    const u8 *text = str->u.str.ptr;
-    u32 len = str->u.str.len / 2, index;
+    const uint8_t *text = str->u.str.ptr;
+    unsigned int len = str->u.str.len / 2, index;
 
-    range->val = len ? ((u32)text[0] << 8) | text[1] : 0xFFFD;
+    range->val = len ? ((uint32_t)text[0] << 8) | text[1] : 0xFFFD;
     if ( str->u.str.len == 1 ) {
         range->val = text[0];
     }
@@ -57,7 +58,7 @@ static void unicode_of( const OBJ *str, CMRANGE *range )
         return;
     }
     for ( index = 1; index < len && index < 4; index++ ) {
-        range->more[index - 1] = (u16)(((u32)text[index * 2] << 8) | text[index * 2 + 1]);
+        range->more[index - 1] = (uint16_t)(((uint32_t)text[index * 2] << 8) | text[index * 2 + 1]);
     }
 }
 
@@ -84,7 +85,7 @@ CMAP *cmap_parse( OBJ *stm, POOL *pool )
     IN *in = pdf_stream( stm );
     LEX lex;
     OBJ lo, hi, dst;
-    u32 index, gap, at, back;
+    unsigned int index, gap, at, back;
     int type, mode = 0;
 
     if ( in == NULL ) {
@@ -156,7 +157,7 @@ CMAP *cmap_parse( OBJ *stm, POOL *pool )
             range->hi = range->lo;
         }
         if ( mode >= 4 ) {
-            range->val = (u32)obj_int( &dst );
+            range->val = (uint32_t)obj_int( &dst );
         } else if ( type == T_STR ) {
             unicode_of( &dst, range );
         } else {
@@ -189,9 +190,9 @@ CMAP *cmap_parse( OBJ *stm, POOL *pool )
     return cmap;
 }
 
-int cmap_find( const CMAP *cmap, u32 code, CMRANGE **range )
+int cmap_find( const CMAP *cmap, uint32_t code, CMRANGE **range )
 {
-    u32 lo = 0, hi = cmap->count, mid;
+    unsigned int lo = 0, hi = cmap->count, mid;
 
     while ( lo < hi ) {                     /* the last range that starts at or before it */
         mid = (lo + hi) / 2;
@@ -214,12 +215,12 @@ int cmap_find( const CMAP *cmap, u32 code, CMRANGE **range )
 
 static int has_word( const char *name, const char *word )
 {
-    return mem_ifind( (const u8 *)name, str_len( name ), word ) >= 0;
+    return mem_ifind( (const uint8_t *)name, str_len( name ), word ) >= 0;
 }
 
 static void face_flags( FONT *font, const char *name, DICT *desc )
 {
-    s32 flags = dict_int( desc, "Flags", 0 );
+    int32_t flags = dict_int( desc, "Flags", 0 );
     int out = 0;
 
     if ( str_len( name ) > 6 && name[6] == '+' ) {
@@ -249,8 +250,8 @@ static void face_flags( FONT *font, const char *name, DICT *desc )
     if ( str_cmp( name, "ZapfDingbats" ) == 0 || has_word( name, "Dingbats" ) || has_word( name, "Wingdings" ) ) {
         out |= FF_DINGBATS;
     }
-    font->flags = (u8)out;
-    font->symbolic = (u8)((flags & 4) != 0 && (flags & 32) == 0);
+    font->flags = (uint8_t)out;
+    font->symbolic = (uint8_t)((flags & 4) != 0 && (flags & 32) == 0);
     /* what it is called, for a reader that keeps the text's look */
     font->name = pool_str( font->pool, name );
 }
@@ -260,8 +261,8 @@ static void face_flags( FONT *font, const char *name, DICT *desc )
 static void program_load( FONT *font, DICT *desc )
 {
     OBJ *file;
-    u8 *data, *inner;
-    u32 len, inner_len;
+    uint8_t *data, *inner;
+    uint32_t len, inner_len;
     const char *subtype;
 
     font->kind = FT_BUILTIN;
@@ -332,7 +333,7 @@ static void simple_load( FONT *font, DICT *dict, const char *subtype )
     OBJ *enc = dict_get( dict, "Encoding" ), *item;
     ARR *diffs, *widths;
     const char *name, *base_name = "";
-    s32 first, last, missing;
+    int32_t first, last, missing;
     int base = -1, code, has31, has30, has10, gid;
 
     face_flags( font, dict_name( dict, "BaseFont" ), desc );
@@ -381,8 +382,8 @@ static void simple_load( FONT *font, DICT *dict, const char *subtype )
     diffs = enc_dict ? dict_arr( enc_dict, "Differences" ) : NULL;
     if ( diffs ) {
         code = 0;
-        for ( first = 0; (u32)first < diffs->count; first++ ) {
-            item = arr_get( diffs, (u32)first );
+        for ( first = 0; (unsigned int)first < diffs->count; first++ ) {
+            item = arr_get( diffs, (unsigned int)first );
             if ( obj_is_num( item ) ) {
                 code = (int)obj_int( item );
             } else if ( item->type == T_NAME && code >= 0 && code < 256 ) {
@@ -417,8 +418,8 @@ static void simple_load( FONT *font, DICT *dict, const char *subtype )
     if ( widths ) {
         font->dw = (int)missing;
         for ( code = first < 0 ? 0 : (int)first; code <= last && code < 256; code++ ) {
-            if ( (u32)code - (u32)first < widths->count ) {
-                font->width[code] = (s16)obj_int( arr_get( widths, (u32)code - (u32)first ) );
+            if ( (unsigned int)code - (unsigned int)first < widths->count ) {
+                font->width[code] = (int16_t)obj_int( arr_get( widths, (unsigned int)code - (unsigned int)first ) );
             }
         }
     }
@@ -430,13 +431,13 @@ static void simple_load( FONT *font, DICT *dict, const char *subtype )
                 gid = font->kind == FT_TYPE1 ? t1_glyph_named( font->prog, font->gname[code] )
                                              : cff_glyph_named( font->prog, font->gname[code] );
                 if ( gid >= 0 ) {
-                    font->gid[code] = (u16)gid;
+                    font->gid[code] = (uint16_t)gid;
                 }
             }
         }
     } else if ( font->kind == FT_CFF ) {
         for ( code = 0; code < 256; code++ ) {
-            font->gid[code] = (u16)code;
+            font->gid[code] = (uint16_t)code;
         }
     } else if ( font->kind == FT_TRUETYPE ) {
         has31 = ttf_has_cmap( font->prog, 3, 1 );
@@ -448,24 +449,24 @@ static void simple_load( FONT *font, DICT *dict, const char *subtype )
                 gid = ttf_cmap( font->prog, 3, 1, font->uni[code] );
             }
             if ( gid == 0 && has30 ) {
-                gid = ttf_cmap( font->prog, 3, 0, (u32)code );
+                gid = ttf_cmap( font->prog, 3, 0, (uint32_t)code );
                 if ( gid == 0 ) {
-                    gid = ttf_cmap( font->prog, 3, 0, 0xF000UL + (u32)code );
+                    gid = ttf_cmap( font->prog, 3, 0, 0xF000UL + (uint32_t)code );
                 }
             }
             if ( gid == 0 && has10 ) {
-                gid = ttf_cmap( font->prog, 1, 0, (u32)code );
+                gid = ttf_cmap( font->prog, 1, 0, (uint32_t)code );
             }
             if ( gid == 0 && has31 ) {
-                gid = ttf_cmap( font->prog, 3, 1, font->uni[code] ? font->uni[code] : (u32)code );
+                gid = ttf_cmap( font->prog, 3, 1, font->uni[code] ? font->uni[code] : (uint32_t)code );
                 if ( gid == 0 ) {
-                    gid = ttf_cmap( font->prog, 3, 1, 0xF000UL + (u32)code );
+                    gid = ttf_cmap( font->prog, 3, 1, 0xF000UL + (uint32_t)code );
                 }
             }
             if ( gid == 0 && !has31 && !has30 && !has10 ) {
                 gid = code;                 /* no map at all: the code is the glyph */
             }
-            font->gid[code] = (u16)gid;
+            font->gid[code] = (uint16_t)gid;
         }
     }
 
@@ -476,7 +477,7 @@ static void simple_load( FONT *font, DICT *dict, const char *subtype )
         widths = dict_arr( dict, "FontMatrix" );
         if ( widths && widths->count >= 6 ) {
             for ( code = 0; code < 6; code++ ) {
-                font->t3_matrix.m[code] = obj_real( arr_get( widths, (u32)code ) );
+                font->t3_matrix.m[code] = obj_real( arr_get( widths, (unsigned int)code ) );
             }
         }
     }
@@ -493,8 +494,8 @@ static void composite_load( FONT *font, DICT *dict )
     OBJ *enc = dict_get( dict, "Encoding" ), *map, *item;
     ARR *warr = dict_arr( child, "W" );
     WRANGE *range, hold;
-    u32 index, at, gap, back, count;
-    s32 first, last;
+    unsigned int index, at, gap, back, count;
+    int32_t first, last;
 
     font->composite = 1;
     face_flags( font, dict_name( child, "BaseFont" ), desc );
@@ -521,11 +522,11 @@ static void composite_load( FONT *font, DICT *dict )
             if ( item->type == T_ARR ) {
                 count = item->u.arr->count;
                 if ( count && first >= 0 && first + count <= 65536UL ) {
-                    range->first = (u16)first;
-                    range->last = (u16)(first + count - 1);
-                    range->widths = (s16 *)pool_alloc( font->pool, count * sizeof( s16 ) );
+                    range->first = (uint16_t)first;
+                    range->last = (uint16_t)(first + count - 1);
+                    range->widths = (int16_t *)pool_alloc( font->pool, count * sizeof( int16_t ) );
                     for ( at = 0; at < count; at++ ) {
-                        range->widths[at] = (s16)obj_int( arr_get( item->u.arr, at ) );
+                        range->widths[at] = (int16_t)obj_int( arr_get( item->u.arr, at ) );
                     }
                     font->nwr++;
                 }
@@ -533,9 +534,9 @@ static void composite_load( FONT *font, DICT *dict )
             } else {
                 last = obj_int( item );
                 if ( index + 2 < warr->count && first >= 0 && last >= first && last < 65536L ) {
-                    range->first = (u16)first;
-                    range->last = (u16)last;
-                    range->width = (s16)obj_int( arr_get( warr, index + 2 ) );
+                    range->first = (uint16_t)first;
+                    range->last = (uint16_t)last;
+                    range->width = (int16_t)obj_int( arr_get( warr, index + 2 ) );
                     font->nwr++;
                 }
                 index += 3;
@@ -673,10 +674,11 @@ int font_reclaim( int all )
 /* using one                                                           */
 /* ------------------------------------------------------------------ */
 
-u32 font_next_code( FONT *font, const u8 **str, u32 *left )
+uint32_t font_next_code( FONT *font, const uint8_t **str, unsigned int *left )
 {
-    const u8 *text = *str;
-    u32 code = 0, len, take = 2;
+    const uint8_t *text = *str;
+    uint32_t code = 0;
+    unsigned int len, take = 2;
     int index;
 
     if ( *left == 0 ) {
@@ -692,7 +694,7 @@ u32 font_next_code( FONT *font, const u8 **str, u32 *left )
         for ( len = 1; len <= 4 && len <= *left && !take; len++ ) {
             code = (code << 8) | text[len - 1];
             for ( index = 0; index < font->enc->nspace; index++ ) {
-                if ( (u32)font->enc->space[index].len == len && code >= font->enc->space[index].lo &&
+                if ( (unsigned int)font->enc->space[index].len == len && code >= font->enc->space[index].lo &&
                      code <= font->enc->space[index].hi ) {
                     take = len;
                     break;
@@ -700,7 +702,7 @@ u32 font_next_code( FONT *font, const u8 **str, u32 *left )
             }
         }
         if ( !take ) {
-            take = (u32)font->enc->space[0].len;    /* in none of them: step over it */
+            take = (unsigned int)font->enc->space[0].len; /* in none of them: step over it */
         }
     }
     if ( take > *left ) {
@@ -716,7 +718,7 @@ u32 font_next_code( FONT *font, const u8 **str, u32 *left )
 }
 
 /* a composite font's code as a character ID */
-static u32 cid_of( FONT *font, u32 code )
+static uint32_t cid_of( FONT *font, uint32_t code )
 {
     CMRANGE *range;
 
@@ -726,9 +728,10 @@ static u32 cid_of( FONT *font, u32 code )
     return code;
 }
 
-int font_width( FONT *font, u32 code )
+int font_width( FONT *font, uint32_t code )
 {
-    u32 cid, lo, hi, mid;
+    uint32_t cid;
+    unsigned int lo, hi, mid;
 
     if ( font->composite ) {
         cid = cid_of( font, code );
@@ -757,14 +760,14 @@ int font_width( FONT *font, u32 code )
     return sfont_width( font->uni[code], font->flags );
 }
 
-int font_unicode( FONT *font, u32 code, u16 *out )
+int font_unicode( FONT *font, uint32_t code, uint16_t *out )
 {
     CMRANGE *range;
     int count = 1;
-    u32 gid;
+    uint32_t gid;
 
     if ( font->tou && cmap_find( font->tou, code, &range ) ) {
-        out[0] = (u16)(range->val + (code - range->lo));
+        out[0] = (uint16_t)(range->val + (code - range->lo));
         if ( code == range->lo ) {
             for ( ; count < 4 && range->more[count - 1]; count++ ) {
                 out[count] = range->more[count - 1];
@@ -778,7 +781,7 @@ int font_unicode( FONT *font, u32 code, u16 *out )
             out[0] = ttf_unicode_of( font->prog, font->gid[code & 255] );
         }
         if ( out[0] == 0 && (code & 255) >= 32 && (code & 255) < 127 && !font->symbolic ) {
-            out[0] = (u16)(code & 255);
+            out[0] = (uint16_t)(code & 255);
         }
         return out[0] != 0;
     }
@@ -786,7 +789,7 @@ int font_unicode( FONT *font, u32 code, u16 *out )
     if ( font->kind == FT_TRUETYPE ) {
         gid = cid_of( font, code );
         if ( font->cid2gid && gid * 2 + 1 < font->cid2gid_len ) {
-            gid = ((u32)font->cid2gid[gid * 2] << 8) | font->cid2gid[gid * 2 + 1];
+            gid = ((uint32_t)font->cid2gid[gid * 2] << 8) | font->cid2gid[gid * 2 + 1];
         }
         out[0] = ttf_unicode_of( font->prog, gid );
         if ( out[0] ) {
@@ -800,10 +803,10 @@ int font_unicode( FONT *font, u32 code, u16 *out )
 /* The outline of a code's glyph, to gl_move and the rest.  1 if it is
    to be filled, 2 if it is a pen's path "pen" wide (in the font's
    units), 0 if there is nothing to draw. */
-int font_outline( FONT *font, u32 code, fx *pen )
+int font_outline( FONT *font, uint32_t code, fx *pen )
 {
-    u16 uni[4];
-    u32 gid;
+    uint16_t uni[4];
+    uint32_t gid;
 
     if ( font->composite ) {
         gid = cid_of( font, code );
@@ -813,11 +816,11 @@ int font_outline( FONT *font, u32 code, fx *pen )
                 if ( gid * 2 + 1 >= font->cid2gid_len ) {
                     return 0;
                 }
-                gid = ((u32)font->cid2gid[gid * 2] << 8) | font->cid2gid[gid * 2 + 1];
+                gid = ((uint32_t)font->cid2gid[gid * 2] << 8) | font->cid2gid[gid * 2 + 1];
             }
             return ttf_outline( font->prog, gid );
         case FT_CFF:
-            return cff_outline( font->prog, (u32)cff_glyph_of_cid( font->prog, gid ) );
+            return cff_outline( font->prog, (uint32_t)cff_glyph_of_cid( font->prog, gid ) );
         }
         if ( !font_unicode( font, code, uni ) ) {
             return 0;

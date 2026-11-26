@@ -50,40 +50,40 @@
 #define BLOCK_LIMIT     100000UL        /* blocks walked, at most: a bound on a damaged chain */
 
 typedef struct {
-    SRC  *src;
-    u32   first_block;                  /* the file position of the first block */
-    u32   rate;                         /* the first sound block's */
-    u8    channels;
-    u8    out_ch;
-    u8    down;
-    u8    bits;                         /* 8 or 16 */
+    SRC     *src;
+    uint32_t first_block;               /* the file position of the first block */
+    uint32_t rate;                      /* the first sound block's */
+    uint8_t  channels;
+    uint8_t  out_ch;
+    uint8_t  down;
+    uint8_t  bits;                      /* 8 or 16 */
     /* the block being played */
-    u32   left;                         /* its bytes not yet read */
-    u32   silence;                      /* or frames of silence still to give */
-    u16   code;                         /* CODE_* */
-    u8    blk_channels;
-    u8    need_ref;                     /* ADPCM: the next byte is the starting sample */
-    s32   ref;                          /* ADPCM: the sample, 0..255 */
-    s32   level;                        /* ADPCM: the step size, 0.. */
+    uint32_t left;                      /* its bytes not yet read */
+    uint32_t silence;                   /* or frames of silence still to give */
+    uint16_t code;                      /* CODE_* */
+    uint8_t  blk_channels;
+    uint8_t  need_ref;                  /* ADPCM: the next byte is the starting sample */
+    int32_t  ref;                       /* ADPCM: the sample, 0..255 */
+    int32_t  level;                     /* ADPCM: the step size, 0.. */
     /* the next block's format, from a type 8 block */
-    u8    ext_pending;
-    u8    ext_channels;
-    u32   ext_rate;
+    uint8_t  ext_pending;
+    uint8_t  ext_channels;
+    uint32_t ext_rate;
     /* repeats */
-    u32   rep_pos;                      /* the file position after the type 6 block */
-    u32   rep_count;                    /* times still to go, 0 for none */
-    u32   blocks;
+    uint32_t rep_pos;                   /* the file position after the type 6 block */
+    uint32_t rep_count;                 /* times still to go, 0 for none */
+    uint32_t blocks;
     /* bytes read and not yet used */
-    u8   *in;
-    u32   in_len, in_used;
-    /* samples made and not yet given, mono or stereo frames of s16 */
-    s16   pend[8];
-    u32   pend_have, pend_used;
+    uint8_t *in;
+    uint32_t in_len, in_used;
+    /* samples made and not yet given, mono or stereo frames of int16_t */
+    int16_t  pend[8];
+    uint32_t pend_have, pend_used;
     /* half/quarter rate */
-    s32   acc[2];
-    u32   acc_count;
-    u32   frames_total;                 /* from the walk at open, for the length */
-    u16   first_code;                   /* the first sound block's coding */
+    int32_t  acc[2];
+    uint32_t acc_count;
+    uint32_t frames_total;              /* from the walk at open, for the length */
+    uint16_t first_code;                /* the first sound block's coding */
 } VOCSTATE;
 
 /* ------------------------------------------------------------------ */
@@ -93,10 +93,10 @@ typedef struct {
    level L the step is (magnitude << L) + (L ? 1 << (L - 1) : 0); the
    2.6-bit coding's top level steps by tens.  The level goes up after
    the largest magnitudes and down after a magnitude of nothing. */
-static s32 adpcm_step( VOCSTATE *voc, int code, int bits )
+static int32_t adpcm_step( VOCSTATE *voc, int code, int bits )
 {
     int sign_bit = 1 << (bits - 1), mag = code & (sign_bit - 1), top, up_at;
-    s32 step, level = voc->level;
+    int32_t step, level = voc->level;
 
     if ( bits == 4 ) {
         top = 3;
@@ -111,7 +111,7 @@ static s32 adpcm_step( VOCSTATE *voc, int code, int bits )
     if ( bits == 3 && level == 4 ) {
         step = mag * 10 + 5;
     } else {
-        step = ((s32)mag << level) + (level ? 1L << (level - 1) : 0);
+        step = ((int32_t)mag << level) + (level ? 1L << (level - 1) : 0);
     }
     voc->ref += (code & sign_bit) ? -step : step;
     if ( voc->ref < 0 ) {
@@ -127,23 +127,23 @@ static s32 adpcm_step( VOCSTATE *voc, int code, int bits )
     return voc->ref;
 }
 
-static s32 from_alaw( u8 byte )
+static int32_t from_alaw( uint8_t byte )
 {
-    s32 val, seg;
+    int32_t val, seg;
 
     byte ^= 0x55;
-    val = (s32)(byte & 0x0F) << 4;
+    val = (int32_t)(byte & 0x0F) << 4;
     seg = (byte >> 4) & 7;
     val = seg == 0 ? val + 8 : (val + 0x108) << (seg - 1);
     return (byte & 0x80) ? val : -val;
 }
 
-static s32 from_mulaw( u8 byte )
+static int32_t from_mulaw( uint8_t byte )
 {
-    s32 val;
+    int32_t val;
 
-    byte = (u8)~byte;
-    val = (((s32)(byte & 0x0F) << 3) + 0x84) << ((byte >> 4) & 7);
+    byte = (uint8_t)~byte;
+    val = (((int32_t)(byte & 0x0F) << 3) + 0x84) << ((byte >> 4) & 7);
     return (byte & 0x80) ? 0x84 - val : val - 0x84;
 }
 
@@ -152,7 +152,7 @@ static s32 from_mulaw( u8 byte )
 /* ------------------------------------------------------------------ */
 static int next_byte( VOCSTATE *voc )
 {
-    u32 room, got;
+    unsigned int room, got;
 
     if ( voc->left == 0 ) {
         return -1;
@@ -175,8 +175,8 @@ static int next_byte( VOCSTATE *voc )
    set up, everything before it stepped over.  0 at the end */
 static int next_block( VOCSTATE *voc )
 {
-    u8 hdr[16];
-    u32 len, pos, rate;
+    uint8_t hdr[16];
+    uint32_t len, pos, rate;
     int type;
 
     for ( ;; ) {
@@ -199,7 +199,7 @@ static int next_block( VOCSTATE *voc )
         if ( src_read( voc->src, hdr, 3 ) != 3 ) {
             return 0;
         }
-        len = hdr[0] | ((u32)hdr[1] << 8) | ((u32)hdr[2] << 16);
+        len = hdr[0] | ((uint32_t)hdr[1] << 8) | ((uint32_t)hdr[2] << 16);
         pos = src_tell( voc->src );
         if ( len > src_left( voc->src ) ) {
             len = src_left( voc->src );
@@ -223,12 +223,12 @@ static int next_block( VOCSTATE *voc )
             if ( len < 3 || src_read( voc->src, hdr, 3 ) != 3 ) {
                 return 0;
             }
-            voc->silence = (u32)LE16( hdr ) + 1;
+            voc->silence = (uint32_t)LE16( hdr ) + 1;
             src_seek( voc->src, pos + len );
             return 1;
         case 6:                         /* repeat from here */
             if ( len >= 2 && src_read( voc->src, hdr, 2 ) == 2 ) {
-                voc->rep_count = LE16( hdr ) == 0xFFFF ? MAX_REPEAT : (u32)LE16( hdr ) + 1;
+                voc->rep_count = LE16( hdr ) == 0xFFFF ? MAX_REPEAT : (uint32_t)LE16( hdr ) + 1;
                 if ( voc->rep_count > MAX_REPEAT ) {
                     voc->rep_count = MAX_REPEAT;
                 }
@@ -247,7 +247,7 @@ static int next_block( VOCSTATE *voc )
             break;
         case 8:                         /* the next sound block's real format */
             if ( len >= 4 && src_read( voc->src, hdr, 4 ) == 4 ) {
-                voc->ext_channels = (u8)(hdr[3] ? 2 : 1);
+                voc->ext_channels = (uint8_t)(hdr[3] ? 2 : 1);
                 rate = 65536UL - LE16( hdr );
                 voc->ext_rate = rate ? 256000000UL / rate / voc->ext_channels : 0;
                 voc->ext_pending = 1;
@@ -260,7 +260,7 @@ static int next_block( VOCSTATE *voc )
             }
             voc->left = len - 12;
             voc->code = LE16( hdr + 6 );
-            voc->blk_channels = (u8)(hdr[5] == 2 ? 2 : 1);
+            voc->blk_channels = (uint8_t)(hdr[5] == 2 ? 2 : 1);
             if ( voc->code == CODE_PCM8 && hdr[4] == 16 ) {
                 voc->code = CODE_PCM16;
             }
@@ -275,10 +275,10 @@ static int next_block( VOCSTATE *voc )
 }
 
 /* the next frame of the file into out[0..1]; 0 at the end */
-static int next_frame( VOCSTATE *voc, s32 *out )
+static int next_frame( VOCSTATE *voc, int32_t *out )
 {
     int byte = 0, byte2, k, ch;
-    s32 val[2];
+    int32_t val[2];
 
     for ( ;; ) {
         if ( voc->pend_used < voc->pend_have ) {
@@ -309,17 +309,17 @@ static int next_frame( VOCSTATE *voc, s32 *out )
             if ( voc->need_ref ) {
                 voc->ref = byte;
                 voc->need_ref = 0;
-                voc->pend[voc->pend_have++] = (s16)((byte - 128) << 8);
+                voc->pend[voc->pend_have++] = (int16_t)((byte - 128) << 8);
             } else if ( voc->code == CODE_ADPCM4 ) {
-                voc->pend[voc->pend_have++] = (s16)((adpcm_step( voc, byte >> 4, 4 ) - 128) << 8);
-                voc->pend[voc->pend_have++] = (s16)((adpcm_step( voc, byte & 15, 4 ) - 128) << 8);
+                voc->pend[voc->pend_have++] = (int16_t)((adpcm_step( voc, byte >> 4, 4 ) - 128) << 8);
+                voc->pend[voc->pend_have++] = (int16_t)((adpcm_step( voc, byte & 15, 4 ) - 128) << 8);
             } else if ( voc->code == CODE_ADPCM3 ) {
-                voc->pend[voc->pend_have++] = (s16)((adpcm_step( voc, (byte >> 5) & 7, 3 ) - 128) << 8);
-                voc->pend[voc->pend_have++] = (s16)((adpcm_step( voc, (byte >> 2) & 7, 3 ) - 128) << 8);
-                voc->pend[voc->pend_have++] = (s16)((adpcm_step( voc, (byte & 3) << 1, 3 ) - 128) << 8);
+                voc->pend[voc->pend_have++] = (int16_t)((adpcm_step( voc, (byte >> 5) & 7, 3 ) - 128) << 8);
+                voc->pend[voc->pend_have++] = (int16_t)((adpcm_step( voc, (byte >> 2) & 7, 3 ) - 128) << 8);
+                voc->pend[voc->pend_have++] = (int16_t)((adpcm_step( voc, (byte & 3) << 1, 3 ) - 128) << 8);
             } else {
                 for ( k = 6; k >= 0; k -= 2 ) {
-                    voc->pend[voc->pend_have++] = (s16)((adpcm_step( voc, (byte >> k) & 3, 2 ) - 128) << 8);
+                    voc->pend[voc->pend_have++] = (int16_t)((adpcm_step( voc, (byte >> k) & 3, 2 ) - 128) << 8);
                 }
             }
             continue;
@@ -329,19 +329,19 @@ static int next_frame( VOCSTATE *voc, s32 *out )
                 case CODE_PCM16:
                     byte = next_byte( voc );
                     byte2 = next_byte( voc );
-                    val[ch] = byte2 < 0 ? 0 : (s16)(byte | (byte2 << 8));
+                    val[ch] = byte2 < 0 ? 0 : (int16_t)(byte | (byte2 << 8));
                     break;
                 case CODE_ALAW:
                     byte = next_byte( voc );
-                    val[ch] = byte < 0 ? 0 : from_alaw( (u8)byte );
+                    val[ch] = byte < 0 ? 0 : from_alaw( (uint8_t)byte );
                     break;
                 case CODE_MULAW:
                     byte = next_byte( voc );
-                    val[ch] = byte < 0 ? 0 : from_mulaw( (u8)byte );
+                    val[ch] = byte < 0 ? 0 : from_mulaw( (uint8_t)byte );
                     break;
                 case CODE_PCM8:
                     byte = next_byte( voc );
-                    val[ch] = byte < 0 ? 0 : ((s32)byte - 128) << 8;
+                    val[ch] = byte < 0 ? 0 : ((int32_t)byte - 128) << 8;
                     break;
                 default:
                     voc->left = 0;          /* a coding this does not know: the block is passed */
@@ -371,9 +371,9 @@ static int next_frame( VOCSTATE *voc, s32 *out )
 static int voc_decode( void *state, DECBUF *buf )
 {
     VOCSTATE *voc = (VOCSTATE *)state;
-    s16 *pcm = buf->pcm;
-    s32 frame[2];
-    u32 per = 1UL << voc->down, ch;
+    int16_t *pcm = buf->pcm;
+    int32_t frame[2];
+    unsigned int per = 1UL << voc->down, ch;
 
     buf->frames = 0;
     buf->ev_count = 0;
@@ -388,7 +388,7 @@ static int voc_decode( void *state, DECBUF *buf )
             continue;
         }
         for ( ch = 0; ch < voc->out_ch; ch++ ) {
-            *pcm++ = (s16)FX_SAT16( voc->acc[ch] >> voc->down );
+            *pcm++ = (int16_t)FX_SAT16( voc->acc[ch] >> voc->down );
             voc->acc[ch] = 0;
         }
         voc->acc_count = 0;
@@ -402,7 +402,7 @@ static int voc_decode( void *state, DECBUF *buf )
 /* ------------------------------------------------------------------ */
 static const char voc_sig[] = "Creative Voice File\x1A";
 
-static int voc_detect( SRC *src, const u8 *head, u32 len, const char *ext )
+static int voc_detect( SRC *src, const uint8_t *head, unsigned int len, const char *ext )
 {
     (void)src;
     (void)ext;
@@ -428,9 +428,11 @@ static void voc_close( void *state )
    all of them for the length.  The file is left at the first block */
 static int walk( VOCSTATE *voc, DECINFO *info )
 {
-    u8 hdr[16];
-    u32 len, pos, frames = 0, count, rate_got = 0, chans = 1, ext_chans = 1, ext_rate = 0;
-    u16 code;
+    uint8_t hdr[16];
+    uint32_t len, pos, frames = 0;
+    unsigned int count;
+    uint32_t rate_got = 0, chans = 1, ext_chans = 1, ext_rate = 0;
+    uint16_t code;
     int type, bits = 8, ext = 0;
 
     src_seek( voc->src, voc->first_block );
@@ -439,7 +441,7 @@ static int walk( VOCSTATE *voc, DECINFO *info )
         if ( type <= 0 || src_read( voc->src, hdr, 3 ) != 3 ) {
             break;
         }
-        len = hdr[0] | ((u32)hdr[1] << 8) | ((u32)hdr[2] << 16);
+        len = hdr[0] | ((uint32_t)hdr[1] << 8) | ((uint32_t)hdr[2] << 16);
         pos = src_tell( voc->src );
         if ( len > src_left( voc->src ) ) {
             len = src_left( voc->src );
@@ -453,7 +455,7 @@ static int walk( VOCSTATE *voc, DECINFO *info )
                 sfmt( info->format, sizeof( info->format ), "%s",
                       code == 1 ? "Creative Voice, 4-bit ADPCM" : code == 2 ? "Creative Voice, 2.6-bit ADPCM"
                       : code == 3 ? "Creative Voice, 2-bit ADPCM" : "Creative Voice, 8-bit PCM" );
-                info->bits = (u8)(code == 1 ? 4 : code == 2 ? 3 : code == 3 ? 2 : 8);
+                info->bits = (uint8_t)(code == 1 ? 4 : code == 2 ? 3 : code == 3 ? 2 : 8);
             }
             ext = 0;
             /* frames: the reference byte, then 2, 3 or 4 samples a byte */
@@ -462,7 +464,7 @@ static int walk( VOCSTATE *voc, DECINFO *info )
         } else if ( type == 2 ) {
             frames += len / chans;
         } else if ( type == 3 && len >= 3 && src_read( voc->src, hdr, 3 ) == 3 ) {
-            frames += (u32)LE16( hdr ) + 1;
+            frames += (uint32_t)LE16( hdr ) + 1;
         } else if ( type == 8 && len >= 4 && src_read( voc->src, hdr, 4 ) == 4 ) {
             ext = 1;
             ext_chans = hdr[3] ? 2 : 1;
@@ -476,14 +478,14 @@ static int walk( VOCSTATE *voc, DECINFO *info )
                 sfmt( info->format, sizeof( info->format ), "Creative Voice, %s",
                       code == CODE_ALAW ? "A-law" : code == CODE_MULAW ? "mu-law"
                       : code == CODE_PCM16 || bits == 16 ? "16-bit PCM" : code == 0 ? "8-bit PCM" : "ADPCM" );
-                info->bits = (u8)(code == CODE_PCM16 || bits == 16 ? 16 : 8);
+                info->bits = (uint8_t)(code == CODE_PCM16 || bits == 16 ? 16 : 8);
             }
             frames += (code == CODE_PCM16 || bits == 16 ? (len - 12) / 2 : len - 12) / chans;
         }
         src_seek( voc->src, pos + len );
     }
     voc->rate = rate_got;
-    voc->channels = (u8)chans;
+    voc->channels = (uint8_t)chans;
     voc->frames_total = frames;
     src_seek( voc->src, voc->first_block );
     return rate_got >= 2000 && rate_got <= 96000UL;
@@ -492,8 +494,8 @@ static int walk( VOCSTATE *voc, DECINFO *info )
 static int voc_open( SRC *src, const DECOPT *opt, DECINFO *info, void **state )
 {
     VOCSTATE *voc;
-    u8 hdr[26];
-    u32 hdr_size;
+    uint8_t hdr[26];
+    uint32_t hdr_size;
 
     *state = NULL;
     if ( src_read( src, hdr, 26 ) != 26 || mem_cmp( hdr, voc_sig, 20 ) != 0 ) {
@@ -510,7 +512,7 @@ static int voc_open( SRC *src, const DECOPT *opt, DECINFO *info, void **state )
     mem_set( voc, 0, sizeof( VOCSTATE ) );
     voc->src = src;
     voc->first_block = hdr_size;
-    voc->in = (u8 *)try_alloc( IN_SIZE );
+    voc->in = (uint8_t *)try_alloc( IN_SIZE );
     if ( voc->in == NULL ) {
         voc_close( voc );
         return DE_NOMEM;
@@ -527,7 +529,7 @@ static int voc_open( SRC *src, const DECOPT *opt, DECINFO *info, void **state )
     while ( voc->down > 0 && (voc->rate >> voc->down) < 8000 ) {
         voc->down--;
     }
-    voc->out_ch = (u8)(voc->channels == 1 || opt->mono ? 1 : 2);
+    voc->out_ch = (uint8_t)(voc->channels == 1 || opt->mono ? 1 : 2);
     info->file_rate = voc->rate;
     info->rate = voc->rate >> voc->down;
     info->file_channels = voc->channels;
@@ -546,11 +548,11 @@ static int voc_open( SRC *src, const DECOPT *opt, DECINFO *info, void **state )
     return DE_OK;
 }
 
-static int voc_seek( void *state, u32 ms, u32 *at_ms )
+static int voc_seek( void *state, uint32_t ms, uint32_t *at_ms )
 {
     VOCSTATE *voc = (VOCSTATE *)state;
-    u32 want, done = 0;
-    s32 frame[2];
+    uint32_t want, done = 0;
+    int32_t frame[2];
 
     /* a time past what 32 bits of frames can say is the end anyway */
     if ( ms > 0xFFFFFFFFUL / voc->rate * 1000UL ) {

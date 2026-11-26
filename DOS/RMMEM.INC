@@ -1826,6 +1826,14 @@ ENDIF                                   ; the path after its strings
         mov     dx,es:[bx+2]
         mov     word ptr [ep_tail],dx
         mov     word ptr [ep_tail+2],ax
+        mov     dx,es:[bx+6]            ; and the two FCBs the caller
+        mov     word ptr [ep_fcb1],dx   ; parsed for it
+        mov     dx,es:[bx+8]
+        mov     word ptr [ep_fcb1+2],dx
+        mov     dx,es:[bx+0Ah]
+        mov     word ptr [ep_fcb2],dx
+        mov     dx,es:[bx+0Ch]
+        mov     word ptr [ep_fcb2+2],dx
         pop     ax
 
         push    es
@@ -1858,6 +1866,30 @@ ENDIF                                   ; the path after its strings
         lds     si,dword ptr [ep_tail]  ; ...and only now let go of it
         cld
         rep     movsb
+        pop     ds
+
+        ; THE TWO FCBs, to 5Ch and 6Ch, as MS-DOS's EXEC copies them
+        ; (DOS6SRC dos/msproc.asm): the drive, the name and the
+        ; extension, twelve bytes of each, and four zeros behind each
+        ; for the extent and record size.  COMMAND.COM parses the first
+        ; two arguments into them with 29h, and programs from DOS 1 on
+        ; read their arguments there.  Until 2026-11-19 neither was
+        ; copied, and every program a DOS box started under Windows
+        ; found two blank FCBs.  The same rule as the tail: both
+        ; pointers are ours, read before each LDS.
+        push    ds
+        mov     di,5Ch
+        lds     si,dword ptr cs:[ep_fcb1]
+        mov     cx,12
+        rep     movsb
+        xor     ax,ax
+        stosw
+        stosw
+        lds     si,dword ptr cs:[ep_fcb2]
+        mov     cx,12
+        rep     movsb
+        stosw
+        stosw
         pop     ds
 
         pop     ds
@@ -2212,6 +2244,8 @@ rd_execleft dd  0
 rd_exehdr   db  32 dup(0)
 rd_relbuf   db  4 dup(0)
 ep_tail     dd  0
+ep_fcb1     dd  0                       ; the parameter block's FCBs
+ep_fcb2     dd  0
 ep_envsrc   dw  0
 ep_envnew   dw  0
 ep_envlen   dw  0

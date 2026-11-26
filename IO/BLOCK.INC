@@ -15,24 +15,31 @@
 ;             what keeps DOSBox 0.74 working.  Staged through
 ;             XFER_BUF below 1M, where the BIOS can reach it.
 ;
-; Drive numbers are BIOS numbers (00h = A:, 80h = first hard disk).
+; Drive numbers are BIOS numbers (00h = A:, 80h = first hard disk, up
+; to 87h; MAX_PHYS), then the USB units from USB_DRV0 (88h).
 ; CHS geometry is fetched once per drive via INT 13h/08h and cached;
 ; the ATA path needs none of it.
 ;
 ; Included by IOPM.ASM (after ATA.INC).
 ;=====================================================================
 
-MAX_DRIVES      EQU     4 + USB_MAXUNITS ; slots: A:, B:, hd0, hd1, and the
+MAX_DRIVES      EQU     2 + MAX_PHYS + USB_MAXUNITS ; slots: A:, B:, the
+                                        ; hard disks 80h to 87h, and the
                                         ; USB units - whose geometry is
-                                        ; never cached: a slot above the
-                                        ; four is filled afresh every ask,
+                                        ; never cached: a USB unit's slot
+                                        ; is filled afresh every ask,
                                         ; because the disk in it changes
+GEOS_HD         EQU     2               ; the first hard disk's slot
+GEOS_USB        EQU     GEOS_HD + MAX_PHYS      ; ...and the first USB unit's
 
 ; per-drive geometry cache entry
 GEO_SPT         EQU     0               ; word - sectors per track
 GEO_HEADS       EQU     2               ; word - head count
 GEO_TOTAL       EQU     4               ; dword - total sectors BY CHS
-GEO_FLAGS       EQU     8               ; word - 1 = valid
+GEO_FLAGS       EQU     8               ; word - 1 = valid, and cached;
+                                        ; 2 = valid for this ask only, made
+                                        ; up here for a disk the BIOS does
+                                        ; not have (blk_getgeo, bg_made)
 GEO_EXT         EQU     10              ; word - 1 = INT 13h extensions
 GEO_LBATOT      EQU     12              ; dword - true capacity, 0 = unknown
 GEO_LEN         EQU     16
@@ -65,14 +72,14 @@ blk_slot:
         jb      bs_have
         cmp     al,80h
         jb      bs_bad
-        cmp     al,82h                  ; hard disks 80h and 81h
+        cmp     al,USB_DRV0             ; hard disks 80h to 87h
         jae     bs_usb
-        sub     al,80h - 2
+        sub     al,80h - GEOS_HD
         jmp     short bs_have
 bs_usb:
-        cmp     al,USB_DRV0 + USB_MAXUNITS      ; the USB units, 82h up
+        cmp     al,USB_DRV0 + USB_MAXUNITS      ; the USB units, 88h up
         jae     bs_bad
-        sub     al,USB_DRV0 - 4
+        sub     al,USB_DRV0 - GEOS_USB
 bs_have:
         movzx   ebx,al
         imul    ebx,GEO_LEN
@@ -88,6 +95,28 @@ bs_bad:
 ;=====================================================================
 ; blk_getgeo - make sure the geometry for drive AL is cached.
 ;              EBX = cache entry on return.  CF set on failure.
+;
+; A HARD DISK THE BIOS DID NOT COUNT IS NOT ASKED ABOUT, from 82h on.
+; The BIOS wrote down how many it found (40:75), and MS-DOS walked
+; exactly that many; a BIOS written for two disks need not refuse 82h
+; cleanly, and one that keeps only the low bit of the number reads 80h
+; for it and makes a third disk of the first.  80h and 81h are asked
+; whatever the count says, as they always were.
+;
+; ONE THE IDE DRIVER HAS AND THE BIOS DOES NOT - a disk on the second
+; cable of a board whose BIOS knew two, numbered after the BIOS's by
+; ata_number - has no BIOS geometry to give, so it gets the one a
+; translating BIOS would have made of its size (blk_mkgeo), worked out
+; again at every ask so that it follows the IDE driver's numbering.
+;
+; AN ANSWER OF NO SECTORS A TRACK IS NO ANSWER.  08h can succeed and
+; give CL = 0: the Packard Bell PB520R's AMIBIOS does it for drive 01h,
+; a second diskette drive its setup does not list.  That was cached as
+; it stood, and blk_go then divided the LBA by it - a divide fault in
+; ring 0 for anything that read B:, DRIVES.EXE included (2026-11-17).
+; It fails now, as a drive the BIOS refuses does, and is not cached:
+; a diskette drive reads as not ready, a hard disk as not there.  The
+; heads cannot be 0 (DH + 1), so the sectors are the one figure to test.
 ;=====================================================================
 blk_getgeo:
         call    blk_slot
@@ -96,7 +125,21 @@ blk_getgeo:
         jae     bg_usb
         test    word ptr [ebx+GEO_FLAGS],1
         jnz     bg_ok
+        cmp     al,80h
+        jb      bg_bios                 ; a diskette: the BIOS's
+        push    eax
+        sub     al,80h
+        cmp     al,byte ptr ds:[BDA_HDCOUNT]
+        pop     eax                     ; (POP leaves the flags)
+        jb      bg_bios                 ; a disk the BIOS counted
+        call    ata_owns
+        jnc     bg_made                 ; the IDE driver's alone
+        cmp     al,82h
+        jb      bg_bios
+        stc                             ; nobody's
+        ret
 
+bg_bios:
         push    eax
         push    ecx
         push    edx
@@ -145,6 +188,7 @@ ENDIF
 
         movzx   ecx,byte ptr ds:[RMR_ECX]       ; CL: sector count in 5:0,
         and     ecx,3Fh                         ; cyl bits 9:8 in 7:6
+        jz      bg_fail                         ; no sectors: no drive (above)
         mov     [ebx+GEO_SPT],cx
 
         movzx   edx,byte ptr ds:[RMR_EDX+1]     ; DH = max head
@@ -181,6 +225,74 @@ bg_fail:
         pop     ecx
         pop     eax
         stc
+        ret
+
+;--- a disk the IDE driver numbered past the BIOS's: made from its size
+bg_made:
+        push    ecx
+        push    edx
+        push    esi
+        mov     esi,ebx                 ; the entry
+        call    ata_capacity            ; -> EBX
+        jc      bgm_none
+        push    ebx
+        call    blk_mkgeo               ; -> CX, DX, EBX
+        mov     [esi+GEO_SPT],cx
+        mov     [esi+GEO_HEADS],dx
+        mov     [esi+GEO_TOTAL],ebx
+        pop     dword ptr [esi+GEO_LBATOT]
+        mov     word ptr [esi+GEO_FLAGS],2      ; this ask's, not cached
+        mov     word ptr [esi+GEO_EXT],1
+        mov     ebx,esi
+        pop     esi
+        pop     edx
+        pop     ecx
+        clc
+        ret
+bgm_none:
+        mov     word ptr [esi+GEO_FLAGS],0
+        mov     ebx,esi
+        pop     esi
+        pop     edx
+        pop     ecx
+        stc
+        ret
+
+;---------------------------------------------------------------------
+; blk_mkgeo - EBX = a disk's sectors -> CX = sectors a track, DX =
+;             heads, EBX = the sectors those two reach.  EAX kept.
+;
+; 63 sectors a track; 16 heads until that runs out at 504MB, then 255,
+; which is what every translating BIOS did; and the cylinders stop at
+; 1024, as INT 13h's do.  For a disk no BIOS describes: a USB unit
+; (usbm_geo) and an IDE disk past the BIOS's count (bg_made).
+;---------------------------------------------------------------------
+blk_mkgeo:
+        push    eax
+        mov     ecx,63
+        mov     edx,16
+        cmp     ebx,1024 * 16 * 63
+        jbe     bmg_heads
+        mov     edx,255
+bmg_heads:
+        mov     eax,ebx
+        push    edx
+        push    ecx
+        imul    ecx,edx                 ; sectors a cylinder
+        push    ecx
+        xor     edx,edx
+        div     ecx                     ; EAX = cylinders
+        cmp     eax,1024
+        jbe     bmg_cyls
+        mov     eax,1024
+bmg_cyls:
+        pop     ecx
+        imul    eax,ecx
+        mov     ebx,eax
+        pop     ecx
+        pop     edx
+        pop     eax
+        clc
         ret
 
 ;--- a USB unit: what USBMSC.INC says the disk in it is, every time,
@@ -320,6 +432,21 @@ bp_ata:
         mov     cx,512
         clc
 bp_out:
+        ret
+
+;=====================================================================
+; blk_medium - IOS_DRVMEDIUM.  AL = drive -> AL = DSKF_SOLID, DSKF_SPINS
+;              or 0.  Only a disk PM-DOS talks to itself can say, so a
+;              disk the BIOS drives is 0, and so is a USB disk: the
+;              caller has DSKF_REMOVABLE for that one.
+;=====================================================================
+blk_medium:
+        call    ata_diskmed
+        jnc     bmed_out
+        call    ahci_diskmed
+        jnc     bmed_out
+        xor     al,al
+bmed_out:
         ret
 
 ;=====================================================================

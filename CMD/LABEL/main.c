@@ -142,7 +142,7 @@ static void check_drive( void )
  * only the first 11 are kept.  Returns -1 for an invalid character,
  * 0 for an empty label (ENTER for none), 1 otherwise.
  */
-static int make_label( const char *src, u8 *out )
+static int make_label( const char *src, uint8_t *out )
 {
     const char *bad;
     int i, len = 0, ch;
@@ -151,23 +151,23 @@ static int make_label( const char *src, u8 *out )
         src++;
     }
     for ( i = 0; src[i]; i++ ) {
-        ch = (u8)src[i];
+        ch = (uint8_t)src[i];
         if ( ch < ' ' ) {
             return -1;
         }
         for ( bad = bad_chars; *bad; bad++ ) {
-            if ( ch == (u8)*bad ) {
+            if ( ch == (uint8_t)*bad ) {
                 return -1;
             }
         }
     }
     mem_set( out, ' ', LABEL_LEN );
     for ( i = 0; src[i] && len < LABEL_LEN; i++ ) {
-        ch = (u8)src[i];
+        ch = (uint8_t)src[i];
         if ( !vol.exfat ) {
             ch = ch >= 0x80 ? sys_upcase( ch ) : ch_upper( ch );
         }
-        out[len++] = (u8)ch;
+        out[len++] = (uint8_t)ch;
     }
     return len > 0;
 }
@@ -186,8 +186,8 @@ static int find_label( void )
     if ( idx < 0 ) {
         return 0;
     }
-    mem_cpy( old_name, root.data + (u32)idx * DE_LEN, LABEL_LEN );
-    if ( (u8)old_name[0] == E5_ALIAS ) {
+    mem_cpy( old_name, root.data + (unsigned int)idx * DE_LEN, LABEL_LEN );
+    if ( (uint8_t)old_name[0] == E5_ALIAS ) {
         old_name[0] = (char)DEL_MARK;
     }
     old_name[LABEL_LEN] = 0;
@@ -211,7 +211,7 @@ static void show_label( int have )
 }
 
 /* "Volume label (11 characters, ENTER for none)? " until it is valid */
-static int ask_label( u8 *label, int bad )
+static int ask_label( uint8_t *label, int bad )
 {
     char buf[130];
     int result;
@@ -256,11 +256,11 @@ static int ask_delete( void )
 }
 
 /* delete every label, then create the new one (label NULL: none) */
-static void change_label( const u8 *label )
+static void change_label( const uint8_t *label )
 {
     char drv_buf[4];
-    u16 date, time;
-    u8 *ent;
+    uint16_t date, time;
+    uint8_t *ent;
     int idx, err;
 
     if ( sys_lock( drive, big_volume() ) != 0 ) {
@@ -290,9 +290,9 @@ static void change_label( const u8 *label )
     root_load( &root );
 
     for ( idx = root_next_label( &root, 0 ); idx >= 0;
-          idx = root_next_label( &root, (u32)idx + 1 ) ) {
-        root.data[(u32)idx * DE_LEN] = DEL_MARK;
-        root_touch( &root, (u32)idx );
+          idx = root_next_label( &root, (unsigned int)idx + 1 ) ) {
+        root.data[(unsigned int)idx * DE_LEN] = DEL_MARK;
+        root_touch( &root, (unsigned int)idx );
     }
     if ( label ) {
         /* a slot is always free when a label was just deleted, so
@@ -305,7 +305,7 @@ static void change_label( const u8 *label )
             out_line( H_ERR, M_NOROOM );
             finish( 1 );
         }
-        ent = root.data + (u32)idx * DE_LEN;
+        ent = root.data + (unsigned int)idx * DE_LEN;
         mem_set( ent, 0, DE_LEN );
         mem_cpy( ent, label, LABEL_LEN );
         if ( ent[0] == DEL_MARK ) {
@@ -315,10 +315,10 @@ static void change_label( const u8 *label )
         sys_get_datetime( &date, &time );
         WR16( ent + DE_TIME, time );
         WR16( ent + DE_DATE, date );
-        root_touch( &root, (u32)idx );
+        root_touch( &root, (unsigned int)idx );
     }
     root_write( &root );
-    boot_set_label( label ? label : (const u8 *)"NO NAME    " );
+    boot_set_label( label ? label : (const uint8_t *)"NO NAME    " );
 }
 
 /* ------------------------------------------------------------------ */
@@ -327,7 +327,7 @@ static void change_label( const u8 *label )
 
 void label_main( void )
 {
-    u8 label[LABEL_LEN];
+    uint8_t label[LABEL_LEN];
     int err, old, have = 0, bad = 0, del = 0;
 
     if ( sys_init() != 0 ) {

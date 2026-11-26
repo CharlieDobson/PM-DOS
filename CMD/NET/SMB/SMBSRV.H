@@ -24,9 +24,9 @@
 /* one directory entry a back end hands back during a listing */
 typedef struct {
     char          name[260];        /* OEM ASCIIZ, the on-disk name */
-    unsigned long attr;             /* FILE_ATTRIBUTE_* (low bits = DOS attr) */
-    unsigned long size;             /* bytes (low 32) */
-    unsigned long ft_lo, ft_hi;     /* LastWriteTime as a Windows FILETIME */
+    uint32_t      attr;             /* FILE_ATTRIBUTE_* (low bits = DOS attr) */
+    uint32_t      size;             /* bytes (low 32) */
+    uint32_t      ft_lo, ft_hi;     /* LastWriteTime as a Windows FILETIME */
     unsigned int  dosdate, dostime; /* ...and as a DOS date and time */
 } srv_dirent;
 
@@ -36,9 +36,9 @@ typedef struct {
    int the back end chooses; -1 means failure. */
 typedef struct {
     int   ( *vopen )( void *ctx, const char *path, int write, int dispo,
-                      unsigned long *size, int *action );   /* dispo 1 open,3 open/create,5 create/trunc */
-    int   ( *vread )( void *ctx, int h, unsigned long off, void *buf, int len );
-    int   ( *vwrite )( void *ctx, int h, unsigned long off, const void *buf, int len );
+                      uint32_t *size, int *action );        /* dispo 1 open,3 open/create,5 create/trunc */
+    int   ( *vread )( void *ctx, int h, uint32_t off, void *buf, int len );
+    int   ( *vwrite )( void *ctx, int h, uint32_t off, const void *buf, int len );
     void  ( *vclose )( void *ctx, int h );
     void *( *vfindopen )( void *ctx, const char *dir );     /* NULL if the dir is missing */
     int   ( *vfindnext )( void *ctx, void *it, srv_dirent *de ); /* 1 got one, 0 done */
@@ -54,8 +54,8 @@ typedef struct {
     int   ( *vsetattr )( void *ctx, const char *path, unsigned int attr );
     int   ( *vfstat )( void *ctx, int h, srv_dirent *de );
     int   ( *vsettime )( void *ctx, int h, unsigned int dosdate, unsigned int dostime );
-    int   ( *vdisk )( void *ctx, unsigned long *units, unsigned long *avail,
-                      unsigned long *unitsize );            /* allocation units */
+    int   ( *vdisk )( void *ctx, uint32_t *units, uint32_t *avail,
+                      uint32_t *unitsize );                 /* allocation units */
 } srv_vfs;
 
 /* Serve one connected client to the end (its disconnect).  'sharename' is

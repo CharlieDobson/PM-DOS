@@ -48,13 +48,13 @@ menu, or press F1.  To leave, press ALT, F, X.
 <\aDoskey\vDOSKEY\v>                   <\aMplay\vMPLAY\v>                    <\aUsb (CONFIG.SYS)\vUSB=\v>
 <\aDosshell\vDOSSHELL\v>                 <\aMulti-config\vMultiple Configurations\v>             <\aVer\vVER\v>
 <\aDpmi\vDPMI=\v>                     <\aNet\vNET\v>                      <\aVerify\vVERIFY\v>
-<\aDrivparm\vDRIVPARM=\v>                 <\aNetbeui.sys\vNETBEUI.SYS\v>              <\aVol\vVOL\v>
-<\aEcho\vECHO\v>                     <\aNulltrap\vNULLTRAP=\v>                 <\aWget\vWGET\v>
-<\aEdit\vEDIT\v>                     <\aNumlock\vNUMLOCK=\v>                  <\aWincache\vWINCACHE=\v>
-<\aEl3c515.sys\vEL3C515.SYS\v>              <\aPath\vPATH\v>                     <\aX87emu.sys\vX87EMU.SYS\v>
-<\aEms\vEMS=\v>                      <\aPause\vPAUSE\v>                    <\aXarc\vXARC\v>
-<\aEs1371.sys\vES1371.SYS\v>               <\aPing\vPING\v>                     <\aXcopy\vXCOPY\v>
-<\aExit\vEXIT\v>                     <\aPmd\vPMD\v>
+<\aDrivparm\vDRIVPARM=\v>                 <\aNetbeui.sys\vNETBEUI.SYS\v>              <\aVme\vVME=\v>
+<\aEcho\vECHO\v>                     <\aNulltrap\vNULLTRAP=\v>                 <\aVol\vVOL\v>
+<\aEdit\vEDIT\v>                     <\aNumlock\vNUMLOCK=\v>                  <\aWget\vWGET\v>
+<\aEl3c515.sys\vEL3C515.SYS\v>              <\aPath\vPATH\v>                     <\aWincache\vWINCACHE=\v>
+<\aEms\vEMS=\v>                      <\aPause\vPAUSE\v>                    <\aX87emu.sys\vX87EMU.SYS\v>
+<\aEs1371.sys\vES1371.SYS\v>               <\aPing\vPING\v>                     <\aXarc\vXARC\v>
+<\aExit\vEXIT\v>                     <\aPmd\vPMD\v>                      <\aXcopy\vXCOPY\v>
 <\aExp16.sys\vEXP16.SYS\v>                <\aPmwrite\vPMWRITE\v>
 
 Every command and every CONFIG.SYS statement PM-DOS has is listed.  A
@@ -3756,6 +3756,12 @@ errors.  <\aCHKDSK\vCHKDSK\v> reports whether a file is in one piece.
 DEFRAG works on FAT12, FAT16 and FAT32 drives.  exFAT drives are not
 supported.
 
+\bSolid-state disks\p
+
+DEFRAG works only on spinning disks.  Solid-state disks, USB disks and
+RAM disks are refused.  Moving files on flash memory wears the memory
+out and does not make the disk faster.
+
 \bThe screen\p
 
 A map of the disk, a block for each group of clusters, shows the
@@ -4679,7 +4685,8 @@ to boot.
 
 A USB disk is a disk of its own in the list, marked removable.  A
 partition made, deleted or changed on it is used the next time its
-drive letter is used, so no restart is asked for.  See <\aUSB\vUSB\v>.
+drive letter is used, so no restart is asked for.  Hard disks are
+numbered 0 to 7 and USB disks 8 to 11.  See <\aUSB\vUSB\v>.
 
 \bThe screen\p
 
@@ -5971,12 +5978,27 @@ For the CD-ROM drives themselves, see <\aCDEX\vCDEX\v>.
 A file is read as whatever it holds, not as its name says: an
 ISO9660 or UDF disc image, a FAT diskette or partition image, or a
 whole-disk image with a partition table, whose first FAT partition
-becomes the drive.  .ISO, .IMG, .IMA and .DSK are the usual names.
+becomes the drive.  .ISO, .IMG, .IMA, .IMZ and .DSK are the usual
+names.  An .IMZ is a diskette image in a ZIP file.
 
 \bWriting\p
 
 A mounted FAT image can be written to unless /R was given; the file
 changes with it.
+
+\bNetwork drives\p
+
+An image on a network drive is read and written where it is, over
+the network, whatever its size.  The drive cannot be disconnected
+with NET USE /DELETE while the image is mounted.
+
+\bCD-ROMs, exFAT drives and .IMZ files\p
+
+A diskette image of up to 2.88 MB on a CD-ROM or an exFAT drive is
+loaded into memory, and so is an .IMZ file on any drive.  Changes are
+saved to the file by MOUNT /U.  Restarting the computer before then
+loses the changes.  Any other image has to be copied to a hard disk
+or a network drive first.
 
 \bUnder Windows\p
 
@@ -5998,6 +6020,10 @@ To read a CD-ROM image as drive E:
 To mount a diskette image on the next free letter, read-only:
 
     mount boot.img /r
+
+To mount a hard disk image that is on a network drive:
+
+    mount e: n:\\images\\old486.img
 
 To let go of E:
 
@@ -6112,7 +6138,7 @@ To rename a directory:
                                     MPLAY
  
 Plays sound and music files: wave files, Creative Voice files, MIDI,
-MP3 and Ogg Vorbis.  It has a playlist, a graphic equalizer and a
+MP3, FLAC and Ogg Vorbis.  It has a playlist, a graphic equalizer and a
 spectrum analyzer.
 
 \bSyntax\p
@@ -6153,8 +6179,9 @@ The sound card needs its driver, loaded with <\aDEVICE=\vDEVICE=\v>: see
 Wave files (.WAV): PCM of 8 to 32 bits, floating point, A-law, mu-law,
 and IMA and Microsoft ADPCM.  Creative Voice files (.VOC), except
 2.6-bit ADPCM.  MIDI files (.MID, .RMI, .KAR).  MPEG audio layers 1, 2
-and 3 (.MP3, .MP2, .MP1) at every rate.  Ogg Vorbis (.OGG).  Windows
-Media Audio files (.WMA) are not played.
+and 3 (.MP3, .MP2, .MP1) at every rate.  FLAC files (.FLAC, .FLA),
+except 32-bit files.  Ogg Vorbis (.OGG).  Windows Media Audio files
+(.WMA) are not played.
 
 \bKeys\p
 
@@ -6181,13 +6208,16 @@ octave.  On a 486 DX4-100 an MP3 file plays at half rate and an Ogg
 Vorbis file at full rate; a Pentium plays both at full rate.
 Quality on the Options menu sets this by hand.
 
+FLAC files take the same work at every quality setting.  CD-quality
+FLAC needs a 486 DX2-66 or faster.
+
 \bThe equalizer\p
 
 Ten sliders from 31 Hz to 16 kHz and a preamp, each up to 12 dB up or
 down.  E switches the equalizer on and off, and the Equalizer menu has
 presets.  The equalizer costs almost nothing on MP3 and Ogg Vorbis
-files.  On wave, VOC and MIDI files it takes more work; Sound on the
-Options menu turns the equalizer off for those files.
+files.  On wave, FLAC, VOC and MIDI files it takes more work; Sound on
+the Options menu turns the equalizer off for those files.
 
 \bScreens and settings\p
 
@@ -8373,7 +8403,19 @@ place of its first letter.  A directory that has gone is made again.
 Up to a tenth of the drive's free space.  When more room is needed
 the oldest kept files go first.  Files bigger than that, *.TMP and
 *.$$$ files, and anything deleted inside RECYCLED are gone at once.
-Protection does not work while Windows is running.
+
+\bUnder Windows\p
+
+Windows in 386 enhanced mode needs UNDELETE.386 to keep deleted
+files.  Add this line to the [386Enh] section of SYSTEM.INI, with the
+directory UNDELETE.386 is in:
+
+    device=C:\\DOS\\UNDELETE.386
+
+Files deleted by Windows programs and in DOS windows are then kept as
+they are at the prompt, with or without 32-bit file access.  Windows'
+own *.SWP files and files whose names start with ~ are not kept.
+Standard mode is not covered.
  
                                      
 .context UNDELETE--Examples
@@ -8986,8 +9028,8 @@ they are in the kernel, so those programs are not loaded:
 \i<\aDpmi\vDPMI=\v>                     <\aShare\vSHARE=\v>\p
 \i<\aEms\vEMS=\v>                      <\aUndelete\vUNDELETE=\v>\p
 \i<\aIde32\vIDE32=\v>                    <\aUsb\vUSB=\v>\p
-\i<\aIdecable\vIDECABLE=\v>                 <\aWincache\vWINCACHE=\v>\p
-\i<\aIdedma\vIDEDMA=\v>\p
+\i<\aIdecable\vIDECABLE=\v>                 <\aVme\vVME=\v>\p
+\i<\aIdedma\vIDEDMA=\v>                   <\aWincache\vWINCACHE=\v>\p
 
 CONFIG.SYS can also hold several configurations, with a menu at
 startup to choose one.  See <\aMultiple Configurations\vMulti-config\v>.
@@ -9199,9 +9241,8 @@ PM-DOS.
 
 \bWhich disks\p
 
-Only the first AHCI controller is used, and only for the BIOS's first
-and second hard disks.  Each disk keeps the drive number the BIOS gave
-it.
+Only the first AHCI controller is used, for up to eight hard disks.
+Each disk keeps the drive number the BIOS gave it.
 
 \bCD-ROM drives\p
 
@@ -11042,7 +11083,8 @@ ON
     This is the default setting.
 
 OFF
-    Disables delete protection.
+    Disables delete protection.  UNDELETE.386 does nothing under
+    Windows as well.
 
 \bRelated Commands\p
 
@@ -11058,6 +11100,45 @@ See <\aUNDELETE\vUNDELETE\v> and <\aDEL\vDEL\v>.
                            UNDELETE=컴Examples
  
     UNDELETE=OFF
+ 
+                                     
+.context VME=
+.context Vme
+.topic VME=
+.freeze 3
+\i\aExamples\vVME=--Examples\v\p
+\b\i컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴\p
+ 
+                                     VME=
+ 
+Lets the processor handle a DOS program's interrupt flag instructions.
+
+\bSyntax\p
+
+    VME=ON | OFF
+
+\bParameters\p
+
+ON
+    Uses the Virtual-8086 Mode Extensions of a Pentium or later
+    processor, which makes DOS programs faster.  The extensions are
+    used only if a check at startup passes.
+    This is the default setting.
+
+OFF
+    PM-DOS handles the instructions itself.  For checking whether a
+    problem with a DOS program comes from VME.
+ 
+                                     
+.context VME=--Examples
+.topic VME=--Examples
+.freeze 3
+\i\aSyntax\vVME=\v\p
+\b\i컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴\p
+ 
+                              VME=컴Examples
+ 
+    VME=OFF
  
                                      
 .context WINCACHE=

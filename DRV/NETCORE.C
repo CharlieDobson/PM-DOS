@@ -15,36 +15,36 @@
 #include "netdrv.h"
 
 /* the globals a card fills */
-u16  net_port;
-u32  net_mem;
-u8   net_irq = NIC_NOIRQ;
-u8   net_bus;
-u8   net_flags;
-u32  net_pciaddr;
-u8   net_mac[6];
-char net_name[32];
+uint16_t net_port;
+uint32_t net_mem;
+uint8_t  net_irq = NIC_NOIRQ;
+uint8_t  net_bus;
+uint8_t  net_flags;
+uint32_t net_pciaddr;
+uint8_t  net_mac[6];
+char     net_name[32];
 
-u32  net_opt_port;
-u32  net_opt_mem;
-u8   net_opt_irq = NIC_NOIRQ;
-u8   net_opt_poll;              /* /POLL: run the card on the clock, no IRQ */
+uint32_t net_opt_port;
+uint32_t net_opt_mem;
+uint8_t  net_opt_irq = NIC_NOIRQ;
+unsigned char net_opt_poll;     /* /POLL: run the card on the clock, no IRQ */
 const char *net_line;           /* the DEVICE= line, while nd_init runs */
 
 NIC_STATBLOCK net_stats;
 
-volatile u8 net_probing;
-volatile u8 net_probe_hit = NIC_NOIRQ;
+volatile unsigned char net_probing;
+volatile uint8_t net_probe_hit = NIC_NOIRQ;
 int ( *net_probe_isr )( void );         /* the card's: was that its interrupt? */
-static u8 probe_kept = NIC_NOIRQ;       /* the line the probe left hooked */
+static uint8_t probe_kept = NIC_NOIRQ;  /* the line the probe left hooked */
 
 /* the receive queue: QN frames and a spare the newest goes in when the
    queue is full, so that a card's ISR always has somewhere to write */
 #define QN      16
 #define QSLOT   1536            /* a length word and the longest frame */
 
-static u8  *queue;
-static u32  q_head, q_tail;
-static volatile u32 q_count;
+static uint8_t *queue;
+static unsigned int q_head, q_tail;
+static volatile unsigned int q_count;
 
 /* the bindings (NIC_BIND), as NE2000.SYS has them: a protocol driver
    beside the default reader - NETBEUI.SYS beside TCPIP.SYS - claims an
@@ -53,31 +53,31 @@ static volatile u32 q_count;
 #define BQN     8               /* frames a binding's queue holds */
 
 static struct {
-    u8   used;
-    u8   dsap;                  /* with type 0: an 802.3 frame's DSAP */
-    u16  type;                  /* an Ethernet type, or 0 */
-    u8  *q;                     /* BQN slots of QSLOT */
-    u32  head, tail;
-    volatile u32 count;
+    unsigned char used;
+    uint8_t  dsap;              /* with type 0: an 802.3 frame's DSAP */
+    uint16_t type;              /* an Ethernet type, or 0 */
+    uint8_t *q;                 /* BQN slots of QSLOT */
+    unsigned int head, tail;
+    volatile unsigned int count;
 } binds[NIC_BINDS];
 
-static u8   running;
-static u8   parked;
-static u8   polled;
-static u8   tick_seen;          /* the card was asking last tick too */
-static u8   bridge_woke;        /* the WfW bridge woke the card (polled) */
-static u8   nat_irq;            /* the native line, kept across a bridge wake */
-static u8   nat_flags;          /* the native NICF_*, the same */
-static u8   probe_hooked[16];
+static unsigned char running;
+static unsigned char parked;
+static unsigned char polled;
+static unsigned char tick_seen;   /* the card was asking last tick too */
+static unsigned char bridge_woke; /* the WfW bridge woke the card (polled) */
+static uint8_t nat_irq;           /* the native line, kept across a bridge wake */
+static uint8_t nat_flags;         /* the native NICF_*, the same */
+static unsigned char probe_hooked[16];
 
 /* ---------------------------------------------------------------- */
 /* the services, wrapped                                             */
 /* ---------------------------------------------------------------- */
 
-void *net_alloc( u32 bytes )  { return nds_alloc( bytes ); }
-void  net_free( void *block ) { nds_free( block ); }
-void  net_print( const char *text ) { nds_print( text ); }
-u32   net_ticks( void )       { return nds_ticks(); }
+void    *net_alloc( unsigned int bytes )  { return nds_alloc( bytes ); }
+void     net_free( void *block ) { nds_free( block ); }
+void     net_print( const char *text ) { nds_print( text ); }
+uint32_t net_ticks( void )       { return nds_ticks(); }
 
 /* ---------------------------------------------------------------- */
 /* time shorter than a tick                                          */
@@ -85,16 +85,16 @@ u32   net_ticks( void )       { return nds_ticks(); }
 
 /* the timer's channel 0, latched: it counts down at 1,193,182 a second
    whatever the processor and the bus are */
-static u16 pit_count( void )
+static uint16_t pit_count( void )
 {
-    u32 flags = int_off();
-    u16 low, high;
+    uint32_t flags = int_off();
+    uint16_t low, high;
 
     outb( 0x43, 0x00 );                 /* latch channel 0 */
     low = inb( 0x40 );
     high = inb( 0x40 );
     int_back( flags );
-    return (u16)( ( high << 8 ) | low );
+    return (uint16_t)( ( high << 8 ) | low );
 }
 
 /* At least USEC microseconds (EL3C509.SYS's wait, shared).  In the
@@ -106,15 +106,15 @@ static u16 pit_count( void )
    cycles, so the guard is never what ends the wait on a machine whose
    timer runs.  An empty loop is no measure of time: on a Pentium 4 a
    5,000-pass loop is gone in a couple of microseconds. */
-void net_delay_us( u32 usec )
+void net_delay_us( unsigned int usec )
 {
-    u32 want = usec * 5 / 2, got = 0, guard = usec * 8 + 64;
-    u16 last, now;
+    unsigned int want = usec * 5 / 2, got = 0, guard = usec * 8 + 64;
+    uint16_t last, now;
 
     last = pit_count();
     while ( got < want && guard ) {
         now = pit_count();
-        got += ( now <= last ) ? (u32)( last - now ) : (u32)last;
+        got += ( now <= last ) ? (unsigned int)( last - now ) : (unsigned int)last;
         last = now;
         guard--;
     }
@@ -124,16 +124,16 @@ void net_delay_us( u32 usec )
 /* what a library would have supplied                                */
 /* ---------------------------------------------------------------- */
 
-void net_memcpy( void *to, const void *from, u32 len )
+void net_memcpy( void *to, const void *from, unsigned int len )
 {
-    u8 *t = (u8 *)to;
-    const u8 *f = (const u8 *)from;
+    uint8_t *t = (uint8_t *)to;
+    const uint8_t *f = (const uint8_t *)from;
     while ( len-- ) *t++ = *f++;
 }
 
-void net_memzero( void *to, u32 len )
+void net_memzero( void *to, unsigned int len )
 {
-    u8 *t = (u8 *)to;
+    uint8_t *t = (uint8_t *)to;
     while ( len-- ) *t++ = 0;
 }
 
@@ -142,7 +142,7 @@ void net_strcpy( char *to, const char *from )
     while ( ( *to++ = *from++ ) != 0 ) ;
 }
 
-int net_mac_ok( const u8 *mac )
+int net_mac_ok( const uint8_t *mac )
 {
     int i;
     for ( i = 0; i < 6 && mac[i] == 0; i++ ) ;
@@ -156,19 +156,19 @@ int net_mac_ok( const u8 *mac )
 /* the receive queue                                                 */
 /* ---------------------------------------------------------------- */
 
-u8 *net_rx_begin( void )
+uint8_t *net_rx_begin( void )
 {
     return queue + ( q_count == QN ? QN : q_tail ) * QSLOT + 2;
 }
 
 /* which binding wants this frame, or -1 */
-static int bind_match( const u8 *frame, u32 len )
+static int bind_match( const uint8_t *frame, unsigned int len )
 {
-    u16 type;
+    uint16_t type;
     int i;
 
     if ( len < NIC_HDRLEN + 1 ) return -1;
-    type = (u16)( ( (u16)frame[12] << 8 ) | frame[13] );
+    type = (uint16_t)( ( (uint16_t)frame[12] << 8 ) | frame[13] );
     for ( i = 0; i < NIC_BINDS; i++ ) {
         if ( !binds[i].used ) continue;
         if ( binds[i].type ? type == binds[i].type
@@ -179,9 +179,9 @@ static int bind_match( const u8 *frame, u32 len )
 
 /* a frame copied into a binding's queue.  The card wrote it into a slot
    of QSLOT, so it is never longer than a binding's slot holds */
-static void bind_put( int b, const u8 *frame, u32 len )
+static void bind_put( int b, const uint8_t *frame, unsigned int len )
 {
-    u8 *slot;
+    uint8_t *slot;
 
     if ( binds[b].count == BQN ) {
         net_stats.rxdropped++;
@@ -189,7 +189,7 @@ static void bind_put( int b, const u8 *frame, u32 len )
     }
     if ( len > QSLOT - 2 ) len = QSLOT - 2;
     slot = binds[b].q + binds[b].tail * QSLOT;
-    *(u16 *)slot = (u16)len;
+    *(uint16_t *)slot = (uint16_t)len;
     net_memcpy( slot + 2, frame, len );
     binds[b].tail = ( binds[b].tail + 1 ) % BQN;
     binds[b].count++;
@@ -197,9 +197,9 @@ static void bind_put( int b, const u8 *frame, u32 len )
     net_stats.rxbytes += len;
 }
 
-void net_rx_commit( u32 len )
+void net_rx_commit( unsigned int len )
 {
-    u8 *slot;
+    uint8_t *slot;
     int b;
 
     /* the frame is where net_rx_begin said: the tail, or the spare.  A
@@ -216,7 +216,7 @@ void net_rx_commit( u32 len )
         return;
     }
     slot = queue + q_tail * QSLOT;
-    *(u16 *)slot = (u16)len;
+    *(uint16_t *)slot = (uint16_t)len;
     q_tail = ( q_tail + 1 ) % QN;
     q_count++;
     net_stats.rxframes++;
@@ -227,35 +227,35 @@ void net_rx_commit( u32 len )
 /* the PCI bus                                                       */
 /* ---------------------------------------------------------------- */
 
-static int bus_call( u32 func, REGS *r )
+static int bus_call( unsigned int func, REGS *r )
 {
     r->eax = ( r->eax & 0xFFFF ) | ( func << 8 );
     return nds_bus( r );
 }
 
-u32 net_pci_cfg_read( u32 addr, int reg, int bytes )
+uint32_t net_pci_cfg_read( uint32_t addr, int reg, int bytes )
 {
     REGS r;
 
     net_memzero( &r, sizeof( r ) );
     r.ebx = addr;
-    r.edx = (u32)reg | ( (u32)bytes << 8 );
+    r.edx = (uint32_t)reg | ( (uint32_t)bytes << 8 );
     if ( !bus_call( BUS_PCIREAD, &r ) ) return 0xFFFFFFFFL;
     return r.eax;
 }
 
-void net_pci_cfg_write( u32 addr, int reg, int bytes, u32 value )
+void net_pci_cfg_write( uint32_t addr, int reg, int bytes, uint32_t value )
 {
     REGS r;
 
     net_memzero( &r, sizeof( r ) );
     r.ebx = addr;
-    r.edx = (u32)reg | ( (u32)bytes << 8 );
+    r.edx = (uint32_t)reg | ( (uint32_t)bytes << 8 );
     r.ecx = value;
     bus_call( BUS_PCIWRITE, &r );
 }
 
-u32 net_pci_find( const PCI_ID *ids, const PCI_ID **which )
+uint32_t net_pci_find( const PCI_ID *ids, const PCI_ID **which )
 {
     REGS r;
     int  i;
@@ -276,7 +276,7 @@ u32 net_pci_find( const PCI_ID *ids, const PCI_ID **which )
 /* a base address register: its base, and whether it is in I/O space.
    A 64-bit memory BAR the BIOS put above 4GB is out of reach - the
    kernel's map is 32-bit - and is refused, with the setting to change */
-u32 net_pci_bar( u32 addr, int bar, int *is_io )
+uint32_t net_pci_bar( uint32_t addr, int bar, int *is_io )
 {
     REGS r;
 
@@ -296,7 +296,7 @@ u32 net_pci_bar( u32 addr, int bar, int *is_io )
 /* device memory made reachable: the identity map means the linear
    address is the physical one, but BUS_MAPPHYS is asked anyway so a
    region above what the boot-time map covers is mapped in */
-u32 net_pci_map( u32 phys, u32 bytes )
+uint32_t net_pci_map( uint32_t phys, unsigned int bytes )
 {
     REGS r;
 
@@ -307,7 +307,7 @@ u32 net_pci_map( u32 phys, u32 bytes )
     return r.eax;
 }
 
-int net_pci_irqline( u32 addr )
+int net_pci_irqline( uint32_t addr )
 {
     REGS r;
 
@@ -320,9 +320,9 @@ int net_pci_irqline( u32 addr )
 
 /* the command register's I/O, memory and bus-master bits, switched on
    if the BIOS left any off */
-void net_pci_enable( u32 addr )
+void net_pci_enable( uint32_t addr )
 {
-    u32 cmd = net_pci_cfg_read( addr, 0x04, 2 );
+    uint32_t cmd = net_pci_cfg_read( addr, 0x04, 2 );
 
     if ( ( cmd & 7 ) != 7 ) net_pci_cfg_write( addr, 0x04, 2, cmd | 7 );
 }
@@ -331,7 +331,7 @@ void net_pci_enable( u32 addr )
 /* the interrupt line, found by making an ISA card interrupt          */
 /* ---------------------------------------------------------------- */
 
-static const u8 probe_lines[] = { 3, 4, 5, 9, 10, 11, 12, 15, 0 };
+static const uint8_t probe_lines[] = { 3, 4, 5, 9, 10, 11, 12, 15, 0 };
 
 void net_irq_probe_begin( void )
 {
@@ -371,9 +371,9 @@ static void probe_drop( void )
 /* the DEVICE= line: /P:port (hex), /M:mem (hex), /I:line (decimal)   */
 /* ---------------------------------------------------------------- */
 
-static u32 num_after( const char *text, int hex, u32 none )
+static uint32_t num_after( const char *text, int hex, uint32_t none )
 {
-    u32 value = 0;
+    uint32_t value = 0;
     int digits = 0, digit;
     char ch;
 
@@ -403,12 +403,21 @@ static void parse_line( const char *line )
             if ( p[3] == '0' && ( p[4] | 0x20 ) == 'x' ) p += 2;
             net_opt_mem = num_after( p + 3, 1, 0 );
         } else if ( ( p[1] | 0x20 ) == 'i' && p[2] == ':' ) {
-            u32 value = num_after( p + 3, 0, NIC_NOIRQ );
-            net_opt_irq = (u8)( value > 15 ? NIC_NOIRQ : value );
+            uint32_t value = num_after( p + 3, 0, NIC_NOIRQ );
+            net_opt_irq = (uint8_t)( value > 15 ? NIC_NOIRQ : value );
         } else if ( ( p[1] | 0x20 ) == 'p' && ( p[2] | 0x20 ) == 'o' ) {
             net_opt_poll = 1;           /* /POLL - no interrupt, clock only */
         }
     }
+}
+
+/* a /P: port no card can have: 00-FFh are the motherboard's (DMA, the
+   interrupt controllers, the timer, the keyboard), and a port number
+   has 16 bits.  num_after leaves a number too long to read at
+   FFFFFFFFh, so that is refused too.  0 is no /P: at all. */
+static int port_bad( uint32_t port )
+{
+    return port != 0 && ( port < 0x100 || port > 0xFFFF );
 }
 
 /* ---------------------------------------------------------------- */
@@ -421,7 +430,7 @@ static void add_str( char *to, const char *from )
     net_strcpy( to, from );
 }
 
-static void add_hex( char *to, u32 value, int digits )
+static void add_hex( char *to, uint32_t value, int digits )
 {
     int shift;
     while ( *to ) to++;
@@ -429,7 +438,7 @@ static void add_hex( char *to, u32 value, int digits )
     *to = 0;
 }
 
-static void add_dec( char *to, u32 value )
+static void add_dec( char *to, unsigned int value )
 {
     char d[12];
     int  n = 0;
@@ -467,6 +476,10 @@ int __cdecl nd_init( const char *line )
     int  failed;
 
     parse_line( line );
+    if ( port_bad( net_opt_port ) ) {
+        net_print( "the /P: port must be from 100 to FFFF\r\n" );
+        return 1;
+    }
     net_line = line;
     if ( card_find() ) {
         net_line = 0;
@@ -496,7 +509,7 @@ int __cdecl nd_init( const char *line )
         if ( !nds_irqhook( net_irq ) ) net_irq = NIC_NOIRQ;
     }
     probe_kept = NIC_NOIRQ;                     /* net_irq's now, unhooked as it is */
-    polled = (u8)( net_irq == NIC_NOIRQ );
+    polled = (unsigned char)( net_irq == NIC_NOIRQ );
     if ( polled ) net_flags |= NICF_POLLED;
     nds_tickhook();
     failed = card_setup();
@@ -518,8 +531,8 @@ int __cdecl nd_init( const char *line )
 
 void __cdecl nd_park( int back )
 {
-    u32 flags = int_off();
-    u8  keep_irq, keep_flags;
+    uint32_t flags = int_off();
+    uint8_t  keep_irq, keep_flags;
 
     if ( !back ) {
         parked = 1;
@@ -532,7 +545,7 @@ void __cdecl nd_park( int back )
                the kernel runs the card on its interrupt again, not polled */
             net_irq = nat_irq;
             net_flags = nat_flags;
-            polled = (u8)( net_irq == NIC_NOIRQ );
+            polled = (unsigned char)( net_irq == NIC_NOIRQ );
             bridge_woke = 0;
         }
         /* card_find sets the line and the flags afresh, as at the load;
@@ -557,12 +570,12 @@ void __cdecl nd_halt( void )
     running = 0;
 }
 
-int __cdecl nd_irq( u32 line )
+int __cdecl nd_irq( uint32_t line )
 {
     if ( net_probing ) {                        /* the card making itself
                                                    interrupt: which line? */
         if ( net_probe_isr != 0 && net_probe_isr() ) {
-            net_probe_hit = (u8)line;
+            net_probe_hit = (uint8_t)line;
             return 1;
         }
         return 0;
@@ -585,12 +598,13 @@ void __cdecl nd_tick( void )
     (void)tick_seen;
 }
 
-int __cdecl nd_call( u32 fn, void *buf, u32 len, u32 *answer )
+int __cdecl nd_call( uint32_t fn, void *buf, uint32_t len, uint32_t *answer )
 {
     NIC_INFOBLOCK *info;
     NIC_STATBLOCK *st;
-    u32 flags, got;
-    u8 *slot;
+    uint32_t flags;
+    unsigned int got;
+    uint8_t *slot;
 
     switch ( fn ) {
     case NIC_INFO:
@@ -612,7 +626,7 @@ int __cdecl nd_call( u32 fn, void *buf, u32 len, u32 *answer )
     case NIC_SEND:
         if ( len < NIC_MINFRAME || len > NIC_MAXFRAME ) return ERR_BADLEN;
         if ( !running ) return ERR_GENERAL;
-        if ( !card_send( (const u8 *)buf, len ) ) return ERR_GENERAL;
+        if ( !card_send( (const uint8_t *)buf, len ) ) return ERR_GENERAL;
         net_stats.txframes++;
         net_stats.txbytes += len;
         *answer = len;
@@ -621,7 +635,7 @@ int __cdecl nd_call( u32 fn, void *buf, u32 len, u32 *answer )
     case NIC_RECV:
         if ( q_count == 0 ) { *answer = 0; return 0; }
         slot = queue + q_head * QSLOT;
-        got = *(u16 *)slot;
+        got = *(uint16_t *)slot;
         net_memcpy( buf, slot + 2, got < len ? got : len );
         flags = int_off();
         q_head = ( q_head + 1 ) % QN;
@@ -631,32 +645,32 @@ int __cdecl nd_call( u32 fn, void *buf, u32 len, u32 *answer )
         return 0;
 
     case NIC_BIND: {
-        const u8 *req = (const u8 *)buf;
-        u16 type;
+        const uint8_t *req = (const uint8_t *)buf;
+        uint16_t type;
         int i;
 
         if ( len < NICB_LEN ) return ERR_BADLEN;
-        type = *(const u16 *)req;
+        type = *(const uint16_t *)req;
         for ( i = 0; i < NIC_BINDS && binds[i].used; i++ ) ;
         if ( i == NIC_BINDS ) return ERR_GENERAL;
         if ( binds[i].q == 0 ) binds[i].q = net_alloc( BQN * QSLOT );
         if ( binds[i].q == 0 ) return ERR_GENERAL;
         binds[i].type = type;
-        binds[i].dsap = (u8)( type ? 0 : req[2] );
+        binds[i].dsap = (uint8_t)( type ? 0 : req[2] );
         binds[i].head = binds[i].tail = 0;
         binds[i].count = 0;
         flags = int_off();
         binds[i].used = 1;              /* the card's handler may use it from now */
         int_back( flags );
-        *answer = (u32)( i + 1 );
+        *answer = (uint32_t)( i + 1 );
         return 0;
     }
 
     case NIC_RECVB: {
-        u32 b;
+        uint32_t b;
 
         if ( len < 4 ) return ERR_BADLEN;
-        b = *(u32 *)buf;
+        b = *(uint32_t *)buf;
         if ( b < 1 || b > NIC_BINDS || !binds[b - 1].used ) return ERR_BADDATA;
         b--;
         if ( binds[b].count == 0 ) {
@@ -664,8 +678,8 @@ int __cdecl nd_call( u32 fn, void *buf, u32 len, u32 *answer )
             return 0;
         }
         slot = binds[b].q + binds[b].head * QSLOT;
-        got = *(u16 *)slot;
-        net_memcpy( (u8 *)buf + 4, slot + 2, got < len - 4 ? got : len - 4 );
+        got = *(uint16_t *)slot;
+        net_memcpy( (uint8_t *)buf + 4, slot + 2, got < len - 4 ? got : len - 4 );
         flags = int_off();
         binds[b].head = ( binds[b].head + 1 ) % BQN;
         binds[b].count--;
@@ -688,7 +702,7 @@ int __cdecl nd_call( u32 fn, void *buf, u32 len, u32 *answer )
         /* take whatever has arrived off the card's ring into the queue,
            as nd_irq/nd_tick do - the WfW bridge drives this with
            interrupts off, so NIC_RECV then finds the frames */
-        *answer = running ? (u32)card_service() : 0;
+        *answer = running ? (uint32_t)card_service() : 0;
         return 0;
 
     case NIC_WAKE:
@@ -727,7 +741,7 @@ int __cdecl nd_call( u32 fn, void *buf, u32 len, u32 *answer )
             net_irq = nat_irq;
             net_flags = nat_flags;
         }
-        net_flags = (u8)( net_flags & ~NICF_POLLED );
+        net_flags = (uint8_t)( net_flags & ~NICF_POLLED );
         polled = 0;
         if ( !card_setup() ) running = 1;
         int_back( flags );

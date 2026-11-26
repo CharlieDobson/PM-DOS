@@ -10,7 +10,7 @@ rem D32 image linked with no C library, DOSINT.OBJ first because the
 rem D32 header is in it, D32BIND putting the MS-DOS stub in front - but
 rem nothing goes to BIN.  With no folder named it uses %TEMP%\MPLAY.
 rem
-rem The codecs: set MPHAVE=VOC MP3 OGG MIDI names the ones built in,
+rem The codecs: set MPHAVE=VOC MP3 OGG FLAC MIDI names the ones built in,
 rem and MPSRC their sources.  With neither set, every codec whose first
 rem source is here is built in, except WMA, which BUILD.CMD leaves out
 rem too; WMA needs WMATAB.C, which is not shipped (NOTES.TXT says why).
@@ -28,6 +28,7 @@ set MPSRC=
 if exist voc.c set MPHAVE=!MPHAVE! VOC& set MPSRC=!MPSRC! voc
 if exist mp3.c set MPHAVE=!MPHAVE! MP3& set MPSRC=!MPSRC! mp3 mp3l12 mp3l3 mp3syn mp3tab
 if exist ogg.c set MPHAVE=!MPHAVE! OGG& set MPSRC=!MPSRC! ogg vbdec vbmdct vbtab
+if exist flac.c set MPHAVE=!MPHAVE! FLAC& set MPSRC=!MPSRC! flac
 if exist midi.c set MPHAVE=!MPHAVE! MIDI& set MPSRC=!MPSRC! midi mdopl mdsyn mdbank
 :have
 set DEFS=

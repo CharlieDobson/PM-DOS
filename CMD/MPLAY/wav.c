@@ -49,33 +49,33 @@
 #define IN_SIZE         16384UL         /* bytes read at a time */
 
 typedef struct {
-    SRC  *src;
-    u32   data_start, data_end;         /* the samples, as file positions */
-    u32   frames;                       /* in the file, 0 when not known */
-    u32   done;                         /* frames given out so far, at the file's rate */
-    u16   tag;                          /* WF_*, never WF_EXTENSIBLE */
-    u16   channels;
-    u16   bits;                         /* container bits a sample */
-    u16   block;                        /* block_align: bytes a frame, or an ADPCM block */
-    u32   block_frames;                 /* ADPCM: frames a block */
-    u8    down, mono;                   /* what was asked for */
-    u8    out_ch;                       /* channels given out: 1 or 2 */
-    u32   rate;
+    SRC     *src;
+    uint32_t data_start, data_end;      /* the samples, as file positions */
+    uint32_t frames;                    /* in the file, 0 when not known */
+    uint32_t done;                      /* frames given out so far, at the file's rate */
+    uint16_t tag;                       /* WF_*, never WF_EXTENSIBLE */
+    uint16_t channels;
+    uint16_t bits;                      /* container bits a sample */
+    uint16_t block;                     /* block_align: bytes a frame, or an ADPCM block */
+    uint32_t block_frames;              /* ADPCM: frames a block */
+    uint8_t  down, mono;                /* what was asked for */
+    uint8_t  out_ch;                    /* channels given out: 1 or 2 */
+    uint32_t rate;
     /* MS ADPCM's coefficients */
-    int   ncoefs;
-    s16   coef1[MAX_COEFS], coef2[MAX_COEFS];
+    int      ncoefs;
+    int16_t  coef1[MAX_COEFS], coef2[MAX_COEFS];
     /* the bytes read and not yet used */
-    u8   *in;
-    u32   in_len, in_used;
+    uint8_t *in;
+    uint32_t in_len, in_used;
     /* ADPCM: one block decoded, frames waiting to go out */
-    s16  *blk;                          /* block_frames * channels */
-    u32   blk_have, blk_used;
+    int16_t *blk;                       /* block_frames * channels */
+    uint32_t blk_have, blk_used;
     /* half/quarter rate: frames waiting to be averaged */
-    s32   acc[2];
-    u32   acc_count;
+    int32_t  acc[2];
+    uint32_t acc_count;
 } WAVSTATE;
 
-static const u16 ima_step[89] = {
+static const uint16_t ima_step[89] = {
         7,     8,     9,    10,    11,    12,    13,    14,    16,    17,
        19,    21,    23,    25,    28,    31,    34,    37,    41,    45,
        50,    55,    60,    66,    73,    80,    88,    97,   107,   118,
@@ -87,19 +87,19 @@ static const u16 ima_step[89] = {
     15289, 16818, 18500, 20350, 22385, 24623, 27086, 29794, 32767
 };
 
-static const s8 ima_index[8] = { -1, -1, -1, -1, 2, 4, 6, 8 };
+static const int8_t ima_index[8] = { -1, -1, -1, -1, 2, 4, 6, 8 };
 
-static const u16 ms_adapt[16] = {
+static const uint16_t ms_adapt[16] = {
     230, 230, 230, 230, 307, 409, 512, 614,
     768, 614, 512, 409, 307, 230, 230, 230
 };
 
-static const s16 ms_coef1[7] = { 256, 512, 0, 192, 240, 460, 392 };
-static const s16 ms_coef2[7] = { 0, -256, 0, 64, 0, -208, -232 };
+static const int16_t ms_coef1[7] = { 256, 512, 0, 192, 240, 460, 392 };
+static const int16_t ms_coef2[7] = { 0, -256, 0, 64, 0, -208, -232 };
 
 /* the GUID of an EXTENSIBLE format, after its first two bytes (which
    are the old format code) */
-static const u8 ksguid_tail[14] = {
+static const uint8_t ksguid_tail[14] = {
     0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x80, 0x00,
     0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71
 };
@@ -107,12 +107,12 @@ static const u8 ksguid_tail[14] = {
 /* ------------------------------------------------------------------ */
 /* one sample of each coding                                           */
 /* ------------------------------------------------------------------ */
-static s32 from_alaw( u8 byte )
+static int32_t from_alaw( uint8_t byte )
 {
-    s32 val, seg;
+    int32_t val, seg;
 
     byte ^= 0x55;
-    val = (s32)(byte & 0x0F) << 4;
+    val = (int32_t)(byte & 0x0F) << 4;
     seg = (byte >> 4) & 7;
     if ( seg == 0 ) {
         val += 8;
@@ -122,20 +122,20 @@ static s32 from_alaw( u8 byte )
     return (byte & 0x80) ? val : -val;
 }
 
-static s32 from_mulaw( u8 byte )
+static int32_t from_mulaw( uint8_t byte )
 {
-    s32 val;
+    int32_t val;
 
-    byte = (u8)~byte;
-    val = (((s32)(byte & 0x0F) << 3) + 0x84) << ((byte >> 4) & 7);
+    byte = (uint8_t)~byte;
+    val = (((int32_t)(byte & 0x0F) << 3) + 0x84) << ((byte >> 4) & 7);
     return (byte & 0x80) ? 0x84 - val : val - 0x84;
 }
 
 /* an IEEE single, its bits in "bits", as a 16-bit sample */
-static s32 from_float32( u32 bits )
+static int32_t from_float32( uint32_t bits )
 {
     int exp = (int)((bits >> 23) & 0xFF);
-    s32 mant, shift, val;
+    int32_t mant, shift, val;
 
     if ( exp == 0 ) {
         return 0;                       /* zero, or too small to hear */
@@ -143,7 +143,7 @@ static s32 from_float32( u32 bits )
     if ( exp == 0xFF ) {
         return 0;                       /* not a number: silence rather than a click */
     }
-    mant = (s32)((bits & 0x7FFFFF) | 0x800000);
+    mant = (int32_t)((bits & 0x7FFFFF) | 0x800000);
     shift = exp - 135;                  /* value * 32768 = mant * 2^(exp - 127 - 23 + 15) */
     if ( shift >= 0 ) {
         val = 32767;
@@ -161,15 +161,15 @@ static s32 from_float32( u32 bits )
 /* an IEEE double by its upper four bytes, which hold the sign, the
    exponent and 20 bits of the fraction - more than a 16-bit sample
    can show */
-static s32 from_float64( u32 hi )
+static int32_t from_float64( uint32_t hi )
 {
     int exp = (int)((hi >> 20) & 0x7FF);
-    s32 mant, shift, val;
+    int32_t mant, shift, val;
 
     if ( exp == 0 || exp == 0x7FF ) {
         return 0;
     }
-    mant = (s32)((hi & 0xFFFFF) | 0x100000);
+    mant = (int32_t)((hi & 0xFFFFF) | 0x100000);
     shift = exp - 1028;                 /* mant * 2^(exp - 1023 - 20 + 15) */
     if ( shift >= 0 ) {
         val = 32767;
@@ -185,19 +185,19 @@ static s32 from_float64( u32 hi )
 }
 
 /* one channel's sample at "at", as 16 bits */
-static s32 pcm_sample( const WAVSTATE *wav, const u8 *at )
+static int32_t pcm_sample( const WAVSTATE *wav, const uint8_t *at )
 {
     switch ( wav->tag ) {
     case WF_PCM:
         switch ( wav->bits ) {
         case 8:
-            return ((s32)at[0] - 128) << 8;
+            return ((int32_t)at[0] - 128) << 8;
         case 16:
-            return (s16)LE16( at );
+            return (int16_t)LE16( at );
         case 24:
-            return (s16)LE16( at + 1 );
+            return (int16_t)LE16( at + 1 );
         default:
-            return (s16)LE16( at + 2 );
+            return (int16_t)LE16( at + 2 );
         }
     case WF_FLOAT:
         return wav->bits == 32 ? from_float32( LE32( at ) ) : from_float64( LE32( at + 4 ) );
@@ -212,7 +212,7 @@ static s32 pcm_sample( const WAVSTATE *wav, const u8 *at )
 /* ------------------------------------------------------------------ */
 /* ADPCM blocks                                                        */
 /* ------------------------------------------------------------------ */
-static s32 clamp16( s32 val )
+static int32_t clamp16( int32_t val )
 {
     return FX_SAT16( val );
 }
@@ -220,24 +220,24 @@ static s32 clamp16( s32 val )
 /* An IMA block: a header of four bytes for each channel (the first
    sample and the step index), then the nibbles four bytes - eight
    samples - of one channel after four of the next.  -> frames made */
-static u32 ima_block( WAVSTATE *wav, const u8 *data, u32 len )
+static unsigned int ima_block( WAVSTATE *wav, const uint8_t *data, unsigned int len )
 {
-    s32 pred[MAX_CHANNELS];
+    int32_t pred[MAX_CHANNELS];
     int index[MAX_CHANNELS];
-    u32 ch, frame, nch = wav->channels, made = 0, group, nib, pos;
-    s32 step, diff;
+    unsigned int ch, frame, nch = wav->channels, made = 0, group, nib, pos;
+    int32_t step, diff;
     int code;
 
     if ( len < 4 * nch ) {
         return 0;
     }
     for ( ch = 0; ch < nch; ch++ ) {
-        pred[ch] = (s16)LE16( data + 4 * ch );
+        pred[ch] = (int16_t)LE16( data + 4 * ch );
         index[ch] = data[4 * ch + 2];
         if ( index[ch] > 88 ) {
             index[ch] = 88;
         }
-        wav->blk[ch] = (s16)pred[ch];
+        wav->blk[ch] = (int16_t)pred[ch];
     }
     made = 1;
     pos = 4 * nch;
@@ -266,7 +266,7 @@ static u32 ima_block( WAVSTATE *wav, const u8 *data, u32 len )
                     index[ch] = 88;
                 }
                 if ( frame < wav->block_frames ) {
-                    wav->blk[frame * nch + ch] = (s16)pred[ch];
+                    wav->blk[frame * nch + ch] = (int16_t)pred[ch];
                 }
             }
         }
@@ -280,13 +280,13 @@ static u32 ima_block( WAVSTATE *wav, const u8 *data, u32 len )
    each a delta, a first and a second sample (the second is the older
    one and is played first); then the nibbles, high one first,
    channels taking turns.  -> frames made */
-static u32 ms_block( WAVSTATE *wav, const u8 *data, u32 len )
+static unsigned int ms_block( WAVSTATE *wav, const uint8_t *data, unsigned int len )
 {
-    s32 c1[MAX_CHANNELS], c2[MAX_CHANNELS], delta[MAX_CHANNELS];
-    s32 s1[MAX_CHANNELS], s2[MAX_CHANNELS];
-    u32 ch, nch = wav->channels, pos, made, nibbles, k;
+    int32_t c1[MAX_CHANNELS], c2[MAX_CHANNELS], delta[MAX_CHANNELS];
+    int32_t s1[MAX_CHANNELS], s2[MAX_CHANNELS];
+    unsigned int ch, nch = wav->channels, pos, made, nibbles, k;
     int pick, code;
-    s32 pred, val;
+    int32_t pred, val;
 
     if ( len < 7 * nch ) {
         return 0;
@@ -298,12 +298,12 @@ static u32 ms_block( WAVSTATE *wav, const u8 *data, u32 len )
         }
         c1[ch] = wav->coef1[pick];
         c2[ch] = wav->coef2[pick];
-        delta[ch] = (s16)LE16( data + nch + 2 * ch );
-        s1[ch] = (s16)LE16( data + 3 * nch + 2 * ch );
-        s2[ch] = (s16)LE16( data + 5 * nch + 2 * ch );
-        wav->blk[ch] = (s16)s2[ch];
+        delta[ch] = (int16_t)LE16( data + nch + 2 * ch );
+        s1[ch] = (int16_t)LE16( data + 3 * nch + 2 * ch );
+        s2[ch] = (int16_t)LE16( data + 5 * nch + 2 * ch );
+        wav->blk[ch] = (int16_t)s2[ch];
         if ( wav->block_frames > 1 ) {
-            wav->blk[nch + ch] = (s16)s1[ch];
+            wav->blk[nch + ch] = (int16_t)s1[ch];
         }
     }
     made = wav->block_frames > 1 ? 2 : 1;
@@ -313,7 +313,7 @@ static u32 ms_block( WAVSTATE *wav, const u8 *data, u32 len )
         ch = k % nch;
         code = (data[pos + k / 2] >> ((k & 1) ? 0 : 4)) & 0x0F;
         pred = (s1[ch] * c1[ch] + s2[ch] * c2[ch]) >> 8;
-        val = clamp16( pred + (s32)(code >= 8 ? code - 16 : code) * delta[ch] );
+        val = clamp16( pred + (int32_t)(code >= 8 ? code - 16 : code) * delta[ch] );
         s2[ch] = s1[ch];
         s1[ch] = val;
         delta[ch] = (ms_adapt[code] * delta[ch]) >> 8;
@@ -322,7 +322,7 @@ static u32 ms_block( WAVSTATE *wav, const u8 *data, u32 len )
         } else if ( delta[ch] > 0x7FFFFFFFL / 768 ) {
             delta[ch] = 0x7FFFFFFFL / 768;  /* the next step's 768 x delta must fit */
         }
-        wav->blk[made * nch + ch] = (s16)val;
+        wav->blk[made * nch + ch] = (int16_t)val;
         if ( ch == nch - 1 ) {
             made++;
         }
@@ -335,9 +335,11 @@ static u32 ms_block( WAVSTATE *wav, const u8 *data, u32 len )
 /* ------------------------------------------------------------------ */
 /* At least "want" bytes in wav->in from in_used on, or as many as the
    data has left.  -> the bytes there */
-static u32 fill_in( WAVSTATE *wav, u32 want )
+static unsigned int fill_in( WAVSTATE *wav, unsigned int want )
 {
-    u32 keep = wav->in_len - wav->in_used, room, left, got;
+    unsigned int keep = wav->in_len - wav->in_used, room;
+    uint32_t left;
+    unsigned int got;
 
     if ( keep >= want ) {
         return keep;
@@ -357,11 +359,11 @@ static u32 fill_in( WAVSTATE *wav, u32 want )
 
 /* The next frame of the file, mixed to the channels given out, into
    out[0] and out[1].  0 at the end */
-static int next_frame( WAVSTATE *wav, s32 *out )
+static int next_frame( WAVSTATE *wav, int32_t *out )
 {
-    u32 nch = wav->channels, ch, have, made;
-    const u8 *at;
-    s32 val, left = 0, right = 0;
+    unsigned int nch = wav->channels, ch, have, made;
+    const uint8_t *at;
+    int32_t val, left = 0, right = 0;
 
     if ( wav->tag == WF_IMAADPCM || wav->tag == WF_MSADPCM ) {
         if ( wav->blk_used >= wav->blk_have ) {
@@ -409,8 +411,8 @@ static int next_frame( WAVSTATE *wav, s32 *out )
     if ( nch == 1 ) {
         right = left;
     } else if ( nch > 2 ) {
-        left /= (s32)((nch + 1) / 2);
-        right /= (s32)(nch / 2);
+        left /= (int32_t)((nch + 1) / 2);
+        right /= (int32_t)(nch / 2);
     }
     if ( wav->out_ch == 1 ) {
         out[0] = nch == 1 ? left : (left + right) >> 1;
@@ -427,9 +429,9 @@ static int next_frame( WAVSTATE *wav, s32 *out )
    386's time at 44.1 kHz stereo, so this runs straight through. */
 static int fast_pcm( WAVSTATE *wav, DECBUF *buf )
 {
-    s16 *pcm = buf->pcm;
-    const u8 *at;
-    u32 have, count, i, total;
+    int16_t *pcm = buf->pcm;
+    const uint8_t *at;
+    unsigned int have, count, i, total;
 
     while ( buf->frames < buf->max ) {
         have = fill_in( wav, wav->block ) / wav->block;
@@ -447,21 +449,21 @@ static int fast_pcm( WAVSTATE *wav, DECBUF *buf )
                 mem_cpy( pcm, at, total * 2 );      /* little-endian on both sides */
             } else {
                 for ( i = 0; i < count; i++ ) {
-                    pcm[i * wav->channels] = (s16)LE16( at + i * wav->block );
+                    pcm[i * wav->channels] = (int16_t)LE16( at + i * wav->block );
                     if ( wav->channels == 2 ) {
-                        pcm[i * 2 + 1] = (s16)LE16( at + i * wav->block + 2 );
+                        pcm[i * 2 + 1] = (int16_t)LE16( at + i * wav->block + 2 );
                     }
                 }
             }
         } else if ( wav->block == wav->channels ) {
             for ( i = 0; i < total; i++ ) {
-                pcm[i] = (s16)(((s32)at[i] - 128) << 8);
+                pcm[i] = (int16_t)(((int32_t)at[i] - 128) << 8);
             }
         } else {
             for ( i = 0; i < count; i++ ) {
-                pcm[i * wav->channels] = (s16)(((s32)at[i * wav->block] - 128) << 8);
+                pcm[i * wav->channels] = (int16_t)(((int32_t)at[i * wav->block] - 128) << 8);
                 if ( wav->channels == 2 ) {
-                    pcm[i * 2 + 1] = (s16)(((s32)at[i * wav->block + 1] - 128) << 8);
+                    pcm[i * 2 + 1] = (int16_t)(((int32_t)at[i * wav->block + 1] - 128) << 8);
                 }
             }
         }
@@ -476,9 +478,9 @@ static int fast_pcm( WAVSTATE *wav, DECBUF *buf )
 static int wav_decode( void *state, DECBUF *buf )
 {
     WAVSTATE *wav = (WAVSTATE *)state;
-    s16 *pcm = buf->pcm;
-    s32 frame[2];
-    u32 per = 1UL << wav->down, ch;
+    int16_t *pcm = buf->pcm;
+    int32_t frame[2];
+    unsigned int per = 1UL << wav->down, ch;
 
     buf->frames = 0;
     buf->ev_count = 0;
@@ -500,7 +502,7 @@ static int wav_decode( void *state, DECBUF *buf )
             continue;
         }
         for ( ch = 0; ch < wav->out_ch; ch++ ) {
-            *pcm++ = (s16)clamp16( wav->acc[ch] >> wav->down );
+            *pcm++ = (int16_t)clamp16( wav->acc[ch] >> wav->down );
             wav->acc[ch] = 0;
         }
         wav->acc_count = 0;
@@ -512,7 +514,7 @@ static int wav_decode( void *state, DECBUF *buf )
 /* ------------------------------------------------------------------ */
 /* opening                                                             */
 /* ------------------------------------------------------------------ */
-static int wav_detect( SRC *src, const u8 *head, u32 len, const char *ext )
+static int wav_detect( SRC *src, const uint8_t *head, unsigned int len, const char *ext )
 {
     (void)src;
     (void)ext;
@@ -524,10 +526,11 @@ static int wav_detect( SRC *src, const u8 *head, u32 len, const char *ext )
 
 /* The INFO list of a LIST chunk of "len" bytes at the file's position:
    the title (INAM), artist (IART) and album (IPRD) */
-static void read_info( SRC *src, u32 len, DECINFO *info )
+static void read_info( SRC *src, uint32_t len, DECINFO *info )
 {
-    u8 hdr[8], text[TAG_LEN];
-    u32 end = src_tell( src ) + len, size, take;
+    uint8_t hdr[8], text[TAG_LEN];
+    uint32_t end = src_tell( src ) + len, size;
+    unsigned int take;
 
     if ( len < 4 || src_read( src, hdr, 4 ) != 4 || mem_cmp( hdr, "INFO", 4 ) != 0 ) {
         return;
@@ -558,10 +561,11 @@ static void read_info( SRC *src, u32 len, DECINFO *info )
 }
 
 /* What the format chunk says: -> DE_OK, DE_FORMAT, DE_UNSUPPORTED */
-static int read_fmt( WAVSTATE *wav, const u8 *fmt, u32 len, DECINFO *info )
+static int read_fmt( WAVSTATE *wav, const uint8_t *fmt, unsigned int len, DECINFO *info )
 {
-    u32 rate, extra, i;
-    u16 tag;
+    uint32_t rate, extra;
+    unsigned int i;
+    uint16_t tag;
 
     if ( len < 16 ) {
         return DE_FORMAT;
@@ -612,13 +616,13 @@ static int read_fmt( WAVSTATE *wav, const u8 *fmt, u32 len, DECINFO *info )
             return DE_UNSUPPORTED;
         }
         /* the header's sample, then two a byte of what is left */
-        wav->block_frames = (u32)(wav->block / wav->channels - 4) * 2 + 1;
+        wav->block_frames = (uint32_t)(wav->block / wav->channels - 4) * 2 + 1;
         break;
     case WF_MSADPCM:
         if ( wav->bits != 4 || wav->block < 7 * wav->channels + 1 ) {
             return DE_FORMAT;
         }
-        wav->block_frames = (u32)(wav->block - 7 * wav->channels) * 2 / wav->channels + 2;
+        wav->block_frames = (uint32_t)(wav->block - 7 * wav->channels) * 2 / wav->channels + 2;
         /* the coefficients: the file's own when it lists them */
         wav->ncoefs = 7;
         for ( i = 0; i < 7; i++ ) {
@@ -626,12 +630,12 @@ static int read_fmt( WAVSTATE *wav, const u8 *fmt, u32 len, DECINFO *info )
             wav->coef2[i] = ms_coef2[i];
         }
         if ( extra >= 4 ) {
-            u32 n = LE16( fmt + 20 );
+            uint32_t n = LE16( fmt + 20 );
             if ( n >= 1 && n <= MAX_COEFS && 4 + n * 4 <= extra ) {
                 wav->ncoefs = (int)n;
                 for ( i = 0; i < n; i++ ) {
-                    wav->coef1[i] = (s16)LE16( fmt + 22 + i * 4 );
-                    wav->coef2[i] = (s16)LE16( fmt + 24 + i * 4 );
+                    wav->coef1[i] = (int16_t)LE16( fmt + 22 + i * 4 );
+                    wav->coef2[i] = (int16_t)LE16( fmt + 24 + i * 4 );
                 }
             }
         }
@@ -666,10 +670,13 @@ static void wav_close( void *state )
 static int wav_open( SRC *src, const DECOPT *opt, DECINFO *info, void **state )
 {
     WAVSTATE *wav;
-    u8 hdr[12], fmt[64];
-    u32 size, take, data_len = 0, pad;
+    uint8_t hdr[12], fmt[64];
+    uint32_t size;
+    unsigned int take;
+    uint32_t data_len = 0, pad;
     int have_fmt = 0, have_data = 0, rc;
-    u32 chunks, units;
+    unsigned int chunks;
+    uint32_t units;
 
     *state = NULL;
     if ( src_read( src, hdr, 12 ) != 12 || mem_cmp( hdr, "RIFF", 4 ) != 0
@@ -709,7 +716,7 @@ static int wav_open( SRC *src, const DECOPT *opt, DECINFO *info, void **state )
             have_data = 1;
             size = data_len;
         } else if ( mem_cmp( hdr, "LIST", 4 ) == 0 && size <= src_left( src ) ) {
-            u32 at = src_tell( src );
+            uint32_t at = src_tell( src );
             read_info( src, size, info );
             src_seek( src, at );
         }
@@ -725,7 +732,7 @@ static int wav_open( SRC *src, const DECOPT *opt, DECINFO *info, void **state )
         return DE_FORMAT;
     }
     if ( wav->tag == WF_IMAADPCM || wav->tag == WF_MSADPCM ) {
-        wav->blk = (s16 *)try_alloc( wav->block_frames * wav->channels * sizeof( s16 ) );
+        wav->blk = (int16_t *)try_alloc( wav->block_frames * wav->channels * sizeof( int16_t ) );
         if ( wav->blk == NULL ) {
             wav_close( wav );
             return DE_NOMEM;
@@ -740,7 +747,7 @@ static int wav_open( SRC *src, const DECOPT *opt, DECINFO *info, void **state )
         wav_close( wav );
         return DE_FORMAT;
     }
-    wav->in = (u8 *)try_alloc( IN_SIZE );
+    wav->in = (uint8_t *)try_alloc( IN_SIZE );
     if ( wav->in == NULL ) {
         wav_close( wav );
         return DE_NOMEM;
@@ -750,13 +757,13 @@ static int wav_open( SRC *src, const DECOPT *opt, DECINFO *info, void **state )
         wav->down--;                    /* not below 8 kHz */
     }
     wav->mono = opt->mono;
-    wav->out_ch = (u8)(wav->channels == 1 || opt->mono ? 1 : 2);
+    wav->out_ch = (uint8_t)(wav->channels == 1 || opt->mono ? 1 : 2);
 
     info->file_rate = wav->rate;
     info->rate = wav->rate >> wav->down;
-    info->file_channels = (u8)wav->channels;
+    info->file_channels = (uint8_t)wav->channels;
     info->channels = wav->out_ch;
-    info->bits = (u8)(wav->tag == WF_IMAADPCM || wav->tag == WF_MSADPCM ? 4 : wav->bits);
+    info->bits = (uint8_t)(wav->tag == WF_IMAADPCM || wav->tag == WF_MSADPCM ? 4 : wav->bits);
     info->flags = DIF_SEEK;
     info->length_ms = fx_umuldiv( wav->frames, 1000, wav->rate );
     /* bits a millisecond; a large file divided first, so the quotient
@@ -793,10 +800,10 @@ static int wav_open( SRC *src, const DECOPT *opt, DECINFO *info, void **state )
     return DE_OK;
 }
 
-static int wav_seek( void *state, u32 ms, u32 *at_ms )
+static int wav_seek( void *state, uint32_t ms, uint32_t *at_ms )
 {
     WAVSTATE *wav = (WAVSTATE *)state;
-    u32 frame, unit, pos;
+    uint32_t frame, unit, pos;
 
     /* a time past what 32 bits of frames can say is the end anyway */
     if ( ms > 0xFFFFFFFFUL / wav->rate * 1000UL ) {

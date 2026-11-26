@@ -10,6 +10,8 @@
 #ifndef NETSPLOR_X509_H
 #define NETSPLOR_X509_H
 
+#include <stdint.h>
+
 #define X509_OK              0
 #define X509_ERR_PARSE     (-1)
 #define X509_ERR_NOTRSA    (-2)
@@ -25,15 +27,15 @@
  *   e / elen     : same, for the public exponent
  * Returns X509_OK or an X509_ERR_*.
  */
-int x509_extract_rsa_pubkey(const unsigned char *cert, int certlen,
-                            unsigned char *n, int *nlen,
-                            unsigned char *e, int *elen);
+int x509_extract_rsa_pubkey(const uint8_t *cert, int certlen,
+                            uint8_t *n, int *nlen,
+                            uint8_t *e, int *elen);
 
 /* Verify that 'cert' was signed with sha256WithRSAEncryption by the issuer
    whose RSA public key is (n,e).  X509_OK if valid, else X509_ERR_*. */
-int x509_verify_signed_by(const unsigned char *cert, int certlen,
-                          const unsigned char *n, int nlen,
-                          const unsigned char *e, int elen);
+int x509_verify_signed_by(const uint8_t *cert, int certlen,
+                          const uint8_t *n, int nlen,
+                          const uint8_t *e, int elen);
 
 /* A parsed subject public key: RSA {n,e} or an EC point (SEC1 uncompressed:
  * P-256 = 65 B, P-384 = 97 B). */
@@ -42,18 +44,18 @@ int x509_verify_signed_by(const unsigned char *cert, int certlen,
 #define X509_KEY_EC384  3
 typedef struct {
     int           type;             /* X509_KEY_RSA | X509_KEY_EC256 | X509_KEY_EC384 */
-    unsigned char n[512]; int nlen; /* RSA modulus */
-    unsigned char e[16];  int elen; /* RSA exponent */
-    unsigned char point[97];        /* EC uncompressed point (65 or 97 bytes) */
+    uint8_t       n[512]; int nlen; /* RSA modulus */
+    uint8_t       e[16];  int elen; /* RSA exponent */
+    uint8_t       point[97];        /* EC uncompressed point (65 or 97 bytes) */
 } x509_pubkey;
 
 /* Extract the subject public key (RSA or EC-P256) from a certificate. */
-int x509_get_pubkey(const unsigned char *cert, int certlen, x509_pubkey *out);
+int x509_get_pubkey(const uint8_t *cert, int certlen, x509_pubkey *out);
 
 /* Verify 'cert's signature (sha256/384/512WithRSAEncryption, RSASSA-PSS with
    SHA-256, ecdsa-with-SHA256 or -SHA384) against the issuer's public key.
    X509_OK if valid, else X509_ERR_*. */
-int x509_verify_signed(const unsigned char *cert, int certlen,
+int x509_verify_signed(const uint8_t *cert, int certlen,
                        const x509_pubkey *issuer);
 
 /* Verify a TLS signature: 'scheme' is the TLS SignatureScheme (0x0401/0501/
@@ -62,19 +64,27 @@ int x509_verify_signed(const unsigned char *cert, int certlen,
    signed bytes (hashed here), 'sig' the signature as sent (DER for ECDSA).
    X509_OK if valid, else X509_ERR_*. */
 int x509_verify_scheme(const x509_pubkey *key, int scheme,
-                       const unsigned char *msg, int msglen,
-                       const unsigned char *sig, int siglen);
+                       const uint8_t *msg, int msglen,
+                       const uint8_t *sig, int siglen);
 
 /* notBefore/notAfter as normalized "YYYYMMDDHHMMSS" (14 chars + NUL). */
-int x509_get_validity(const unsigned char *cert, int certlen,
+int x509_get_validity(const uint8_t *cert, int certlen,
                       char notBefore[15], char notAfter[15]);
 
 /* Check the cert is currently valid.  'now' is "YYYYMMDDHHMMSS" (UTC). */
-int x509_check_validity(const unsigned char *cert, int certlen,
+int x509_check_validity(const uint8_t *cert, int certlen,
                         const char *now);
 
 /* Match the cert identity (subjectAltName dNSName/iPAddress, else CN)
    against 'host'.  X509_OK or X509_ERR_HOST. */
-int x509_check_host(const unsigned char *cert, int certlen, const char *host);
+int x509_check_host(const uint8_t *cert, int certlen, const char *host);
+
+/* X509_OK if basicConstraints says the cert is a CA, else X509_ERR_*.
+   *pathlen gets its pathLenConstraint, or -1 if it has none. */
+int x509_ca_limit( const uint8_t *cert, int certlen, int *pathlen );
+
+/* 1 if cert's issuer name is byte for byte ca's subject name, else 0. */
+int x509_issuer_is( const uint8_t *cert, int certlen,
+                    const uint8_t *ca, int calen );
 
 #endif /* NETSPLOR_X509_H */

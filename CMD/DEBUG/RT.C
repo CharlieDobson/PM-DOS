@@ -9,20 +9,20 @@
 /* memory and strings                                                  */
 /* ------------------------------------------------------------------ */
 
-void mem_set( void *dst, int val, u32 len )
+void mem_set( void *dst, int val, unsigned int len )
 {
-    u8 *cur = (u8 *)dst;
+    uint8_t *cur = (uint8_t *)dst;
 
     while ( len-- ) {
-        *cur++ = (u8)val;
+        *cur++ = (uint8_t)val;
     }
 }
 
 /* safe for overlapping blocks, in either direction */
-void mem_cpy( void *dst, const void *src, u32 len )
+void mem_cpy( void *dst, const void *src, unsigned int len )
 {
-    u8 *dcur = (u8 *)dst;
-    const u8 *scur = (const u8 *)src;
+    uint8_t *dcur = (uint8_t *)dst;
+    const uint8_t *scur = (const uint8_t *)src;
 
     if ( dcur < scur ) {
         while ( len-- ) {
@@ -37,10 +37,10 @@ void mem_cpy( void *dst, const void *src, u32 len )
     }
 }
 
-int mem_cmp( const void *lhs, const void *rhs, u32 len )
+int mem_cmp( const void *lhs, const void *rhs, unsigned int len )
 {
-    const u8 *lcur = (const u8 *)lhs;
-    const u8 *rcur = (const u8 *)rhs;
+    const uint8_t *lcur = (const uint8_t *)lhs;
+    const uint8_t *rcur = (const uint8_t *)rhs;
 
     for ( ; len; len-- ) {
         if ( *lcur != *rcur ) {
@@ -52,9 +52,9 @@ int mem_cmp( const void *lhs, const void *rhs, u32 len )
     return 0;
 }
 
-u32 str_len( const char *str )
+unsigned int str_len( const char *str )
 {
-    u32 len = 0;
+    unsigned int len = 0;
 
     while ( str[len] ) {
         len++;
@@ -93,7 +93,7 @@ int str_icmp( const char *lhs, const char *rhs )
     }
 }
 
-int str_nicmp( const char *lhs, const char *rhs, u32 len )
+int str_nicmp( const char *lhs, const char *rhs, unsigned int len )
 {
     int lch, rch;
 
@@ -114,7 +114,7 @@ int str_nicmp( const char *lhs, const char *rhs, u32 len )
 /* the heap: DEBUG buys its buffers once, at the start, and keeps them */
 /* ------------------------------------------------------------------ */
 
-void *try_alloc( u32 size )
+void *try_alloc( unsigned int size )
 {
     return sys_mem_alloc( size );
 }
@@ -122,10 +122,10 @@ void *try_alloc( u32 size )
 /* A command that needs a buffer for itself alone (M) takes this one: it
    is kept between commands and only bought again when a command needs
    more, so a command ended early by an error leaves nothing behind. */
-static void *scratch;
-static u32   scratch_len;
+static void        *scratch;
+static unsigned int scratch_len;
 
-void *scratch_get( u32 size )
+void *scratch_get( unsigned int size )
 {
     if ( size > scratch_len ) {
         if ( scratch ) {
@@ -143,9 +143,9 @@ void *scratch_get( u32 size )
 
 #define OUT_MAX 256
 
-static char out_buf[OUT_MAX];
-static u32  out_len;
-static int  out_column;
+static char         out_buf[OUT_MAX];
+static unsigned int out_len;
+static int          out_column;
 
 void out_flush( void )
 {
@@ -180,7 +180,7 @@ void out_str( const char *str )
 }
 
 /* VAL in DIGITS hex digits, capitals, leading zeros */
-void out_hex( u32 val, int digits )
+void out_hex( uint32_t val, int digits )
 {
     int shift;
 

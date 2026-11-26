@@ -21,7 +21,7 @@ static void dump_chp( WDOC *doc, OUT *out, const CHP *chp )
     int bit;
 
     out_fmt( out, "[%s %u", doc->font[chp->font < doc->nfont ? chp->font : 0].name,
-             (u32)chp->size / 2 );
+             (uint32_t)chp->size / 2 );
     if ( chp->size & 1 ) {
         out_str( out, ".5" );
     }
@@ -34,15 +34,16 @@ static void dump_chp( WDOC *doc, OUT *out, const CHP *chp )
         out_fmt( out, " #%06X", chp->color );
     }
     if ( chp->hilite ) {
-        out_fmt( out, " hl%u", (u32)chp->hilite );
+        out_fmt( out, " hl%u", (uint32_t)chp->hilite );
     }
     out_str( out, "]" );
 }
 
-static void dump_text( OUT *out, const u16 *text, u32 len )
+static void dump_text( OUT *out, const uint16_t *text, unsigned int len )
 {
-    u32 pos = 0, code;
-    u8 utf[4];
+    unsigned int pos = 0;
+    uint32_t code;
+    uint8_t utf[4];
 
     while ( pos < len ) {
         code = utf16_get( text, len, &pos );
@@ -51,7 +52,7 @@ static void dump_text( OUT *out, const u16 *text, u32 len )
             out_byte( out, (int)code );
         } else if ( (code >= 0x20 && code < 0x7F) || (code >= 0xC0 && code < 0x250) ||
                     (code >= 0x370 && code < 0x530) ) {
-            out_put( out, utf, (u32)utf8_put( utf, code ) );
+            out_put( out, utf, (unsigned int)utf8_put( utf, code ) );
         } else if ( code == WCH_TAB ) {
             out_str( out, "{tab}" );
         } else if ( code == WCH_LINE ) {
@@ -91,16 +92,16 @@ static void dump_pap( WDOC *doc, OUT *out, const PAP *pap )
         out_fmt( out, " ind=%d,%d,%d", pap->left, pap->right, pap->first );
     }
     if ( pap->before || pap->after ) {
-        out_fmt( out, " space=%u,%u", (u32)pap->before, (u32)pap->after );
+        out_fmt( out, " space=%u,%u", (uint32_t)pap->before, (uint32_t)pap->after );
     }
     if ( pap->line_rule != LS_MULTIPLE || pap->line != 240 ) {
         out_fmt( out, " line=%s%u", pap->line_rule == LS_EXACT ? "exact" :
-                 pap->line_rule == LS_ATLEAST ? "atleast" : "x", (u32)pap->line );
+                 pap->line_rule == LS_ATLEAST ? "atleast" : "x", (uint32_t)pap->line );
     }
     if ( pap->list != LIST_NONE && pap->list <= LIST_ROMAN_UPPER ) {
-        out_fmt( out, " list=%s/%u", lists[pap->list], (u32)pap->level );
+        out_fmt( out, " list=%s/%u", lists[pap->list], (uint32_t)pap->level );
         if ( pap->list_start ) {
-            out_fmt( out, "@%u", (u32)pap->list_start );
+            out_fmt( out, "@%u", (uint32_t)pap->list_start );
         }
     }
     if ( pap->flags & PF_KEEP ) {
@@ -136,7 +137,7 @@ static void dump_pap( WDOC *doc, OUT *out, const PAP *pap )
             out_fmt( out, "%s%d%s", index ? "," : "", pap->tabs[index].pos,
                      tabs[pap->tabs[index].kind & 3] );
             if ( pap->tabs[index].lead ) {
-                out_fmt( out, "/%u", (u32)pap->tabs[index].lead );
+                out_fmt( out, "/%u", (uint32_t)pap->tabs[index].lead );
             }
         }
     }
@@ -146,7 +147,7 @@ static void dump_story( WDOC *doc, OUT *out, STORY *story, const char *name, int
 {
     WPARA *para;
     WOBJ *obj;
-    u32 index, off, run;
+    unsigned int index, off, run;
     int which;
 
     out_fmt( out, "%s: %u paragraph%s\r\n", name, story->count, story->count == 1 ? "" : "s" );
@@ -161,13 +162,13 @@ static void dump_story( WDOC *doc, OUT *out, STORY *story, const char *name, int
             dump_chp( doc, out, wd_chp_get( doc, para->attr[off] ) );
             if ( para->text[off] == WCH_OBJ ) {
                 which = wd_obj_at( para, off );
-                if ( which < 0 || (u32)which >= doc->nobj ) {
+                if ( which < 0 || (unsigned int)which >= doc->nobj ) {
                     out_str( out, " {object?}\r\n" );
                     continue;
                 }
                 obj = &doc->obj[which];
                 if ( obj->kind == OBJ_IMAGE ) {
-                    out_fmt( out, " {image fmt=%u bytes=%u size=%dx%d}\r\n", (u32)obj->fmt, obj->len,
+                    out_fmt( out, " {image fmt=%u bytes=%u size=%dx%d}\r\n", (uint32_t)obj->fmt, obj->len,
                              obj->width, obj->height );
                 } else {
                     out_fmt( out, " {%s}\r\n", obj->fmt == NOTE_END ? "endnote" : "footnote" );
@@ -186,12 +187,12 @@ static void dump_story( WDOC *doc, OUT *out, STORY *story, const char *name, int
 
 void wd_dump( WDOC *doc, OUT *out )
 {
-    u32 index;
+    unsigned int index;
 
     out_fmt( out, "page %dx%d margins %d,%d,%d,%d header %d footer %d%s first %u deftab %d\r\n",
              doc->page.width, doc->page.height, doc->page.left, doc->page.right, doc->page.top,
              doc->page.bottom, doc->page.header, doc->page.footer,
-             doc->page.landscape ? " landscape" : "", (u32)doc->page.first_page, doc->deftab );
+             doc->page.landscape ? " landscape" : "", (uint32_t)doc->page.first_page, doc->deftab );
     if ( doc->title[0] ) {
         out_fmt( out, "title: %s\r\n", doc->title );
     }
@@ -208,7 +209,7 @@ void wd_dump( WDOC *doc, OUT *out )
         out_fmt( out, "lost: %04X\r\n", doc->lost );
     }
     for ( index = 1; index < doc->nstyle; index++ ) {
-        out_fmt( out, "style \"%s\" kind %u ", doc->style[index].name, (u32)doc->style[index].kind );
+        out_fmt( out, "style \"%s\" kind %u ", doc->style[index].name, (uint32_t)doc->style[index].kind );
         dump_chp( doc, out, &doc->style[index].chp );
         dump_pap( doc, out, &doc->style[index].pap );
         out_str( out, "\r\n" );

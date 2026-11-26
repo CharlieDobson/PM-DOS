@@ -44,14 +44,14 @@
 #define FIND_ATTR       0x37            /* everything but volume labels */
 #define ATTR_DIR        0x10
 
-int   current_drive = 3;
-u64   total_disk_space;
-u64   free_disk_space;
-u64   used_disk_space;
-NODE *tree_nodes;
-int   tree_count;
-int   selected_node = -1;
-int   data_valid;
+int      current_drive = 3;
+uint64_t total_disk_space;
+uint64_t free_disk_space;
+uint64_t used_disk_space;
+NODE    *tree_nodes;
+int      tree_count;
+int      selected_node = -1;
+int      data_valid;
 
 static int  node_cap;
 static int  scan_cut;           /* a folder too deep, or no memory for a name */
@@ -71,7 +71,7 @@ static int  country_read;
 static void country_init( void )
 {
     REGS regs;
-    u8 block[64];
+    uint8_t block[64];
     int at, len;
 
     if ( country_read ) {
@@ -80,7 +80,7 @@ static void country_init( void )
     country_read = 1;
     memset( block, 0, sizeof( block ) );
     xa_clear( &regs );
-    regs.edx = (u32)block;
+    regs.edx = (uint32_t)block;
     if ( xa_dos( &regs, 0x3800 ) != 0 ) {
         return;
     }
@@ -95,7 +95,7 @@ static void country_init( void )
 }
 
 /* "1,234,567"; "out" holds 17 (ten digits, three separators of two) */
-static void group_u32( u32 val, char *out )
+static void group_u32( uint32_t val, char *out )
 {
     char digits[12];
     int count = 0, at;
@@ -114,9 +114,9 @@ static void group_u32( u32 val, char *out )
     *out = 0;
 }
 
-static u64 half64( u64 val )
+static uint64_t half64( uint64_t val )
 {
-    u32 hi = xa_hi32( val ), lo = xa_lo32( val );
+    uint32_t hi = xa_hi32( val ), lo = xa_lo32( val );
 
     return xa_make64( hi >> 1, (lo >> 1) | (hi << 31) );
 }
@@ -125,10 +125,10 @@ static u64 half64( u64 val )
    two are halved together until "whole" fits in 32 bits, which costs
    nothing a screen can show - except that a part a hair under the
    whole can halve to equal it, and less than all is never all */
-u32 per_whole( u64 part, u64 whole, u32 scale )
+uint32_t per_whole( uint64_t part, uint64_t whole, uint32_t scale )
 {
-    u64 prod;
-    u32 result;
+    uint64_t prod;
+    uint32_t result;
 
     if ( whole == 0 ) {
         return 0;
@@ -150,12 +150,12 @@ u32 per_whole( u64 part, u64 whole, u32 scale )
    megabyte, then megabytes and a tenth - with the digits grouped, and
    gigabytes and terabytes past 9,999.9 of the one before, which a DOS
    drive never reached */
-void format_size( u64 bytes, char *buf )
+void format_size( uint64_t bytes, char *buf )
 {
     static const char *const unit[] = { "MB", "GB", "TB" };
     char whole_text[24];                /* ten digits and three two-byte separators */
-    u64 whole;
-    u32 rem, tenth;
+    uint64_t whole;
+    uint32_t rem, tenth;
     int at;
 
     country_init();
@@ -181,9 +181,9 @@ void format_size( u64 bytes, char *buf )
 }
 
 /* "12.3%" of "whole", as DiskStat worked it out: tenths, rounded down */
-void format_pct( u64 part, u64 whole, char *buf )
+void format_pct( uint64_t part, uint64_t whole, char *buf )
 {
-    u32 pct10 = per_whole( part, whole, 1000 );
+    uint32_t pct10 = per_whole( part, whole, 1000 );
 
     country_init();
     sprintf( buf, "%u%s%u%%", pct10 / 10, dec_sep, pct10 % 10 );
@@ -217,19 +217,19 @@ void shorten_name( char *dst, int room, const char *name )
 /* ------------------------------------------------------------------ */
 
 typedef struct {
-    int  lfn;
-    u32  handle;
-    u8   rec[320];
-    char name[260];
-    u8   attr;
-    u64  size;
+    int      lfn;
+    uint32_t handle;
+    uint8_t  rec[320];
+    char     name[260];
+    uint8_t  attr;
+    uint64_t size;
 } FIND;
 
 static void find_fill( FIND *fd )
 {
     if ( fd->lfn ) {
         strncpy( fd->name, (const char *)fd->rec + 0x2C, sizeof( fd->name ) - 1 );
-        fd->attr = (u8)RD32( fd->rec );
+        fd->attr = (uint8_t)RD32( fd->rec );
         fd->size = xa_make64( RD32( fd->rec + 0x1C ), RD32( fd->rec + 0x20 ) );
     } else {
         strncpy( fd->name, (const char *)fd->rec + 0x1E, 13 );
@@ -246,12 +246,12 @@ static int classic_find( FIND *fd, const char *pattern, int attrs )
     REGS regs;
 
     xa_clear( &regs );
-    regs.edx = (u32)fd->rec;
+    regs.edx = (uint32_t)fd->rec;
     xa_dos( &regs, 0x1A00 );
     xa_clear( &regs );
     if ( pattern ) {
-        regs.edx = (u32)pattern;
-        regs.ecx = (u32)attrs;
+        regs.edx = (uint32_t)pattern;
+        regs.ecx = (uint32_t)attrs;
         return xa_dos( &regs, 0x4E00 );
     }
     return xa_dos( &regs, 0x4F00 );
@@ -273,15 +273,15 @@ static void find_close( FIND *fd )
 static int find_first( const char *pattern, FIND *fd )
 {
     REGS regs;
-    u32 before = crit_hits;
+    uint32_t before = crit_hits;
     int rc = -1;
 
     fd->lfn = 0;
     fd->handle = 0xFFFFFFFFUL;
     if ( xa_lfn ) {
         xa_clear( &regs );
-        regs.edx = (u32)pattern;
-        regs.edi = (u32)fd->rec;
+        regs.edx = (uint32_t)pattern;
+        regs.edi = (uint32_t)fd->rec;
         regs.ecx = FIND_ATTR;
         regs.esi = 1;
         regs.flags = 1;
@@ -311,13 +311,13 @@ static int find_first( const char *pattern, FIND *fd )
 static int find_next( FIND *fd )
 {
     REGS regs;
-    u32 before = crit_hits;
+    uint32_t before = crit_hits;
     int rc;
 
     if ( fd->lfn ) {
         xa_clear( &regs );
         regs.ebx = fd->handle;
-        regs.edi = (u32)fd->rec;
+        regs.edi = (uint32_t)fd->rec;
         regs.esi = 1;
         rc = xa_dos( &regs, 0x714F );
     } else {
@@ -340,20 +340,20 @@ static int is_dot( const char *name )
 /* ------------------------------------------------------------------ */
 
 typedef struct {
-    char *names;                /* one after another, each with its NUL */
-    u32   used, cap;
-    u32   next;                 /* where the next one to go into starts */
-    int   len;                  /* the length of this folder's path */
+    char    *names;             /* one after another, each with its NUL */
+    unsigned used, cap;
+    unsigned next;              /* where the next one to go into starts */
+    int      len;               /* the length of this folder's path */
 } LEVEL;
 
 static FIND finder;             /* one search at a time: see the top */
 
 static void level_add( LEVEL *lv, const char *name )
 {
-    u32 len = (u32)strlen( name ) + 1;
+    unsigned len = (unsigned)strlen( name ) + 1;
 
     if ( lv->used + len > lv->cap ) {
-        u32 cap = lv->cap ? lv->cap * 2 : 512;
+        unsigned cap = lv->cap ? lv->cap * 2 : 512;
         char *grown;
 
         while ( cap < lv->used + len ) {
@@ -374,7 +374,7 @@ static void level_add( LEVEL *lv, const char *name )
 /* "path" is a folder ("C:" for the root): its files' bytes onto *total,
    its subfolders into "lv" (which may be NULL: then only whether there
    is one, in the return) */
-static int read_dir( const char *path, LEVEL *lv, u64 *total )
+static int read_dir( const char *path, LEVEL *lv, uint64_t *total )
 {
     char pattern[SCAN_PATH + 8];
     int len = (int)strlen( path ), kids = 0;
@@ -415,10 +415,10 @@ static LEVEL levels[SCAN_DEPTH];
 /* The bytes in every file under "start", and (*kids) whether it has a
    subfolder.  A depth-first walk: each level holds its folder's
    subfolder names and how far through them it is. */
-static u64 scan_tree( const char *start, int *kids )
+static uint64_t scan_tree( const char *start, int *kids )
 {
     char path[SCAN_PATH + 2];
-    u64 total = 0;
+    uint64_t total = 0;
     int top = 0, len;
     const char *name;
     LEVEL *lv;
@@ -434,7 +434,7 @@ static u64 scan_tree( const char *start, int *kids )
         }
         name = lv->names + lv->next;
         len = (int)strlen( name );
-        lv->next += (u32)len + 1;
+        lv->next += (unsigned)len + 1;
         if ( top + 1 >= SCAN_DEPTH || lv->len + 1 + len >= SCAN_PATH ) {
             scan_cut = 1;
             continue;
@@ -457,9 +457,9 @@ static u64 scan_tree( const char *start, int *kids )
 static void get_disk_space( int drive )
 {
     REGS regs;
-    u8 rec[44], *at;
+    uint8_t rec[44], *at;
     char root[4];
-    u32 before = crit_hits, cluster;
+    uint32_t before = crit_hits, cluster;
 
     total_disk_space = free_disk_space = used_disk_space = 0;
     root[0] = (char)('A' + drive - 1);
@@ -469,8 +469,8 @@ static void get_disk_space( int drive )
     memset( rec, 0, sizeof( rec ) );
     rec[0] = sizeof( rec );
     xa_clear( &regs );
-    regs.edx = (u32)root;
-    regs.edi = (u32)rec;
+    regs.edx = (uint32_t)root;
+    regs.edi = (uint32_t)rec;
     regs.ecx = sizeof( rec );
     regs.flags = 1;
     if ( xa_dos( &regs, 0x7303 ) == 0 && crit_hits == before ) {
@@ -480,7 +480,7 @@ static void get_disk_space( int drive )
         free_disk_space = xa_mul32( cluster, RD32( at + 8 ) );
     } else if ( crit_hits == before ) {
         xa_clear( &regs );
-        regs.edx = (u32)drive;
+        regs.edx = (uint32_t)drive;
         xa_dos( &regs, 0x3600 );
         if ( AX( regs ) != 0xFFFF && crit_hits == before ) {
             cluster = AX( regs ) * (regs.ecx & 0xFFFF);
@@ -501,7 +501,7 @@ static int drive_exists( int drive )
     REGS regs;
 
     xa_clear( &regs );
-    regs.ebx = (u32)drive;
+    regs.ebx = (uint32_t)drive;
     return xa_dos( &regs, 0x4408 ) != 0x0F;
 }
 
@@ -603,18 +603,18 @@ static void sort_rows( int first, int count )
 }
 
 /* the rows made from a folder's subfolder names, sized; how many */
-static int fill_rows( int insert_at, const LEVEL *names, const char *parent, u8 depth, int count )
+static int fill_rows( int insert_at, const LEVEL *names, const char *parent, uint8_t depth, int count )
 {
     char path[SCAN_PATH + 2];
     const char *name;
     int done = 0, kids, plen = (int)strlen( parent );
-    u32 at = 0;
+    unsigned at = 0;
 
     while ( done < count && at < names->used ) {
         NODE *node = &tree_nodes[insert_at + done];
 
         name = names->names + at;
-        at += (u32)strlen( name ) + 1;
+        at += (unsigned)strlen( name ) + 1;
         node->name = strdup( name );
         if ( node->name == NULL ) {
             scan_cut = 1;
@@ -641,11 +641,11 @@ static int fill_rows( int insert_at, const LEVEL *names, const char *parent, u8 
 
 static int count_names( const LEVEL *names )
 {
-    u32 at = 0;
+    unsigned at = 0;
     int count = 0;
 
     while ( at < names->used ) {
-        at += (u32)strlen( names->names + at ) + 1;
+        at += (unsigned)strlen( names->names + at ) + 1;
         count++;
     }
     return count;
@@ -709,7 +709,7 @@ static void expand_node( int idx )
     read_dir( path, &names, NULL );
     count = count_names( &names );
     if ( count == 0 ) {
-        tree_nodes[idx].flags &= (u8)~NODE_HAS_CHILDREN;
+        tree_nodes[idx].flags &= (uint8_t)~NODE_HAS_CHILDREN;
         free( names.names );
         return;
     }
@@ -727,7 +727,7 @@ static void expand_node( int idx )
         memmove( &tree_nodes[insert_at + count], &tree_nodes[insert_at],
                  sizeof( NODE ) * (size_t)(tree_count - insert_at) );
     }
-    made = fill_rows( insert_at, &names, path, (u8)(tree_nodes[idx].depth + 1), count );
+    made = fill_rows( insert_at, &names, path, (uint8_t)(tree_nodes[idx].depth + 1), count );
     free( names.names );
     if ( made < count ) {
         memmove( &tree_nodes[insert_at + made], &tree_nodes[insert_at + count],
@@ -746,7 +746,7 @@ static void expand_node( int idx )
 void collapse_node( int idx )
 {
     int end_idx, remove_count;
-    u8 depth;
+    uint8_t depth;
 
     if ( idx < 0 || idx >= tree_count || !(tree_nodes[idx].flags & NODE_EXPANDED) ) {
         return;
@@ -757,7 +757,7 @@ void collapse_node( int idx )
         end_idx++;
     }
     remove_count = end_idx - (idx + 1);
-    tree_nodes[idx].flags &= (u8)~NODE_EXPANDED;
+    tree_nodes[idx].flags &= (uint8_t)~NODE_EXPANDED;
     if ( remove_count <= 0 ) {
         return;
     }
@@ -789,7 +789,7 @@ int drive_ready( int drive )
     for ( ;; ) {
         crit_clear();
         xa_clear( &regs );
-        regs.edx = (u32)drive;
+        regs.edx = (uint32_t)drive;
         xa_dos( &regs, 0x3600 );
         if ( !crit_hit() ) {
             return 1;

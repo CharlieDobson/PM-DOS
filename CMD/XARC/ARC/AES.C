@@ -8,7 +8,7 @@
 #include "aes.h"
 #include <string.h>
 
-static const unsigned char sbox[256] = {
+static const uint8_t sbox[256] = {
 0x63,0x7c,0x77,0x7b,0xf2,0x6b,0x6f,0xc5,0x30,0x01,0x67,0x2b,0xfe,0xd7,0xab,0x76,
 0xca,0x82,0xc9,0x7d,0xfa,0x59,0x47,0xf0,0xad,0xd4,0xa2,0xaf,0x9c,0xa4,0x72,0xc0,
 0xb7,0xfd,0x93,0x26,0x36,0x3f,0xf7,0xcc,0x34,0xa5,0xe5,0xf1,0x71,0xd8,0x31,0x15,
@@ -27,7 +27,7 @@ static const unsigned char sbox[256] = {
 0x8c,0xa1,0x89,0x0d,0xbf,0xe6,0x42,0x68,0x41,0x99,0x2d,0x0f,0xb0,0x54,0xbb,0x16
 };
 
-static const unsigned char inv_sbox[256] = {
+static const uint8_t inv_sbox[256] = {
 0x52,0x09,0x6a,0xd5,0x30,0x36,0xa5,0x38,0xbf,0x40,0xa3,0x9e,0x81,0xf3,0xd7,0xfb,
 0x7c,0xe3,0x39,0x82,0x9b,0x2f,0xff,0x87,0x34,0x8e,0x43,0x44,0xc4,0xde,0xe9,0xcb,
 0x54,0x7b,0x94,0x32,0xa6,0xc2,0x23,0x3d,0xee,0x4c,0x95,0x0b,0x42,0xfa,0xc3,0x4e,
@@ -46,20 +46,20 @@ static const unsigned char inv_sbox[256] = {
 0x17,0x2b,0x04,0x7e,0xba,0x77,0xd6,0x26,0xe1,0x69,0x14,0x63,0x55,0x21,0x0c,0x7d
 };
 
-static const unsigned char rcon[11] = {
+static const uint8_t rcon[11] = {
 0x00,0x01,0x02,0x04,0x08,0x10,0x20,0x40,0x80,0x1b,0x36
 };
 
 /* Multiply by x (i.e. by 2) in GF(2^8) with the AES reduction polynomial. */
-static unsigned char xtime(unsigned char x)
+static uint8_t xtime(uint8_t x)
 {
-    return (unsigned char)((x << 1) ^ (((x >> 7) & 1) * 0x1b));
+    return (uint8_t)((x << 1) ^ (((x >> 7) & 1) * 0x1b));
 }
 
 /* General GF(2^8) multiply (used only by the inverse MixColumns). */
-static unsigned char gmul(unsigned char a, unsigned char b)
+static uint8_t gmul(uint8_t a, uint8_t b)
 {
-    unsigned char p = 0;
+    uint8_t p = 0;
     int i;
     for (i = 0; i < 8; i++) {
         if (b & 1)
@@ -70,10 +70,10 @@ static unsigned char gmul(unsigned char a, unsigned char b)
     return p;
 }
 
-void aes128_expand_key(const unsigned char key[16], unsigned char rk[176])
+void aes128_expand_key(const uint8_t key[16], uint8_t rk[176])
 {
     int i;
-    unsigned char t0, t1, t2, t3, tmp;
+    uint8_t t0, t1, t2, t3, tmp;
 
     memcpy(rk, key, 16);
     for (i = 4; i < 44; i++) {
@@ -83,22 +83,22 @@ void aes128_expand_key(const unsigned char key[16], unsigned char rk[176])
         t3 = rk[(i-1)*4 + 3];
         if ((i & 3) == 0) {                     /* RotWord + SubWord + Rcon */
             tmp = t0;
-            t0 = (unsigned char)(sbox[t1] ^ rcon[i/4]);
+            t0 = (uint8_t)(sbox[t1] ^ rcon[i/4]);
             t1 = sbox[t2];
             t2 = sbox[t3];
             t3 = sbox[tmp];
         }
-        rk[i*4 + 0] = (unsigned char)(rk[(i-4)*4 + 0] ^ t0);
-        rk[i*4 + 1] = (unsigned char)(rk[(i-4)*4 + 1] ^ t1);
-        rk[i*4 + 2] = (unsigned char)(rk[(i-4)*4 + 2] ^ t2);
-        rk[i*4 + 3] = (unsigned char)(rk[(i-4)*4 + 3] ^ t3);
+        rk[i*4 + 0] = (uint8_t)(rk[(i-4)*4 + 0] ^ t0);
+        rk[i*4 + 1] = (uint8_t)(rk[(i-4)*4 + 1] ^ t1);
+        rk[i*4 + 2] = (uint8_t)(rk[(i-4)*4 + 2] ^ t2);
+        rk[i*4 + 3] = (uint8_t)(rk[(i-4)*4 + 3] ^ t3);
     }
 }
 
-void aes256_expand_key(const unsigned char key[32], unsigned char rk[240])
+void aes256_expand_key(const uint8_t key[32], uint8_t rk[240])
 {
     int i;
-    unsigned char t0, t1, t2, t3, tmp;
+    uint8_t t0, t1, t2, t3, tmp;
 
     memcpy(rk, key, 32);                         /* Nk = 8 words */
     for (i = 8; i < 60; i++) {                   /* 60 words = 15 round keys */
@@ -108,44 +108,44 @@ void aes256_expand_key(const unsigned char key[32], unsigned char rk[240])
         t3 = rk[(i-1)*4 + 3];
         if ((i & 7) == 0) {                     /* RotWord + SubWord + Rcon */
             tmp = t0;
-            t0 = (unsigned char)(sbox[t1] ^ rcon[i/8]);
+            t0 = (uint8_t)(sbox[t1] ^ rcon[i/8]);
             t1 = sbox[t2];
             t2 = sbox[t3];
             t3 = sbox[tmp];
         } else if ((i & 7) == 4) {              /* SubWord only (AES-256 extra) */
             t0 = sbox[t0]; t1 = sbox[t1]; t2 = sbox[t2]; t3 = sbox[t3];
         }
-        rk[i*4 + 0] = (unsigned char)(rk[(i-8)*4 + 0] ^ t0);
-        rk[i*4 + 1] = (unsigned char)(rk[(i-8)*4 + 1] ^ t1);
-        rk[i*4 + 2] = (unsigned char)(rk[(i-8)*4 + 2] ^ t2);
-        rk[i*4 + 3] = (unsigned char)(rk[(i-8)*4 + 3] ^ t3);
+        rk[i*4 + 0] = (uint8_t)(rk[(i-8)*4 + 0] ^ t0);
+        rk[i*4 + 1] = (uint8_t)(rk[(i-8)*4 + 1] ^ t1);
+        rk[i*4 + 2] = (uint8_t)(rk[(i-8)*4 + 2] ^ t2);
+        rk[i*4 + 3] = (uint8_t)(rk[(i-8)*4 + 3] ^ t3);
     }
 }
 
-static void add_round_key(unsigned char *s, const unsigned char *rk)
+static void add_round_key(uint8_t *s, const uint8_t *rk)
 {
     int i;
     for (i = 0; i < 16; i++)
         s[i] ^= rk[i];
 }
 
-static void sub_bytes(unsigned char *s)
+static void sub_bytes(uint8_t *s)
 {
     int i;
     for (i = 0; i < 16; i++)
         s[i] = sbox[s[i]];
 }
 
-static void inv_sub_bytes(unsigned char *s)
+static void inv_sub_bytes(uint8_t *s)
 {
     int i;
     for (i = 0; i < 16; i++)
         s[i] = inv_sbox[s[i]];
 }
 
-static void shift_rows(unsigned char *s)
+static void shift_rows(uint8_t *s)
 {
-    unsigned char t;
+    uint8_t t;
     /* row 1: left rotate by 1  (indices 1,5,9,13) */
     t = s[1];  s[1] = s[5];   s[5] = s[9];   s[9] = s[13];  s[13] = t;
     /* row 2: left rotate by 2 */
@@ -155,9 +155,9 @@ static void shift_rows(unsigned char *s)
     t = s[15]; s[15] = s[11]; s[11] = s[7];  s[7] = s[3];   s[3] = t;
 }
 
-static void inv_shift_rows(unsigned char *s)
+static void inv_shift_rows(uint8_t *s)
 {
-    unsigned char t;
+    uint8_t t;
     /* row 1: right rotate by 1 */
     t = s[13]; s[13] = s[9];  s[9] = s[5];   s[5] = s[1];   s[1] = t;
     /* row 2: rotate by 2 */
@@ -167,37 +167,37 @@ static void inv_shift_rows(unsigned char *s)
     t = s[3];  s[3] = s[7];   s[7] = s[11];  s[11] = s[15]; s[15] = t;
 }
 
-static void mix_columns(unsigned char *s)
+static void mix_columns(uint8_t *s)
 {
     int c;
     for (c = 0; c < 4; c++) {
-        unsigned char *p = s + 4*c;
-        unsigned char a0 = p[0], a1 = p[1], a2 = p[2], a3 = p[3];
-        p[0] = (unsigned char)(xtime(a0) ^ (xtime(a1) ^ a1) ^ a2 ^ a3);
-        p[1] = (unsigned char)(a0 ^ xtime(a1) ^ (xtime(a2) ^ a2) ^ a3);
-        p[2] = (unsigned char)(a0 ^ a1 ^ xtime(a2) ^ (xtime(a3) ^ a3));
-        p[3] = (unsigned char)((xtime(a0) ^ a0) ^ a1 ^ a2 ^ xtime(a3));
+        uint8_t *p = s + 4*c;
+        uint8_t a0 = p[0], a1 = p[1], a2 = p[2], a3 = p[3];
+        p[0] = (uint8_t)(xtime(a0) ^ (xtime(a1) ^ a1) ^ a2 ^ a3);
+        p[1] = (uint8_t)(a0 ^ xtime(a1) ^ (xtime(a2) ^ a2) ^ a3);
+        p[2] = (uint8_t)(a0 ^ a1 ^ xtime(a2) ^ (xtime(a3) ^ a3));
+        p[3] = (uint8_t)((xtime(a0) ^ a0) ^ a1 ^ a2 ^ xtime(a3));
     }
 }
 
-static void inv_mix_columns(unsigned char *s)
+static void inv_mix_columns(uint8_t *s)
 {
     int c;
     for (c = 0; c < 4; c++) {
-        unsigned char *p = s + 4*c;
-        unsigned char a0 = p[0], a1 = p[1], a2 = p[2], a3 = p[3];
-        p[0] = (unsigned char)(gmul(a0,14) ^ gmul(a1,11) ^ gmul(a2,13) ^ gmul(a3, 9));
-        p[1] = (unsigned char)(gmul(a0, 9) ^ gmul(a1,14) ^ gmul(a2,11) ^ gmul(a3,13));
-        p[2] = (unsigned char)(gmul(a0,13) ^ gmul(a1, 9) ^ gmul(a2,14) ^ gmul(a3,11));
-        p[3] = (unsigned char)(gmul(a0,11) ^ gmul(a1,13) ^ gmul(a2, 9) ^ gmul(a3,14));
+        uint8_t *p = s + 4*c;
+        uint8_t a0 = p[0], a1 = p[1], a2 = p[2], a3 = p[3];
+        p[0] = (uint8_t)(gmul(a0,14) ^ gmul(a1,11) ^ gmul(a2,13) ^ gmul(a3, 9));
+        p[1] = (uint8_t)(gmul(a0, 9) ^ gmul(a1,14) ^ gmul(a2,11) ^ gmul(a3,13));
+        p[2] = (uint8_t)(gmul(a0,13) ^ gmul(a1, 9) ^ gmul(a2,14) ^ gmul(a3,11));
+        p[3] = (uint8_t)(gmul(a0,11) ^ gmul(a1,13) ^ gmul(a2, 9) ^ gmul(a3,14));
     }
 }
 
 /* Key-size-generic single block: nr rounds over the matching schedule rk. */
-void aes_encrypt(const unsigned char *rk, int nr,
-                 const unsigned char in[16], unsigned char out[16])
+void aes_encrypt(const uint8_t *rk, int nr,
+                 const uint8_t in[16], uint8_t out[16])
 {
-    unsigned char s[16];
+    uint8_t s[16];
     int r;
     memcpy(s, in, 16);
     add_round_key(s, rk);
@@ -213,10 +213,10 @@ void aes_encrypt(const unsigned char *rk, int nr,
     memcpy(out, s, 16);
 }
 
-void aes_decrypt(const unsigned char *rk, int nr,
-                 const unsigned char in[16], unsigned char out[16])
+void aes_decrypt(const uint8_t *rk, int nr,
+                 const uint8_t in[16], uint8_t out[16])
 {
-    unsigned char s[16];
+    uint8_t s[16];
     int r;
     memcpy(s, in, 16);
     add_round_key(s, rk + 16*nr);
@@ -232,40 +232,40 @@ void aes_decrypt(const unsigned char *rk, int nr,
     memcpy(out, s, 16);
 }
 
-void aes128_encrypt(const unsigned char rk[176],
-                    const unsigned char in[16], unsigned char out[16])
+void aes128_encrypt(const uint8_t rk[176],
+                    const uint8_t in[16], uint8_t out[16])
 { aes_encrypt(rk, 10, in, out); }
-void aes128_decrypt(const unsigned char rk[176],
-                    const unsigned char in[16], unsigned char out[16])
+void aes128_decrypt(const uint8_t rk[176],
+                    const uint8_t in[16], uint8_t out[16])
 { aes_decrypt(rk, 10, in, out); }
-void aes256_encrypt(const unsigned char rk[240],
-                    const unsigned char in[16], unsigned char out[16])
+void aes256_encrypt(const uint8_t rk[240],
+                    const uint8_t in[16], uint8_t out[16])
 { aes_encrypt(rk, 14, in, out); }
-void aes256_decrypt(const unsigned char rk[240],
-                    const unsigned char in[16], unsigned char out[16])
+void aes256_decrypt(const uint8_t rk[240],
+                    const uint8_t in[16], uint8_t out[16])
 { aes_decrypt(rk, 14, in, out); }
 
-int aes_cbc_encrypt(const unsigned char *rk, int nr, const unsigned char iv[16],
-                    const unsigned char *in, unsigned char *out, int len)
+int aes_cbc_encrypt(const uint8_t *rk, int nr, const uint8_t iv[16],
+                    const uint8_t *in, uint8_t *out, int len)
 {
-    unsigned char prev[16], blk[16];
+    uint8_t prev[16], blk[16];
     int i, j;
     if (len <= 0 || (len & 15))
         return -1;
     memcpy(prev, iv, 16);
     for (i = 0; i < len; i += 16) {
         for (j = 0; j < 16; j++)
-            blk[j] = (unsigned char)(in[i+j] ^ prev[j]);
+            blk[j] = (uint8_t)(in[i+j] ^ prev[j]);
         aes_encrypt(rk, nr, blk, out + i);
         memcpy(prev, out + i, 16);
     }
     return 0;
 }
 
-int aes_cbc_decrypt(const unsigned char *rk, int nr, const unsigned char iv[16],
-                    const unsigned char *in, unsigned char *out, int len)
+int aes_cbc_decrypt(const uint8_t *rk, int nr, const uint8_t iv[16],
+                    const uint8_t *in, uint8_t *out, int len)
 {
-    unsigned char prev[16], ct[16];
+    uint8_t prev[16], ct[16];
     int i, j;
     if (len <= 0 || (len & 15))
         return -1;
@@ -280,9 +280,9 @@ int aes_cbc_decrypt(const unsigned char *rk, int nr, const unsigned char iv[16],
     return 0;
 }
 
-int aes128_cbc_encrypt(const unsigned char rk[176], const unsigned char iv[16],
-                       const unsigned char *in, unsigned char *out, int len)
+int aes128_cbc_encrypt(const uint8_t rk[176], const uint8_t iv[16],
+                       const uint8_t *in, uint8_t *out, int len)
 { return aes_cbc_encrypt(rk, 10, iv, in, out, len); }
-int aes128_cbc_decrypt(const unsigned char rk[176], const unsigned char iv[16],
-                       const unsigned char *in, unsigned char *out, int len)
+int aes128_cbc_decrypt(const uint8_t rk[176], const uint8_t iv[16],
+                       const uint8_t *in, uint8_t *out, int len)
 { return aes_cbc_decrypt(rk, 10, iv, in, out, len); }

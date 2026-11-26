@@ -18,20 +18,20 @@
 #include "gfx.h"
 
 struct SHADE {
-    int   type;
-    u32   ramp[256];
+    int      type;
+    uint32_t ramp[256];
     /* axial: how far along a pixel is, as A*x + B*y + C */
-    REAL  along_x, along_y, along_c;
+    REAL     along_x, along_y, along_c;
     /* radial, in pixels of the canvas */
-    fx    centre_x, centre_y, radius0, radius1;
+    fx       centre_x, centre_y, radius0, radius1;
 };
 
-static void shade_row( const PAINT *paint, int ypos, int xpos, int count, u8 *bgr )
+static void shade_row( const PAINT *paint, int ypos, int xpos, int count, uint8_t *bgr )
 {
     const SHADE *shade = (const SHADE *)paint->ctx;
     REAL start;
-    s32 tee, step, dx, dy, dist, span;
-    u32 rgb;
+    int32_t tee, step, dx, dy, dist, span;
+    uint32_t rgb;
     int index, level;
 
     if ( shade->type == 2 ) {
@@ -43,9 +43,9 @@ static void shade_row( const PAINT *paint, int ypos, int xpos, int count, u8 *bg
         for ( index = 0; index < count; index++, bgr += 3 ) {
             level = tee < 0 ? 0 : (tee >= 0x1000000L ? 255 : (int)(tee >> 16));
             rgb = shade->ramp[level];
-            bgr[0] = (u8)rgb;
-            bgr[1] = (u8)(rgb >> 8);
-            bgr[2] = (u8)(rgb >> 16);
+            bgr[0] = (uint8_t)rgb;
+            bgr[1] = (uint8_t)(rgb >> 8);
+            bgr[2] = (uint8_t)(rgb >> 16);
             if ( (step > 0 && tee > 0x7F000000L - step) || (step < 0 && tee < -0x7F000000L - step) ) {
                 continue;                           /* far off the end: stay there */
             }
@@ -61,14 +61,14 @@ static void shade_row( const PAINT *paint, int ypos, int xpos, int count, u8 *bg
         if ( dx > 30000 || dx < -30000 || dy > 30000 || dy < -30000 ) {
             dist = 46000;
         } else {
-            dist = (s32)isqrt( (u32)(dx * dx + dy * dy) );
+            dist = (int32_t)isqrt( (uint32_t)(dx * dx + dy * dy) );
         }
         dist -= shade->radius0 >> 12;
         level = span == 0 ? 255 : (int)((dist * 255) / span);
         rgb = shade->ramp[level < 0 ? 0 : (level > 255 ? 255 : level)];
-        bgr[0] = (u8)rgb;
-        bgr[1] = (u8)(rgb >> 8);
-        bgr[2] = (u8)(rgb >> 16);
+        bgr[0] = (uint8_t)rgb;
+        bgr[1] = (uint8_t)(rgb >> 8);
+        bgr[2] = (uint8_t)(rgb >> 16);
     }
 }
 
@@ -91,7 +91,7 @@ SHADE *shade_load( OBJ *shading, const RMAT *ctm, DICT *res )
     }
     type = (int)dict_int( dict, "ShadingType", 0 );
     coords = dict_arr( dict, "Coords" );
-    if ( (type != 2 && type != 3) || coords == NULL || coords->count < (u32)(type == 2 ? 4 : 6) ) {
+    if ( (type != 2 && type != 3) || coords == NULL || coords->count < (unsigned int)(type == 2 ? 4 : 6) ) {
         return NULL;
     }
     shade = (SHADE *)pool_alloc( doc.page_pool, sizeof( SHADE ) );
@@ -170,8 +170,8 @@ void shade_fill( SHADE *shade, CANVAS *cv, const CLIP *clip, int alpha, int blen
     int x0, y0, x1, y1;
 
     mem_set( &paint, 0, sizeof( paint ) );
-    paint.alpha = (u8)alpha;
-    paint.blend = (u8)blend;
+    paint.alpha = (uint8_t)alpha;
+    paint.blend = (uint8_t)blend;
     shade_paint( shade, &paint );
     x0 = clip->x0;
     y0 = clip->y0;

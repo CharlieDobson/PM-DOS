@@ -17,8 +17,8 @@
  *                 floppy (F7), U on the Uninstall disk, R a DOS file
  *                 copied to the root as well (CMD.EXE: with the startup
  *                 files bypassed, the kernel looks for it there).  SETUP
- *                 is Setup's own: the boot code it writes, never
- *                 installed.
+ *                 is Setup's own, never installed: the boot code it
+ *                 writes, and SETUP.MSG (BBOARD.C).
  *   [countries]   code,name,date order,date separator,time separator,
  *                 12|24,code pages
  *   [keyboards]   code,id,name,code pages
@@ -78,7 +78,7 @@ static int split( char *line, char **field, int max )
     return n;
 }
 
-static int pages( const char *list, u16 *page )
+static int pages( const char *list, uint16_t *page )
 {
     int n = 0;
     const char *end;
@@ -88,7 +88,7 @@ static int pages( const char *list, u16 *page )
         if ( *list < '0' || *list > '9' || n >= MAX_PAGES ) {
             return n;
         }
-        page[n++] = (u16)parse_u32( list, &end );
+        page[n++] = (uint16_t)parse_u32( list, &end );
         list = end;
     }
 }
@@ -134,7 +134,7 @@ static int parse_file( char *line )
     }
     file = &inf.file[inf.nfiles];
     mem_set( file, 0, sizeof( *file ) );
-    file->disk = (u8)parse_u32( field[0], NULL );
+    file->disk = (uint8_t)parse_u32( field[0], NULL );
     if ( file->disk < 1 || file->disk > MAX_DISKS ) {
         return 1;
     }
@@ -152,7 +152,7 @@ static int parse_file( char *line )
         return 1;
     }
     for ( flag = field[4]; *flag; flag++ ) {
-        switch ( ch_upper( (u8)*flag ) ) {
+        switch ( ch_upper( (uint8_t)*flag ) ) {
         case 'S': file->flags |= FF_SYSTEM; break;
         case 'P': file->flags |= FF_PACKED; break;
         case 'F': file->flags |= FF_FLOPPY; break;
@@ -180,11 +180,11 @@ static int parse_country( char *line )
     mem_set( ctry, 0, sizeof( *ctry ) );
     str_cpyn( ctry->code, field[0], sizeof( ctry->code ) );
     str_cpyn( ctry->name, field[1], sizeof( ctry->name ) );
-    ctry->date_order = (u8)parse_u32( field[2], NULL );
+    ctry->date_order = (uint8_t)parse_u32( field[2], NULL );
     ctry->date_sep = field[3][0] ? field[3][0] : '/';
     ctry->time_sep = field[4][0] ? field[4][0] : ':';
     ctry->clock24 = parse_u32( field[5], NULL ) == 24;
-    ctry->npages = (u8)pages( field[6], ctry->page );
+    ctry->npages = (uint8_t)pages( field[6], ctry->page );
     if ( ctry->date_order > 2 || ctry->npages == 0 ) {
         return 1;
     }
@@ -204,9 +204,9 @@ static int parse_keyboard( char *line )
     mem_set( kb, 0, sizeof( *kb ) );
     str_cpyn( kb->code, field[0], sizeof( kb->code ) );
     str_upper( kb->code );
-    kb->id = (u16)parse_u32( field[1], NULL );
+    kb->id = (uint16_t)parse_u32( field[1], NULL );
     str_cpyn( kb->name, field[2], sizeof( kb->name ) );
-    kb->npages = (u8)pages( field[3], kb->page );
+    kb->npages = (uint8_t)pages( field[3], kb->page );
     if ( !kb->code[0] || kb->npages == 0 ) {
         return 1;
     }
@@ -217,8 +217,8 @@ static int parse_keyboard( char *line )
 /* 0 = read; else nonzero and the file was not usable */
 int inf_load( const char *path )
 {
-    u16 handle, done;
-    u32 size;
+    uint16_t handle, done;
+    uint32_t size;
     char *line, *next, *end;
     int section = S_NONE, bad = 0, i, len;
 
@@ -230,7 +230,7 @@ int inf_load( const char *path )
         return 2;
     }
     text = (char *)xalloc( size + 1 );
-    if ( plat_read( handle, text, (u16)size, &done ) || done != (u16)size ) {
+    if ( plat_read( handle, text, (uint16_t)size, &done ) || done != (uint16_t)size ) {
         plat_close( handle );
         return 2;
     }
@@ -337,7 +337,7 @@ const COUNTRYDEF *inf_country( const char *code )
     return NULL;
 }
 
-const KEYBDEF *inf_keyboard( const char *code, u16 id )
+const KEYBDEF *inf_keyboard( const char *code, uint16_t id )
 {
     int i;
     const KEYBDEF *first = NULL;

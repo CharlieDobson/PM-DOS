@@ -32,32 +32,32 @@
 #define RBUF 4096
 
 typedef struct {
-    int  handle;                /* the socket */
-    int  https;
-    void *tls;                  /* the TLS connection, when https */
-    u8   buf[RBUF];
-    int  pos, len;
-    int  eof;
+    int     handle;             /* the socket */
+    int     https;
+    void   *tls;                /* the TLS connection, when https */
+    uint8_t buf[RBUF];
+    int     pos, len;
+    int     eof;
 } CONN;
 
 #ifdef WITH_TLS
 /* the trust bundle read off the disk, and what tls_open is told to do
    with it - set by dos_entry, read inside conn_open */
-static u8                    ca_bundle[40960];
-static const unsigned char  *g_ca       = NULL;
+static uint8_t               ca_bundle[40960];
+static const uint8_t        *g_ca       = NULL;
 static int                    g_calen    = 0;
 static int                    g_insecure = 0;
 static int                    g_outcome  = TLSV_UNVERIFIED;
 
 /* read a whole file into buf (at most bufmax bytes); 0 if it will not open */
-static int read_whole( const char *path, unsigned char *buf, int bufmax )
+static int read_whole( const char *path, uint8_t *buf, int bufmax )
 {
     REGS regs;
     int  handle, total = 0, got;
 
     sl_memzero( &regs, sizeof( regs ) );
     regs.eax = 0x3D00;                  /* open existing, read only */
-    regs.edx = (u32)path;
+    regs.edx = (uint32_t)path;
     int21( &regs );
     if ( CF( regs ) ) return 0;
     handle = (int)( regs.eax & 0xFFFF );
@@ -65,9 +65,9 @@ static int read_whole( const char *path, unsigned char *buf, int bufmax )
     while ( total < bufmax ) {
         sl_memzero( &regs, sizeof( regs ) );
         regs.eax = 0x3F00;
-        regs.ebx = (u32)handle;
-        regs.ecx = (u32)( bufmax - total );
-        regs.edx = (u32)( buf + total );
+        regs.ebx = (uint32_t)handle;
+        regs.ecx = (uint32_t)( bufmax - total );
+        regs.edx = (uint32_t)( buf + total );
         int21( &regs );
         if ( CF( regs ) ) { total = 0; break; }
         got = (int)( regs.eax & 0xFFFF );
@@ -77,19 +77,19 @@ static int read_whole( const char *path, unsigned char *buf, int bufmax )
 
     sl_memzero( &regs, sizeof( regs ) );
     regs.eax = 0x3E00;                  /* close */
-    regs.ebx = (u32)handle;
+    regs.ebx = (uint32_t)handle;
     int21( &regs );
     return total;
 }
 
 /* find and load the CA bundle: /CA:file, then CACERT, then the current
    directory, then each PATH entry; the byte count, or 0 if none found */
-static int load_ca( const char *cafile, unsigned char *buf, int bufmax )
+static int load_ca( const char *cafile, uint8_t *buf, int bufmax )
 {
-    const char *path;
-    char        trial[160];
-    int         got;
-    u32         seg, end;
+    const char  *path;
+    char         trial[160];
+    int          got;
+    unsigned int seg, end;
 
     if ( cafile && cafile[0] ) return read_whole( cafile, buf, bufmax );
 
@@ -136,7 +136,7 @@ static const char *verr_text( int code )
 
 /* ---- the transport: TCP, or TLS over it ---- */
 
-static int conn_raw_recv( CONN *c, void *buf, u32 max )
+static int conn_raw_recv( CONN *c, void *buf, unsigned int max )
 {
 #ifdef WITH_TLS
     if ( c->https ) return tls_recv( c->tls, buf, max );
@@ -144,7 +144,7 @@ static int conn_raw_recv( CONN *c, void *buf, u32 max )
     return sl_recvwait( c->handle, buf, max, 1500 );
 }
 
-static int conn_send( CONN *c, const void *data, u32 len )
+static int conn_send( CONN *c, const void *data, unsigned int len )
 {
 #ifdef WITH_TLS
     if ( c->https ) return tls_send( c->tls, data, len );
@@ -152,7 +152,7 @@ static int conn_send( CONN *c, const void *data, u32 len )
     return sl_send( c->handle, data, len, 1500 );
 }
 
-static int conn_open( CONN *c, const char *host, u32 ip, u16 port, int https )
+static int conn_open( CONN *c, const char *host, uint32_t ip, uint16_t port, int https )
 {
     c->pos = c->len = c->eof = 0;
     c->https = https;
@@ -198,10 +198,10 @@ static int conn_getc( CONN *c )
 
 /* ---- the URL ---- */
 
-static int parse_url( const char *url, int *https, char *host, u32 hostmax, u16 *port, char *path, u32 pathmax )
+static int parse_url( const char *url, int *https, char *host, unsigned int hostmax, uint16_t *port, char *path, unsigned int pathmax )
 {
     const char *p = url;
-    u32 i;
+    unsigned int i;
 
     *https = 0;
     *port = 80;
@@ -214,7 +214,7 @@ static int parse_url( const char *url, int *https, char *host, u32 hostmax, u16 
     while ( *p && *p != ':' && *p != '/' && i + 1 < hostmax ) host[i++] = *p++;
     host[i] = 0;
     if ( i == 0 ) return 0;
-    if ( *p == ':' ) { p++; *port = (u16)sl_atou( p ); while ( *p >= '0' && *p <= '9' ) p++; }
+    if ( *p == ':' ) { p++; *port = (uint16_t)sl_atou( p ); while ( *p >= '0' && *p <= '9' ) p++; }
     /* path */
     if ( *p != '/' ) { path[0] = '/'; path[1] = 0; }
     else { for ( i = 0; *p && i + 1 < pathmax; i++ ) path[i] = *p++; path[i] = 0; }
@@ -223,22 +223,22 @@ static int parse_url( const char *url, int *https, char *host, u32 hostmax, u16 
 
 /* ---- the fetch ---- */
 
-static u8   body[RBUF];
-static char line[1024];
-static char host[256], path[1024], req[1400];
+static uint8_t body[RBUF];
+static char    line[1024];
+static char    host[256], path[1024], req[1400];
 
 void __cdecl dos_entry( void )
 {
-    char **argv;
-    int   argc, i, https, status = 0, n;
+    char   **argv;
+    int      argc, i, https, status = 0, n;
     const char *url = NULL, *outfile = NULL;
-    u16   port;
-    u32   ip, total = 0;
-    CONN  conn;
-    REGS  regs;
-    int   outhandle = 1;        /* stdout by default */
+    uint16_t port;
+    uint32_t ip, total = 0;
+    CONN     conn;
+    REGS     regs;
+    int      outhandle = 1;     /* stdout by default */
 #ifdef WITH_TLS
-    int   insecure = 0, verbose = 0;
+    int      insecure = 0, verbose = 0;
     const char *cafile = NULL;
 #endif
 
@@ -318,8 +318,8 @@ void __cdecl dos_entry( void )
             sl_memzero( &regs, sizeof( regs ) );
             regs.eax = 0x4000;
             regs.ebx = 2;
-            regs.ecx = (u32)( sizeof( warn ) - 1 );
-            regs.edx = (u32)warn;
+            regs.ecx = (uint32_t)( sizeof( warn ) - 1 );
+            regs.edx = (uint32_t)warn;
             int21( &regs );
         }
     }
@@ -334,7 +334,7 @@ void __cdecl dos_entry( void )
         for ( s = " HTTP/1.0\r\nHost: "; *s; ) *w++ = *s++;
         for ( s = host; *s; ) *w++ = *s++;
         for ( s = "\r\nUser-Agent: PM-DOS/WGET\r\nConnection: close\r\n\r\n"; *s; ) *w++ = *s++;
-        conn_send( &conn, req, (u32)( w - req ) );
+        conn_send( &conn, req, (unsigned int)( w - req ) );
     }
 
     /* the status line */
@@ -373,7 +373,7 @@ void __cdecl dos_entry( void )
         sl_memzero( &regs, sizeof( regs ) );
         regs.eax = 0x3C00;
         regs.ecx = 0;
-        regs.edx = (u32)outfile;
+        regs.edx = (uint32_t)outfile;
         int21( &regs );
         if ( CF( regs ) ) { sl_puts( "WGET: cannot create " ); sl_puts( outfile ); sl_puts( "\r\n" ); conn_close( &conn ); sl_flush(); return; }
         outhandle = (int)regs.eax;
@@ -384,7 +384,7 @@ void __cdecl dos_entry( void )
         int got;
         if ( conn.pos < conn.len ) {
             got = conn.len - conn.pos;
-            sl_memcpy( body, conn.buf + conn.pos, (u32)got );
+            sl_memcpy( body, conn.buf + conn.pos, (unsigned int)got );
             conn.pos = conn.len;
         } else {
             got = conn_raw_recv( &conn, body, RBUF );
@@ -394,8 +394,8 @@ void __cdecl dos_entry( void )
         sl_memzero( &regs, sizeof( regs ) );
         regs.eax = 0x4000;
         regs.ebx = outhandle;
-        regs.ecx = (u32)got;
-        regs.edx = (u32)body;
+        regs.ecx = (uint32_t)got;
+        regs.edx = (uint32_t)body;
         int21( &regs );
     }
 
@@ -407,7 +407,7 @@ void __cdecl dos_entry( void )
         regs.ebx = outhandle;
         int21( &regs );
         sl_puts( "saved " ); sl_putu( total ); sl_puts( " bytes to " ); sl_puts( outfile );
-        sl_puts( " (HTTP " ); sl_putu( (u32)status ); sl_puts( ")\r\n" );
+        sl_puts( " (HTTP " ); sl_putu( (unsigned int)status ); sl_puts( ")\r\n" );
     }
     sl_flush();
 }

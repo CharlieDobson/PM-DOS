@@ -2,9 +2,9 @@
  * SMBCRYPT.C - MD4, MD5, HMAC-MD5, RC4 and the NTLMv2 helpers.  C89.
  * ==========================================================================
  * See SMBCRYPT.H.  All four are the textbook algorithms (RFC 1320, 1321,
- * 2104, and Rivest's RC4); the word type is 32-bit unsigned long, which it
- * is on every target this builds for (Open Watcom, 16- and 32-bit DOS and
- * Win32).  Known-answer tests live in SMBCTEST.C.
+ * 2104, and Rivest's RC4); the word type is uint32_t, on every target this
+ * builds for (Open Watcom, 16- and 32-bit DOS and Win32).  Known-answer
+ * tests live in SMBCTEST.C.
  * ========================================================================== */
 #include "smbcrypt.h"
 #include <string.h>
@@ -12,26 +12,26 @@
 #define ROTL( x, n )  ( ( (x) << (n) ) | ( (x) >> ( 32 - (n) ) ) )
 
 /* read 'count' little-endian 32-bit words out of bytes */
-static void decode_le( unsigned long *out, const unsigned char *in, int count )
+static void decode_le( uint32_t *out, const uint8_t *in, int count )
 {
     int i;
     for ( i = 0; i < count; i++ ) {
-        out[i] = (unsigned long)in[i * 4] |
-                 ( (unsigned long)in[i * 4 + 1] << 8 ) |
-                 ( (unsigned long)in[i * 4 + 2] << 16 ) |
-                 ( (unsigned long)in[i * 4 + 3] << 24 );
+        out[i] = (uint32_t)in[i * 4] |
+                 ( (uint32_t)in[i * 4 + 1] << 8 ) |
+                 ( (uint32_t)in[i * 4 + 2] << 16 ) |
+                 ( (uint32_t)in[i * 4 + 3] << 24 );
     }
 }
 
 /* write 'count' 32-bit words out as little-endian bytes */
-static void encode_le( unsigned char *out, const unsigned long *in, int count )
+static void encode_le( uint8_t *out, const uint32_t *in, int count )
 {
     int i;
     for ( i = 0; i < count; i++ ) {
-        out[i * 4]     = (unsigned char)( in[i] & 0xFF );
-        out[i * 4 + 1] = (unsigned char)( ( in[i] >> 8 ) & 0xFF );
-        out[i * 4 + 2] = (unsigned char)( ( in[i] >> 16 ) & 0xFF );
-        out[i * 4 + 3] = (unsigned char)( ( in[i] >> 24 ) & 0xFF );
+        out[i * 4]     = (uint8_t)( in[i] & 0xFF );
+        out[i * 4 + 1] = (uint8_t)( ( in[i] >> 8 ) & 0xFF );
+        out[i * 4 + 2] = (uint8_t)( ( in[i] >> 16 ) & 0xFF );
+        out[i * 4 + 3] = (uint8_t)( ( in[i] >> 24 ) & 0xFF );
     }
 }
 
@@ -45,10 +45,10 @@ static void encode_le( unsigned char *out, const unsigned long *in, int count )
 #define MD4_GG( a, b, c, d, x, s )  { (a) += MD4_G( (b), (c), (d) ) + (x) + 0x5A827999UL; (a) = ROTL( (a), (s) ); }
 #define MD4_HH( a, b, c, d, x, s )  { (a) += MD4_H( (b), (c), (d) ) + (x) + 0x6ED9EBA1UL; (a) = ROTL( (a), (s) ); }
 
-static void md4_block( unsigned long state[4], const unsigned char block[64] )
+static void md4_block( uint32_t state[4], const uint8_t block[64] )
 {
-    unsigned long aa = state[0], bb = state[1], cc = state[2], dd = state[3];
-    unsigned long x[16];
+    uint32_t aa = state[0], bb = state[1], cc = state[2], dd = state[3];
+    uint32_t x[16];
 
     decode_le( x, block, 16 );
 
@@ -90,17 +90,17 @@ void md4_init( MD4_CTX *ctx )
 }
 
 /* the fill/flush loop is identical for MD4 and MD5; share it */
-static void md_absorb( unsigned long count[2], unsigned char buffer[64],
-                       unsigned long state[4], const unsigned char *data,
+static void md_absorb( uint32_t count[2], uint8_t buffer[64],
+                       uint32_t state[4], const uint8_t *data,
                        unsigned int len,
-                       void ( *block )( unsigned long[4], const unsigned char[64] ) )
+                       void ( *block )( uint32_t[4], const uint8_t[64] ) )
 {
     unsigned int index = (unsigned int)( ( count[0] >> 3 ) & 0x3F );
     unsigned int partlen, i;
 
-    count[0] += (unsigned long)len << 3;
-    if ( count[0] < ( (unsigned long)len << 3 ) ) count[1]++;
-    count[1] += (unsigned long)len >> 29;
+    count[0] += (uint32_t)len << 3;
+    if ( count[0] < ( (uint32_t)len << 3 ) ) count[1]++;
+    count[1] += (uint32_t)len >> 29;
 
     partlen = 64 - index;
     if ( len >= partlen ) {
@@ -114,15 +114,15 @@ static void md_absorb( unsigned long count[2], unsigned char buffer[64],
     memcpy( buffer + index, data + i, len - i );
 }
 
-static void md_pad_final( unsigned long count[2], unsigned char buffer[64],
-                          unsigned long state[4], unsigned char *digest,
-                          void ( *block )( unsigned long[4], const unsigned char[64] ) )
+static void md_pad_final( uint32_t count[2], uint8_t buffer[64],
+                          uint32_t state[4], uint8_t *digest,
+                          void ( *block )( uint32_t[4], const uint8_t[64] ) )
 {
-    unsigned char bits[8];
-    unsigned char pad[64];
+    uint8_t       bits[8];
+    uint8_t       pad[64];
     unsigned int  index = (unsigned int)( ( count[0] >> 3 ) & 0x3F );
     unsigned int  padlen;
-    unsigned long saved[2];
+    uint32_t      saved[2];
 
     saved[0] = count[0]; saved[1] = count[1];
     encode_le( bits, saved, 2 );
@@ -135,18 +135,18 @@ static void md_pad_final( unsigned long count[2], unsigned char buffer[64],
     encode_le( digest, state, 4 );
 }
 
-void md4_update( MD4_CTX *ctx, const unsigned char *data, unsigned int len )
+void md4_update( MD4_CTX *ctx, const uint8_t *data, unsigned int len )
 {
     md_absorb( ctx->count, ctx->buffer, ctx->state, data, len, md4_block );
 }
 
-void md4_final( MD4_CTX *ctx, unsigned char digest[16] )
+void md4_final( MD4_CTX *ctx, uint8_t digest[16] )
 {
     md_pad_final( ctx->count, ctx->buffer, ctx->state, digest, md4_block );
     memset( ctx, 0, sizeof( *ctx ) );
 }
 
-void md4( const unsigned char *data, unsigned int len, unsigned char digest[16] )
+void md4( const uint8_t *data, unsigned int len, uint8_t digest[16] )
 {
     MD4_CTX ctx;
     md4_init( &ctx );
@@ -161,15 +161,15 @@ void md4( const unsigned char *data, unsigned int len, unsigned char digest[16] 
 #define MD5_G( x, y, z )  ( ( (x) & (z) ) | ( (y) & ~(z) ) )
 #define MD5_H( x, y, z )  ( (x) ^ (y) ^ (z) )
 #define MD5_I( x, y, z )  ( (y) ^ ( (x) | ~(z) ) )
-#define MD5_FF( a, b, c, d, x, s, ac )  { (a) += MD5_F( (b), (c), (d) ) + (x) + (unsigned long)(ac); (a) = ROTL( (a), (s) ); (a) += (b); }
-#define MD5_GG( a, b, c, d, x, s, ac )  { (a) += MD5_G( (b), (c), (d) ) + (x) + (unsigned long)(ac); (a) = ROTL( (a), (s) ); (a) += (b); }
-#define MD5_HH( a, b, c, d, x, s, ac )  { (a) += MD5_H( (b), (c), (d) ) + (x) + (unsigned long)(ac); (a) = ROTL( (a), (s) ); (a) += (b); }
-#define MD5_II( a, b, c, d, x, s, ac )  { (a) += MD5_I( (b), (c), (d) ) + (x) + (unsigned long)(ac); (a) = ROTL( (a), (s) ); (a) += (b); }
+#define MD5_FF( a, b, c, d, x, s, ac )  { (a) += MD5_F( (b), (c), (d) ) + (x) + (uint32_t)(ac); (a) = ROTL( (a), (s) ); (a) += (b); }
+#define MD5_GG( a, b, c, d, x, s, ac )  { (a) += MD5_G( (b), (c), (d) ) + (x) + (uint32_t)(ac); (a) = ROTL( (a), (s) ); (a) += (b); }
+#define MD5_HH( a, b, c, d, x, s, ac )  { (a) += MD5_H( (b), (c), (d) ) + (x) + (uint32_t)(ac); (a) = ROTL( (a), (s) ); (a) += (b); }
+#define MD5_II( a, b, c, d, x, s, ac )  { (a) += MD5_I( (b), (c), (d) ) + (x) + (uint32_t)(ac); (a) = ROTL( (a), (s) ); (a) += (b); }
 
-static void md5_block( unsigned long state[4], const unsigned char block[64] )
+static void md5_block( uint32_t state[4], const uint8_t block[64] )
 {
-    unsigned long aa = state[0], bb = state[1], cc = state[2], dd = state[3];
-    unsigned long x[16];
+    uint32_t aa = state[0], bb = state[1], cc = state[2], dd = state[3];
+    uint32_t x[16];
 
     decode_le( x, block, 16 );
 
@@ -219,18 +219,18 @@ void md5_init( MD5_CTX *ctx )
     ctx->count[0] = ctx->count[1] = 0;
 }
 
-void md5_update( MD5_CTX *ctx, const unsigned char *data, unsigned int len )
+void md5_update( MD5_CTX *ctx, const uint8_t *data, unsigned int len )
 {
     md_absorb( ctx->count, ctx->buffer, ctx->state, data, len, md5_block );
 }
 
-void md5_final( MD5_CTX *ctx, unsigned char digest[16] )
+void md5_final( MD5_CTX *ctx, uint8_t digest[16] )
 {
     md_pad_final( ctx->count, ctx->buffer, ctx->state, digest, md5_block );
     memset( ctx, 0, sizeof( *ctx ) );
 }
 
-void md5( const unsigned char *data, unsigned int len, unsigned char digest[16] )
+void md5( const uint8_t *data, unsigned int len, uint8_t digest[16] )
 {
     MD5_CTX ctx;
     md5_init( &ctx );
@@ -241,13 +241,13 @@ void md5( const unsigned char *data, unsigned int len, unsigned char digest[16] 
 /* ==========================================================================
  * HMAC-MD5 (RFC 2104)
  * ========================================================================== */
-void hmac_md5( const unsigned char *key, int keylen,
-               const unsigned char *data, int datalen,
-               unsigned char out[16] )
+void hmac_md5( const uint8_t *key, int keylen,
+               const uint8_t *data, int datalen,
+               uint8_t out[16] )
 {
-    unsigned char kpad[64];
-    unsigned char tk[16];
-    unsigned char inner[16];
+    uint8_t       kpad[64];
+    uint8_t       tk[16];
+    uint8_t       inner[16];
     MD5_CTX       ctx;
     int           i;
 
@@ -258,14 +258,14 @@ void hmac_md5( const unsigned char *key, int keylen,
     }
 
     memset( kpad, 0x36, sizeof( kpad ) );
-    for ( i = 0; i < keylen; i++ ) kpad[i] = (unsigned char)( kpad[i] ^ key[i] );
+    for ( i = 0; i < keylen; i++ ) kpad[i] = (uint8_t)( kpad[i] ^ key[i] );
     md5_init( &ctx );
     md5_update( &ctx, kpad, 64 );
     md5_update( &ctx, data, (unsigned int)datalen );
     md5_final( &ctx, inner );
 
     memset( kpad, 0x5C, sizeof( kpad ) );
-    for ( i = 0; i < keylen; i++ ) kpad[i] = (unsigned char)( kpad[i] ^ key[i] );
+    for ( i = 0; i < keylen; i++ ) kpad[i] = (uint8_t)( kpad[i] ^ key[i] );
     md5_init( &ctx );
     md5_update( &ctx, kpad, 64 );
     md5_update( &ctx, inner, 16 );
@@ -275,12 +275,12 @@ void hmac_md5( const unsigned char *key, int keylen,
 /* ==========================================================================
  * RC4
  * ========================================================================== */
-void rc4_init( RC4_CTX *ctx, const unsigned char *key, int keylen )
+void rc4_init( RC4_CTX *ctx, const uint8_t *key, int keylen )
 {
     int i, j;
-    unsigned char tmp;
+    uint8_t tmp;
 
-    for ( i = 0; i < 256; i++ ) ctx->s[i] = (unsigned char)i;
+    for ( i = 0; i < 256; i++ ) ctx->s[i] = (uint8_t)i;
     j = 0;
     for ( i = 0; i < 256; i++ ) {
         j = ( j + ctx->s[i] + key[i % keylen] ) & 0xFF;
@@ -289,45 +289,45 @@ void rc4_init( RC4_CTX *ctx, const unsigned char *key, int keylen )
     ctx->i = ctx->j = 0;
 }
 
-void rc4_crypt( RC4_CTX *ctx, const unsigned char *in, unsigned char *out, int len )
+void rc4_crypt( RC4_CTX *ctx, const uint8_t *in, uint8_t *out, int len )
 {
     int k;
-    unsigned char tmp;
+    uint8_t tmp;
 
     for ( k = 0; k < len; k++ ) {
         ctx->i = ( ctx->i + 1 ) & 0xFF;
         ctx->j = ( ctx->j + ctx->s[ctx->i] ) & 0xFF;
         tmp = ctx->s[ctx->i]; ctx->s[ctx->i] = ctx->s[ctx->j]; ctx->s[ctx->j] = tmp;
-        out[k] = (unsigned char)( in[k] ^ ctx->s[( ctx->s[ctx->i] + ctx->s[ctx->j] ) & 0xFF] );
+        out[k] = (uint8_t)( in[k] ^ ctx->s[( ctx->s[ctx->i] + ctx->s[ctx->j] ) & 0xFF] );
     }
 }
 
 /* ==========================================================================
  * NTLMv2 helpers
  * ========================================================================== */
-int utf16le( const char *ascii, unsigned char *out, int outcap )
+int utf16le( const char *ascii, uint8_t *out, int outcap )
 {
     int i = 0;
     while ( ascii[i] && ( i * 2 + 1 ) < outcap ) {
-        out[i * 2]     = (unsigned char)ascii[i];
+        out[i * 2]     = (uint8_t)ascii[i];
         out[i * 2 + 1] = 0;
         i++;
     }
     return i * 2;
 }
 
-void nt_hash( const char *password, unsigned char out[16] )
+void nt_hash( const char *password, uint8_t out[16] )
 {
-    unsigned char wide[512];
+    uint8_t       wide[512];
     int           widelen = utf16le( password, wide, sizeof( wide ) );
     md4( wide, (unsigned int)widelen, out );
 }
 
 void ntowf_v2( const char *password, const char *user, const char *domain,
-               unsigned char out[16] )
+               uint8_t out[16] )
 {
-    unsigned char nt[16];
-    unsigned char wide[1024];
+    uint8_t       nt[16];
+    uint8_t       wide[1024];
     int           pos = 0;
     int           i;
 
@@ -337,11 +337,11 @@ void ntowf_v2( const char *password, const char *user, const char *domain,
     for ( i = 0; user[i] && pos + 1 < (int)sizeof( wide ); i++ ) {
         char upper = user[i];
         if ( upper >= 'a' && upper <= 'z' ) upper = (char)( upper - 32 );
-        wide[pos++] = (unsigned char)upper;
+        wide[pos++] = (uint8_t)upper;
         wide[pos++] = 0;
     }
     for ( i = 0; domain[i] && pos + 1 < (int)sizeof( wide ); i++ ) {
-        wide[pos++] = (unsigned char)domain[i];
+        wide[pos++] = (uint8_t)domain[i];
         wide[pos++] = 0;
     }
 
@@ -425,7 +425,7 @@ static const int DES_SBOX[8][64] = {
       7,11,4,1,9,12,14,2,0,6,10,13,15,3,5,8,
       2,1,14,7,4,10,8,13,15,12,9,0,3,5,6,11 } };
 
-static void bytes_to_bits( const unsigned char *in, int nbytes, int *bits )
+static void bytes_to_bits( const uint8_t *in, int nbytes, int *bits )
 {
     int i, b;
     for ( i = 0; i < nbytes; i++ )
@@ -433,12 +433,12 @@ static void bytes_to_bits( const unsigned char *in, int nbytes, int *bits )
             bits[i * 8 + b] = ( in[i] >> ( 7 - b ) ) & 1;
 }
 
-static void bits_to_bytes( const int *bits, int nbytes, unsigned char *out )
+static void bits_to_bytes( const int *bits, int nbytes, uint8_t *out )
 {
     int i, b;
     for ( i = 0; i < nbytes; i++ ) {
-        unsigned char v = 0;
-        for ( b = 0; b < 8; b++ ) v = (unsigned char)( ( v << 1 ) | bits[i * 8 + b] );
+        uint8_t v = 0;
+        for ( b = 0; b < 8; b++ ) v = (uint8_t)( ( v << 1 ) | bits[i * 8 + b] );
         out[i] = v;
     }
 }
@@ -450,21 +450,21 @@ static void des_permute( const int *in, int *out, const int *table, int n )
 }
 
 /* expand 7 packed bytes into an 8-byte DES key (the LM/NTLM str_to_key) */
-static void str_to_key( const unsigned char *str, unsigned char *key )
+static void str_to_key( const uint8_t *str, uint8_t *key )
 {
     int i;
-    key[0] = (unsigned char)( str[0] >> 1 );
-    key[1] = (unsigned char)( ( ( str[0] & 0x01 ) << 6 ) | ( str[1] >> 2 ) );
-    key[2] = (unsigned char)( ( ( str[1] & 0x03 ) << 5 ) | ( str[2] >> 3 ) );
-    key[3] = (unsigned char)( ( ( str[2] & 0x07 ) << 4 ) | ( str[3] >> 4 ) );
-    key[4] = (unsigned char)( ( ( str[3] & 0x0F ) << 3 ) | ( str[4] >> 5 ) );
-    key[5] = (unsigned char)( ( ( str[4] & 0x1F ) << 2 ) | ( str[5] >> 6 ) );
-    key[6] = (unsigned char)( ( ( str[5] & 0x3F ) << 1 ) | ( str[6] >> 7 ) );
-    key[7] = (unsigned char)( str[6] & 0x7F );
-    for ( i = 0; i < 8; i++ ) key[i] = (unsigned char)( key[i] << 1 );   /* parity bit, ignored */
+    key[0] = (uint8_t)( str[0] >> 1 );
+    key[1] = (uint8_t)( ( ( str[0] & 0x01 ) << 6 ) | ( str[1] >> 2 ) );
+    key[2] = (uint8_t)( ( ( str[1] & 0x03 ) << 5 ) | ( str[2] >> 3 ) );
+    key[3] = (uint8_t)( ( ( str[2] & 0x07 ) << 4 ) | ( str[3] >> 4 ) );
+    key[4] = (uint8_t)( ( ( str[3] & 0x0F ) << 3 ) | ( str[4] >> 5 ) );
+    key[5] = (uint8_t)( ( ( str[4] & 0x1F ) << 2 ) | ( str[5] >> 6 ) );
+    key[6] = (uint8_t)( ( ( str[5] & 0x3F ) << 1 ) | ( str[6] >> 7 ) );
+    key[7] = (uint8_t)( str[6] & 0x7F );
+    for ( i = 0; i < 8; i++ ) key[i] = (uint8_t)( key[i] << 1 );         /* parity bit, ignored */
 }
 
-static void des_key_schedule( const unsigned char key[8], int subkeys[16][48] )
+static void des_key_schedule( const uint8_t key[8], int subkeys[16][48] )
 {
     int keybits[64], pc1[56], c[28], d[28], round, i;
 
@@ -483,8 +483,8 @@ static void des_key_schedule( const unsigned char key[8], int subkeys[16][48] )
     }
 }
 
-static void des_crypt( const int subkeys[16][48], const unsigned char in[8],
-                       unsigned char out[8] )
+static void des_crypt( const int subkeys[16][48], const uint8_t in[8],
+                       uint8_t out[8] )
 {
     int block[64], perm[64], l[32], r[32], round, i;
 
@@ -515,34 +515,34 @@ static void des_crypt( const int subkeys[16][48], const unsigned char in[8],
     bits_to_bytes( perm, 8, out );
 }
 
-void des_encrypt_block( const unsigned char key[8], const unsigned char in[8],
-                        unsigned char out[8] )
+void des_encrypt_block( const uint8_t key[8], const uint8_t in[8],
+                        uint8_t out[8] )
 {
     int subkeys[16][48];
     des_key_schedule( key, subkeys );
     des_crypt( subkeys, in, out );
 }
 
-void lm_hash( const char *password, unsigned char out[16] )
+void lm_hash( const char *password, uint8_t out[16] )
 {
-    static const unsigned char kgs[8] = { 0x4B,0x47,0x53,0x21,0x40,0x23,0x24,0x25 };
-    unsigned char up[14], key[8];
+    static const uint8_t kgs[8] = { 0x4B,0x47,0x53,0x21,0x40,0x23,0x24,0x25 };
+    uint8_t up[14], key[8];
     int i;
 
     memset( up, 0, sizeof( up ) );
     for ( i = 0; i < 14 && password[i]; i++ ) {
         char ch = password[i];
         if ( ch >= 'a' && ch <= 'z' ) ch = (char)( ch - 32 );
-        up[i] = (unsigned char)ch;
+        up[i] = (uint8_t)ch;
     }
     str_to_key( up,     key ); des_encrypt_block( key, kgs, out );
     str_to_key( up + 7, key ); des_encrypt_block( key, kgs, out + 8 );
 }
 
-void desl( const unsigned char hash[16], const unsigned char challenge[8],
-           unsigned char out[24] )
+void desl( const uint8_t hash[16], const uint8_t challenge[8],
+           uint8_t out[24] )
 {
-    unsigned char k21[21], key[8];
+    uint8_t k21[21], key[8];
 
     memset( k21, 0, sizeof( k21 ) );
     memcpy( k21, hash, 16 );

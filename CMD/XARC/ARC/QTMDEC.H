@@ -32,10 +32,10 @@ void QtmFree( QtmDec *dec );
 
 /* Decode one frame: exactly outLen bytes (at most QTM_FRAME_SIZE) from the
  * block's compressed bytes.  SZ_ERR_DATA when they do not describe that. */
-int  QtmDecodeFrame( QtmDec *dec, const Byte *in, UInt32 inLen,
-                     Byte *out, UInt32 outLen );
+int  QtmDecodeFrame( QtmDec *dec, const uint8_t *in, uint32_t inLen,
+                     uint8_t *out, uint32_t outLen );
 
 /* Bytes a decoder with this window holds, for ArcMemNeeded. */
-UInt32 QtmMemNeeded( int windowBits );
+uint32_t QtmMemNeeded( int windowBits );
 
 #endif /* QTMDEC_H */

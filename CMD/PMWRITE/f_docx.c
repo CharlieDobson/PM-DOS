@@ -53,7 +53,7 @@
 
 /* PW_PEAK: ZIPHOST.EXE's build, which reports the most heap a file took */
 #ifdef PW_PEAK
-u32 pw_peak_heap;
+unsigned int pw_peak_heap;
 #define PEAK()  if ( heap_in_use() > pw_peak_heap ) { pw_peak_heap = heap_in_use(); }
 #else
 #define PEAK()
@@ -159,15 +159,15 @@ static const char *const tag_names[T_COUNT] = { "", W_TAGS };
 #define CF_VERTS        (CF_SUPER | CF_SUB)
 
 typedef struct {
-    u16 set;                    /* XC_*: which of the members below are given */
-    u16 tog_set;                /* which of CF_TOGGLES are given... */
-    u16 tog;                    /* ...and whether each is on */
-    u16 font, size;
-    u16 under;                  /* one of CF_UNDERS, or 0 for none */
-    u16 vert;                   /* one of CF_VERTS, or 0 for neither */
-    u8  hilite;
-    u8  spare;
-    u32 color;
+    uint16_t set;               /* XC_*: which of the members below are given */
+    uint16_t tog_set;           /* which of CF_TOGGLES are given... */
+    uint16_t tog;               /* ...and whether each is on */
+    uint16_t font, size;
+    uint16_t under;             /* one of CF_UNDERS, or 0 for none */
+    uint16_t vert;              /* one of CF_VERTS, or 0 for neither */
+    uint8_t  hilite;
+    uint8_t  spare;
+    uint32_t color;
 } XCHP;
 
 #define XP_ALIGN        0x0001
@@ -186,17 +186,17 @@ typedef struct {
 #define TAB_CLEAR       0xFF    /* a WTAB's kind: the tab there is taken away */
 
 typedef struct {
-    u16 set;                    /* XP_* */
-    u16 flag_set;               /* which of PF_GIVEN are given... */
-    u16 flags;                  /* ...and whether each is on */
-    u8  align, line_rule;
-    u8  ilvl;
-    u8  ntabs;
-    u16 before, after, line;
-    s32 left, right, first;
-    s32 num_id;
-    int style;                  /* its paragraph style: which DSTYLE, -1 for none such */
-    WTAB *tabs;
+    uint16_t set;               /* XP_* */
+    uint16_t flag_set;          /* which of PF_GIVEN are given... */
+    uint16_t flags;             /* ...and whether each is on */
+    uint8_t  align, line_rule;
+    uint8_t  ilvl;
+    uint8_t  ntabs;
+    uint16_t before, after, line;
+    int      left, right, first;
+    int32_t  num_id;
+    int      style;             /* its paragraph style: which DSTYLE, -1 for none such */
+    WTAB    *tabs;
 } XPAP;
 
 enum { ST_PARA = 1, ST_CHAR, ST_TABLE, ST_OTHER };
@@ -205,15 +205,15 @@ enum { ST_PARA = 1, ST_CHAR, ST_TABLE, ST_OTHER };
 #define BASED_DEPTH     32      /* how long a chain of "based on" is followed */
 
 typedef struct {
-    u32  id, name, based;       /* strings (docx_str); "based" 0 for none */
-    u8   type;                  /* ST_* */
-    u8   is_default;
-    u8   state;                 /* 0 as read, 1 being folded, 2 folded with its chain */
-    u8   ruled;                 /* a table style: 1 no borders, 2 borders */
-    int  wd;                    /* the document's style it became, -1 not yet */
-    XCHP chp;
-    XCHP first;                 /* a table style: what its first row's text has besides */
-    XPAP pap;                   /* its tabs are a heap block of its own */
+    unsigned int id, name, based; /* strings (docx_str); "based" 0 for none */
+    uint8_t      type;          /* ST_* */
+    uint8_t      is_default;
+    uint8_t      state;         /* 0 as read, 1 being folded, 2 folded with its chain */
+    uint8_t      ruled;         /* a table style: 1 no borders, 2 borders */
+    int          wd;            /* the document's style it became, -1 not yet */
+    XCHP         chp;
+    XCHP         first;         /* a table style: what its first row's text has besides */
+    XPAP         pap;           /* its tabs are a heap block of its own */
 } DSTYLE;
 
 /* ------------------------------------------------------------------ */
@@ -225,26 +225,26 @@ typedef struct {
 #define MAX_NUMS        16384
 
 typedef struct {
-    u8  fmt;                    /* LIST_* */
-    u8  ind_set;                /* 1: "left" is given, 2: "first" is */
-    u16 start;
-    s32 left, first;
+    uint8_t  fmt;               /* LIST_* */
+    uint8_t  ind_set;           /* 1: "left" is given, 2: "first" is */
+    uint16_t start;
+    int      left, first;
 } DLEVEL;
 
 typedef struct {
-    s32 id;
-    u32 style_link, num_style_link;     /* strings */
-    DLEVEL lvl[NUM_LEVELS];
+    int32_t      id;
+    unsigned int style_link, num_style_link; /* strings */
+    DLEVEL       lvl[NUM_LEVELS];
     /* while the text is read: which levels have had a paragraph, which
        start again at their next, and whose paragraph was the last */
-    u8  seen[NUM_LEVELS], again[NUM_LEVELS];
-    s32 last_num[NUM_LEVELS];
+    uint8_t      seen[NUM_LEVELS], again[NUM_LEVELS];
+    int32_t      last_num[NUM_LEVELS];
 } DABS;
 
 typedef struct {
-    s32 id, abs_id;
-    u16 over_set;               /* a bit for each level whose start it changes */
-    u16 start[NUM_LEVELS];
+    int32_t id, abs_id;
+    uint16_t over_set;          /* a bit for each level whose start it changes */
+    uint16_t start[NUM_LEVELS];
 } DNUM;
 
 /* ------------------------------------------------------------------ */
@@ -258,46 +258,46 @@ enum { REL_OTHER, REL_DOCUMENT, REL_STYLES, REL_NUMBERING, REL_FOOTNOTES, REL_EN
 #define PART_NAME_LEN   512
 
 typedef struct {
-    u32 id, target;             /* strings: "rId4", and the part's name in the package */
-    u8  kind;                   /* REL_* */
-    u8  external;
+    unsigned int id, target;    /* strings: "rId4", and the part's name in the package */
+    uint8_t      kind;          /* REL_* */
+    uint8_t      external;
 } DREL;
 
 typedef struct {
-    s32 id;
-    int obj;
-    u8  kind;                   /* NOTE_* */
-    u8  filled;
+    int32_t id;
+    int     obj;
+    uint8_t kind;               /* NOTE_* */
+    uint8_t filled;
 } DNOTE;
 
 #define MAX_FIELDS      8
 #define INSTR_LEN       48
 
 typedef struct {
-    u8   simple;                /* a fldSimple: it ends with its element */
-    u8   phase;                 /* 0 its instructions, 1 its result */
-    u8   emitted;
-    u8   instr_len;
-    u16  code;                  /* the WCH_* it is, or 0 for a field kept as text */
-    int  depth;
-    char instr[INSTR_LEN];
+    uint8_t  simple;            /* a fldSimple: it ends with its element */
+    uint8_t  phase;             /* 0 its instructions, 1 its result */
+    uint8_t  emitted;
+    uint8_t  instr_len;
+    uint16_t code;              /* the WCH_* it is, or 0 for a field kept as text */
+    int      depth;
+    char     instr[INSTR_LEN];
 } DFIELD;
 
 #define MAX_ALT         16
 
 typedef struct {
-    int depth;
-    u8  fallback;               /* it has one, so no Choice is read */
-    u8  taken;                  /* a Choice was read: no other is */
+    int     depth;
+    uint8_t fallback;           /* it has one, so no Choice is read */
+    uint8_t taken;              /* a Choice was read: no other is */
 } DALT;
 
 typedef struct {
-    XCHP x;                     /* what a run of it starts as */
-    int  style;                 /* its DSTYLE, or -1 */
-    s32  num_id;                /* its list, 0 for none */
-    u8   ilvl, list;
-    u8   joined;                /* its mark was deleted: the next runs on from it */
-    u8   spare;
+    XCHP    x;                  /* what a run of it starts as */
+    int     style;              /* its DSTYLE, or -1 */
+    int32_t num_id;             /* its list, 0 for none */
+    uint8_t ilvl, list;
+    uint8_t joined;             /* its mark was deleted: the next runs on from it */
+    uint8_t spare;
 } DPARA;
 
 #define MAX_GRID        64
@@ -306,66 +306,66 @@ typedef struct {
 enum { STORY_BODY, STORY_NOTES, STORY_HEADER, STORY_FOOTER };
 
 typedef struct {
-    WDOC *doc;
-    ZIP  *zip;
-    int   nomem;
-    char *str;                  /* every string kept, one after another */
-    u32   str_len, str_cap;
-    DREL *rel;                  /* the relationships of the part in hand */
-    u32   nrel, rel_cap;
-    DSTYLE *style;
-    u32   nstyle, style_cap;
-    XCHP  def_chp;              /* the document's defaults: everything given */
-    XPAP  def_pap;
-    int   def_para, def_table;  /* the default styles, -1 for none */
-    int   theme_major, theme_minor;     /* the theme's fonts, -1 for none */
-    DABS *abs;
-    u32   nabs, abs_cap;
-    DNUM *num;
-    u32   nnum, num_cap;
-    DNOTE *note;
-    u32   nnote, note_cap, note_hint;
-    u8    tag_head[32], tag_next[T_COUNT], tag_len[T_COUNT];
+    WDOC        *doc;
+    ZIP         *zip;
+    int          nomem;
+    char        *str;                 /* every string kept, one after another */
+    unsigned int str_len, str_cap;
+    DREL        *rel;                 /* the relationships of the part in hand */
+    unsigned int nrel, rel_cap;
+    DSTYLE      *style;
+    unsigned int nstyle, style_cap;
+    XCHP         def_chp;             /* the document's defaults: everything given */
+    XPAP         def_pap;
+    int          def_para, def_table; /* the default styles, -1 for none */
+    int          theme_major, theme_minor; /* the theme's fonts, -1 for none */
+    DABS        *abs;
+    unsigned int nabs, abs_cap;
+    DNUM        *num;
+    unsigned int nnum, num_cap;
+    DNOTE       *note;
+    unsigned int nnote, note_cap, note_hint;
+    uint8_t      tag_head[32], tag_next[T_COUNT], tag_len[T_COUNT];
 
     /* the story being read */
-    WBUILD wb;
-    int   story;                /* STORY_* */
-    int   mute;                 /* nothing is kept: between the notes of a notes part */
-    int   in_text, in_instr;
-    int   p_depth;              /* paragraphs open, one inside another */
-    DPARA para;
-    int   split;                /* a text box has just cut the paragraph in two */
-    int   txbx_depth;
-    DPARA host;                 /* the paragraph a text box is in, kept while the box is read */
-    PAP   host_pap;
-    CHP   host_chp;
-    int   host_saved;
-    DFIELD fld[MAX_FIELDS];
-    int   nfld, fld_over;
-    DALT  alt[MAX_ALT];
-    int   nalt;
+    WBUILD       wb;
+    int          story;               /* STORY_* */
+    int          mute;                /* nothing is kept: between the notes of a notes part */
+    int          in_text, in_instr;
+    int          p_depth;             /* paragraphs open, one inside another */
+    DPARA        para;
+    int          split;               /* a text box has just cut the paragraph in two */
+    int          txbx_depth;
+    DPARA        host;                /* the paragraph a text box is in, kept while the box is read */
+    PAP          host_pap;
+    CHP          host_chp;
+    int          host_saved;
+    DFIELD       fld[MAX_FIELDS];
+    int          nfld, fld_over;
+    DALT         alt[MAX_ALT];
+    int          nalt;
     /* a drawing */
-    int   draw_on, draw_text;
-    s32   draw_cx, draw_cy, vml_cx, vml_cy;
-    char  draw_embed[64];
+    int          draw_on, draw_text;
+    int          draw_cx, draw_cy, vml_cx, vml_cy;
+    char         draw_embed[64];
     /* the outermost table */
-    int   tbl_depth, tbl_style;
-    int   tbl_first, tbl_row;   /* its first row is dressed as the style says; the row in hand */
-    int   tbl_ruled;            /* -1 not said, 0 no, 1 yes */
-    s32   tbl_left;
-    s32   grid[MAX_GRID];
-    int   ngrid;
-    TROW  row;
-    int   row_ruled, col;
-    s32   edge;
-    u32   cell_from;
-    int   cell_span;
-    s32   cell_width;
-    WPARA *cell_last;
+    int          tbl_depth, tbl_style;
+    int          tbl_first, tbl_row;  /* its first row is dressed as the style says; the row in hand */
+    int          tbl_ruled;           /* -1 not said, 0 no, 1 yes */
+    int          tbl_left;
+    int          grid[MAX_GRID];
+    int          ngrid;
+    TROW         row;
+    int          row_ruled, col;
+    int          edge;
+    unsigned int cell_from;
+    int          cell_span;
+    int          cell_width;
+    WPARA       *cell_last;
     /* sections */
-    int   have_sect, sect_mark;
-    WPARA *sect_para;
-    u32   header_part, footer_part;     /* strings */
+    int          have_sect, sect_mark;
+    WPARA       *sect_para;
+    unsigned int header_part, footer_part; /* strings */
 } DOCX;
 
 #define STR( ctx, at )  ((ctx)->str + (at))
@@ -375,10 +375,10 @@ typedef struct {
 /* ------------------------------------------------------------------ */
 
 /* a string kept for as long as the reading lasts -> where, 0 for "" */
-static u32 docx_str( DOCX *ctx, const char *text )
+static unsigned int docx_str( DOCX *ctx, const char *text )
 {
     char *fresh;
-    u32 len = str_len( text ), want, at;
+    unsigned int len = str_len( text ), want, at;
 
     if ( len == 0 || len > 0x00FFFFFFUL || ctx->str_len > 0x3FFFFFFFUL ) {
         return 0;
@@ -403,10 +403,10 @@ static u32 docx_str( DOCX *ctx, const char *text )
 }
 
 /* room for one more in an array that doubles, up to a limit */
-static int docx_grow( DOCX *ctx, void **array, u32 *cap, u32 need, u32 size, u32 limit )
+static int docx_grow( DOCX *ctx, void **array, unsigned int *cap, unsigned int need, unsigned int size, unsigned int limit )
 {
     void *fresh;
-    u32 want;
+    unsigned int want;
 
     if ( need <= *cap ) {
         return 1;
@@ -429,15 +429,15 @@ static int docx_grow( DOCX *ctx, void **array, u32 *cap, u32 need, u32 size, u32
 }
 
 /* value * num / den, for numbers whose product would not fit */
-static u32 docx_muldiv( u32 value, u32 num, u32 den )
+static unsigned int docx_muldiv( unsigned int value, unsigned int num, unsigned int den )
 {
     return (value / den) * num + (value % den) * num / den;
 }
 
 /* a whole number, with a sign perhaps: 0 if there are no digits */
-static int docx_int( const char *text, s32 *out )
+static int docx_int( const char *text, int *out )
 {
-    s32 value = 0;
+    int value = 0;
     int minus = 0, digits = 0;
 
     if ( text == NULL ) {
@@ -460,9 +460,9 @@ static int docx_int( const char *text, s32 *out )
  * "strict" files, and VML) a number with a unit - 12.5pt, 1in, 2.54cm.
  * "plain" is how many twips a number with no unit counts, times 1000.
  */
-static int docx_twips( const char *text, s32 *out, u32 plain )
+static int docx_twips( const char *text, int *out, unsigned int plain )
 {
-    u32 whole = 0, frac = 0, scale = 100, milli, twips;
+    unsigned int whole = 0, frac = 0, scale = 100, milli, twips;
     int minus = 0, digits = 0;
 
     if ( text == NULL ) {
@@ -476,12 +476,12 @@ static int docx_twips( const char *text, s32 *out, u32 plain )
     }
     for ( ; *text >= '0' && *text <= '9'; text++, digits++ ) {
         if ( whole < 1000000UL ) {
-            whole = whole * 10 + (u32)(*text - '0');
+            whole = whole * 10 + (unsigned int)(*text - '0');
         }
     }
     if ( *text == '.' ) {
         for ( text++; *text >= '0' && *text <= '9'; text++, digits++ ) {
-            frac += (u32)(*text - '0') * scale;
+            frac += (unsigned int)(*text - '0') * scale;
             scale /= 10;
         }
     }
@@ -507,19 +507,19 @@ static int docx_twips( const char *text, s32 *out, u32 plain )
     } else {
         twips = docx_muldiv( milli, plain, 1000000UL );
     }
-    *out = minus ? -(s32)twips : (s32)twips;
+    *out = minus ? -(int)twips : (int)twips;
     return 1;
 }
 
-static s32 docx_clamp( s32 value, s32 low, s32 high )
+static int docx_clamp( int value, int low, int high )
 {
     return value < low ? low : value > high ? high : value;
 }
 
 /* hexadecimal, all of the text: 0 if it is not */
-static int docx_hex( const char *text, u32 *out )
+static int docx_hex( const char *text, uint32_t *out )
 {
-    u32 value = 0;
+    uint32_t value = 0;
     int digits = 0, digit;
 
     for ( ; text != NULL && *text; text++, digits++ ) {
@@ -533,7 +533,7 @@ static int docx_hex( const char *text, u32 *out )
         } else {
             return 0;
         }
-        value = (value << 4) | (u32)digit;
+        value = (value << 4) | (uint32_t)digit;
     }
     *out = value;
     return digits > 0 && digits <= 8;
@@ -552,13 +552,13 @@ static int docx_on( const XML *xml )
 
 static int docx_tag( const DOCX *ctx, const XML *xml )
 {
-    u32 len = xml->name_len;
+    unsigned int len = xml->name_len;
     int tag;
 
     if ( xml->ns != NS_W || len == 0 || len > 255 ) {
         return T_NONE;
     }
-    for ( tag = ctx->tag_head[(len * 5 + (u8)xml->name[0]) & 31]; tag; tag = ctx->tag_next[tag] ) {
+    for ( tag = ctx->tag_head[(len * 5 + (uint8_t)xml->name[0]) & 31]; tag; tag = ctx->tag_next[tag] ) {
         if ( ctx->tag_len[tag] == len && mem_cmp( xml->name, tag_names[tag], len ) == 0 ) {
             return tag;
         }
@@ -567,7 +567,7 @@ static int docx_tag( const DOCX *ctx, const XML *xml )
 }
 
 /* what kind of picture some bytes are */
-static int docx_sniff( const u8 *data, u32 len )
+static int docx_sniff( const uint8_t *data, uint32_t len )
 {
     if ( len >= 8 && mem_cmp( data, "\x89PNG\r\n\x1A\n", 8 ) == 0 ) {
         return IMG_PNG;
@@ -599,9 +599,9 @@ static int docx_sniff( const u8 *data, u32 len )
 /* ------------------------------------------------------------------ */
 
 /* a part's bytes, the caller's to xfree: NULL if it has no such part */
-static u8 *docx_part( DOCX *ctx, const char *name, u32 *len )
+static uint8_t *docx_part( DOCX *ctx, const char *name, uint32_t *len )
 {
-    u8 *data;
+    uint8_t *data;
     int index;
 
     *len = 0;
@@ -615,7 +615,7 @@ static u8 *docx_part( DOCX *ctx, const char *name, u32 *len )
     if ( index < 0 ) {
         return NULL;
     }
-    data = zip_read( ctx->zip, (u32)index, len );
+    data = zip_read( ctx->zip, (unsigned int)index, len );
     if ( data == NULL && zip_error( ctx->zip ) == ZIP_NOMEM ) {
         ctx->nomem = 1;
     }
@@ -623,10 +623,10 @@ static u8 *docx_part( DOCX *ctx, const char *name, u32 *len )
     return data;
 }
 
-static XML *docx_xml( DOCX *ctx, const u8 *data, u32 len )
+static XML *docx_xml( DOCX *ctx, const uint8_t *data, uint32_t len )
 {
     XML *xml = xml_open( data, len );
-    u32 index;
+    unsigned int index;
 
     if ( xml == NULL ) {
         ctx->nomem = 1;
@@ -647,18 +647,18 @@ static XML *docx_xml( DOCX *ctx, const u8 *data, u32 len )
  * relationships of the part "base", made into a name in the package.
  * -> the name (a string), 0 if it is too long to be one.
  */
-static u32 docx_target( DOCX *ctx, const char *base, const char *target )
+static unsigned int docx_target( DOCX *ctx, const char *base, const char *target )
 {
     char path[PART_NAME_LEN];
     const char *slash;
-    u32 len = 0, piece;
+    unsigned int len = 0, piece;
 
     if ( target[0] == '/' ) {
         target++;
     } else {
         slash = str_rchr( base, '/' );
         if ( slash != NULL ) {
-            len = (u32)(slash - base) + 1;
+            len = (unsigned int)(slash - base) + 1;
             if ( len + 2 > sizeof( path ) ) {
                 return 0;
             }
@@ -707,7 +707,7 @@ static int docx_rel_kind( const char *type )
         { "core-properties", REL_CORE }
     };
     const char *tail = str_rchr( type, '/' );
-    u32 index;
+    unsigned int index;
 
     tail = tail != NULL ? tail + 1 : type;
     for ( index = 0; index < sizeof( kinds ) / sizeof( kinds[0] ); index++ ) {
@@ -725,8 +725,8 @@ static void docx_rels( DOCX *ctx, const char *part )
     const char *slash, *id, *type, *target, *mode;
     XML *xml;
     DREL *rel;
-    u8 *data;
-    u32 len, dir;
+    uint8_t *data;
+    unsigned int len, dir;
     int token;
 
     ctx->nrel = 0;
@@ -734,7 +734,7 @@ static void docx_rels( DOCX *ctx, const char *part )
         return;
     }
     slash = str_rchr( base, '/' );
-    dir = slash != NULL ? (u32)(slash - base) + 1 : 0;
+    dir = slash != NULL ? (unsigned int)(slash - base) + 1 : 0;
     mem_cpy( name, base, dir );
     sfmt( name + dir, sizeof( name ) - dir, "_rels/%s.rels", base + dir );
     data = docx_part( ctx, name, &len );
@@ -759,8 +759,8 @@ static void docx_rels( DOCX *ctx, const char *part )
             continue;
         }
         rel = &ctx->rel[ctx->nrel];
-        rel->kind = (u8)docx_rel_kind( type );
-        rel->external = (u8)(mode != NULL && str_icmp( mode, "External" ) == 0);
+        rel->kind = (uint8_t)docx_rel_kind( type );
+        rel->external = (uint8_t)(mode != NULL && str_icmp( mode, "External" ) == 0);
         rel->id = docx_str( ctx, id );
         rel->target = rel->external ? 0 : docx_target( ctx, base, target );
         ctx->nrel++;
@@ -771,7 +771,7 @@ static void docx_rels( DOCX *ctx, const char *part )
 
 static const DREL *docx_rel( const DOCX *ctx, const char *id )
 {
-    u32 index;
+    unsigned int index;
 
     for ( index = 0; id != NULL && index < ctx->nrel; index++ ) {
         if ( str_cmp( STR( ctx, ctx->rel[index].id ), id ) == 0 ) {
@@ -782,9 +782,9 @@ static const DREL *docx_rel( const DOCX *ctx, const char *id )
 }
 
 /* the first part of a kind the part in hand is related to: its name, or 0 */
-static u32 docx_rel_first( const DOCX *ctx, int kind )
+static unsigned int docx_rel_first( const DOCX *ctx, int kind )
 {
-    u32 index;
+    unsigned int index;
 
     for ( index = 0; index < ctx->nrel; index++ ) {
         if ( ctx->rel[index].kind == kind && !ctx->rel[index].external ) {
@@ -824,7 +824,7 @@ static void xchp_over( XCHP *dst, const XCHP *src, int toggle )
     if ( toggle ) {
         dst->tog ^= src->tog & src->tog_set;
     } else {
-        dst->tog = (u16)((dst->tog & ~src->tog_set) | (src->tog & src->tog_set));
+        dst->tog = (uint16_t)((dst->tog & ~src->tog_set) | (src->tog & src->tog_set));
     }
     dst->tog_set |= src->tog_set;
 }
@@ -864,7 +864,7 @@ static void xpap_over( XPAP *dst, const XPAP *src )
         dst->style = src->style;
     }
     dst->set |= src->set;
-    dst->flags = (u16)((dst->flags & ~src->flag_set) | (src->flags & src->flag_set));
+    dst->flags = (uint16_t)((dst->flags & ~src->flag_set) | (src->flags & src->flag_set));
     dst->flag_set |= src->flag_set;
 }
 
@@ -892,7 +892,7 @@ static void xchp_chp( const XCHP *from, CHP *chp )
 {
     chp->font = from->font;
     chp->size = from->size;
-    chp->flags = (u16)((from->tog & CF_TOGGLES) | from->under | from->vert);
+    chp->flags = (uint16_t)((from->tog & CF_TOGGLES) | from->under | from->vert);
     chp->hilite = from->hilite;
     chp->spare = 0;
     chp->color = from->color;
@@ -904,7 +904,7 @@ static void xchp_chp( const XCHP *from, CHP *chp )
 
 static int docx_style_find( const DOCX *ctx, const char *id, int type )
 {
-    u32 index;
+    unsigned int index;
 
     for ( index = 0; id != NULL && index < ctx->nstyle; index++ ) {
         if ( ctx->style[index].type == type && str_cmp( STR( ctx, ctx->style[index].id ), id ) == 0 ) {
@@ -914,13 +914,13 @@ static int docx_style_find( const DOCX *ctx, const char *id, int type )
     return -1;
 }
 
-static void docx_toggle( const XML *xml, XCHP *chp, u16 flag )
+static void docx_toggle( const XML *xml, XCHP *chp, uint16_t flag )
 {
     chp->tog_set |= flag;
     if ( docx_on( xml ) ) {
         chp->tog |= flag;
     } else {
-        chp->tog &= (u16)~flag;
+        chp->tog &= (uint16_t)~flag;
     }
 }
 
@@ -953,7 +953,7 @@ static void docx_fonts( DOCX *ctx, const XML *xml, XCHP *chp )
         }
     }
     if ( font >= 0 ) {
-        chp->font = (u16)font;
+        chp->font = (uint16_t)font;
         chp->set |= XC_FONT;
     }
 }
@@ -982,8 +982,8 @@ static int docx_hilite( const char *val )
 static void docx_rpr( DOCX *ctx, XML *xml, XCHP *chp, int *rstyle )
 {
     const char *val;
-    u32 rgb;
-    s32 value;
+    uint32_t rgb;
+    int value;
     int depth = xml->depth;
 
     mem_set( chp, 0, sizeof( XCHP ) );
@@ -1024,20 +1024,20 @@ static void docx_rpr( DOCX *ctx, XML *xml, XCHP *chp, int *rstyle )
         case T_U:
             val = WVAL( xml );
             chp->set |= XC_UNDER;
-            chp->under = (u16)(val == NULL || str_cmp( val, "none" ) == 0 ? 0 :
-                               str_cmp( val, "words" ) == 0 ? CF_WUNDER :
-                               str_cmp( val, "double" ) == 0 ? CF_DUNDER : CF_UNDER);
+            chp->under = (uint16_t)(val == NULL || str_cmp( val, "none" ) == 0 ? 0 :
+                                    str_cmp( val, "words" ) == 0 ? CF_WUNDER :
+                                    str_cmp( val, "double" ) == 0 ? CF_DUNDER : CF_UNDER);
             break;
         case T_VERTALIGN:
             val = WVAL( xml );
             chp->set |= XC_VERT;
-            chp->vert = (u16)(val == NULL ? 0 : str_cmp( val, "superscript" ) == 0 ? CF_SUPER :
-                              str_cmp( val, "subscript" ) == 0 ? CF_SUB : 0);
+            chp->vert = (uint16_t)(val == NULL ? 0 : str_cmp( val, "superscript" ) == 0 ? CF_SUPER :
+                                   str_cmp( val, "subscript" ) == 0 ? CF_SUB : 0);
             break;
         case T_SZ:
             /* half points; a "strict" file may say 12pt instead */
             if ( docx_twips( WVAL( xml ), &value, 10000UL ) && value > 0 ) {
-                chp->size = (u16)docx_clamp( value / 10, 2, 1000 );
+                chp->size = (uint16_t)docx_clamp( value / 10, 2, 1000 );
                 chp->set |= XC_SIZE;
             }
             break;
@@ -1052,7 +1052,7 @@ static void docx_rpr( DOCX *ctx, XML *xml, XCHP *chp, int *rstyle )
             }
             break;
         case T_HIGHLIGHT:
-            chp->hilite = (u8)docx_hilite( WVAL( xml ) );
+            chp->hilite = (uint8_t)docx_hilite( WVAL( xml ) );
             chp->set |= XC_HILITE;
             break;
         }
@@ -1076,10 +1076,10 @@ static void docx_sectpr( DOCX *ctx, XML *xml );
  */
 static void docx_ppr( DOCX *ctx, XML *xml, XPAP *pap, WTAB *tabs, int body )
 {
-    static const u16 sides[4] = { PF_BORDER_TOP, PF_BORDER_LEFT, PF_BORDER_BOT, PF_BORDER_RIGHT };
+    static const uint16_t sides[4] = { PF_BORDER_TOP, PF_BORDER_LEFT, PF_BORDER_BOT, PF_BORDER_RIGHT };
     const char *val, *rule;
     WTAB *tab;
-    s32 value;
+    int value;
     int depth = xml->depth, inner, tag;
 
     mem_set( pap, 0, sizeof( XPAP ) );
@@ -1094,10 +1094,10 @@ static void docx_ppr( DOCX *ctx, XML *xml, XPAP *pap, WTAB *tabs, int body )
         case T_JC:
             val = WVAL( xml );
             if ( val != NULL ) {
-                pap->align = (u8)(str_cmp( val, "center" ) == 0 ? AL_CENTER :
-                                  (str_cmp( val, "right" ) == 0 || str_cmp( val, "end" ) == 0) ? AL_RIGHT :
-                                  (str_cmp( val, "both" ) == 0 || str_cmp( val, "distribute" ) == 0) ?
-                                  AL_JUSTIFY : AL_LEFT);
+                pap->align = (uint8_t)(str_cmp( val, "center" ) == 0 ? AL_CENTER :
+                                       (str_cmp( val, "right" ) == 0 || str_cmp( val, "end" ) == 0) ? AL_RIGHT :
+                                       (str_cmp( val, "both" ) == 0 || str_cmp( val, "distribute" ) == 0) ?
+                                       AL_JUSTIFY : AL_LEFT);
                 pap->set |= XP_ALIGN;
             }
             break;
@@ -1128,18 +1128,18 @@ static void docx_ppr( DOCX *ctx, XML *xml, XPAP *pap, WTAB *tabs, int body )
             break;
         case T_SPACING:
             if ( docx_twips( xml_attr( xml, NS_W, "before" ), &value, 1000 ) ) {
-                pap->before = (u16)docx_clamp( value, 0, 31680 );
+                pap->before = (uint16_t)docx_clamp( value, 0, 31680 );
                 pap->set |= XP_BEFORE;
             }
             if ( docx_twips( xml_attr( xml, NS_W, "after" ), &value, 1000 ) ) {
-                pap->after = (u16)docx_clamp( value, 0, 31680 );
+                pap->after = (uint16_t)docx_clamp( value, 0, 31680 );
                 pap->set |= XP_AFTER;
             }
             if ( docx_twips( xml_attr( xml, NS_W, "line" ), &value, 1000 ) && value > 0 ) {
                 rule = xml_attr( xml, NS_W, "lineRule" );
-                pap->line = (u16)docx_clamp( value, 1, 31680 );
-                pap->line_rule = (u8)(rule == NULL ? LS_MULTIPLE : str_cmp( rule, "exact" ) == 0 ? LS_EXACT :
-                                      str_cmp( rule, "atLeast" ) == 0 ? LS_ATLEAST : LS_MULTIPLE);
+                pap->line = (uint16_t)docx_clamp( value, 1, 31680 );
+                pap->line_rule = (uint8_t)(rule == NULL ? LS_MULTIPLE : str_cmp( rule, "exact" ) == 0 ? LS_EXACT :
+                                           str_cmp( rule, "atLeast" ) == 0 ? LS_ATLEAST : LS_MULTIPLE);
                 pap->set |= XP_LINE;
             }
             break;
@@ -1148,11 +1148,11 @@ static void docx_ppr( DOCX *ctx, XML *xml, XPAP *pap, WTAB *tabs, int body )
         case T_PAGEBEFORE:
             tag = docx_tag( ctx, xml );
             value = tag == T_KEEPNEXT ? PF_KEEPNEXT : tag == T_KEEPLINES ? PF_KEEP : PF_PAGEBEFORE;
-            pap->flag_set |= (u16)value;
+            pap->flag_set |= (uint16_t)value;
             if ( docx_on( xml ) ) {
-                pap->flags |= (u16)value;
+                pap->flags |= (uint16_t)value;
             } else {
-                pap->flags &= (u16)~value;
+                pap->flags &= (uint16_t)~value;
             }
             break;
         case T_TABS:
@@ -1167,17 +1167,17 @@ static void docx_ppr( DOCX *ctx, XML *xml, XPAP *pap, WTAB *tabs, int body )
                 tab->pos = docx_clamp( value, -31680, 31680 );
                 val = WVAL( xml );
                 if ( val != NULL ) {
-                    tab->kind = (u8)(str_cmp( val, "clear" ) == 0 ? TAB_CLEAR :
-                                     str_cmp( val, "center" ) == 0 ? TAB_CENTER :
-                                     (str_cmp( val, "right" ) == 0 || str_cmp( val, "end" ) == 0) ? TAB_RIGHT :
-                                     str_cmp( val, "decimal" ) == 0 ? TAB_DECIMAL : TAB_LEFT);
+                    tab->kind = (uint8_t)(str_cmp( val, "clear" ) == 0 ? TAB_CLEAR :
+                                          str_cmp( val, "center" ) == 0 ? TAB_CENTER :
+                                          (str_cmp( val, "right" ) == 0 || str_cmp( val, "end" ) == 0) ? TAB_RIGHT :
+                                          str_cmp( val, "decimal" ) == 0 ? TAB_DECIMAL : TAB_LEFT);
                 }
                 val = xml_attr( xml, NS_W, "leader" );
                 if ( val != NULL ) {
-                    tab->lead = (u8)((str_cmp( val, "dot" ) == 0 || str_cmp( val, "middleDot" ) == 0) ? LEAD_DOTS :
-                                     str_cmp( val, "hyphen" ) == 0 ? LEAD_DASHES :
-                                     (str_cmp( val, "underscore" ) == 0 || str_cmp( val, "heavy" ) == 0) ?
-                                     LEAD_LINE : LEAD_NONE);
+                    tab->lead = (uint8_t)((str_cmp( val, "dot" ) == 0 || str_cmp( val, "middleDot" ) == 0) ? LEAD_DOTS :
+                                          str_cmp( val, "hyphen" ) == 0 ? LEAD_DASHES :
+                                          (str_cmp( val, "underscore" ) == 0 || str_cmp( val, "heavy" ) == 0) ?
+                                          LEAD_LINE : LEAD_NONE);
                 }
             }
             break;
@@ -1201,7 +1201,7 @@ static void docx_ppr( DOCX *ctx, XML *xml, XPAP *pap, WTAB *tabs, int body )
                     pap->num_id = value;
                     pap->set |= XP_NUM;
                 } else if ( tag == T_ILVL && docx_int( WVAL( xml ), &value ) ) {
-                    pap->ilvl = (u8)docx_clamp( value, 0, NUM_LEVELS - 1 );
+                    pap->ilvl = (uint8_t)docx_clamp( value, 0, NUM_LEVELS - 1 );
                     pap->set |= XP_ILVL;
                 }
             }
@@ -1229,7 +1229,7 @@ static void docx_ppr( DOCX *ctx, XML *xml, XPAP *pap, WTAB *tabs, int body )
 
 static void docx_style_free( DOCX *ctx )
 {
-    u32 index;
+    unsigned int index;
 
     for ( index = 0; index < ctx->nstyle; index++ ) {
         xfree( ctx->style[index].pap.tabs );
@@ -1245,17 +1245,17 @@ static void docx_style_tabs( DOCX *ctx, DSTYLE *style, const WTAB *tabs, int cou
     WTAB *fresh = NULL;
 
     if ( count > 0 ) {
-        fresh = (WTAB *)try_alloc( (u32)count * sizeof( WTAB ) );
+        fresh = (WTAB *)try_alloc( (unsigned int)count * sizeof( WTAB ) );
         if ( fresh == NULL ) {
             ctx->nomem = 1;
             count = 0;
         } else {
-            mem_cpy( fresh, tabs, (u32)count * sizeof( WTAB ) );
+            mem_cpy( fresh, tabs, (unsigned int)count * sizeof( WTAB ) );
         }
     }
     xfree( style->pap.tabs );
     style->pap.tabs = fresh;
-    style->pap.ntabs = (u8)count;
+    style->pap.ntabs = (uint8_t)count;
 }
 
 /* one <w:style> */
@@ -1276,12 +1276,12 @@ static void docx_style_read( DOCX *ctx, XML *xml )
     style->wd = -1;
     style->pap.style = -1;
     val = xml_attr( xml, NS_W, "type" );
-    style->type = (u8)(val == NULL || str_cmp( val, "paragraph" ) == 0 ? ST_PARA :
-                       str_cmp( val, "character" ) == 0 ? ST_CHAR :
-                       str_cmp( val, "table" ) == 0 ? ST_TABLE : ST_OTHER);
+    style->type = (uint8_t)(val == NULL || str_cmp( val, "paragraph" ) == 0 ? ST_PARA :
+                            str_cmp( val, "character" ) == 0 ? ST_CHAR :
+                            str_cmp( val, "table" ) == 0 ? ST_TABLE : ST_OTHER);
     val = xml_attr( xml, NS_W, "default" );
-    style->is_default = (u8)(val != NULL && (str_cmp( val, "1" ) == 0 || str_icmp( val, "true" ) == 0 ||
-                                             str_icmp( val, "on" ) == 0));
+    style->is_default = (uint8_t)(val != NULL && (str_cmp( val, "1" ) == 0 || str_icmp( val, "true" ) == 0 ||
+                                                  str_icmp( val, "on" ) == 0));
     val = xml_attr( xml, NS_W, "styleId" );
     style->id = docx_str( ctx, val != NULL ? val : "" );
     ctx->nstyle++;
@@ -1394,8 +1394,9 @@ static void docx_styles( DOCX *ctx, const char *part )
     XPAP pap;
     XCHP chp;
     XML *xml;
-    u8 *data;
-    u32 len, index;
+    uint8_t *data;
+    uint32_t len;
+    unsigned int index;
     int depth, inner, deeper, tag, rstyle;
 
     data = docx_part( ctx, part, &len );
@@ -1454,7 +1455,7 @@ static int docx_style_kind( const char *name, const char **as )
         { "subtitle", "Subtitle", STY_SUBTITLE }, { "header", "Header", STY_HEADER },
         { "footer", "Footer", STY_FOOTER }, { "footnote text", "Footnote Text", STY_FOOTNOTE }
     };
-    u32 index;
+    unsigned int index;
 
     for ( index = 0; index < sizeof( known ) / sizeof( known[0] ); index++ ) {
         if ( str_icmp( name, known[index].name ) == 0 ) {
@@ -1479,7 +1480,7 @@ static int docx_wd_style( DOCX *ctx, int index )
     XPAP pap;
     int kind;
 
-    if ( index < 0 || (u32)index >= ctx->nstyle ) {
+    if ( index < 0 || (unsigned int)index >= ctx->nstyle ) {
         return 0;
     }
     style = &ctx->style[index];
@@ -1514,7 +1515,7 @@ static int docx_wd_style( DOCX *ctx, int index )
     made->pap.after = pap.after;
     made->pap.line = pap.line;
     made->pap.line_rule = pap.line_rule;
-    made->pap.flags = (u16)(pap.flags & PF_GIVEN);
+    made->pap.flags = (uint16_t)(pap.flags & PF_GIVEN);
     return style->wd;
 }
 
@@ -1544,9 +1545,9 @@ static void docx_numbering( DOCX *ctx, const char *part )
     DNUM *num;
     DLEVEL *level;
     const char *val;
-    u8 *data;
-    u32 len;
-    s32 value, which;
+    uint8_t *data;
+    uint32_t len;
+    int value, which;
     int depth, inner, deeper, tag;
 
     data = docx_part( ctx, part, &len );
@@ -1573,11 +1574,11 @@ static void docx_numbering( DOCX *ctx, const char *part )
                     abs = &ctx->abs[ctx->nabs - 1];
                     if ( tag == T_STYLELINK || tag == T_NUMSTYLELINK ) {
                         val = WVAL( xml );
-                        which = (s32)docx_str( ctx, val != NULL ? val : "" );
+                        which = (int)docx_str( ctx, val != NULL ? val : "" );
                         if ( tag == T_STYLELINK ) {
-                            abs->style_link = (u32)which;
+                            abs->style_link = (unsigned int)which;
                         } else {
-                            abs->num_style_link = (u32)which;
+                            abs->num_style_link = (unsigned int)which;
                         }
                         continue;
                     }
@@ -1590,9 +1591,9 @@ static void docx_numbering( DOCX *ctx, const char *part )
                     while ( xml_child( xml, deeper ) ) {
                         tag = docx_tag( ctx, xml );
                         if ( tag == T_START && docx_int( WVAL( xml ), &value ) ) {
-                            level->start = (u16)docx_clamp( value, 0, 65535L );
+                            level->start = (uint16_t)docx_clamp( value, 0, 65535L );
                         } else if ( tag == T_NUMFMT ) {
-                            level->fmt = (u8)docx_list_kind( WVAL( xml ) );
+                            level->fmt = (uint8_t)docx_list_kind( WVAL( xml ) );
                         } else if ( tag == T_PPR ) {
                             docx_ppr( ctx, xml, &pap, tabs, 0 );
                             if ( pap.set & XP_LEFT ) {
@@ -1621,8 +1622,8 @@ static void docx_numbering( DOCX *ctx, const char *part )
                         deeper = xml->depth;
                         while ( xml_child( xml, deeper ) ) {
                             if ( docx_tag( ctx, xml ) == T_STARTOVERRIDE && docx_int( WVAL( xml ), &value ) ) {
-                                num->start[which] = (u16)docx_clamp( value, 0, 65535L );
-                                num->over_set |= (u16)(1u << which);
+                                num->start[which] = (uint16_t)docx_clamp( value, 0, 65535L );
+                                num->over_set |= (uint16_t)(1u << which);
                             }
                         }
                     }
@@ -1635,11 +1636,11 @@ static void docx_numbering( DOCX *ctx, const char *part )
 }
 
 /* the list a paragraph is in: its definition, or NULL */
-static DABS *docx_list( DOCX *ctx, s32 num_id, DNUM **num_out )
+static DABS *docx_list( DOCX *ctx, int32_t num_id, DNUM **num_out )
 {
     DNUM *num = NULL;
     DABS *abs = NULL;
-    u32 index;
+    unsigned int index;
 
     for ( index = 0; index < ctx->nnum; index++ ) {
         if ( ctx->num[index].id == num_id ) {
@@ -1675,8 +1676,8 @@ static void docx_theme( DOCX *ctx, const char *part )
 {
     XML *xml;
     const char *face;
-    u8 *data;
-    u32 len;
+    uint8_t *data;
+    uint32_t len;
     int token, which = 0;
 
     data = docx_part( ctx, part, &len );
@@ -1714,9 +1715,9 @@ static void docx_theme( DOCX *ctx, const char *part )
 static void docx_settings( DOCX *ctx, const char *part )
 {
     XML *xml;
-    u8 *data;
-    u32 len;
-    s32 value;
+    uint8_t *data;
+    uint32_t len;
+    int value;
     int depth;
 
     data = docx_part( ctx, part, &len );
@@ -1742,8 +1743,8 @@ static void docx_core( DOCX *ctx, const char *part )
 {
     WDOC *doc = ctx->doc;
     XML *xml;
-    u8 *data;
-    u32 len;
+    uint8_t *data;
+    uint32_t len;
     int depth;
 
     data = docx_part( ctx, part, &len );
@@ -1801,7 +1802,7 @@ static int docx_quiet( DOCX *ctx )
     return 0;
 }
 
-static void docx_put( DOCX *ctx, u32 code )
+static void docx_put( DOCX *ctx, uint32_t code )
 {
     if ( !docx_quiet( ctx ) ) {
         wb_char( &ctx->wb, code );
@@ -1809,11 +1810,12 @@ static void docx_put( DOCX *ctx, u32 code )
 }
 
 /* the text of a <w:t> */
-static void docx_text( DOCX *ctx, const u8 *text, u32 len )
+static void docx_text( DOCX *ctx, const uint8_t *text, unsigned int len )
 {
-    u16 run[256];
-    const u8 *end = text + len;
-    u32 used = 0, code;
+    uint16_t run[256];
+    const uint8_t *end = text + len;
+    unsigned int used = 0;
+    uint32_t code;
 
     if ( docx_quiet( ctx ) ) {
         return;
@@ -1829,10 +1831,10 @@ static void docx_text( DOCX *ctx, const u8 *text, u32 len )
         }
         if ( code >= 0x10000UL ) {
             code -= 0x10000UL;
-            run[used++] = (u16)(0xD800 + (code >> 10));
+            run[used++] = (uint16_t)(0xD800 + (code >> 10));
             code = 0xDC00 + (code & 0x3FF);
         }
-        run[used++] = (u16)code;
+        run[used++] = (uint16_t)code;
         if ( used >= sizeof( run ) / sizeof( run[0] ) - 2 ) {
             wb_text( &ctx->wb, run, used );
             used = 0;
@@ -1871,7 +1873,7 @@ static void docx_para_setup( DOCX *ctx, const XPAP *direct )
     const DLEVEL *level;
     DABS *abs;
     DNUM *num;
-    s32 num_id;
+    int32_t num_id;
     int index, ntabs = 0, by_style = 1, ilvl;
 
     index = ctx->tbl_depth ? ctx->tbl_style : -1;
@@ -1907,7 +1909,7 @@ static void docx_para_setup( DOCX *ctx, const XPAP *direct )
     }
     ctx->para.num_id = 0;
     ctx->para.list = LIST_NONE;
-    ctx->para.ilvl = (u8)ilvl;
+    ctx->para.ilvl = (uint8_t)ilvl;
     if ( num_id > 0 ) {
         abs = docx_list( ctx, num_id, &num );
         if ( abs != NULL ) {
@@ -1934,9 +1936,9 @@ static void docx_para_setup( DOCX *ctx, const XPAP *direct )
     out->after = pap.after;
     out->line = pap.line;
     out->line_rule = pap.line_rule;
-    out->flags = (u16)(pap.flags & PF_GIVEN);
+    out->flags = (uint16_t)(pap.flags & PF_GIVEN);
     out->list = ctx->para.list;
-    out->level = (u8)(ctx->para.list != LIST_NONE ? ilvl : 0);
+    out->level = (uint8_t)(ctx->para.list != LIST_NONE ? ilvl : 0);
     out->list_start = 0;
     if ( !pap_set_tabs( out, tabs, ntabs ) ) {
         ctx->nomem = 1;
@@ -1947,12 +1949,12 @@ static void docx_para_setup( DOCX *ctx, const XPAP *direct )
 
 /* where a list's numbers stand at the paragraph in hand: the number
    it starts again with, or 0 when it carries on */
-static u16 docx_list_start( DOCX *ctx )
+static uint16_t docx_list_start( DOCX *ctx )
 {
     DABS *abs;
     DNUM *num;
     int level = ctx->para.ilvl, deeper;
-    u16 start = 0;
+    uint16_t start = 0;
 
     if ( ctx->para.num_id <= 0 || ctx->para.list == LIST_NONE ) {
         return 0;
@@ -1975,7 +1977,7 @@ static u16 docx_list_start( DOCX *ctx )
     for ( deeper = level + 1; deeper < NUM_LEVELS; deeper++ ) {
         abs->again[deeper] = 1;
     }
-    return (u16)(ctx->para.list == LIST_BULLET ? 0 : start);
+    return (uint16_t)(ctx->para.list == LIST_BULLET ? 0 : start);
 }
 
 static WPARA *docx_last_para( DOCX *ctx )
@@ -1990,11 +1992,11 @@ static void docx_par( DOCX *ctx )
 {
     PAP *pap = &ctx->wb.pap;
 
-    pap->flags &= (u16)~(PF_INTABLE | PF_CELLEND | PF_ROWEND);
+    pap->flags &= (uint16_t)~(PF_INTABLE | PF_CELLEND | PF_ROWEND);
     if ( ctx->tbl_depth ) {
         pap->flags |= PF_INTABLE;
     }
-    pap->style = (u8)docx_wd_style( ctx, ctx->para.style );
+    pap->style = (uint8_t)docx_wd_style( ctx, ctx->para.style );
     pap->list_start = docx_list_start( ctx );
     wb_par( &ctx->wb );
     pap->list_start = 0;
@@ -2006,11 +2008,11 @@ static void docx_par( DOCX *ctx )
 }
 
 /* a picture, by the relationship that names its part */
-static void docx_image( DOCX *ctx, const char *rid, s32 width, s32 height )
+static void docx_image( DOCX *ctx, const char *rid, int width, int height )
 {
     const DREL *rel = docx_rel( ctx, rid );
-    u8 *data;
-    u32 len;
+    uint8_t *data;
+    uint32_t len;
     int kind, obj;
 
     if ( docx_quiet( ctx ) ) {
@@ -2040,10 +2042,10 @@ static void docx_image( DOCX *ctx, const char *rid, s32 width, s32 height )
 }
 
 /* a width or height out of a VML style: "width:468pt;height:1.5in" */
-static s32 docx_vml_size( const char *style, const char *name )
+static int docx_vml_size( const char *style, const char *name )
 {
-    u32 len = str_len( name );
-    s32 value = 0;
+    unsigned int len = str_len( name );
+    int value = 0;
 
     while ( style != NULL && *style ) {
         while ( *style == ' ' || *style == ';' ) {
@@ -2065,7 +2067,7 @@ static s32 docx_vml_size( const char *style, const char *name )
 /* ------------------------------------------------------------------ */
 
 /* a part named by r:id in a header or footer reference -> its name */
-static u32 docx_ref_part( DOCX *ctx, const XML *xml )
+static unsigned int docx_ref_part( DOCX *ctx, const XML *xml )
 {
     const char *type = xml_attr( xml, NS_W, "type" );
     const DREL *rel;
@@ -2084,9 +2086,9 @@ static void docx_sectpr( DOCX *ctx, XML *xml )
     PAGESETUP page;
     WDOC *doc = ctx->doc;
     const char *val;
-    u32 header = 0, footer = 0;
-    s32 value;
-    u16 mark = WCH_PAGE;
+    unsigned int header = 0, footer = 0;
+    int value;
+    uint16_t mark = WCH_PAGE;
     int depth = xml->depth, has_size = 0, runs_on = 0;
 
     page = doc->page;
@@ -2104,7 +2106,7 @@ static void docx_sectpr( DOCX *ctx, XML *xml )
                 has_size |= 2;
             }
             val = xml_attr( xml, NS_W, "orient" );
-            page.landscape = (u8)(val != NULL && str_cmp( val, "landscape" ) == 0);
+            page.landscape = (uint8_t)(val != NULL && str_cmp( val, "landscape" ) == 0);
             break;
         case T_PGMAR:
             if ( docx_twips( xml_attr( xml, NS_W, "top" ), &value, 1000 ) ) {
@@ -2128,7 +2130,7 @@ static void docx_sectpr( DOCX *ctx, XML *xml )
             break;
         case T_PGNUMTYPE:
             if ( docx_int( xml_attr( xml, NS_W, "start" ), &value ) ) {
-                page.first_page = (u16)docx_clamp( value, 0, 65535L );
+                page.first_page = (uint16_t)docx_clamp( value, 0, 65535L );
             }
             break;
         case T_HEADERREF:
@@ -2166,7 +2168,7 @@ static void docx_sectpr( DOCX *ctx, XML *xml )
     } else if ( !runs_on && ctx->sect_para != NULL ) {
         /* this section started a page: the one before it ends with the break */
         wd_text_insert( doc, ctx->sect_para, ctx->sect_para->len, &mark, 1,
-                        (u16)(ctx->sect_para->len ? ctx->sect_para->attr[ctx->sect_para->len - 1] : 0) );
+                        (uint16_t)(ctx->sect_para->len ? ctx->sect_para->attr[ctx->sect_para->len - 1] : 0) );
     }
     ctx->sect_para = NULL;
     ctx->sect_mark = 1;                 /* the paragraph this is in ends a section */
@@ -2177,16 +2179,16 @@ static void docx_sectpr( DOCX *ctx, XML *xml )
 /* ------------------------------------------------------------------ */
 
 /* the field character for a field's instructions, or 0 */
-static u16 docx_field_code( DOCX *ctx, const char *instr )
+static uint16_t docx_field_code( DOCX *ctx, const char *instr )
 {
     static const struct {
         const char *name;
-        u16 code;
+        uint16_t code;
     } known[] = {
         { "PAGE", WCH_PAGENUM }, { "NUMPAGES", WCH_NUMPAGES }, { "DATE", WCH_DATE },
         { "TIME", WCH_TIME }, { "FILENAME", WCH_FILENAME }
     };
-    u32 len, index;
+    unsigned int len, index;
 
     while ( *instr == ' ' ) {
         instr++;
@@ -2217,7 +2219,7 @@ static void docx_field_begin( DOCX *ctx, int simple, int depth, const char *inst
     }
     field = &ctx->fld[ctx->nfld++];
     mem_set( field, 0, sizeof( DFIELD ) );
-    field->simple = (u8)simple;
+    field->simple = (uint8_t)simple;
     field->depth = depth;
     if ( simple ) {
         field->phase = 1;
@@ -2262,8 +2264,8 @@ static void docx_field_end( DOCX *ctx )
 static void docx_tblpr( DOCX *ctx, XML *xml )
 {
     const char *val;
-    u32 look;
-    s32 value;
+    uint32_t look;
+    int value;
     int depth = xml->depth, inner, tag;
 
     while ( xml_child( xml, depth ) ) {
@@ -2298,7 +2300,7 @@ static void docx_tblpr( DOCX *ctx, XML *xml )
 static void docx_tcpr( DOCX *ctx, XML *xml )
 {
     const char *val;
-    s32 value, text;
+    int value, text;
     int depth = xml->depth, inner, tag;
 
     while ( xml_child( xml, depth ) ) {
@@ -2313,8 +2315,8 @@ static void docx_tcpr( DOCX *ctx, XML *xml )
             } else if ( str_cmp( val, "pct" ) == 0 ) {
                 /* fiftieths of a percent of the width between the margins */
                 text = ctx->doc->page.width - ctx->doc->page.left - ctx->doc->page.right;
-                ctx->cell_width = (s32)docx_muldiv( (u32)docx_clamp( text, 1440, 31680 * 2 ),
-                                                    (u32)docx_clamp( value, 1, 5000 ), 5000 );
+                ctx->cell_width = (int)docx_muldiv( (unsigned int)docx_clamp( text, 1440, 31680 * 2 ),
+                                                        (unsigned int)docx_clamp( value, 1, 5000 ), 5000 );
             }
         } else if ( tag == T_GRIDSPAN ) {
             if ( docx_int( WVAL( xml ), &value ) ) {
@@ -2338,7 +2340,7 @@ static void docx_tcpr( DOCX *ctx, XML *xml )
 static void docx_cell_end( DOCX *ctx )
 {
     WPARA *para;
-    s32 width = 0;
+    int width = 0;
     int index;
 
     if ( ctx->wb.story->count == ctx->cell_from || ctx->wb.para != NULL ) {
@@ -2373,7 +2375,7 @@ static void docx_cell_end( DOCX *ctx )
         /* more cells than a row holds: the rest are part of the last */
         ctx->row.edge[MAX_CELLS - 1] = ctx->edge;
         if ( ctx->cell_last != NULL && ctx->cell_last != para ) {
-            ctx->cell_last->pap.flags &= (u16)~PF_CELLEND;
+            ctx->cell_last->pap.flags &= (uint16_t)~PF_CELLEND;
         }
         ctx->doc->lost |= LOST_TABLES;
     }
@@ -2390,7 +2392,7 @@ static void docx_row_end( DOCX *ctx )
     if ( ruled < 0 ) {
         ruled = ctx->tbl_style >= 0 && ctx->style[ctx->tbl_style].ruled == 2;
     }
-    ctx->row.borders = (u8)(ruled || ctx->row_ruled);
+    ctx->row.borders = (uint8_t)(ruled || ctx->row_ruled);
     ctx->cell_last->pap.flags |= PF_ROWEND;
     if ( !pap_set_row( &ctx->cell_last->pap, &ctx->row ) ) {
         ctx->nomem = 1;
@@ -2472,7 +2474,7 @@ static void docx_draw_flush( DOCX *ctx )
 static void docx_note_ref( DOCX *ctx, const XML *xml, int kind )
 {
     DNOTE *note;
-    s32 id;
+    int32_t id;
     int obj;
 
     if ( ctx->story != STORY_BODY || docx_quiet( ctx ) || !docx_int( xml_attr( xml, NS_W, "id" ), &id ) ) {
@@ -2487,7 +2489,7 @@ static void docx_note_ref( DOCX *ctx, const XML *xml, int kind )
         note = &ctx->note[ctx->nnote++];
         note->id = id;
         note->obj = obj;
-        note->kind = (u8)kind;
+        note->kind = (uint8_t)kind;
         note->filled = 0;
     }
 }
@@ -2497,8 +2499,8 @@ static int docx_note_begin( DOCX *ctx, const XML *xml, int kind )
 {
     const char *type = xml_attr( xml, NS_W, "type" );
     STORY *story;
-    u32 index, count;
-    s32 id;
+    unsigned int index, count;
+    int32_t id;
 
     if ( ctx->story != STORY_NOTES || (type != NULL && str_cmp( type, "normal" ) != 0) ||
          !docx_int( xml_attr( xml, NS_W, "id" ), &id ) ) {
@@ -2530,8 +2532,8 @@ static void docx_start( DOCX *ctx, XML *xml )
     CHP keep;
     const char *val;
     DALT *alt;
-    u32 code;
-    s32 value, high;
+    uint32_t code;
+    int value, high;
     int tag, rstyle, depth;
 
     if ( xml->ns != NS_W ) {
@@ -2648,7 +2650,7 @@ static void docx_start( DOCX *ctx, XML *xml )
             keep = ctx->wb.chp;
             val = xml_attr( xml, NS_W, "font" );
             if ( val != NULL && val[0] ) {
-                ctx->wb.chp.font = (u16)wd_font( ctx->doc, val, FAM_SYMBOL, -1 );
+                ctx->wb.chp.font = (uint16_t)wd_font( ctx->doc, val, FAM_SYMBOL, -1 );
             }
             docx_put( ctx, code );
             ctx->wb.chp = keep;
@@ -2760,7 +2762,7 @@ static void docx_start( DOCX *ctx, XML *xml )
             }
             tag = docx_tag( ctx, xml );
             if ( tag == T_TBLHEADER ) {
-                ctx->row.header = (u8)docx_on( xml );
+                ctx->row.header = (uint8_t)docx_on( xml );
             } else if ( tag == T_GRIDBEFORE && docx_int( WVAL( xml ), &value ) ) {
                 /* the row starts some columns in */
                 for ( ; value > 0 && ctx->col < ctx->ngrid; value--, ctx->col++ ) {
@@ -2896,8 +2898,8 @@ static int docx_story( DOCX *ctx, const char *part, STORY *story, int kind )
     char name[PART_NAME_LEN];
     XML *xml;
     DFIELD *field;
-    u8 *data;
-    u32 len;
+    uint8_t *data;
+    uint32_t len;
     int token, ok;
 
     if ( !str_cpyn( name, part, sizeof( name ) ) ) {
@@ -2935,7 +2937,7 @@ static int docx_story( DOCX *ctx, const char *part, STORY *story, int kind )
         } else if ( token == XML_END ) {
             docx_end( ctx, xml );
         } else if ( ctx->in_text ) {
-            docx_text( ctx, (const u8 *)xml->text, xml->text_len );
+            docx_text( ctx, (const uint8_t *)xml->text, xml->text_len );
         } else if ( ctx->in_instr && ctx->nfld && !ctx->fld_over ) {
             field = &ctx->fld[ctx->nfld - 1];
             while ( field->phase == 0 && xml->text_len && field->instr_len < INSTR_LEN - 1 ) {
@@ -2971,7 +2973,7 @@ static int docx_story( DOCX *ctx, const char *part, STORY *story, int kind )
 static DOCX *docx_new( WDOC *doc )
 {
     DOCX *ctx = (DOCX *)try_alloc( sizeof( DOCX ) );
-    u32 len, key;
+    unsigned int len, key;
     int tag;
 
     if ( ctx == NULL ) {
@@ -2993,10 +2995,10 @@ static DOCX *docx_new( WDOC *doc )
     ctx->tbl_style = -1;
     for ( tag = 1; tag < T_COUNT; tag++ ) {
         len = str_len( tag_names[tag] );
-        key = (len * 5 + (u8)tag_names[tag][0]) & 31;
-        ctx->tag_len[tag] = (u8)len;
+        key = (len * 5 + (uint8_t)tag_names[tag][0]) & 31;
+        ctx->tag_len[tag] = (uint8_t)len;
         ctx->tag_next[tag] = ctx->tag_head[key];
-        ctx->tag_head[key] = (u8)tag;
+        ctx->tag_head[key] = (uint8_t)tag;
     }
     /* what a file that says nothing at all gets: Word's own defaults */
     ctx->def_chp.set = XC_FONT | XC_SIZE | XC_COLOR | XC_HILITE | XC_UNDER | XC_VERT;
@@ -3031,12 +3033,13 @@ static void docx_free( DOCX *ctx )
  * relationships: its name (a string), and with "check" whether the
  * content types say it is a word processor's.  0 if there is none.
  */
-static u32 docx_main_part( DOCX *ctx, int check )
+static unsigned int docx_main_part( DOCX *ctx, int check )
 {
     XML *xml;
     const char *name, *type;
-    u8 *data;
-    u32 len, main_part;
+    uint8_t *data;
+    uint32_t len;
+    unsigned int main_part;
     int token, ours = 0;
 
     docx_rels( ctx, "" );
@@ -3064,8 +3067,8 @@ static u32 docx_main_part( DOCX *ctx, int check )
         type = xml_attr( xml, 0, "ContentType" );
         if ( name != NULL && type != NULL && name[0] == '/' &&
              str_icmp( name + 1, STR( ctx, main_part ) ) == 0 &&
-             (mem_find( (const u8 *)type, str_len( type ), "wordprocessingml" ) >= 0 ||
-              mem_find( (const u8 *)type, str_len( type ), "ms-word" ) >= 0) ) {
+             (mem_find( (const uint8_t *)type, str_len( type ), "wordprocessingml" ) >= 0 ||
+              mem_find( (const uint8_t *)type, str_len( type ), "ms-word" ) >= 0) ) {
             ours = 1;
         }
     }
@@ -3074,7 +3077,7 @@ static u32 docx_main_part( DOCX *ctx, int check )
     return ours ? main_part : 0;
 }
 
-static int docx_detect( const u8 *data, u32 len, const char *ext )
+static int docx_detect( const uint8_t *data, uint32_t len, const char *ext )
 {
     DOCX *ctx;
     int sure = 0;
@@ -3097,11 +3100,11 @@ static int docx_detect( const u8 *data, u32 len, const char *ext )
     return sure;
 }
 
-static int docx_load( const u8 *data, u32 len, WDOC *doc )
+static int docx_load( const uint8_t *data, uint32_t len, WDOC *doc )
 {
     DOCX *ctx = docx_new( doc );
-    u32 main_part, styles, numbering, theme, settings, footnotes, endnotes, core;
-    u32 index;
+    unsigned int main_part, styles, numbering, theme, settings, footnotes, endnotes, core;
+    unsigned int index;
     int why, rc = WE_OK, foot = 0, end = 0;
 
     if ( ctx == NULL ) {
@@ -3189,26 +3192,26 @@ static int docx_load( const u8 *data, u32 len, WDOC *doc )
 /* a list made for the file: what each of its levels is, 0xFF for a
    level no paragraph has used */
 typedef struct {
-    u8  kind[NUM_LEVELS];
-    u16 start[NUM_LEVELS];
+    uint8_t  kind[NUM_LEVELS];
+    uint16_t start[NUM_LEVELS];
 } WLIST;
 
 typedef struct {
-    WDOC *doc;
-    ZIPW *zipw;
-    OUT  *part;                 /* the part being written, a piece of it */
-    int   failed;
-    WLIST *list;
-    u32   nlist, list_cap;
-    u32   cur[NUM_LEVELS];      /* the list each level is in: its number, 0 for none */
-    u32  *note_id;              /* by object: the number its note was given, 0 not written */
-    u8   *in_part;              /* by object: a picture used in the part in hand */
-    u8   *in_file;              /* ...and in any part */
-    u32   next_note[2];
-    u32   draw_id;
-    int   body;                 /* the part in hand is the document itself */
-    int   note_mark;            /* 1, 2: the next paragraph starts a footnote, an endnote */
-    int   has_lists, has_foot, has_end;
+    WDOC        *doc;
+    ZIPW        *zipw;
+    OUT         *part;              /* the part being written, a piece of it */
+    int          failed;
+    WLIST       *list;
+    unsigned int nlist, list_cap;
+    unsigned int cur[NUM_LEVELS];   /* the list each level is in: its number, 0 for none */
+    uint32_t    *note_id;           /* by object: the number its note was given, 0 not written */
+    uint8_t     *in_part;           /* by object: a picture used in the part in hand */
+    uint8_t     *in_file;           /* ...and in any part */
+    uint32_t     next_note[2];
+    uint32_t     draw_id;
+    int          body;              /* the part in hand is the document itself */
+    int          note_mark;         /* 1, 2: the next paragraph starts a footnote, an endnote */
+    int          has_lists, has_foot, has_end;
 } DOCXW;
 
 #define PUT( text )     out_str( w->part, (text) )
@@ -3216,8 +3219,8 @@ typedef struct {
 /* what is waiting in memory goes to the archive, when there is enough of it */
 static void docxw_drain( DOCXW *w, int all )
 {
-    u8 *data;
-    u32 len = out_tell( w->part ), size;
+    uint8_t *data;
+    uint32_t len = out_tell( w->part ), size;
 
     if ( out_error( w->part ) ) {
         w->failed = 1;
@@ -3252,7 +3255,7 @@ static void docxw_finish( DOCXW *w )
 
 /* the name a style goes by inside the file: letters and digits only,
    and no two alike */
-static void docxw_style_id( const WDOC *doc, u32 index, char *id )
+static void docxw_style_id( const WDOC *doc, unsigned int index, char *id )
 {
     static const char *const fixed[STY_OTHER] = {
         "Normal", "Heading1", "Heading2", "Heading3", "Heading4", "Heading5", "Heading6",
@@ -3260,7 +3263,7 @@ static void docxw_style_id( const WDOC *doc, u32 index, char *id )
     };
     const WSTYLE *style;
     const char *name;
-    u32 len = 0;
+    unsigned int len = 0;
 
     if ( index >= doc->nstyle ) {
         index = 0;
@@ -3308,14 +3311,14 @@ static void docxw_toggle( DOCXW *w, const char *tag, int on, int was )
     }
 }
 
-static u16 docxw_under( u16 flags )
+static uint16_t docxw_under( uint16_t flags )
 {
-    return (u16)(flags & CF_DUNDER ? CF_DUNDER : flags & CF_WUNDER ? CF_WUNDER : flags & CF_UNDER);
+    return (uint16_t)(flags & CF_DUNDER ? CF_DUNDER : flags & CF_WUNDER ? CF_WUNDER : flags & CF_UNDER);
 }
 
-static u16 docxw_vert( u16 flags )
+static uint16_t docxw_vert( uint16_t flags )
 {
-    return (u16)(flags & CF_SUPER ? CF_SUPER : flags & CF_SUB);
+    return (uint16_t)(flags & CF_SUPER ? CF_SUPER : flags & CF_SUB);
 }
 
 /*
@@ -3325,7 +3328,7 @@ static u16 docxw_vert( u16 flags )
 static void docxw_rpr( DOCXW *w, const CHP *chp, const CHP *base )
 {
     static const struct {
-        u16 flag;
+        uint16_t flag;
         const char *tag;
     } toggles[8] = {
         { CF_BOLD, "b" }, { CF_ITALIC, "i" }, { CF_ALLCAPS, "caps" }, { CF_SMALLCAPS, "smallCaps" },
@@ -3336,8 +3339,8 @@ static void docxw_rpr( DOCXW *w, const CHP *chp, const CHP *base )
         "darkCyan", "darkGreen", "darkMagenta", "darkRed", "darkYellow", "darkGray", "lightGray"
     };
     const WDOC *doc = w->doc;
-    u32 start = out_tell( w->part );
-    u16 under = docxw_under( chp->flags ), vert = docxw_vert( chp->flags );
+    uint32_t start = out_tell( w->part );
+    uint16_t under = docxw_under( chp->flags ), vert = docxw_vert( chp->flags );
     const char *name;
     int index;
 
@@ -3362,7 +3365,7 @@ static void docxw_rpr( DOCXW *w, const CHP *chp, const CHP *base )
         }
     }
     if ( chp->size != base->size ) {
-        out_fmt( w->part, "<w:sz w:val=\"%u\"/><w:szCs w:val=\"%u\"/>", (u32)chp->size, (u32)chp->size );
+        out_fmt( w->part, "<w:sz w:val=\"%u\"/><w:szCs w:val=\"%u\"/>", (uint32_t)chp->size, (uint32_t)chp->size );
     }
     if ( chp->hilite != base->hilite ) {
         out_fmt( w->part, "<w:highlight w:val=\"%s\"/>", hilites[chp->hilite <= 16 ? chp->hilite : 0] );
@@ -3385,10 +3388,10 @@ static void docxw_rpr( DOCXW *w, const CHP *chp, const CHP *base )
 /* the list a paragraph is in -> its number in the file.  A paragraph
    that starts the numbers again, or is of another kind than the list
    its level was in, begins a new one. */
-static u32 docxw_list( DOCXW *w, const PAP *pap )
+static unsigned int docxw_list( DOCXW *w, const PAP *pap )
 {
     WLIST *list;
-    u32 want;
+    unsigned int want;
     int level = pap->level < NUM_LEVELS ? pap->level : NUM_LEVELS - 1;
 
     if ( pap->list_start == 0 && w->cur[level] != 0 && w->list[w->cur[level] - 1].kind[level] == pap->list ) {
@@ -3408,7 +3411,7 @@ static u32 docxw_list( DOCXW *w, const PAP *pap )
     mem_set( list->kind, 0xFF, NUM_LEVELS );
     mem_set( list->start, 0, sizeof( list->start ) );
     list->kind[level] = pap->list;
-    list->start[level] = (u16)(pap->list_start ? pap->list_start : 1);
+    list->start[level] = (uint16_t)(pap->list_start ? pap->list_start : 1);
     w->cur[level] = w->nlist;
     return w->nlist;
 }
@@ -3431,8 +3434,9 @@ static void docxw_ppr( DOCXW *w, const PAP *pap, const PAP *base, const char *st
     static const char *const aligns[4] = { "left", "center", "right", "both" };
     static const char *const kinds[4] = { "left", "center", "right", "decimal" };
     static const char *const leads[4] = { "none", "dot", "hyphen", "underscore" };
-    u32 start = out_tell( w->part ), number;
-    u16 sides = (u16)(pap->flags & PF_SIDES);
+    uint32_t start = out_tell( w->part );
+    unsigned int number;
+    uint16_t sides = (uint16_t)(pap->flags & PF_SIDES);
     int index, listed = pap->list != LIST_NONE && pap->list <= LIST_ROMAN_UPPER;
 
     PUT( "<w:pPr>" );
@@ -3445,9 +3449,9 @@ static void docxw_ppr( DOCXW *w, const PAP *pap, const PAP *base, const char *st
     if ( listed ) {
         number = docxw_list( w, pap );
         out_fmt( w->part, "<w:numPr><w:ilvl w:val=\"%u\"/><w:numId w:val=\"%u\"/></w:numPr>",
-                 (u32)(pap->level < NUM_LEVELS ? pap->level : NUM_LEVELS - 1), number );
+                 (uint32_t)(pap->level < NUM_LEVELS ? pap->level : NUM_LEVELS - 1), number );
     }
-    if ( sides != (u16)(base->flags & PF_SIDES) ) {
+    if ( sides != (uint16_t)(base->flags & PF_SIDES) ) {
         PUT( "<w:pBdr>" );
         docxw_border( w, "top", sides & PF_BORDER_TOP );
         docxw_border( w, "left", sides & PF_BORDER_LEFT );
@@ -3481,7 +3485,7 @@ static void docxw_ppr( DOCXW *w, const PAP *pap, const PAP *base, const char *st
         out_fmt( w->part, "<w:jc w:val=\"%s\"/>", aligns[pap->align & 3] );
     }
     if ( outline ) {
-        out_fmt( w->part, "<w:outlineLvl w:val=\"%u\"/>", (u32)outline - 1 );
+        out_fmt( w->part, "<w:outlineLvl w:val=\"%u\"/>", (uint32_t)outline - 1 );
     }
     if ( out_tell( w->part ) == start + 7 ) {
         out_seek( w->part, start );
@@ -3491,16 +3495,16 @@ static void docxw_ppr( DOCXW *w, const PAP *pap, const PAP *base, const char *st
 }
 
 /* a picture, set in the line */
-static void docxw_image( DOCXW *w, u32 obj )
+static void docxw_image( DOCXW *w, unsigned int obj )
 {
     const WOBJ *image = &w->doc->obj[obj];
     const char *ext = docxw_ext( image->fmt );
-    u32 wide, high;
+    uint32_t wide, high;
 
     w->in_part[obj] = w->in_file[obj] = 1;
     w->draw_id++;
-    wide = (u32)docx_clamp( image->width, 1, 3168000L ) * EMU_PER_TWIP;
-    high = (u32)docx_clamp( image->height, 1, 3168000L ) * EMU_PER_TWIP;
+    wide = (uint32_t)docx_clamp( image->width, 1, 3168000L ) * EMU_PER_TWIP;
+    high = (uint32_t)docx_clamp( image->height, 1, 3168000L ) * EMU_PER_TWIP;
     out_fmt( w->part, "<w:drawing><wp:inline distT=\"0\" distB=\"0\" distL=\"0\" distR=\"0\">"
              "<wp:extent cx=\"%u\" cy=\"%u\"/><wp:docPr id=\"%u\" name=\"Picture %u\"/>", wide, high, w->draw_id,
              w->draw_id );
@@ -3515,9 +3519,9 @@ static void docxw_image( DOCXW *w, u32 obj )
 }
 
 /* what one run holds: text, and the characters that are elements */
-static void docxw_run_text( DOCXW *w, const u16 *text, u32 len )
+static void docxw_run_text( DOCXW *w, const uint16_t *text, unsigned int len )
 {
-    u32 pos = 0, from;
+    unsigned int pos = 0, from;
     int open = 0;
 
     while ( pos < len ) {
@@ -3551,7 +3555,7 @@ static void docxw_run_text( DOCXW *w, const u16 *text, u32 len )
 
 /* a field character: Word's field, with something for it to show
    until it has worked the field out */
-static void docxw_field( DOCXW *w, u32 code, const CHP *chp, const CHP *base )
+static void docxw_field( DOCXW *w, uint32_t code, const CHP *chp, const CHP *base )
 {
     static const char *const fields[5][2] = {
         { "PAGE", "1" }, { "NUMPAGES", "1" }, { "DATE", "1/1/2026" }, { "TIME", "12:00" },
@@ -3580,7 +3584,7 @@ static void docxw_para( DOCXW *w, const WPARA *para )
     const WSTYLE *style = &doc->style[para->pap.style < doc->nstyle ? para->pap.style : 0];
     const CHP *chp;
     const WOBJ *item;
-    u32 off, run, pos, from;
+    unsigned int off, run, pos, from;
     int obj;
 
     PUT( "<w:p>" );
@@ -3592,7 +3596,7 @@ static void docxw_para( DOCXW *w, const WPARA *para )
         chp = wd_chp_get( doc, para->attr[off] );
         if ( para->text[off] == WCH_OBJ ) {
             obj = wd_obj_at( para, off );
-            if ( obj < 0 || (u32)obj >= doc->nobj ) {
+            if ( obj < 0 || (unsigned int)obj >= doc->nobj ) {
                 continue;
             }
             item = &doc->obj[obj];
@@ -3600,7 +3604,7 @@ static void docxw_para( DOCXW *w, const WPARA *para )
                 if ( docxw_ext( item->fmt ) != NULL && item->data != NULL && item->len != 0 ) {
                     PUT( "<w:r>" );
                     docxw_rpr( w, chp, &style->chp );
-                    docxw_image( w, (u32)obj );
+                    docxw_image( w, (unsigned int)obj );
                     PUT( "</w:r>" );
                 }
             } else if ( item->kind == OBJ_NOTE && w->body && w->note_id[obj] == 0 ) {
@@ -3634,7 +3638,7 @@ static void docxw_para( DOCXW *w, const WPARA *para )
 }
 
 /* a table's column edges, kept in order with no two alike */
-static int docxw_grid_add( s32 *grid, int count, s32 pos )
+static int docxw_grid_add( int *grid, int count, int pos )
 {
     int at, move;
 
@@ -3651,7 +3655,7 @@ static int docxw_grid_add( s32 *grid, int count, s32 pos )
 }
 
 /* which edge a place is: the last one not past it */
-static int docxw_grid_at( const s32 *grid, int count, s32 pos )
+static int docxw_grid_at( const int *grid, int count, int pos )
 {
     int at = 0;
 
@@ -3661,7 +3665,7 @@ static int docxw_grid_at( const s32 *grid, int count, s32 pos )
     return at;
 }
 
-static void docxw_cell_open( DOCXW *w, s32 width, int span, int ruled )
+static void docxw_cell_open( DOCXW *w, int width, int span, int ruled )
 {
     out_fmt( w->part, "<w:tc><w:tcPr><w:tcW w:w=\"%d\" w:type=\"dxa\"/>", width );
     if ( span > 1 ) {
@@ -3679,11 +3683,11 @@ static void docxw_cell_open( DOCXW *w, s32 width, int span, int ruled )
 }
 
 /* one row: paragraphs "from" to "to" of the story, cut into cells */
-static void docxw_row( DOCXW *w, const STORY *story, u32 from, u32 to, const TROW *row, const s32 *grid,
+static void docxw_row( DOCXW *w, const STORY *story, unsigned int from, unsigned int to, const TROW *row, const int *grid,
                        int ngrid, int ruled_all )
 {
-    s32 prev = row->left, edge;
-    u32 index = from;
+    int prev = row->left, edge;
+    unsigned int index = from;
     int cell, col = docxw_grid_at( grid, ngrid, row->left ), next, ncells = row->ncells;
     int ruled = row->borders && !ruled_all;
 
@@ -3724,14 +3728,14 @@ static void docxw_row( DOCXW *w, const STORY *story, u32 from, u32 to, const TRO
 }
 
 /* the table that starts at paragraph "from" -> the paragraph after it */
-static u32 docxw_table( DOCXW *w, const STORY *story, u32 from )
+static unsigned int docxw_table( DOCXW *w, const STORY *story, unsigned int from )
 {
-    s32 grid[MAX_GRIDW + 2];
+    int grid[MAX_GRIDW + 2];
     TROW whole;
     const PAP *pap;
     const TROW *row;
-    s32 prev;
-    u32 to, index, row_from;
+    int prev;
+    unsigned int to, index, row_from;
     int ngrid = 0, ruled_all = 1, cell;
 
     for ( to = from; to < story->count && (story->para[to]->pap.flags & PF_INTABLE); to++ ) {
@@ -3801,7 +3805,7 @@ static u32 docxw_table( DOCXW *w, const STORY *story, u32 from )
 
 static void docxw_story( DOCXW *w, const STORY *story )
 {
-    u32 index = 0;
+    unsigned int index = 0;
 
     while ( index < story->count ) {
         if ( story->para[index]->pap.flags & PF_INTABLE ) {
@@ -3827,7 +3831,7 @@ static void docxw_rels( DOCXW *w, const char *name, int main_part )
         "styles", "settings", "numbering", "footnotes", "endnotes", "header", "footer"
     };
     const WDOC *doc = w->doc;
-    u32 index;
+    unsigned int index;
     int any = main_part, have[7];
 
     for ( index = 0; index < doc->nobj; index++ ) {
@@ -3872,7 +3876,7 @@ static void docxw_notes( DOCXW *w, int end )
 {
     const WDOC *doc = w->doc;
     const char *tag = end ? "endnote" : "footnote";
-    u32 index;
+    unsigned int index;
 
     docxw_begin( w, end ? "word/endnotes.xml" : "word/footnotes.xml" );
     out_fmt( w->part, "<w:%ss", tag );
@@ -3918,7 +3922,7 @@ static void docxw_styles( DOCXW *w )
     const WSTYLE *style;
     CHP plain;
     PAP none;
-    u32 index;
+    unsigned int index;
     int head;
 
     /* what a style with nothing in it would be: the defaults written
@@ -3964,7 +3968,7 @@ static void docxw_numbering( DOCXW *w )
         "none", "bullet", "decimal", "lowerLetter", "upperLetter", "lowerRoman", "upperRoman"
     };
     const WLIST *list;
-    u32 index;
+    unsigned int index;
     int level, kind, fill;
 
     docxw_begin( w, "word/numbering.xml" );
@@ -3986,7 +3990,7 @@ static void docxw_numbering( DOCXW *w )
                 kind = LIST_NUMBER;
             }
             out_fmt( w->part, "<w:lvl w:ilvl=\"%d\"><w:start w:val=\"%u\"/><w:numFmt w:val=\"%s\"/>", level,
-                     (u32)(list->kind[level] != 0xFF ? list->start[level] : 1), formats[kind] );
+                     (uint32_t)(list->kind[level] != 0xFF ? list->start[level] : 1), formats[kind] );
             if ( kind == LIST_BULLET ) {
                 /* the round bullet of the Symbol font, as Word's own lists have it */
                 PUT( "<w:lvlText w:val=\"\xEF\x82\xB7\"/><w:lvlJc w:val=\"left\"/>" );
@@ -4017,7 +4021,7 @@ static void docxw_survey( DOCXW *w )
     const WDOC *doc = w->doc;
     const STORY *story;
     const WPARA *para;
-    u32 which, index, at, obj;
+    unsigned int which, index, at, obj;
 
     for ( which = 0; which < 3 + doc->nobj; which++ ) {
         story = which == 0 ? &doc->body : which == 1 ? &doc->header : which == 2 ? &doc->footer :
@@ -4113,8 +4117,8 @@ static void docxw_props( DOCXW *w )
     char stamp[40];
 
     sys_now( &now );
-    sfmt( stamp, sizeof( stamp ), "%04u-%02u-%02uT%02u:%02u:%02uZ", (u32)now.year, (u32)now.month, (u32)now.day,
-          (u32)now.hour, (u32)now.minute, (u32)now.second );
+    sfmt( stamp, sizeof( stamp ), "%04u-%02u-%02uT%02u:%02u:%02uZ", (uint32_t)now.year, (uint32_t)now.month, (uint32_t)now.day,
+          (uint32_t)now.hour, (uint32_t)now.minute, (uint32_t)now.second );
     docxw_begin( w, "docProps/core.xml" );
     PUT( "<cp:coreProperties xmlns:cp=\"http://schemas.openxmlformats.org/package/2006/metadata/core-properties\""
          " xmlns:dc=\"http://purl.org/dc/elements/1.1/\" xmlns:dcterms=\"http://purl.org/dc/terms/\""
@@ -4135,13 +4139,13 @@ static void docxw_props( DOCXW *w )
 
 /* a picture's bytes into the archive.  A bare DIB is given the header
    that makes it a .BMP file. */
-static void docxw_media( DOCXW *w, u32 obj )
+static void docxw_media( DOCXW *w, unsigned int obj )
 {
     char name[48];
     const WOBJ *image = &w->doc->obj[obj];
     OUT *bmp;
-    u8 *data;
-    u32 len, head, colors, bits;
+    uint8_t *data;
+    uint32_t len, head, colors, bits;
     int packed = image->fmt == IMG_PNG || image->fmt == IMG_JPEG || image->fmt == IMG_GIF;
 
     sfmt( name, sizeof( name ), "word/media/image%u.%s", obj + 1, docxw_ext( image->fmt ) );
@@ -4203,7 +4207,7 @@ static void docxw_document( DOCXW *w )
              docx_clamp( page->left, 0, LEN_MAX ), docx_clamp( page->header, 0, LEN_MAX ),
              docx_clamp( page->footer, 0, LEN_MAX ) );
     if ( page->first_page != 1 ) {
-        out_fmt( w->part, "<w:pgNumType w:start=\"%u\"/>", (u32)page->first_page );
+        out_fmt( w->part, "<w:pgNumType w:start=\"%u\"/>", (uint32_t)page->first_page );
     }
     PUT( "</w:sectPr></w:body></w:document>" );
     docxw_finish( w );
@@ -4213,7 +4217,7 @@ static void docxw_document( DOCXW *w )
 static int docx_save( WDOC *doc, OUT *out, int variant )
 {
     DOCXW *w;
-    u32 index;
+    unsigned int index;
     int rc = WE_OK;
 
     (void)variant;
@@ -4225,12 +4229,12 @@ static int docx_save( WDOC *doc, OUT *out, int variant )
     w->doc = doc;
     w->part = out_mem();
     w->zipw = zipw_new( out );
-    w->note_id = (u32 *)try_alloc( (doc->nobj + 1) * sizeof( u32 ) );
-    w->in_part = (u8 *)try_alloc( doc->nobj * 2 + 2 );
+    w->note_id = (uint32_t *)try_alloc( (doc->nobj + 1) * sizeof( uint32_t ) );
+    w->in_part = (uint8_t *)try_alloc( doc->nobj * 2 + 2 );
     if ( w->part == NULL || w->zipw == NULL || w->note_id == NULL || w->in_part == NULL ) {
         w->failed = 1;
     } else {
-        mem_set( w->note_id, 0, (doc->nobj + 1) * sizeof( u32 ) );
+        mem_set( w->note_id, 0, (doc->nobj + 1) * sizeof( uint32_t ) );
         mem_set( w->in_part, 0, doc->nobj * 2 + 2 );
         w->in_file = w->in_part + doc->nobj + 1;
         docxw_survey( w );

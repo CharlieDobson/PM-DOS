@@ -25,34 +25,34 @@ enum { FM_NONE, FM_INPUT, FM_OUTPUT, FM_APPEND, FM_RANDOM, FM_BINARY };
 enum { DV_FILE, DV_SCRN, DV_KYBD, DV_LPT, DV_COM, DV_CONS };
 
 typedef struct {
-    STR **var;
-    u32   off, width;
+    STR        **var;
+    unsigned int off, width;
 } FIELDVAR;
 
 typedef struct {
-    int    mode;
-    int    dev;
-    u32    handle;
-    u32    reclen;
-    u8    *buf;             /* sequential: what is read ahead, or waiting to go */
-    u32    buf_len;         /* bytes in it */
-    u32    buf_pos;         /* reading: the next one to take */
-    u32    file_pos;        /* the file's position of buf[0] (reading) or of the end (writing) */
-    int    at_eof;          /* reading: the end, or Ctrl+Z, has been reached */
-    int    past_end;        /* BINARY: a read went past the end */
-    int    col;
-    int    width;
-    u8    *record;
-    u32    recno;           /* the last record moved */
-    u32    bpos;            /* BINARY/RANDOM: the next byte or record, 1-based */
-    FIELDVAR *fields;
-    int    nfields;
-    char   name[PATH_MAX];
+    int          mode;
+    int          dev;
+    uint32_t     handle;
+    unsigned int reclen;
+    uint8_t     *buf;       /* sequential: what is read ahead, or waiting to go */
+    unsigned int buf_len;   /* bytes in it */
+    unsigned int buf_pos;   /* reading: the next one to take */
+    uint32_t     file_pos;  /* the file's position of buf[0] (reading) or of the end (writing) */
+    int          at_eof;    /* reading: the end, or Ctrl+Z, has been reached */
+    int          past_end;  /* BINARY: a read went past the end */
+    int          col;
+    int          width;
+    uint8_t     *record;
+    uint32_t     recno;     /* the last record moved */
+    uint32_t     bpos;      /* BINARY/RANDOM: the next byte or record, 1-based */
+    FIELDVAR    *fields;
+    int          nfields;
+    char         name[PATH_MAX];
 } QFILE;
 
-static QFILE *files[MAX_FILES + 1];
-static u32    lpt_handle;
-static int    lpt_open, lpt_column = 1, lpt_wid = 80;
+static QFILE   *files[MAX_FILES + 1];
+static uint32_t lpt_handle;
+static int      lpt_open, lpt_column = 1, lpt_wid = 80;
 
 /* a DOS error as QBasic's */
 static int dos_to_qb( int rc )
@@ -83,7 +83,7 @@ static void dos_fail( int rc )
 /* a string as a C path: cut at 259, the error if it is empty */
 static void path_of( STR *s, char *path )
 {
-    u32 len = QS_LEN( s );
+    unsigned int len = QS_LEN( s );
 
     if ( len == 0 ) {
         qs_release( s );
@@ -126,7 +126,7 @@ static QFILE *get_file( int num )
    outside a statement, after a run, there is nothing to raise it in) */
 static int flush_out( QFILE *f )
 {
-    u32 done;
+    unsigned int done;
     int rc;
 
     if ( f->buf_len == 0 || f->dev == DV_SCRN || f->dev == DV_CONS ) {
@@ -159,7 +159,7 @@ static void flush_or_fail( QFILE *f )
 /* the next byte of a file being read, or -1 at its end (Ctrl+Z is one) */
 static int read_byte( QFILE *f, int peek )
 {
-    u32 done;
+    unsigned int done;
     int rc, ch;
 
     if ( f->dev == DV_KYBD ) {
@@ -194,7 +194,7 @@ static int read_byte( QFILE *f, int peek )
 }
 
 /* the position the program sees, 1-based */
-static u32 seq_position( QFILE *f )
+static uint32_t seq_position( QFILE *f )
 {
     if ( f->mode == FM_INPUT ) {
         return f->file_pos + f->buf_pos;
@@ -262,11 +262,11 @@ static int already_open_for_write( const char *path, int except )
     return 0;
 }
 
-static void do_open( const char *path, int mode, int num, s32 reclen )
+static void do_open( const char *path, int mode, int num, int32_t reclen )
 {
     QFILE *f;
     int dev = device_of( path ), rc, other;
-    u32 handle = 0, size;
+    uint32_t handle = 0, size;
     char devname[8];
 
     /* the name is looked at before the number */
@@ -347,11 +347,11 @@ static void do_open( const char *path, int mode, int num, s32 reclen )
     f->handle = handle;
     f->col = 1;
     f->width = dev == DV_LPT ? 80 : dev == DV_SCRN || dev == DV_CONS ? con_width() : 0;
-    f->reclen = reclen > 0 ? (u32)reclen : 128;
+    f->reclen = reclen > 0 ? (unsigned int)reclen : 128;
     f->bpos = 1;
     str_cpyn( f->name, path, sizeof( f->name ) );
     if ( mode == FM_INPUT || mode == FM_OUTPUT || mode == FM_APPEND ) {
-        f->buf = (u8 *)try_alloc( SEQBUF );
+        f->buf = (uint8_t *)try_alloc( SEQBUF );
         if ( f->buf == NULL ) {
             if ( dev == DV_FILE || dev == DV_LPT || dev == DV_COM ) {
                 sys_close( handle );            /* the handle goes with it */
@@ -362,7 +362,7 @@ static void do_open( const char *path, int mode, int num, s32 reclen )
         }
     }
     if ( mode == FM_RANDOM ) {
-        f->record = (u8 *)try_alloc( f->reclen );
+        f->record = (uint8_t *)try_alloc( f->reclen );
         if ( f->record == NULL ) {
             if ( dev == DV_FILE || dev == DV_LPT || dev == DV_COM ) {
                 sys_close( handle );            /* the handle goes with it */
@@ -377,8 +377,8 @@ static void do_open( const char *path, int mode, int num, s32 reclen )
         /* to the end, less a Ctrl+Z if the file ends with one */
         sys_size_keep( handle, &size );
         if ( size > 0 ) {
-            u8 last;
-            u32 done;
+            uint8_t last;
+            unsigned int done;
             sys_seek( handle, size - 1 );
             if ( sys_read( handle, &last, 1, &done ) == 0 && done == 1 && last == 26 ) {
                 size--;
@@ -393,7 +393,7 @@ static void do_open( const char *path, int mode, int num, s32 reclen )
 /* OPEN file$ FOR mode ACCESS a lock AS #n LEN = r */
 void rtf_OPEN( void )
 {
-    s32 reclen = POP_L(), num = POP_L();
+    int32_t reclen = POP_L(), num = POP_L();
     int lock = (int)POP_L(), access = (int)POP_L(), mode = (int)POP_L();
     char path[PATH_MAX];
 
@@ -406,10 +406,10 @@ void rtf_OPEN( void )
 /* OPEN "O", #n, file$ [, length] */
 void rtf_OPENOLD( void )
 {
-    s32 reclen = POP_L();
+    int32_t reclen = POP_L();
     char path[PATH_MAX];
     STR *ms;
-    s32 num;
+    int32_t num;
     int mode;
 
     open_path( POP_STR(), path );
@@ -455,7 +455,7 @@ static int close_file( int num )
 
 void rtf_CLOSE( void )
 {
-    s32 num = POP_L();
+    int32_t num = POP_L();
     int rc;
 
     if ( num < 1 || num > MAX_FILES ) {
@@ -526,9 +526,9 @@ int file_width( int num )
     return get_file( num )->width;
 }
 
-static void put_bytes( QFILE *f, const char *text, u32 len )
+static void put_bytes( QFILE *f, const char *text, unsigned int len )
 {
-    u32 n, done;
+    unsigned int n, done;
     int rc;
 
     if ( f->dev == DV_SCRN || f->dev == DV_CONS ) {
@@ -558,10 +558,10 @@ static void put_bytes( QFILE *f, const char *text, u32 len )
     }
 }
 
-void file_text( int num, const char *text, u32 len )
+void file_text( int num, const char *text, unsigned int len )
 {
     QFILE *f = get_file( num );
-    u32 i;
+    unsigned int i;
 
     put_bytes( f, text, len );
     for ( i = 0; i < len; i++ ) {
@@ -588,7 +588,7 @@ void file_newline( int num )
 /* WIDTH #n, w */
 void rtf_WIDTHF( void )
 {
-    s32 width = POP_L();
+    int32_t width = POP_L();
     QFILE *f = get_file( (int)POP_L() );
 
     if ( width < 0 || width > 255 ) {
@@ -600,7 +600,7 @@ void rtf_WIDTHF( void )
 /* WIDTH "LPT1:", w and the like */
 void rtf_WIDTHDEV( void )
 {
-    s32 width = POP_L();
+    int32_t width = POP_L();
     char path[PATH_MAX];
 
     path_of( POP_STR(), path );
@@ -638,9 +638,9 @@ int lpt_width( void )
     return lpt_wid;
 }
 
-void lpt_text( const char *text, u32 len )
+void lpt_text( const char *text, unsigned int len )
 {
-    u32 done, i;
+    unsigned int done, i;
 
     lpt_need();
     if ( sys_write( lpt_handle, text, len, &done ) != 0 ) {
@@ -803,10 +803,10 @@ int file_line_input( int num, char *buf, int max )
 void rtf_INPUTSF( void )
 {
     int num = (int)POP_L();
-    s32 n = POP_L(), i;
+    int32_t n = POP_L(), i;
     QFILE *f;
     STR *s;
-    u32 done;
+    unsigned int done;
     int ch, rc;
 
     if ( n < 1 || n > STR_MAX ) {
@@ -816,10 +816,10 @@ void rtf_INPUTSF( void )
     if ( f->mode == FM_OUTPUT || f->mode == FM_APPEND ) {
         vm_error( E_INPUT_PAST_END );
     }
-    s = qs_new( (u32)n );
+    s = qs_new( (unsigned int)n );
     if ( f->mode == FM_BINARY || f->mode == FM_RANDOM ) {
-        rc = sys_read( f->handle, s->text, (u32)n, &done );
-        if ( rc != 0 || done < (u32)n ) {
+        rc = sys_read( f->handle, s->text, (unsigned int)n, &done );
+        if ( rc != 0 || done < (unsigned int)n ) {
             qs_release( s );
             vm_error( rc ? dos_to_qb( rc ) : E_INPUT_PAST_END );
         }
@@ -875,7 +875,7 @@ void rtf_EOF( void )
 void rtf_LOF( void )
 {
     QFILE *f = get_file( (int)POP_L() );
-    u32 size = 0;
+    uint32_t size = 0;
 
     if ( f->dev != DV_FILE ) {
         PUSH_L( 0 );
@@ -885,50 +885,50 @@ void rtf_LOF( void )
         flush_or_fail( f );
     }
     sys_size_keep( f->handle, &size );
-    PUSH_L( (s32)size );
+    PUSH_L( (int32_t)size );
 }
 
 void rtf_LOC( void )
 {
     QFILE *f = get_file( (int)POP_L() );
-    u32 pos;
+    uint32_t pos;
 
     switch ( f->mode ) {
     case FM_INPUT:
-        PUSH_L( (s32)(seq_position( f ) / 128 + 1) );
+        PUSH_L( (int32_t)(seq_position( f ) / 128 + 1) );
         return;
     case FM_OUTPUT:
     case FM_APPEND:
-        PUSH_L( (s32)(seq_position( f ) / 128) );
+        PUSH_L( (int32_t)(seq_position( f ) / 128) );
         return;
     case FM_RANDOM:
-        PUSH_L( (s32)f->recno );
+        PUSH_L( (int32_t)f->recno );
         return;
     }
     sys_tell( f->handle, &pos );
-    PUSH_L( (s32)pos );
+    PUSH_L( (int32_t)pos );
 }
 
 void rtf_SEEKF( void )
 {
     QFILE *f = get_file( (int)POP_L() );
-    u32 pos;
+    uint32_t pos;
 
     switch ( f->mode ) {
     case FM_RANDOM:
-        PUSH_L( (s32)f->bpos );
+        PUSH_L( (int32_t)f->bpos );
         return;
     case FM_BINARY:
         sys_tell( f->handle, &pos );
-        PUSH_L( (s32)pos + 1 );
+        PUSH_L( (int32_t)pos + 1 );
         return;
     }
-    PUSH_L( (s32)seq_position( f ) + 1 );
+    PUSH_L( (int32_t)seq_position( f ) + 1 );
 }
 
 void rtf_SEEKS( void )
 {
-    s32 pos = POP_L();
+    int32_t pos = POP_L();
     QFILE *f = get_file( (int)POP_L() );
 
     if ( pos < 1 ) {
@@ -939,26 +939,26 @@ void rtf_SEEKS( void )
     }
     switch ( f->mode ) {
     case FM_RANDOM:
-        if ( (u32)pos - 1 > 0xFFFFFFFFUL / f->reclen ) {
+        if ( (uint32_t)pos - 1 > 0xFFFFFFFFUL / f->reclen ) {
             vm_error( E_BAD_RECNUM );                   /* past what a DOS file can hold */
         }
-        f->bpos = (u32)pos;
-        sys_seek( f->handle, ((u32)pos - 1) * f->reclen );
+        f->bpos = (uint32_t)pos;
+        sys_seek( f->handle, ((uint32_t)pos - 1) * f->reclen );
         return;
     case FM_BINARY:
         f->past_end = 0;
-        sys_seek( f->handle, (u32)pos - 1 );
+        sys_seek( f->handle, (uint32_t)pos - 1 );
         return;
     case FM_INPUT:
         f->buf_len = f->buf_pos = 0;
         f->at_eof = 0;
-        f->file_pos = (u32)pos - 1;
-        sys_seek( f->handle, (u32)pos - 1 );
+        f->file_pos = (uint32_t)pos - 1;
+        sys_seek( f->handle, (uint32_t)pos - 1 );
         return;
     }
     flush_or_fail( f );
-    f->file_pos = (u32)pos - 1;
-    sys_seek( f->handle, (u32)pos - 1 );
+    f->file_pos = (uint32_t)pos - 1;
+    sys_seek( f->handle, (uint32_t)pos - 1 );
 }
 
 void rtf_FREEFILE( void )
@@ -976,14 +976,14 @@ void rtf_FREEFILE( void )
 
 void rtf_FILEATTR( void )
 {
-    s32 which = POP_L();
+    int32_t which = POP_L();
     QFILE *f = get_file( (int)POP_L() );
     static const int codes[] = { 0, 1, 2, 8, 4, 32 };
 
     if ( which == 1 ) {
         PUSH_L( codes[f->mode] );
     } else if ( which == 2 ) {
-        PUSH_L( (s32)f->handle );
+        PUSH_L( (int32_t)f->handle );
     } else {
         vm_error( E_ILLEGAL_CALL );
     }
@@ -1016,7 +1016,7 @@ static void fields_from_record( QFILE *f, int except )
    freed it): the FIELDs that named a variable there forget it */
 static int any_fields;                  /* a FIELD has been made: forgetting has work */
 
-void file_forget_vars( const u8 *lo, const u8 *hi )
+void file_forget_vars( const uint8_t *lo, const uint8_t *hi )
 {
     int num, i;
 
@@ -1028,7 +1028,7 @@ void file_forget_vars( const u8 *lo, const u8 *hi )
             continue;
         }
         for ( i = 0; i < files[num]->nfields; i++ ) {
-            const u8 *at = (const u8 *)files[num]->fields[i].var;
+            const uint8_t *at = (const uint8_t *)files[num]->fields[i].var;
             if ( at >= lo && at < hi ) {
                 files[num]->fields[i].var = NULL;
             }
@@ -1049,7 +1049,7 @@ void file_field_changed( STR **var )
         }
         for ( i = 0; i < f->nfields; i++ ) {
             if ( f->fields[i].var == var ) {
-                u32 n = QS_LEN( *var ) < f->fields[i].width ? QS_LEN( *var ) : f->fields[i].width;
+                unsigned int n = QS_LEN( *var ) < f->fields[i].width ? QS_LEN( *var ) : f->fields[i].width;
                 mem_cpy( f->record + f->fields[i].off, QS_TEXT( *var ), n );
                 fields_from_record( f, i );     /* fields over the same bytes see it */
                 return;
@@ -1064,15 +1064,15 @@ void rtf_FIELD( void )
     int count = (int)POP_L(), i;
     FIELDVAR *list;
     QFILE *f;
-    u32 off = 0;
+    unsigned int off = 0;
 
-    list = (FIELDVAR *)try_alloc( (u32)(count ? count : 1) * sizeof( FIELDVAR ) );
+    list = (FIELDVAR *)try_alloc( (unsigned int)(count ? count : 1) * sizeof( FIELDVAR ) );
     if ( list == NULL ) {
         vm_error( E_OUT_OF_MEMORY );
     }
     for ( i = count - 1; i >= 0; i-- ) {
         list[i].var = (STR **)POP_A();
-        list[i].width = (u32)POP_L();
+        list[i].width = (unsigned int)POP_L();
     }
     f = get_file( (int)POP_L() );
     if ( f->mode != FM_RANDOM ) {
@@ -1082,7 +1082,7 @@ void rtf_FIELD( void )
     for ( i = 0; i < count; i++ ) {
         list[i].off = off;
         off += list[i].width;
-        if ( (s32)list[i].width < 0 || off > f->reclen ) {
+        if ( (int)list[i].width < 0 || off > f->reclen ) {
             xfree( list );
             vm_error( E_FIELD_OVERFLOW );
         }
@@ -1090,7 +1090,7 @@ void rtf_FIELD( void )
     /* a second FIELD adds to the first (QBasic): the earlier variables
        stay, but for any this one places again */
     {
-        FIELDVAR *all = (FIELDVAR *)try_alloc( (u32)(f->nfields + count + 1) * sizeof( FIELDVAR ) );
+        FIELDVAR *all = (FIELDVAR *)try_alloc( (unsigned int)(f->nfields + count + 1) * sizeof( FIELDVAR ) );
         int n = 0, j;
         if ( all == NULL ) {
             xfree( list );
@@ -1120,9 +1120,9 @@ void rtf_FIELD( void )
 static void get_put( int is_put )
 {
     int type = (int)POP_L();
-    u32 width = (u32)POP_L(), done, size;
+    unsigned int width = (unsigned int)POP_L(), done, size;
     void *var = POP_A();
-    s32 rec = POP_L();
+    int32_t rec = POP_L();
     QFILE *f = get_file( (int)POP_L() );
     int rc;
 
@@ -1130,7 +1130,7 @@ static void get_put( int is_put )
         vm_error( E_BAD_MODE );
     }
     if ( f->mode == FM_RANDOM ) {
-        u32 recno = rec != NO_RECORD ? (u32)rec : f->bpos;
+        uint32_t recno = rec != NO_RECORD ? (uint32_t)rec : f->bpos;
         if ( rec != NO_RECORD && rec < 1 ) {
             vm_error( E_BAD_RECNUM );
         }
@@ -1159,7 +1159,7 @@ static void get_put( int is_put )
             } else if ( type == TY_STR ) {
                 /* the length in two bytes, then the text */
                 STR *s = *(STR **)var;
-                u16 n = (u16)QS_LEN( s );
+                uint16_t n = (uint16_t)QS_LEN( s );
                 rc = sys_write( f->handle, &n, 2, &done );
                 if ( rc == 0 && n > 0 ) {
                     rc = sys_write( f->handle, QS_TEXT( s ), n, &done );
@@ -1179,11 +1179,11 @@ static void get_put( int is_put )
             f->past_end = done < f->reclen;
             if ( var != NULL ) {
                 if ( type == TY_STR ) {
-                    u16 n;
+                    uint16_t n;
                     STR *old = *(STR **)var;
                     mem_cpy( &n, f->record, 2 );
                     if ( n > f->reclen - 2 ) {
-                        n = (u16)(f->reclen - 2);
+                        n = (uint16_t)(f->reclen - 2);
                     }
                     *(STR **)var = qs_make( (const char *)f->record + 2, n );
                     qs_release( old );
@@ -1203,7 +1203,7 @@ static void get_put( int is_put )
         vm_error( E_BAD_RECNUM );
     }
     if ( rec != NO_RECORD ) {
-        sys_seek( f->handle, (u32)rec - 1 );
+        sys_seek( f->handle, (uint32_t)rec - 1 );
     }
     if ( var == NULL ) {
         vm_error( E_BAD_RECLEN );
@@ -1227,7 +1227,7 @@ static void get_put( int is_put )
     } else {
         rc = sys_read( f->handle, var, width, &done );
         if ( rc == 0 && done < width ) {
-            mem_set( (u8 *)var + done, 0, width - done );
+            mem_set( (uint8_t *)var + done, 0, width - done );
             f->past_end = 1;
         }
     }
@@ -1268,7 +1268,7 @@ void rtf_KILL( void )
 {
     char pattern[PATH_MAX], path[PATH_MAX], *slash;
     FINDREC rec;
-    u32 handle;
+    uint32_t handle;
     int rc, any = 0, len;
 
     path_of( POP_STR(), pattern );
@@ -1312,7 +1312,7 @@ void rtf_KILL( void )
 void rtf_NAME( void )
 {
     char to[PATH_MAX], from[PATH_MAX];
-    u16 attr;
+    uint16_t attr;
     int rc;
 
     path_of( POP_STR(), to );
@@ -1363,7 +1363,7 @@ void rtf_FILES( void )
     STR *s = POP_STR();
     char pattern[PATH_MAX], cwd[PATH_MAX + 3], entry[24], num[16];   /* "X:\" and the 7147h path */
     FINDREC rec;
-    u32 handle, freeb;
+    uint32_t handle, freeb;
     int i, dot;
 
     if ( given ) {
@@ -1424,7 +1424,7 @@ void rtf_FILES( void )
         freeb = 0;
     }
     num[0] = ' ';
-    num_fmt_l( (s32)(freeb > 0x7FFFFFFFUL ? 0x7FFFFFFFUL : freeb), num + 1 );
+    num_fmt_l( (int32_t)(freeb > 0x7FFFFFFFUL ? 0x7FFFFFFFUL : freeb), num + 1 );
     con_write( num, str_len( num ) );
     con_write( " Bytes free", 11 );
     con_newline();
@@ -1442,7 +1442,7 @@ static int  nenv = -1;
 static void env_load( void )
 {
     const char *block = sys_environment();
-    u32 len;
+    unsigned int len;
 
     if ( nenv >= 0 ) {
         return;
@@ -1459,7 +1459,7 @@ static void env_load( void )
 }
 
 /* the entry for "name", by its length up to the '=' */
-static int env_find( const char *name, u32 len )
+static int env_find( const char *name, unsigned int len )
 {
     int i;
 
@@ -1471,9 +1471,9 @@ static int env_find( const char *name, u32 len )
     return -1;
 }
 
-static int has_byte( const char *text, u32 len, int ch )
+static int has_byte( const char *text, unsigned int len, int ch )
 {
-    u32 i;
+    unsigned int i;
 
     for ( i = 0; i < len; i++ ) {
         if ( text[i] == (char)ch ) {
@@ -1486,7 +1486,7 @@ static int has_byte( const char *text, u32 len, int ch )
 void rtf_ENVIRONS( void )
 {
     STR *s = POP_STR();
-    u32 len = QS_LEN( s );
+    unsigned int len = QS_LEN( s );
     int i;
 
     env_load();
@@ -1508,7 +1508,7 @@ void rtf_ENVIRONS( void )
 
 void rtf_ENVIRONN( void )
 {
-    s32 n = POP_L();
+    int32_t n = POP_L();
 
     env_load();
     if ( n < 1 || n > 255 ) {
@@ -1522,7 +1522,7 @@ void rtf_ENVIRONN( void )
 void rtf_ENVSET( void )
 {
     STR *s = POP_STR();
-    u32 len = QS_LEN( s ), eq, name_len;
+    unsigned int len = QS_LEN( s ), eq, name_len;
     int i;
     char *text;
 
@@ -1545,7 +1545,7 @@ void rtf_ENVSET( void )
     if ( eq >= len ) {
         if ( i >= 0 ) {
             qs_release( env[i] );
-            mem_cpy( &env[i], &env[i + 1], (u32)(nenv - i - 1) * sizeof( STR * ) );
+            mem_cpy( &env[i], &env[i + 1], (unsigned int)(nenv - i - 1) * sizeof( STR * ) );
             nenv--;
         }
         qs_release( s );
@@ -1577,7 +1577,7 @@ void rtf_SHELL( void )
     const char *comspec = sys_getenv( "COMSPEC" );
     char tail[260], shell[PATH_MAX];
     char *block = NULL;
-    u32 size = 1;
+    unsigned int size = 1;
     void con_after_shell( void );
 
     /* the child gets the environment as ENVIRON left it, and its COMSPEC */
@@ -1653,7 +1653,8 @@ const char *chain_ext = ".BAS";         /* QBRUN: ".EXE" */
 static void chain_path( STR *s, char *path )
 {
     const char *name = path;
-    u32 at, handle;
+    unsigned int at;
+    uint32_t handle;
     int rc;
 
     path_of( s, path );
@@ -1703,7 +1704,7 @@ void rtf_RUNFILE( void )
 /* RUN n: this program again, started at the line's code */
 void rtf_RUNLINE( void )
 {
-    vm.chain_at = (u32)POP_L() + 1;
+    vm.chain_at = (unsigned int)POP_L() + 1;
     vm.chain_to[0] = 0;
     vm.chain_keep = 0;
     vm.stopped = RUN_CHAIN;

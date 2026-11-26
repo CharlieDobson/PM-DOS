@@ -25,27 +25,27 @@
 #define DEV_LIMIT   0x3E800000L     /* 16000 pixels: nothing is drawn beyond */
 
 typedef struct {
-    s32 top, bot;                   /* sample rows: the first, and one past the last */
-    fx  xpos;                       /* where it crosses the current sample row */
-    fx  step;                       /* ...and how far that moves a row down */
-    s32 dir;                        /* +1 going down, -1 going up */
+    int     top, bot;               /* sample rows: the first, and one past the last */
+    fx      xpos;                   /* where it crosses the current sample row */
+    fx      step;                   /* ...and how far that moves a row down */
+    int     dir;                    /* +1 going down, -1 going up */
 } EDGE;
 
-static EDGE *edges;
-static u32   edge_count, edge_cap;
-static s32   box_top, box_bot;      /* sample rows */
-static fx    box_left, box_right;
+static EDGE        *edges;
+static unsigned int edge_count, edge_cap;
+static int          box_top, box_bot;   /* sample rows */
+static fx           box_left, box_right;
 
-static u32  *active;
-static u32   active_cap;
-static s32  *diffs;                 /* a row's coverage, as differences */
-static u8   *cover;                 /* ...and summed */
-static u32   row_cap;
-static u8   *work_cov;              /* paint_row's own copies */
-static u8   *work_bgr;
-static u32   work_cap;
+static unsigned int *active;
+static unsigned int  active_cap;
+static int          *diffs;             /* a row's coverage, as differences */
+static uint8_t      *cover;             /* ...and summed */
+static unsigned int  row_cap;
+static uint8_t      *work_cov;          /* paint_row's own copies */
+static uint8_t      *work_bgr;
+static unsigned int  work_cap;
 
-static void *grow( void *old, u32 old_bytes, u32 new_bytes )
+static void *grow( void *old, unsigned int old_bytes, unsigned int new_bytes )
 {
     void *mem = xalloc( new_bytes );
 
@@ -112,7 +112,7 @@ void ras_line( fx x0, fx y0, fx x1, fx y1 )
 {
     EDGE *edge;
     fx swap;
-    s32 top, bot, dir = 1;
+    int top, bot, dir = 1;
 
     x0 = LIMIT( x0 );
     y0 = LIMIT( y0 );
@@ -167,7 +167,7 @@ void ras_line( fx x0, fx y0, fx x1, fx y1 )
 static void sort_edges( void )
 {
     EDGE hold;
-    u32 gap, at, back;
+    unsigned int gap, at, back;
 
     for ( gap = 1; gap < edge_count / 3; gap = gap * 3 + 1 ) {
     }
@@ -192,8 +192,8 @@ static void sort_edges( void )
 void ras_scan( int cx0, int cy0, int cx1, int cy1, int evenodd, ROWFN fn, void *ctx )
 {
     EDGE *edge;
-    u32 next = 0, live = 0, at, keep, width, hold;
-    s32 row, sample, wind, run;
+    unsigned int next = 0, live = 0, at, keep, width, hold;
+    int row, sample, wind, run;
     fx left, right, from = 0, to, base, limit;
     int ypos, lo, hi, index, cell;
 
@@ -215,7 +215,7 @@ void ras_scan( int cx0, int cy0, int cx1, int cy1, int evenodd, ROWFN fn, void *
     if ( cx0 >= cx1 || cy0 >= cy1 ) {
         return;
     }
-    width = (u32)(cx1 - cx0);
+    width = (unsigned int)(cx1 - cx0);
     /* xalloc may leave by pdf_fail: what has been freed is forgotten
        before more is asked for, so that the next page finds nothing
        rather than a block that is no longer its own */
@@ -225,15 +225,15 @@ void ras_scan( int cx0, int cy0, int cx1, int cy1, int evenodd, ROWFN fn, void *
         diffs = NULL;
         cover = NULL;
         row_cap = 0;
-        diffs = (s32 *)xalloc( (width + 2 + 256) * sizeof( s32 ) );
-        cover = (u8 *)xalloc( width + 2 + 256 );
+        diffs = (int *)xalloc( (width + 2 + 256) * sizeof( int ) );
+        cover = (uint8_t *)xalloc( width + 2 + 256 );
         row_cap = width + 2 + 256;
     }
     if ( edge_count > active_cap ) {
         xfree( active );
         active = NULL;
         active_cap = 0;
-        active = (u32 *)xalloc( edge_cap * sizeof( u32 ) );
+        active = (unsigned int *)xalloc( edge_cap * sizeof( unsigned int ) );
         active_cap = edge_cap;
     }
     sort_edges();
@@ -244,7 +244,7 @@ void ras_scan( int cx0, int cy0, int cx1, int cy1, int evenodd, ROWFN fn, void *
         lo = (int)width;
         hi = -1;
         for ( sample = 0; sample < SUB_ROWS; sample++ ) {
-            row = (s32)ypos * SUB_ROWS + sample;
+            row = (int)ypos * SUB_ROWS + sample;
             /* the edges that start here, or started above the clip */
             while ( next < edge_count && edges[next].top <= row ) {
                 edge = &edges[next];
@@ -275,7 +275,7 @@ void ras_scan( int cx0, int cy0, int cx1, int cy1, int evenodd, ROWFN fn, void *
                 continue;
             }
             if ( hi < 0 ) {
-                mem_set( diffs, 0, (width + 2) * sizeof( s32 ) );
+                mem_set( diffs, 0, (width + 2) * sizeof( int ) );
             }
             wind = 0;
             for ( at = 0; at < live; at++ ) {
@@ -343,7 +343,7 @@ void ras_scan( int cx0, int cy0, int cx1, int cy1, int evenodd, ROWFN fn, void *
         run = 0;
         for ( index = lo; index <= hi; index++ ) {
             run += diffs[index];
-            cover[index] = (u8)(run > 255 ? 255 : (run < 0 ? 0 : run));
+            cover[index] = (uint8_t)(run > 255 ? 255 : (run < 0 ? 0 : run));
         }
         fn( ctx, ypos, cx0 + lo, cx0 + hi + 1, cover + lo );
     }
@@ -353,15 +353,15 @@ void ras_scan( int cx0, int cy0, int cx1, int cy1, int evenodd, ROWFN fn, void *
 /* painting                                                            */
 /* ------------------------------------------------------------------ */
 
-u32 rgb_grey( u32 rgb )
+uint32_t rgb_grey( uint32_t rgb )
 {
     return (((rgb >> 16) & 0xFF) * 77 + ((rgb >> 8) & 0xFF) * 150 + (rgb & 0xFF) * 29) >> 8;
 }
 
-void canvas_clear( CANVAS *cv, u32 rgb )
+void canvas_clear( CANVAS *cv, uint32_t rgb )
 {
-    u8 *row = cv->pix;
-    u32 count = (u32)cv->width * (u32)cv->height;
+    uint8_t *row = cv->pix;
+    unsigned int count = (unsigned int)cv->width * (unsigned int)cv->height;
 
     if ( cv->bpp == 1 ) {
         mem_set( row, (int)rgb_grey( rgb ), count );
@@ -369,23 +369,23 @@ void canvas_clear( CANVAS *cv, u32 rgb )
         mem_set( row, (int)(rgb & 0xFF), count * 3 );
     } else {
         while ( count-- ) {
-            row[0] = (u8)rgb;
-            row[1] = (u8)(rgb >> 8);
-            row[2] = (u8)(rgb >> 16);
+            row[0] = (uint8_t)rgb;
+            row[1] = (uint8_t)(rgb >> 8);
+            row[2] = (uint8_t)(rgb >> 16);
             row += 3;
         }
     }
 }
 
-static void work_need( u32 count )
+static void work_need( unsigned int count )
 {
     if ( count > work_cap ) {
         xfree( work_cov );
         xfree( work_bgr );
         work_cov = work_bgr = NULL;     /* as in ras_scan: xalloc may not come back */
         work_cap = 0;
-        work_cov = (u8 *)xalloc( count + 256 );
-        work_bgr = (u8 *)xalloc( (count + 256) * 3 );
+        work_cov = (uint8_t *)xalloc( count + 256 );
+        work_bgr = (uint8_t *)xalloc( (count + 256) * 3 );
         work_cap = count + 256;
     }
 }
@@ -407,10 +407,10 @@ static int blend_chan( int mode, int dst, int src )
 
 /* "count" pixels of colour at (x0, ypos): bgr is 3 bytes each; alpha a
    byte each, or NULL for all opaque.  For images and shadings. */
-void paint_pixels( CANVAS *cv, const CLIP *clip, int ypos, int x0, int count, const u8 *bgr,
-                   const u8 *alpha, int blend )
+void paint_pixels( CANVAS *cv, const CLIP *clip, int ypos, int x0, int count, const uint8_t *bgr,
+                   const uint8_t *alpha, int blend )
 {
-    u8 *dst;
+    uint8_t *dst;
     int skip, index, level, red, green, blue, grey;
 
     if ( ypos < clip->y0 || ypos >= clip->y1 ) {
@@ -432,16 +432,16 @@ void paint_pixels( CANVAS *cv, const CLIP *clip, int ypos, int x0, int count, co
         return;
     }
     if ( clip->mask ) {
-        work_need( (u32)count );
+        work_need( (unsigned int)count );
         if ( alpha ) {
-            mem_cpy( work_cov, alpha, (u32)count );
+            mem_cpy( work_cov, alpha, (uint32_t)count );
         } else {
-            mem_set( work_cov, 255, (u32)count );
+            mem_set( work_cov, 255, (uint32_t)count );
         }
         mask_row( clip->mask, ypos, x0, x0 + count, work_cov );
         alpha = work_cov;
     }
-    dst = cv->pix + (u32)ypos * cv->stride + (u32)x0 * (u32)cv->bpp;
+    dst = cv->pix + (uint32_t)ypos * cv->stride + (uint32_t)x0 * (uint32_t)cv->bpp;
     for ( index = 0; index < count; index++, bgr += 3, dst += cv->bpp ) {
         level = alpha ? alpha[index] : 255;
         if ( level == 0 ) {
@@ -455,7 +455,7 @@ void paint_pixels( CANVAS *cv, const CLIP *clip, int ypos, int x0, int count, co
             if ( blend ) {
                 grey = blend_chan( blend, dst[0], grey );
             }
-            dst[0] = (u8)(level == 255 ? grey : dst[0] + (((grey - dst[0]) * level + 128) >> 8));
+            dst[0] = (uint8_t)(level == 255 ? grey : dst[0] + (((grey - dst[0]) * level + 128) >> 8));
         } else {
             if ( blend ) {
                 blue = blend_chan( blend, dst[0], blue );
@@ -463,13 +463,13 @@ void paint_pixels( CANVAS *cv, const CLIP *clip, int ypos, int x0, int count, co
                 red = blend_chan( blend, dst[2], red );
             }
             if ( level == 255 ) {
-                dst[0] = (u8)blue;
-                dst[1] = (u8)green;
-                dst[2] = (u8)red;
+                dst[0] = (uint8_t)blue;
+                dst[1] = (uint8_t)green;
+                dst[2] = (uint8_t)red;
             } else {
-                dst[0] = (u8)(dst[0] + (((blue - dst[0]) * level + 128) >> 8));
-                dst[1] = (u8)(dst[1] + (((green - dst[1]) * level + 128) >> 8));
-                dst[2] = (u8)(dst[2] + (((red - dst[2]) * level + 128) >> 8));
+                dst[0] = (uint8_t)(dst[0] + (((blue - dst[0]) * level + 128) >> 8));
+                dst[1] = (uint8_t)(dst[1] + (((green - dst[1]) * level + 128) >> 8));
+                dst[2] = (uint8_t)(dst[2] + (((red - dst[2]) * level + 128) >> 8));
             }
         }
     }
@@ -478,10 +478,10 @@ void paint_pixels( CANVAS *cv, const CLIP *clip, int ypos, int x0, int count, co
 /* A row of a shape: "cov" is its coverage from x0 to x1, or NULL for
    all of it.  Clipped here, to the rectangle and to the mask. */
 void paint_row( CANVAS *cv, const CLIP *clip, const PAINT *paint, int ypos, int x0, int x1,
-                const u8 *cov )
+                const uint8_t *cov )
 {
     CLIP bare;
-    u8 *dst;
+    uint8_t *dst;
     int count, index, level, alpha = paint->alpha, red, green, blue, grey;
 
     if ( paint->none || alpha == 0 || ypos < clip->y0 || ypos >= clip->y1 ) {
@@ -501,13 +501,13 @@ void paint_row( CANVAS *cv, const CLIP *clip, const PAINT *paint, int ypos, int 
         return;
     }
     if ( clip->mask || paint->row ) {
-        work_need( (u32)count );
+        work_need( (unsigned int)count );
     }
     if ( clip->mask ) {
         if ( cov ) {
-            mem_cpy( work_cov, cov, (u32)count );
+            mem_cpy( work_cov, cov, (uint32_t)count );
         } else {
-            mem_set( work_cov, 255, (u32)count );
+            mem_set( work_cov, 255, (uint32_t)count );
         }
         mask_row( clip->mask, ypos, x0, x1, work_cov );
         cov = work_cov;
@@ -518,14 +518,14 @@ void paint_row( CANVAS *cv, const CLIP *clip, const PAINT *paint, int ypos, int 
         if ( alpha != 255 ) {
             if ( cov != work_cov ) {
                 if ( cov ) {
-                    mem_cpy( work_cov, cov, (u32)count );
+                    mem_cpy( work_cov, cov, (uint32_t)count );
                 } else {
-                    mem_set( work_cov, 255, (u32)count );
+                    mem_set( work_cov, 255, (uint32_t)count );
                 }
                 cov = work_cov;
             }
             for ( index = 0; index < count; index++ ) {
-                work_cov[index] = (u8)((work_cov[index] * alpha + 127) / 255);
+                work_cov[index] = (uint8_t)((work_cov[index] * alpha + 127) / 255);
             }
         }
         /* the mask has been applied: paint_pixels gets a clip without one */
@@ -538,11 +538,11 @@ void paint_row( CANVAS *cv, const CLIP *clip, const PAINT *paint, int ypos, int 
     red = (int)((paint->rgb >> 16) & 0xFF);
     green = (int)((paint->rgb >> 8) & 0xFF);
     blue = (int)(paint->rgb & 0xFF);
-    dst = cv->pix + (u32)ypos * cv->stride + (u32)x0 * (u32)cv->bpp;
+    dst = cv->pix + (uint32_t)ypos * cv->stride + (uint32_t)x0 * (uint32_t)cv->bpp;
     if ( cv->bpp == 1 ) {
         grey = (red * 77 + green * 150 + blue * 29) >> 8;
         if ( cov == NULL && alpha == 255 && paint->blend == BM_NORMAL ) {
-            mem_set( dst, grey, (u32)count );
+            mem_set( dst, grey, (uint32_t)count );
             return;
         }
         for ( index = 0; index < count; index++, dst++ ) {
@@ -555,11 +555,11 @@ void paint_row( CANVAS *cv, const CLIP *clip, const PAINT *paint, int ypos, int 
             }
             if ( paint->blend ) {
                 red = blend_chan( paint->blend, dst[0], grey );
-                dst[0] = (u8)(dst[0] + (((red - dst[0]) * level + 128) >> 8));
+                dst[0] = (uint8_t)(dst[0] + (((red - dst[0]) * level + 128) >> 8));
             } else if ( level == 255 ) {
-                dst[0] = (u8)grey;
+                dst[0] = (uint8_t)grey;
             } else {
-                dst[0] = (u8)(dst[0] + (((grey - dst[0]) * level + 128) >> 8));
+                dst[0] = (uint8_t)(dst[0] + (((grey - dst[0]) * level + 128) >> 8));
             }
         }
         return;
@@ -573,17 +573,17 @@ void paint_row( CANVAS *cv, const CLIP *clip, const PAINT *paint, int ypos, int 
             level = (level * alpha + 127) / 255;
         }
         if ( paint->blend ) {
-            dst[0] = (u8)(dst[0] + (((blend_chan( paint->blend, dst[0], blue ) - dst[0]) * level + 128) >> 8));
-            dst[1] = (u8)(dst[1] + (((blend_chan( paint->blend, dst[1], green ) - dst[1]) * level + 128) >> 8));
-            dst[2] = (u8)(dst[2] + (((blend_chan( paint->blend, dst[2], red ) - dst[2]) * level + 128) >> 8));
+            dst[0] = (uint8_t)(dst[0] + (((blend_chan( paint->blend, dst[0], blue ) - dst[0]) * level + 128) >> 8));
+            dst[1] = (uint8_t)(dst[1] + (((blend_chan( paint->blend, dst[1], green ) - dst[1]) * level + 128) >> 8));
+            dst[2] = (uint8_t)(dst[2] + (((blend_chan( paint->blend, dst[2], red ) - dst[2]) * level + 128) >> 8));
         } else if ( level == 255 ) {
-            dst[0] = (u8)blue;
-            dst[1] = (u8)green;
-            dst[2] = (u8)red;
+            dst[0] = (uint8_t)blue;
+            dst[1] = (uint8_t)green;
+            dst[2] = (uint8_t)red;
         } else {
-            dst[0] = (u8)(dst[0] + (((blue - dst[0]) * level + 128) >> 8));
-            dst[1] = (u8)(dst[1] + (((green - dst[1]) * level + 128) >> 8));
-            dst[2] = (u8)(dst[2] + (((red - dst[2]) * level + 128) >> 8));
+            dst[0] = (uint8_t)(dst[0] + (((blue - dst[0]) * level + 128) >> 8));
+            dst[1] = (uint8_t)(dst[1] + (((green - dst[1]) * level + 128) >> 8));
+            dst[2] = (uint8_t)(dst[2] + (((red - dst[2]) * level + 128) >> 8));
         }
     }
 }
@@ -609,7 +609,7 @@ typedef struct {
     const PAINT *paint;
 } FILLCTX;
 
-static void fill_row( void *ctx, int ypos, int x0, int x1, const u8 *cov )
+static void fill_row( void *ctx, int ypos, int x0, int x1, const uint8_t *cov )
 {
     FILLCTX *fill = (FILLCTX *)ctx;
 
@@ -639,34 +639,34 @@ void ras_fill( CANVAS *cv, const CLIP *clip, int evenodd, const PAINT *paint )
  * a circle a dozen.
  */
 struct MASK {
-    int  x0, y0, x1, y1;
-    u32 *rows;                      /* where each row's runs start; one extra */
-    u8  *runs;
-    u32  used, cap;
-    int  next_row;                  /* the row to be written next */
-    int  refs;
-    const CLIP *under;              /* while it is being made */
+    int           x0, y0, x1, y1;
+    unsigned int *rows;             /* where each row's runs start; one extra */
+    uint8_t      *runs;
+    unsigned int  used, cap;
+    int           next_row;         /* the row to be written next */
+    int           refs;
+    const CLIP   *under;            /* while it is being made */
 };
 
 static void mask_put( MASK *mask, int count, int level )
 {
-    u8 *grown;
+    uint8_t *grown;
 
     while ( count > 0 ) {
         if ( mask->used + 2 > mask->cap ) {
-            grown = (u8 *)pool_big( doc.page_pool, mask->cap * 2 );
+            grown = (uint8_t *)pool_big( doc.page_pool, mask->cap * 2 );
             mem_cpy( grown, mask->runs, mask->used );
             pool_unbig( mask->runs );
             mask->runs = grown;
             mask->cap *= 2;
         }
-        mask->runs[mask->used++] = (u8)(count > 255 ? 255 : count);
-        mask->runs[mask->used++] = (u8)level;
+        mask->runs[mask->used++] = (uint8_t)(count > 255 ? 255 : count);
+        mask->runs[mask->used++] = (uint8_t)level;
         count -= 255;
     }
 }
 
-static void mask_build_row( void *ctx, int ypos, int x0, int x1, const u8 *cov )
+static void mask_build_row( void *ctx, int ypos, int x0, int x1, const uint8_t *cov )
 {
     MASK *mask = (MASK *)ctx;
     int index, start, count = x1 - x0;
@@ -675,8 +675,8 @@ static void mask_build_row( void *ctx, int ypos, int x0, int x1, const u8 *cov )
         mask->rows[mask->next_row++ - mask->y0] = mask->used;
     }
     if ( mask->under->mask ) {
-        work_need( (u32)count );
-        mem_cpy( work_cov, cov, (u32)count );
+        work_need( (unsigned int)count );
+        mem_cpy( work_cov, cov, (uint32_t)count );
         mask_row( mask->under->mask, ypos, x0, x1, work_cov );
         cov = work_cov;
     }
@@ -715,14 +715,14 @@ MASK *mask_make( const CLIP *clip, int evenodd )
         y1 = y0;
     }
     height = y1 - y0;
-    mask = (MASK *)pool_big( doc.page_pool, sizeof( MASK ) + ((u32)height + 2) * sizeof( u32 ) );
+    mask = (MASK *)pool_big( doc.page_pool, sizeof( MASK ) + ((unsigned int)height + 2) * sizeof( unsigned int ) );
     mask->x0 = x0;
     mask->y0 = y0;
     mask->x1 = x1;
     mask->y1 = y1;
-    mask->rows = (u32 *)(mask + 1);
+    mask->rows = (unsigned int *)(mask + 1);
     mask->cap = 1024;
-    mask->runs = (u8 *)pool_big( doc.page_pool, mask->cap );
+    mask->runs = (uint8_t *)pool_big( doc.page_pool, mask->cap );
     mask->next_row = y0;
     mask->under = clip;
     if ( height > 0 ) {
@@ -760,20 +760,20 @@ void mask_box( const MASK *mask, int *x0, int *y0, int *x1, int *y1 )
     *y1 = mask->y1;
 }
 
-void mask_row( const MASK *mask, int ypos, int x0, int x1, u8 *cov )
+void mask_row( const MASK *mask, int ypos, int x0, int x1, uint8_t *cov )
 {
-    const u8 *run, *end;
+    const uint8_t *run, *end;
     int at, stop, from, upto, level;
 
     if ( ypos < mask->y0 || ypos >= mask->y1 || x1 <= mask->x0 || x0 >= mask->x1 ) {
-        mem_set( cov, 0, (u32)(x1 - x0) );
+        mem_set( cov, 0, (uint32_t)(x1 - x0) );
         return;
     }
     run = mask->runs + mask->rows[ypos - mask->y0];
     end = mask->runs + mask->rows[ypos - mask->y0 + 1];
     at = mask->x0;
     if ( x0 < at ) {
-        mem_set( cov, 0, (u32)(at - x0) );
+        mem_set( cov, 0, (uint32_t)(at - x0) );
     }
     for ( ; run < end && at < x1; run += 2 ) {
         level = run[1];
@@ -782,10 +782,10 @@ void mask_row( const MASK *mask, int ypos, int x0, int x1, u8 *cov )
         upto = stop > x1 ? x1 : stop;
         if ( from < upto && level != 255 ) {
             if ( level == 0 ) {
-                mem_set( cov + (from - x0), 0, (u32)(upto - from) );
+                mem_set( cov + (from - x0), 0, (uint32_t)(upto - from) );
             } else {
                 for ( ; from < upto; from++ ) {
-                    cov[from - x0] = (u8)((cov[from - x0] * level + 127) / 255);
+                    cov[from - x0] = (uint8_t)((cov[from - x0] * level + 127) / 255);
                 }
             }
         }
@@ -793,6 +793,6 @@ void mask_row( const MASK *mask, int ypos, int x0, int x1, u8 *cov )
     }
     if ( at < x1 ) {
         from = at < x0 ? x0 : at;
-        mem_set( cov + (from - x0), 0, (u32)(x1 - from) );
+        mem_set( cov + (from - x0), 0, (uint32_t)(x1 - from) );
     }
 }

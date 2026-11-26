@@ -139,7 +139,7 @@ void list_data( LIST *lst, int count, ROWFILL fill, void *user )
     list_free( lst );
     lst->last_click_row = -1;
     if ( count > 0 ) {
-        lst->marks = (u8 *)calloc( (size_t)count, 1 );
+        lst->marks = (uint8_t *)calloc( (size_t)count, 1 );
     }
     if ( lst->sel >= count ) {
         lst->sel = count - 1;
@@ -155,7 +155,7 @@ void list_data( LIST *lst, int count, ROWFILL fill, void *user )
    exist are kept */
 void list_count( LIST *lst, int count )
 {
-    u8 *old = lst->marks;
+    uint8_t *old = lst->marks;
     int old_count = lst->count, at;
 
     if ( count < 0 ) {
@@ -165,7 +165,7 @@ void list_count( LIST *lst, int count )
     lst->marks = NULL;
     lst->mark_count = 0;
     if ( count > 0 ) {
-        lst->marks = (u8 *)calloc( (size_t)count, 1 );
+        lst->marks = (uint8_t *)calloc( (size_t)count, 1 );
         if ( lst->marks && old ) {
             for ( at = 0; at < old_count && at < count; at++ ) {
                 if ( old[at] ) {
@@ -303,7 +303,7 @@ void list_mark_all( LIST *lst )
     }
     lst->mark_count = 0;
     for ( at = 0; at < lst->count; at++ ) {
-        lst->marks[at] = (u8)can_mark( lst, at );
+        lst->marks[at] = (uint8_t)can_mark( lst, at );
         lst->mark_count += lst->marks[at];
     }
 }
@@ -326,7 +326,7 @@ void list_invert( LIST *lst )
     }
     lst->mark_count = 0;
     for ( at = 0; at < lst->count; at++ ) {
-        lst->marks[at] = (u8)(!lst->marks[at] && can_mark( lst, at ));
+        lst->marks[at] = (uint8_t)(!lst->marks[at] && can_mark( lst, at ));
         lst->mark_count += lst->marks[at];
     }
 }
@@ -466,7 +466,7 @@ void list_toggle_node( LIST *lst, int row )
 int list_event( LIST *lst, const EVENT *ev )
 {
     int vis = interior_rows( lst ), first, row, idx, track, local, top_in, nw, m0, dbl;
-    u32 now;
+    uint32_t now;
 
     if ( ev->kind == EV_MOUSE ) {
         if ( !ev->press ) {

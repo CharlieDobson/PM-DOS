@@ -21,15 +21,15 @@ static int x_lower( int ch ) { return ( ch >= 'A' && ch <= 'Z' ) ? ch + 32 : ch;
 
 /* A cursor over a DER region. */
 typedef struct {
-    const unsigned char *p;
-    const unsigned char *end;
+    const uint8_t *p;
+    const uint8_t *end;
 } der;
 
 /* Read one TLV at the cursor: return its tag, and point (val,vlen) at the
    contents; advance the cursor past the contents.  Returns 0 / -1. */
-static int der_tlv(der *d, int *tag, const unsigned char **val, int *vlen)
+static int der_tlv(der *d, int *tag, const uint8_t **val, int *vlen)
 {
-    const unsigned char *p = d->p;
+    const uint8_t *p = d->p;
     int len, nlen;
 
     if (p + 2 > d->end)
@@ -59,7 +59,7 @@ static int der_tlv(der *d, int *tag, const unsigned char **val, int *vlen)
 static int der_into(der *d, int wantTag, der *inner)
 {
     int tag, vl;
-    const unsigned char *v;
+    const uint8_t *v;
     if (der_tlv(d, &tag, &v, &vl) != 0 || tag != wantTag)
         return -1;
     inner->p = v;
@@ -68,10 +68,10 @@ static int der_into(der *d, int wantTag, der *inner)
 }
 
 /* Copy an INTEGER's magnitude (stripping a single leading 0x00) into buf. */
-static int der_int(der *d, unsigned char *buf, int *buflen)
+static int der_int(der *d, uint8_t *buf, int *buflen)
 {
     int tag, vl;
-    const unsigned char *v;
+    const uint8_t *v;
     if (der_tlv(d, &tag, &v, &vl) != 0 || tag != 0x02)      /* INTEGER */
         return X509_ERR_PARSE;
     while (vl > 1 && v[0] == 0x00) { v++; vl--; }            /* strip sign pad */
@@ -86,12 +86,12 @@ static int der_int(der *d, unsigned char *buf, int *buflen)
     return X509_OK;
 }
 
-int x509_extract_rsa_pubkey(const unsigned char *cert, int certlen,
-                            unsigned char *n, int *nlen,
-                            unsigned char *e, int *elen)
+int x509_extract_rsa_pubkey(const uint8_t *cert, int certlen,
+                            uint8_t *n, int *nlen,
+                            uint8_t *e, int *elen)
 {
     der top, tbs, spki, rsapk, rsa;
-    const unsigned char *v, *mark;
+    const uint8_t *v, *mark;
     int tag, vl, i, rc;
 
     top.p = cert; top.end = cert + certlen;
@@ -133,32 +133,32 @@ int x509_extract_rsa_pubkey(const unsigned char *cert, int certlen,
 /* ==========================================================================
  * Signature verification, validity, hostname
  * ========================================================================== */
-static const unsigned char OID_SHA256RSA[11] =
+static const uint8_t OID_SHA256RSA[11] =
     { 0x06,0x09,0x2a,0x86,0x48,0x86,0xf7,0x0d,0x01,0x01,0x0b };
 
 /* OID contents (the bytes after tag+len), for matching der_tlv values. */
-static const unsigned char OIDB_SHA256RSA[9] =
+static const uint8_t OIDB_SHA256RSA[9] =
     { 0x2a,0x86,0x48,0x86,0xf7,0x0d,0x01,0x01,0x0b };
-static const unsigned char OIDB_ECDSA_SHA256[8] =
+static const uint8_t OIDB_ECDSA_SHA256[8] =
     { 0x2a,0x86,0x48,0xce,0x3d,0x04,0x03,0x02 };
-static const unsigned char OIDB_ECDSA_SHA384[8] =
+static const uint8_t OIDB_ECDSA_SHA384[8] =
     { 0x2a,0x86,0x48,0xce,0x3d,0x04,0x03,0x03 };
-static const unsigned char OIDB_RSA_PSS[9] =
+static const uint8_t OIDB_RSA_PSS[9] =
     { 0x2a,0x86,0x48,0x86,0xf7,0x0d,0x01,0x01,0x0a };
-static const unsigned char OIDB_RSA_ENC[9] =
+static const uint8_t OIDB_RSA_ENC[9] =
     { 0x2a,0x86,0x48,0x86,0xf7,0x0d,0x01,0x01,0x01 };
-static const unsigned char OIDB_EC_PUBKEY[7] =
+static const uint8_t OIDB_EC_PUBKEY[7] =
     { 0x2a,0x86,0x48,0xce,0x3d,0x02,0x01 };
-static const unsigned char OIDB_SECP256R1[8] =
+static const uint8_t OIDB_SECP256R1[8] =
     { 0x2a,0x86,0x48,0xce,0x3d,0x03,0x01,0x07 };
-static const unsigned char OIDB_SECP384R1[5] =
+static const uint8_t OIDB_SECP384R1[5] =
     { 0x2b,0x81,0x04,0x00,0x22 };
 
 /* Extract the subject public key (RSA {n,e} or EC-P256 point). */
-int x509_get_pubkey(const unsigned char *cert, int certlen, x509_pubkey *out)
+int x509_get_pubkey(const uint8_t *cert, int certlen, x509_pubkey *out)
 {
     der top, tbs, spki, alg, rsapk, rsa;
-    const unsigned char *v, *mark, *oid;
+    const uint8_t *v, *mark, *oid;
     int tag, vl, i, rc, oidlen;
 
     top.p = cert; top.end = cert + certlen;
@@ -186,7 +186,7 @@ int x509_get_pubkey(const unsigned char *cert, int certlen, x509_pubkey *out)
         return X509_OK;
     }
     if (oidlen == 7 && memcmp(oid, OIDB_EC_PUBKEY, 7) == 0) {
-        const unsigned char *curve;
+        const uint8_t *curve;
         int curvelen, ptlen = vl - 1;                      /* strip BIT STRING pad */
         if (der_tlv(&alg, &tag, &curve, &curvelen) != 0 || tag != 0x06)
             return X509_ERR_PARSE;                          /* namedCurve OID */
@@ -207,7 +207,7 @@ int x509_get_pubkey(const unsigned char *cert, int certlen, x509_pubkey *out)
 }
 
 /* Cursor over the children of the outer Certificate SEQUENCE. */
-static int cert_body(const unsigned char *cert, int certlen, der *body)
+static int cert_body(const uint8_t *cert, int certlen, der *body)
 {
     der top;
     top.p = cert; top.end = cert + certlen;
@@ -216,10 +216,10 @@ static int cert_body(const unsigned char *cert, int certlen, der *body)
 
 /* Cursor over the children of tbsCertificate, positioned past the optional
    [0] version field. */
-static int tbs_after_version(const unsigned char *cert, int certlen, der *tbs)
+static int tbs_after_version(const uint8_t *cert, int certlen, der *tbs)
 {
     der body;
-    const unsigned char *mark, *v;
+    const uint8_t *mark, *v;
     int tag, vl;
     if (cert_body(cert, certlen, &body) != 0) return -1;
     if (der_into(&body, 0x30, tbs) != 0) return -1;     /* into tbsCertificate */
@@ -229,14 +229,14 @@ static int tbs_after_version(const unsigned char *cert, int certlen, der *tbs)
     return 0;
 }
 
-int x509_verify_signed_by(const unsigned char *cert, int certlen,
-                          const unsigned char *n, int nlen,
-                          const unsigned char *e, int elen)
+int x509_verify_signed_by(const uint8_t *cert, int certlen,
+                          const uint8_t *n, int nlen,
+                          const uint8_t *e, int elen)
 {
     der body;
-    const unsigned char *tbs, *v, *sig;
+    const uint8_t *tbs, *v, *sig;
     int tag, vl, tbslen, siglen;
-    unsigned char hash[32];
+    uint8_t hash[32];
     rsa_pubkey k;
 
     if (cert_body(cert, certlen, &body) != 0) return X509_ERR_PARSE;
@@ -268,9 +268,9 @@ int x509_verify_signed_by(const unsigned char *cert, int certlen,
 #define SIGK_ECDSA  3                   /* ECDSA, DER Ecdsa-Sig-Value */
 
 /* The two INTEGERs of a DER Ecdsa-Sig-Value, sign padding stripped. */
-static int ecdsa_der(const unsigned char *sig, int siglen,
-                     const unsigned char **rp, int *rl,
-                     const unsigned char **sp, int *sl)
+static int ecdsa_der(const uint8_t *sig, int siglen,
+                     const uint8_t **rp, int *rl,
+                     const uint8_t **sp, int *sl)
 {
     der sd, inner;
     int tag;
@@ -287,8 +287,8 @@ static int ecdsa_der(const unsigned char *sig, int siglen,
    with 'key'.  The kind must suit the key: RSA for PKCS1 and PSS, an EC
    point for ECDSA.  X509_OK or X509_ERR_*. */
 static int verify_hashed(const x509_pubkey *key, int kind,
-                         const unsigned char *hash, int hlen,
-                         const unsigned char *sig, int siglen)
+                         const uint8_t *hash, int hlen,
+                         const uint8_t *sig, int siglen)
 {
     if ( kind == SIGK_PKCS1 || kind == SIGK_PSS ) {
         rsa_pubkey k;
@@ -303,7 +303,7 @@ static int verify_hashed(const x509_pubkey *key, int kind,
         return bad ? X509_ERR_SIG : X509_OK;
     }
     if ( kind == SIGK_ECDSA ) {
-        const unsigned char *rp, *sp;
+        const uint8_t *rp, *sp;
         int rl, sl;
         if ( ecdsa_der( sig, siglen, &rp, &rl, &sp, &sl ) != 0 ) return X509_ERR_PARSE;
         if ( key->type == X509_KEY_EC384 ) {
@@ -323,8 +323,8 @@ static int verify_hashed(const x509_pubkey *key, int kind,
 }
 
 /* Hash a message with SHA-256, -384 or -512 by digest length. */
-static void hash_by_len(int hlen, const unsigned char *msg, int msglen,
-                        unsigned char *out)
+static void hash_by_len(int hlen, const uint8_t *msg, int msglen,
+                        uint8_t *out)
 {
     if ( hlen == 64 ) {
         sha512( msg, (unsigned int)msglen, out );
@@ -335,13 +335,13 @@ static void hash_by_len(int hlen, const unsigned char *msg, int msglen,
     }
 }
 
-int x509_verify_signed(const unsigned char *cert, int certlen,
+int x509_verify_signed(const uint8_t *cert, int certlen,
                        const x509_pubkey *issuer)
 {
     der body, alg;
-    const unsigned char *tbs, *v, *sig, *oid;
+    const uint8_t *tbs, *v, *sig, *oid;
     int tag, vl, tbslen, siglen, oidlen, kind, hlen;
-    unsigned char hash[64];
+    uint8_t hash[64];
 
     if (cert_body(cert, certlen, &body) != 0) return X509_ERR_PARSE;
 
@@ -378,10 +378,10 @@ int x509_verify_signed(const unsigned char *cert, int certlen,
 }
 
 int x509_verify_scheme(const x509_pubkey *key, int scheme,
-                       const unsigned char *msg, int msglen,
-                       const unsigned char *sig, int siglen)
+                       const uint8_t *msg, int msglen,
+                       const uint8_t *sig, int siglen)
 {
-    unsigned char hash[64];
+    uint8_t hash[64];
     int kind, hlen;
 
     switch ( scheme ) {
@@ -400,7 +400,7 @@ int x509_verify_scheme(const x509_pubkey *key, int scheme,
 }
 
 /* Normalize a UTCTime/GeneralizedTime into "YYYYMMDDHHMMSS". */
-static int norm_time(int tag, const unsigned char *v, int vl, char *out)
+static int norm_time(int tag, const uint8_t *v, int vl, char *out)
 {
     if (tag == 0x17) {                          /* UTCTime YYMMDDHHMMSSZ */
         int yy;
@@ -420,11 +420,11 @@ static int norm_time(int tag, const unsigned char *v, int vl, char *out)
     return 0;
 }
 
-int x509_get_validity(const unsigned char *cert, int certlen,
+int x509_get_validity(const uint8_t *cert, int certlen,
                       char notBefore[15], char notAfter[15])
 {
     der tbs, val;
-    const unsigned char *v;
+    const uint8_t *v;
     int tag, vl, i;
 
     if (tbs_after_version(cert, certlen, &tbs) != 0) return X509_ERR_PARSE;
@@ -438,7 +438,7 @@ int x509_get_validity(const unsigned char *cert, int certlen,
     return X509_OK;
 }
 
-int x509_check_validity(const unsigned char *cert, int certlen, const char *now)
+int x509_check_validity(const uint8_t *cert, int certlen, const char *now)
 {
     char nb[15], na[15];
     if (x509_get_validity(cert, certlen, nb, na) != X509_OK) return X509_ERR_PARSE;
@@ -465,7 +465,7 @@ static int host_match(const unsigned char *pat, int patlen, const char *host)
     }
     return ci_eq(pat, patlen, host);
 }
-static int parse_ipv4(const char *s, unsigned char ip[4])
+static int parse_ipv4(const char *s, uint8_t ip[4])
 {
     int part[4], n = 0, val = 0, dig = 0;
     const char *p = s;
@@ -479,25 +479,24 @@ static int parse_ipv4(const char *s, unsigned char ip[4])
         p++;
     }
     if (n != 4) return 0;
-    ip[0]=(unsigned char)part[0]; ip[1]=(unsigned char)part[1];
-    ip[2]=(unsigned char)part[2]; ip[3]=(unsigned char)part[3];
+    ip[0]=(uint8_t)part[0]; ip[1]=(uint8_t)part[1];
+    ip[2]=(uint8_t)part[2]; ip[3]=(uint8_t)part[3];
     return 1;
 }
 
-/* Cursor over subjectAltName GeneralNames, if present. */
-static int get_san(const unsigned char *cert, int certlen, der *san)
+/* Cursor over the value of extension 2.5.29.id, if the cert has it. */
+static int find_ext(const uint8_t *cert, int certlen, int id, der *value)
 {
     der tbs, exts, ev;
-    const unsigned char *v, *mark;
+    const uint8_t *v;
     int tag, vl, i;
 
     if (tbs_after_version(cert, certlen, &tbs) != 0) return -1;
     for (i = 0; i < 5; i++)                     /* serial,sigAlg,issuer,validity,subject */
         if (der_tlv(&tbs, &tag, &v, &vl) != 0) return -1;
     if (der_tlv(&tbs, &tag, &v, &vl) != 0 || tag != 0x30) return -1;  /* SPKI */
-    mark = tbs.p;
     if (der_tlv(&tbs, &tag, &v, &vl) != 0) return -1;
-    if (tag != 0xA3) { tbs.p = mark; return -1; }   /* no extensions */
+    if (tag != 0xA3) return -1;                 /* no extensions */
 
     ev.p = v; ev.end = v + vl;                  /* [3] content */
     if (der_into(&ev, 0x30, &exts) != 0) return -1; /* Extensions SEQ */
@@ -505,23 +504,83 @@ static int get_san(const unsigned char *cert, int certlen, der *san)
         der ext;
         if (der_into(&exts, 0x30, &ext) != 0) return -1;
         if (der_tlv(&ext, &tag, &v, &vl) != 0) return -1;           /* extnID */
-        if (tag == 0x06 && vl == 3 && v[0]==0x55 && v[1]==0x1d && v[2]==0x11) {
+        if (tag == 0x06 && vl == 3 && v[0]==0x55 && v[1]==0x1d && v[2]==id) {
             if (der_tlv(&ext, &tag, &v, &vl) != 0) return -1;
             if (tag == 0x01)                    /* skip optional critical BOOL */
                 if (der_tlv(&ext, &tag, &v, &vl) != 0) return -1;
             if (tag != 0x04) return -1;         /* extnValue OCTET STRING */
-            ev.p = v; ev.end = v + vl;
-            return der_into(&ev, 0x30, san);    /* GeneralNames SEQ */
+            value->p = v; value->end = v + vl;
+            return 0;
         }
     }
     return -1;
 }
 
+/* Cursor over subjectAltName GeneralNames, if present. */
+static int get_san(const uint8_t *cert, int certlen, der *san)
+{
+    der ev;
+    if (find_ext(cert, certlen, 0x11, &ev) != 0) return -1;
+    return der_into(&ev, 0x30, san);            /* GeneralNames SEQ */
+}
+
+int x509_ca_limit( const uint8_t *cert, int certlen, int *pathlen )
+{
+    der ev, bc;
+    const uint8_t *v;
+    int tag, vl, i, count;
+
+    *pathlen = -1;
+    if ( find_ext( cert, certlen, 0x13, &ev ) != 0 ) return X509_ERR_SIG;
+    if ( der_into( &ev, 0x30, &bc ) != 0 ) return X509_ERR_PARSE;
+
+    /* cA is DEFAULT FALSE, so a certificate without it is not a CA */
+    if ( der_tlv( &bc, &tag, &v, &vl ) != 0 || tag != 0x01 || vl != 1 || v[0] == 0 ) {
+        return X509_ERR_SIG;
+    }
+    if ( bc.p < bc.end ) {
+        if ( der_tlv( &bc, &tag, &v, &vl ) != 0 || tag != 0x02 || vl < 1 || vl > 2 ||
+             ( v[0] & 0x80 ) ) {
+            return X509_ERR_PARSE;
+        }
+        count = 0;
+        for ( i = 0; i < vl; i++ ) count = ( count << 8 ) | v[i];
+        *pathlen = count;
+    }
+    return X509_OK;
+}
+
+/* The contents of a Name in tbsCertificate: field 2 is the issuer, 4 the
+   subject.  0, or -1 if the certificate cannot be walked. */
+static int cert_name( const uint8_t *cert, int certlen, int field,
+                      const uint8_t **name, int *namelen )
+{
+    der tbs;
+    int tag, i;
+
+    if ( tbs_after_version( cert, certlen, &tbs ) != 0 ) return -1;
+    for ( i = 0; i <= field; i++ ) {
+        if ( der_tlv( &tbs, &tag, name, namelen ) != 0 ) return -1;
+    }
+    return ( tag == 0x30 ) ? 0 : -1;
+}
+
+int x509_issuer_is( const uint8_t *cert, int certlen,
+                    const uint8_t *ca, int calen )
+{
+    const uint8_t *issuer, *subject;
+    int issuerlen, subjectlen;
+
+    if ( cert_name( cert, certlen, 2, &issuer, &issuerlen ) != 0 ) return 0;
+    if ( cert_name( ca, calen, 4, &subject, &subjectlen ) != 0 ) return 0;
+    return issuerlen == subjectlen && memcmp( issuer, subject, (size_t)issuerlen ) == 0;
+}
+
 /* CN from the subject Name. */
-static int get_cn(const unsigned char *cert, int certlen, char *out, int outcap)
+static int get_cn(const uint8_t *cert, int certlen, char *out, int outcap)
 {
     der tbs, subj;
-    const unsigned char *v;
+    const uint8_t *v;
     int tag, vl, i;
 
     if (tbs_after_version(cert, certlen, &tbs) != 0) return -1;
@@ -546,16 +605,16 @@ static int get_cn(const unsigned char *cert, int certlen, char *out, int outcap)
     return -1;
 }
 
-int x509_check_host(const unsigned char *cert, int certlen, const char *host)
+int x509_check_host(const uint8_t *cert, int certlen, const char *host)
 {
     der san;
-    unsigned char ip[4];
+    uint8_t ip[4];
     int isip = parse_ipv4(host, ip);
     char cn[256];
 
     if (get_san(cert, certlen, &san) == 0) {    /* SAN present: authoritative */
         int tag, vl;
-        const unsigned char *v;
+        const uint8_t *v;
         while (san.p < san.end) {
             if (der_tlv(&san, &tag, &v, &vl) != 0) break;
             if (tag == 0x82 && !isip && host_match(v, vl, host)) return X509_OK;

@@ -211,7 +211,7 @@ static void menu_draw_pull( int menu, int sel )
     int count = menu_items( menu, &items );
     int width = menu_width( items, count );
     int left = menu_left( menu, width ), index, row;
-    u8 attr, hot;
+    uint8_t attr, hot;
 
     scr_box( 1, left, count + 2, left + width - 1, pal.menu );
     for ( index = 0; index < count; index++ ) {
@@ -554,7 +554,7 @@ void dlg_draw( DLG *dlg )
     int index, row, col, len;
     CTL *ctl;
     const char *text, *end;
-    u8 attr;
+    uint8_t attr;
 
     scr_box( dlg->top, dlg->left, dlg->top + dlg->rows - 1, dlg->left + dlg->cols - 1, pal.dlg );
     scr_shadow( dlg->top, dlg->left, dlg->top + dlg->rows - 1, dlg->left + dlg->cols - 1 );
@@ -735,7 +735,7 @@ static int edit_key( DLG *dlg, CTL *ctl, int key )
             ctl->buf[0] = 0;
             ctl->caret = 0;
         } else if ( ctl->caret > 0 ) {
-            mem_cpy( ctl->buf + ctl->caret - 1, ctl->buf + ctl->caret, (u32)(len - ctl->caret + 1) );
+            mem_cpy( ctl->buf + ctl->caret - 1, ctl->buf + ctl->caret, (unsigned int)(len - ctl->caret + 1) );
             ctl->caret--;
         }
         ctl->fresh = 0;
@@ -748,7 +748,7 @@ static int edit_key( DLG *dlg, CTL *ctl, int key )
             ctl->buf[0] = 0;
             ctl->caret = 0;
         } else if ( ctl->caret < len ) {
-            mem_cpy( ctl->buf + ctl->caret, ctl->buf + ctl->caret + 1, (u32)(len - ctl->caret) );
+            mem_cpy( ctl->buf + ctl->caret, ctl->buf + ctl->caret + 1, (unsigned int)(len - ctl->caret) );
         }
         ctl->fresh = 0;
         if ( dlg->changed ) {
@@ -764,7 +764,7 @@ static int edit_key( DLG *dlg, CTL *ctl, int key )
         }
         ctl->fresh = 0;
         if ( len < ctl->max - 1 ) {
-            mem_cpy( ctl->buf + ctl->caret + 1, ctl->buf + ctl->caret, (u32)(len - ctl->caret + 1) );
+            mem_cpy( ctl->buf + ctl->caret + 1, ctl->buf + ctl->caret, (unsigned int)(len - ctl->caret + 1) );
             ctl->buf[ctl->caret++] = (char)key;
         }
         if ( dlg->changed ) {

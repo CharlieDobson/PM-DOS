@@ -8,21 +8,21 @@
  * malloc: the driver's memory comes from NDS_ALLOC, and the SMB2 engine
  * keeps its buffers in its own fixed-size struct.
  */
-typedef unsigned u_size;
-typedef unsigned char u8;
+#include <stddef.h>
+#include <stdint.h>
 
-void *memcpy( void *to, const void *from, u_size len )
+void *memcpy( void *to, const void *from, size_t len )
 {
-    u8 *dst = (u8 *)to;
-    const u8 *src = (const u8 *)from;
+    uint8_t *dst = (uint8_t *)to;
+    const uint8_t *src = (const uint8_t *)from;
     while ( len-- ) *dst++ = *src++;
     return to;
 }
 
-void *memmove( void *to, const void *from, u_size len )
+void *memmove( void *to, const void *from, size_t len )
 {
-    u8 *dst = (u8 *)to;
-    const u8 *src = (const u8 *)from;
+    uint8_t *dst = (uint8_t *)to;
+    const uint8_t *src = (const uint8_t *)from;
     if ( dst < src ) {
         while ( len-- ) *dst++ = *src++;
     } else {
@@ -32,16 +32,16 @@ void *memmove( void *to, const void *from, u_size len )
     return to;
 }
 
-void *memset( void *to, int value, u_size len )
+void *memset( void *to, int value, size_t len )
 {
-    u8 *dst = (u8 *)to;
-    while ( len-- ) *dst++ = (u8)value;
+    uint8_t *dst = (uint8_t *)to;
+    while ( len-- ) *dst++ = (uint8_t)value;
     return to;
 }
 
-int memcmp( const void *aptr, const void *bptr, u_size len )
+int memcmp( const void *aptr, const void *bptr, size_t len )
 {
-    const u8 *aa = (const u8 *)aptr, *bb = (const u8 *)bptr;
+    const uint8_t *aa = (const uint8_t *)aptr, *bb = (const uint8_t *)bptr;
     while ( len-- ) {
         if ( *aa != *bb ) return (int)*aa - (int)*bb;
         aa++; bb++;

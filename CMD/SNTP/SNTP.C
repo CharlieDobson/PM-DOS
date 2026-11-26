@@ -17,11 +17,11 @@
 #define NTP_PORT   123
 #define NTP_EPOCH  2208988800UL         /* seconds from 1900 to 1970 */
 
-static void set_clock( u32 unix_secs )
+static void set_clock( uint32_t unix_secs )
 {
-    REGS regs;
-    u32  days, sod, hour, minute, second;
-    u32  z, era, doe, yoe, year, doy, mp, day, month;
+    REGS     regs;
+    uint32_t days, sod, hour, minute, second;
+    uint32_t z, era, doe, yoe, year, doy, mp, day, month;
 
     days = unix_secs / 86400UL;
     sod  = unix_secs % 86400UL;
@@ -63,9 +63,9 @@ static void set_clock( u32 unix_secs )
     sl_puts( "\r\n" );
 }
 
-static void show_only( u32 unix_secs )
+static void show_only( uint32_t unix_secs )
 {
-    u32 sod = unix_secs % 86400UL;
+    uint32_t sod = unix_secs % 86400UL;
     sl_puts( "the server's time is " );
     sl_putu( unix_secs );
     sl_puts( " (" );
@@ -77,12 +77,12 @@ static void show_only( u32 unix_secs )
 
 void __cdecl dos_entry( void )
 {
-    char **argv;
-    int argc, i, show = 0, handle, got;
-    long zone = 0;
+    char   **argv;
+    int      argc, i, show = 0, handle, got;
+    long     zone = 0;
     const char *server = "pool.ntp.org";
-    u32 ip, ntp_secs, unix_secs;
-    u8  packet[48];
+    uint32_t ip, ntp_secs, unix_secs;
+    uint8_t  packet[48];
 
     argc = sl_args( &argv );
     for ( i = 0; i < argc; i++ ) {
@@ -125,11 +125,11 @@ void __cdecl dos_entry( void )
     if ( got < 48 ) { sl_puts( "SNTP: no answer from " ); sl_puts( server ); sl_puts( "\r\n" ); sl_flush(); return; }
 
     /* the transmit timestamp: seconds since 1900 at offset 40, big-endian */
-    ntp_secs = ( (u32)packet[40] << 24 ) | ( (u32)packet[41] << 16 ) |
-               ( (u32)packet[42] << 8 ) | packet[43];
+    ntp_secs = ( (uint32_t)packet[40] << 24 ) | ( (uint32_t)packet[41] << 16 ) |
+               ( (uint32_t)packet[42] << 8 ) | packet[43];
     if ( ntp_secs < NTP_EPOCH ) { sl_puts( "SNTP: the server's time is out of range.\r\n" ); sl_flush(); return; }
     unix_secs = ntp_secs - NTP_EPOCH;
-    unix_secs = (u32)( (long)unix_secs + zone * 3600L );
+    unix_secs = (uint32_t)( (long)unix_secs + zone * 3600L );
 
     if ( show ) show_only( unix_secs );
     else set_clock( unix_secs );

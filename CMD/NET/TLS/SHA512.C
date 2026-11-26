@@ -6,37 +6,34 @@
 #include "sha512.h"
 #include <string.h>
 
-#ifndef NST_U32_DEFINED
-#define NST_U32_DEFINED
-typedef unsigned int u32;
-#endif
+#include <stdint.h>
 
-typedef struct { u32 hi, lo; } u64;
+typedef struct { uint32_t hi, lo; } pair64;
 
-static u64 mk(u32 hi, u32 lo)          { u64 r; r.hi = hi; r.lo = lo; return r; }
-static u64 add64(u64 a, u64 b)         { u64 r; u32 lo = a.lo + b.lo;
-                                         r.lo = lo; r.hi = a.hi + b.hi + (lo < a.lo ? 1u : 0u);
-                                         return r; }
-static u64 xor64(u64 a, u64 b)         { return mk(a.hi ^ b.hi, a.lo ^ b.lo); }
-static u64 and64(u64 a, u64 b)         { return mk(a.hi & b.hi, a.lo & b.lo); }
-static u64 not64(u64 a)                { return mk(~a.hi, ~a.lo); }
-static u64 or64(u64 a, u64 b)          { return mk(a.hi | b.hi, a.lo | b.lo); }
+static pair64 mk(uint32_t hi, uint32_t lo) { pair64 r; r.hi = hi; r.lo = lo; return r; }
+static pair64 add64(pair64 a, pair64 b)    { pair64 r; uint32_t lo = a.lo + b.lo;
+                                             r.lo = lo; r.hi = a.hi + b.hi + (lo < a.lo ? 1u : 0u);
+                                             return r; }
+static pair64 xor64(pair64 a, pair64 b)    { return mk(a.hi ^ b.hi, a.lo ^ b.lo); }
+static pair64 and64(pair64 a, pair64 b)    { return mk(a.hi & b.hi, a.lo & b.lo); }
+static pair64 not64(pair64 a)              { return mk(~a.hi, ~a.lo); }
+static pair64 or64(pair64 a, pair64 b)     { return mk(a.hi | b.hi, a.lo | b.lo); }
 
-static u64 shr64(u64 x, int n)
+static pair64 shr64(pair64 x, int n)
 {
     if (n == 0)      return x;
     if (n < 32)      return mk(x.hi >> n, (x.lo >> n) | (x.hi << (32 - n)));
     if (n < 64)      return mk(0u, x.hi >> (n - 32));
     return mk(0u, 0u);
 }
-static u64 shl64(u64 x, int n)
+static pair64 shl64(pair64 x, int n)
 {
     if (n == 0)      return x;
     if (n < 32)      return mk((x.hi << n) | (x.lo >> (32 - n)), x.lo << n);
     if (n < 64)      return mk(x.lo << (n - 32), 0u);
     return mk(0u, 0u);
 }
-static u64 rotr64(u64 x, int n)        { return or64(shr64(x, n), shl64(x, 64 - n)); }
+static pair64 rotr64(pair64 x, int n)      { return or64(shr64(x, n), shl64(x, 64 - n)); }
 
 #define Ch(x,y,z)   xor64(and64(x,y), and64(not64(x),z))
 #define Maj(x,y,z)  xor64(xor64(and64(x,y), and64(x,z)), and64(y,z))
@@ -45,7 +42,7 @@ static u64 rotr64(u64 x, int n)        { return or64(shr64(x, n), shl64(x, 64 - 
 #define SSIG0(x)    xor64(xor64(rotr64(x,1),  rotr64(x,8)),  shr64(x,7))
 #define SSIG1(x)    xor64(xor64(rotr64(x,19), rotr64(x,61)), shr64(x,6))
 
-static const u32 K[80][2] = {
+static const uint32_t K[80][2] = {
  {0x428a2f98,0xd728ae22},{0x71374491,0x23ef65cd},{0xb5c0fbcf,0xec4d3b2f},{0xe9b5dba5,0x8189dbbc},
  {0x3956c25b,0xf348b538},{0x59f111f1,0xb605d019},{0x923f82a4,0xaf194f9b},{0xab1c5ed5,0xda6d8118},
  {0xd807aa98,0xa3030242},{0x12835b01,0x45706fbe},{0x243185be,0x4ee4b28c},{0x550c7dc3,0xd5ffb4e2},
@@ -69,18 +66,18 @@ static const u32 K[80][2] = {
 };
 
 /* SHA-384 initial hash value. */
-static const u32 H0[8][2] = {
+static const uint32_t H0[8][2] = {
  {0xcbbb9d5d,0xc1059ed8},{0x629a292a,0x367cd507},{0x9159015a,0x3070dd17},{0x152fecd8,0xf70e5939},
  {0x67332667,0xffc00b31},{0x8eb44a87,0x68581511},{0xdb0c2e0d,0x64f98fa7},{0x47b5481d,0xbefa4fa4}
 };
 
-static void compress(u64 H[8], const unsigned char *p)
+static void compress(pair64 H[8], const uint8_t *p)
 {
-    u64 w[80], a, b, c, d, e, f, g, h, t1, t2;
+    pair64 w[80], a, b, c, d, e, f, g, h, t1, t2;
     int i;
     for (i = 0; i < 16; i++) {
-        w[i].hi = ((u32)p[0]<<24)|((u32)p[1]<<16)|((u32)p[2]<<8)|(u32)p[3];
-        w[i].lo = ((u32)p[4]<<24)|((u32)p[5]<<16)|((u32)p[6]<<8)|(u32)p[7];
+        w[i].hi = ((uint32_t)p[0]<<24)|((uint32_t)p[1]<<16)|((uint32_t)p[2]<<8)|(uint32_t)p[3];
+        w[i].lo = ((uint32_t)p[4]<<24)|((uint32_t)p[5]<<16)|((uint32_t)p[6]<<8)|(uint32_t)p[7];
         p += 8;
     }
     for (i = 16; i < 80; i++)
@@ -99,11 +96,11 @@ static void compress(u64 H[8], const unsigned char *p)
     H[4]=add64(H[4],e); H[5]=add64(H[5],f); H[6]=add64(H[6],g); H[7]=add64(H[7],h);
 }
 
-void sha384(const void *data, unsigned int len, unsigned char out[48])
+void sha384(const void *data, unsigned int len, uint8_t out[48])
 {
-    u64 H[8];
-    unsigned char block[128];
-    const unsigned char *p = (const unsigned char *)data;
+    pair64 H[8];
+    uint8_t block[128];
+    const uint8_t *p = (const uint8_t *)data;
     unsigned int i, rem = len;
 
     for (i = 0; i < 8; i++) H[i] = mk(H0[i][0], H0[i][1]);
@@ -120,37 +117,37 @@ void sha384(const void *data, unsigned int len, unsigned char out[48])
     /* 128-bit big-endian bit length; our inputs are small so only the low
        ~35 bits are ever nonzero (len < 2^29 bytes). */
     {
-        u32 bits_lo = len << 3;
-        u32 bits_hi = len >> 29;            /* carry of the <<3 into bits 32.. */
-        block[120] = (unsigned char)(bits_hi >> 24);
-        block[121] = (unsigned char)(bits_hi >> 16);
-        block[122] = (unsigned char)(bits_hi >> 8);
-        block[123] = (unsigned char)(bits_hi);
-        block[124] = (unsigned char)(bits_lo >> 24);
-        block[125] = (unsigned char)(bits_lo >> 16);
-        block[126] = (unsigned char)(bits_lo >> 8);
-        block[127] = (unsigned char)(bits_lo);
+        uint32_t bits_lo = len << 3;
+        uint32_t bits_hi = len >> 29;            /* carry of the <<3 into bits 32.. */
+        block[120] = (uint8_t)(bits_hi >> 24);
+        block[121] = (uint8_t)(bits_hi >> 16);
+        block[122] = (uint8_t)(bits_hi >> 8);
+        block[123] = (uint8_t)(bits_hi);
+        block[124] = (uint8_t)(bits_lo >> 24);
+        block[125] = (uint8_t)(bits_lo >> 16);
+        block[126] = (uint8_t)(bits_lo >> 8);
+        block[127] = (uint8_t)(bits_lo);
     }
     compress(H, block);
 
     for (i = 0; i < 6; i++) {               /* SHA-384 = first 6 of 8 words */
-        out[i*8+0] = (unsigned char)(H[i].hi >> 24);
-        out[i*8+1] = (unsigned char)(H[i].hi >> 16);
-        out[i*8+2] = (unsigned char)(H[i].hi >> 8);
-        out[i*8+3] = (unsigned char)(H[i].hi);
-        out[i*8+4] = (unsigned char)(H[i].lo >> 24);
-        out[i*8+5] = (unsigned char)(H[i].lo >> 16);
-        out[i*8+6] = (unsigned char)(H[i].lo >> 8);
-        out[i*8+7] = (unsigned char)(H[i].lo);
+        out[i*8+0] = (uint8_t)(H[i].hi >> 24);
+        out[i*8+1] = (uint8_t)(H[i].hi >> 16);
+        out[i*8+2] = (uint8_t)(H[i].hi >> 8);
+        out[i*8+3] = (uint8_t)(H[i].hi);
+        out[i*8+4] = (uint8_t)(H[i].lo >> 24);
+        out[i*8+5] = (uint8_t)(H[i].lo >> 16);
+        out[i*8+6] = (uint8_t)(H[i].lo >> 8);
+        out[i*8+7] = (uint8_t)(H[i].lo);
     }
 }
 
 /* ==========================================================================
  * Streaming SHA-384 (same compression function; state kept as hi/lo pairs).
  * ========================================================================== */
-static void ctx_compress(SHA384_CTX *c, const unsigned char *p)
+static void ctx_compress(SHA384_CTX *c, const uint8_t *p)
 {
-    u64 H[8];
+    pair64 H[8];
     int i;
     for (i = 0; i < 8; i++) H[i] = mk(c->h[2*i], c->h[2*i+1]);
     compress(H, p);
@@ -166,8 +163,8 @@ void sha384_init(SHA384_CTX *c)
 
 void sha384_update(SHA384_CTX *c, const void *data, unsigned int len)
 {
-    const unsigned char *p = (const unsigned char *)data;
-    unsigned int old = c->lenlo;
+    const uint8_t *p = (const uint8_t *)data;
+    uint32_t old = c->lenlo;
     c->lenlo += len;
     if (c->lenlo < old) c->lenhi++;             /* 64-bit byte counter */
     while (len > 0) {
@@ -183,12 +180,12 @@ void sha384_update(SHA384_CTX *c, const void *data, unsigned int len)
     }
 }
 
-void sha384_final(SHA384_CTX *c, unsigned char out[48])
+void sha384_final(SHA384_CTX *c, uint8_t out[48])
 {
-    unsigned char block[128];
+    uint8_t block[128];
     unsigned int rem = c->nbuf, i;
-    u32 bitlo = c->lenlo << 3;
-    u32 bitmid = (c->lenhi << 3) | (c->lenlo >> 29);   /* low 64 bits of bitlen */
+    uint32_t bitlo = c->lenlo << 3;
+    uint32_t bitmid = (c->lenhi << 3) | (c->lenlo >> 29);   /* low 64 bits of bitlen */
 
     memset(block, 0, sizeof(block));
     memcpy(block, c->buf, rem);
@@ -197,32 +194,32 @@ void sha384_final(SHA384_CTX *c, unsigned char out[48])
         ctx_compress(c, block);
         memset(block, 0, sizeof(block));
     }
-    block[120] = (unsigned char)(bitmid >> 24);
-    block[121] = (unsigned char)(bitmid >> 16);
-    block[122] = (unsigned char)(bitmid >> 8);
-    block[123] = (unsigned char)(bitmid);
-    block[124] = (unsigned char)(bitlo >> 24);
-    block[125] = (unsigned char)(bitlo >> 16);
-    block[126] = (unsigned char)(bitlo >> 8);
-    block[127] = (unsigned char)(bitlo);
+    block[120] = (uint8_t)(bitmid >> 24);
+    block[121] = (uint8_t)(bitmid >> 16);
+    block[122] = (uint8_t)(bitmid >> 8);
+    block[123] = (uint8_t)(bitmid);
+    block[124] = (uint8_t)(bitlo >> 24);
+    block[125] = (uint8_t)(bitlo >> 16);
+    block[126] = (uint8_t)(bitlo >> 8);
+    block[127] = (uint8_t)(bitlo);
     ctx_compress(c, block);
 
     for (i = 0; i < 6; i++) {                   /* first 6 of 8 words */
-        out[i*8+0] = (unsigned char)(c->h[2*i]   >> 24);
-        out[i*8+1] = (unsigned char)(c->h[2*i]   >> 16);
-        out[i*8+2] = (unsigned char)(c->h[2*i]   >> 8);
-        out[i*8+3] = (unsigned char)(c->h[2*i]);
-        out[i*8+4] = (unsigned char)(c->h[2*i+1] >> 24);
-        out[i*8+5] = (unsigned char)(c->h[2*i+1] >> 16);
-        out[i*8+6] = (unsigned char)(c->h[2*i+1] >> 8);
-        out[i*8+7] = (unsigned char)(c->h[2*i+1]);
+        out[i*8+0] = (uint8_t)(c->h[2*i]   >> 24);
+        out[i*8+1] = (uint8_t)(c->h[2*i]   >> 16);
+        out[i*8+2] = (uint8_t)(c->h[2*i]   >> 8);
+        out[i*8+3] = (uint8_t)(c->h[2*i]);
+        out[i*8+4] = (uint8_t)(c->h[2*i+1] >> 24);
+        out[i*8+5] = (uint8_t)(c->h[2*i+1] >> 16);
+        out[i*8+6] = (uint8_t)(c->h[2*i+1] >> 8);
+        out[i*8+7] = (uint8_t)(c->h[2*i+1]);
     }
 }
 
-void hmac_sha384(const unsigned char *key, int keylen,
-                 const unsigned char *msg, int msglen, unsigned char out[48])
+void hmac_sha384(const uint8_t *key, int keylen,
+                 const uint8_t *msg, int msglen, uint8_t out[48])
 {
-    unsigned char k0[128], pad[128], inner[48], kh[48];
+    uint8_t k0[128], pad[128], inner[48], kh[48];
     SHA384_CTX c;
     int i;
 
@@ -230,13 +227,13 @@ void hmac_sha384(const unsigned char *key, int keylen,
     memset(k0, 0, 128);
     memcpy(k0, key, keylen);
 
-    for (i = 0; i < 128; i++) pad[i] = (unsigned char)(k0[i] ^ 0x36);
+    for (i = 0; i < 128; i++) pad[i] = (uint8_t)(k0[i] ^ 0x36);
     sha384_init(&c);
     sha384_update(&c, pad, 128);
     sha384_update(&c, msg, msglen);
     sha384_final(&c, inner);
 
-    for (i = 0; i < 128; i++) pad[i] = (unsigned char)(k0[i] ^ 0x5c);
+    for (i = 0; i < 128; i++) pad[i] = (uint8_t)(k0[i] ^ 0x5c);
     sha384_init(&c);
     sha384_update(&c, pad, 128);
     sha384_update(&c, inner, 48);
@@ -249,7 +246,7 @@ void hmac_sha384(const unsigned char *key, int keylen,
  * and the full 8-word (64-byte) output.  SMB 3.1.1's pre-auth integrity hash
  * is SHA-512.
  * ------------------------------------------------------------------------ */
-static const u32 H0_512[8][2] = {
+static const uint32_t H0_512[8][2] = {
  {0x6a09e667,0xf3bcc908},{0xbb67ae85,0x84caa73b},{0x3c6ef372,0xfe94f82b},{0xa54ff53a,0x5f1d36f1},
  {0x510e527f,0xade682d1},{0x9b05688c,0x2b3e6c1f},{0x1f83d9ab,0xfb41bd6b},{0x5be0cd19,0x137e2179}
 };
@@ -261,12 +258,12 @@ void sha512_init(SHA384_CTX *c)
     c->nbuf = 0; c->lenlo = 0; c->lenhi = 0;
 }
 
-void sha512_final(SHA384_CTX *c, unsigned char out[64])
+void sha512_final(SHA384_CTX *c, uint8_t out[64])
 {
-    unsigned char block[128];
+    uint8_t block[128];
     unsigned int rem = c->nbuf, i;
-    u32 bitlo = c->lenlo << 3;
-    u32 bitmid = (c->lenhi << 3) | (c->lenlo >> 29);
+    uint32_t bitlo = c->lenlo << 3;
+    uint32_t bitmid = (c->lenhi << 3) | (c->lenlo >> 29);
 
     memset(block, 0, sizeof(block));
     memcpy(block, c->buf, rem);
@@ -275,29 +272,29 @@ void sha512_final(SHA384_CTX *c, unsigned char out[64])
         ctx_compress(c, block);
         memset(block, 0, sizeof(block));
     }
-    block[120] = (unsigned char)(bitmid >> 24);
-    block[121] = (unsigned char)(bitmid >> 16);
-    block[122] = (unsigned char)(bitmid >> 8);
-    block[123] = (unsigned char)(bitmid);
-    block[124] = (unsigned char)(bitlo >> 24);
-    block[125] = (unsigned char)(bitlo >> 16);
-    block[126] = (unsigned char)(bitlo >> 8);
-    block[127] = (unsigned char)(bitlo);
+    block[120] = (uint8_t)(bitmid >> 24);
+    block[121] = (uint8_t)(bitmid >> 16);
+    block[122] = (uint8_t)(bitmid >> 8);
+    block[123] = (uint8_t)(bitmid);
+    block[124] = (uint8_t)(bitlo >> 24);
+    block[125] = (uint8_t)(bitlo >> 16);
+    block[126] = (uint8_t)(bitlo >> 8);
+    block[127] = (uint8_t)(bitlo);
     ctx_compress(c, block);
 
     for (i = 0; i < 8; i++) {
-        out[i*8+0] = (unsigned char)(c->h[2*i]   >> 24);
-        out[i*8+1] = (unsigned char)(c->h[2*i]   >> 16);
-        out[i*8+2] = (unsigned char)(c->h[2*i]   >> 8);
-        out[i*8+3] = (unsigned char)(c->h[2*i]);
-        out[i*8+4] = (unsigned char)(c->h[2*i+1] >> 24);
-        out[i*8+5] = (unsigned char)(c->h[2*i+1] >> 16);
-        out[i*8+6] = (unsigned char)(c->h[2*i+1] >> 8);
-        out[i*8+7] = (unsigned char)(c->h[2*i+1]);
+        out[i*8+0] = (uint8_t)(c->h[2*i]   >> 24);
+        out[i*8+1] = (uint8_t)(c->h[2*i]   >> 16);
+        out[i*8+2] = (uint8_t)(c->h[2*i]   >> 8);
+        out[i*8+3] = (uint8_t)(c->h[2*i]);
+        out[i*8+4] = (uint8_t)(c->h[2*i+1] >> 24);
+        out[i*8+5] = (uint8_t)(c->h[2*i+1] >> 16);
+        out[i*8+6] = (uint8_t)(c->h[2*i+1] >> 8);
+        out[i*8+7] = (uint8_t)(c->h[2*i+1]);
     }
 }
 
-void sha512(const void *data, unsigned int len, unsigned char out[64])
+void sha512(const void *data, unsigned int len, uint8_t out[64])
 {
     SHA384_CTX c;
     sha512_init(&c);

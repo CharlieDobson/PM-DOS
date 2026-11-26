@@ -96,7 +96,7 @@ static int action( const char *value, int now, const char *allowed )
 
 static void set_environment( const char *name, const char *value )
 {
-    u32 num = 0;
+    unsigned int num = 0;
     const char *cur;
 
     if ( word_is( name, "Display" ) ) {
@@ -109,7 +109,7 @@ static void set_environment( const char *name, const char *value )
         opt.timeout = on_off( value, opt.timeout );
     } else if ( word_is( name, "NumPasses" ) ) {
         for ( cur = value; *cur >= '0' && *cur <= '9' && num < 65536ul; cur++ ) {
-            num = num * 10 + (u32)(*cur - '0');
+            num = num * 10 + (unsigned int)(*cur - '0');
         }
         if ( *cur == 0 && num >= 1 && num <= 65535ul ) {
             opt.passes = num;
@@ -209,7 +209,8 @@ static void ini_line( char *line, int *section )
 
 static int ini_read( const char *path )
 {
-    u32 handle, size, done, pos, start;
+    uint32_t handle, size;
+    unsigned int done, pos, start;
     char *data, line[200];
     int section = 0;
 
@@ -248,7 +249,7 @@ int ini_load( void )
 {
     const char *path = sys_getenv( "PATH" );
     char trial[PATH_MAX];
-    u32 len, end;
+    unsigned int len, end;
 
     if ( ini_read( "SCANDISK.INI" ) ) {
         return 1;

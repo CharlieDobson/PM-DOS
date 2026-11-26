@@ -41,12 +41,12 @@ enum { ID_PAUSE = 1, ID_INFO, ID_EXIT, ID_FIX, ID_SKIP, ID_SAVE, ID_DELETE, ID_Y
 #define MARGIN          5       /* the column everything starts in */
 #define BAR_COL         20      /* ...and the progress bar */
 
-static int  view = V_BLANK;
-static int  cur_phase = -1;
-static int  paused;
-static u32  bar_done, bar_total;
-static BTNROW run_row;          /* under the checks */
-static BTNROW surf_row;         /* in the Surface Scan box */
+static int          view = V_BLANK;
+static int          cur_phase = -1;
+static int          paused;
+static unsigned int bar_done, bar_total;
+static BTNROW       run_row;    /* under the checks */
+static BTNROW       surf_row;   /* in the Surface Scan box */
 
 static const BTN run_btns[] = { { "&Pause", ID_PAUSE }, { "&More Info", ID_INFO },
                                 { "E&xit", ID_EXIT } };
@@ -67,17 +67,19 @@ static char   busy_head[80];
 
 #define MAP_MAX     (100 * 56)
 
-static u8   blocks[MAP_MAX];    /* MB_* */
-static u32  nblocks, per_block, now_block;
-static int  box_top, box_left, box_bottom, box_right, box_split;
-static int  map_cols, map_rows; /* in cells */
-static int  block_rows;         /* rows of blocks: two to a cell in graphics */
+static uint8_t      blocks[MAP_MAX];    /* MB_* */
+static unsigned int nblocks, now_block;
+static uint32_t     per_block;
+static int          box_top, box_left, box_bottom, box_right, box_split;
+static int          map_cols, map_rows; /* in cells */
+static int          block_rows;         /* rows of blocks: two to a cell in graphics */
 
 /* The box is most of the screen: the map on the left of a line down
    it, the counts on the right. */
 static void map_build( void )
 {
-    u32 clus, index, used, val, room;
+    uint32_t     clus, used, val;
+    unsigned int index, room;
     int bad;
 
     box_top = 2;
@@ -94,7 +96,7 @@ static void map_build( void )
     if ( block_rows > 56 ) {
         block_rows = 56;
     }
-    room = (u32)(map_cols * block_rows);
+    room = (unsigned int)(map_cols * block_rows);
     per_block = (vol.nclus + room - 1) / room;
     if ( per_block == 0 ) {
         per_block = 1;
@@ -113,11 +115,11 @@ static void map_build( void )
                 used++;
             }
         }
-        blocks[index] = (u8)((bad ? MB_BAD : 0) | (used == 0 ? 0 : used >= per_block ? MB_ALL
+        blocks[index] = (uint8_t)((bad ? MB_BAD : 0) | (used == 0 ? 0 : used >= per_block ? MB_ALL
                              : MB_SOME));
         /* the last block may be a short one */
         if ( used && index == nblocks - 1 && used >= vol.nclus - index * per_block ) {
-            blocks[index] = (u8)((blocks[index] & MB_BAD) | MB_ALL);
+            blocks[index] = (uint8_t)((blocks[index] & MB_BAD) | MB_ALL);
         }
     }
 }
@@ -129,7 +131,7 @@ static void map_build( void )
 static int percent( void )
 {
     static const int from[PH_COUNT + 1] = { 0, 2, 10, 60, 100, 100 };
-    u32 done = bar_done, total = bar_total, part;
+    unsigned int done = bar_done, total = bar_total, part;
 
     if ( view == V_SURFACE ) {
         done = st.surf_examined;
@@ -150,7 +152,7 @@ static int percent( void )
     if ( view != V_CHECKS ) {
         return (int)part;
     }
-    return from[cur_phase] + (int)((u32)(from[cur_phase + 1] - from[cur_phase]) * part / 100);
+    return from[cur_phase] + (int)((unsigned int)(from[cur_phase + 1] - from[cur_phase]) * part / 100);
 }
 
 /* the title and the two rules */
@@ -173,7 +175,7 @@ static void paint_status( void )
     int row = scr_rows - 2, wide = scr_cols - MARGIN - BAR_COL, pct = percent(), fill, col, part;
     char text[24];
 
-    sfmt( text, sizeof( text ), "%u%% complete", (u32)pct );
+    sfmt( text, sizeof( text ), "%u%% complete", (unsigned int)pct );
     scr_put( row, MARGIN + 1, text, pal.bright );
     if ( !gfx_on ) {
         fill = wide * pct / 100;
@@ -230,10 +232,10 @@ static void paint_checks( int with_buttons )
 }
 
 /* one block of the map as a text screen shows it */
-static void text_block( int row, int col, u32 block )
+static void text_block( int row, int col, unsigned int block )
 {
-    u8 state = blocks[block];
-    u8 attr = (state & MB_BAD) ? pal.map_bad : (state & MB_READ) ? pal.map_read : pal.map;
+    uint8_t state = blocks[block];
+    uint8_t attr = (state & MB_BAD) ? pal.map_bad : (state & MB_READ) ? pal.map_read : pal.map;
 
     scr_ch( row, col, (state & MB_BAD) ? 'B' : (state & MB_ALL) ? 0xDB : (state & MB_SOME) ? 0xB1
             : 0xB0, attr );
@@ -262,7 +264,7 @@ static void paint_surface( void )
     static const char title[] = "Surface Scan";
     char line[80];
     int row, col, side = box_split + 2, index, flags, upper_now, lower_now;
-    u32 upper, lower;
+    unsigned int upper, lower;
 
     paint_checks( 0 );
     ui_frame( box_top, box_left, box_bottom, box_right, gfx_on ? title : "" );
@@ -283,21 +285,21 @@ static void paint_surface( void )
     for ( row = 0; row < map_rows; row++ ) {
         for ( col = 0; col < map_cols; col++ ) {
             if ( !gfx_on ) {
-                upper = (u32)(row * map_cols + col);
+                upper = (unsigned int)(row * map_cols + col);
                 if ( upper < nblocks ) {
                     text_block( box_top + 1 + row, box_left + 2 + col, upper );
                 }
                 continue;
             }
-            upper = (u32)(row * 2 * map_cols + col);
-            lower = upper + (u32)map_cols;
+            upper = (unsigned int)(row * 2 * map_cols + col);
+            lower = upper + (unsigned int)map_cols;
             upper_now = upper == now_block && st.surface == 2;
             lower_now = lower == now_block && st.surface == 2;
             flags = (upper < nblocks ? MC_UPPER : 0) | (lower < nblocks ? MC_LOWER : 0)
                     | (upper_now ? MC_UPPER_NOW : 0) | (lower_now ? MC_LOWER_NOW : 0);
             scr_pic( box_top + 1 + row, box_left + 2 + col, PIC_MAP,
                      (upper < nblocks ? blocks[upper] : 0) | ((lower < nblocks ? blocks[lower] : 0) << 4),
-                     (u8)flags );
+                     (uint8_t)flags );
         }
     }
 
@@ -445,12 +447,12 @@ static void run_keys( void )
    a twentieth of a second or so has gone by since the last time.  The
    gap between looks is counted in calls, and the count is made longer
    or shorter as the clock shows the calls coming faster or slower. */
-static u32 pace_calls, pace_every = 1;
+static unsigned int pace_calls, pace_every = 1;
 
 static void pace( void )
 {
-    static u32 last;
-    u32 now;
+    static uint32_t last;
+    uint32_t now;
 
     if ( ++pace_calls < pace_every ) {
         return;
@@ -470,7 +472,7 @@ static void pace( void )
     run_keys();
 }
 
-void fe_progress( u32 done, u32 total )
+void fe_progress( unsigned int done, unsigned int total )
 {
     if ( total ) {
         bar_done = done;
@@ -697,9 +699,9 @@ void fe_surface_begin( void )
     show();
 }
 
-void fe_surface_at( u32 clus, u32 count, int bad )
+void fe_surface_at( uint32_t clus, uint32_t count, int bad )
 {
-    u32 block = (clus - 2) / per_block, last = (clus - 2 + count - 1) / per_block;
+    unsigned int block = (clus - 2) / per_block, last = (clus - 2 + count - 1) / per_block;
 
     if ( block >= nblocks ) {
         return;
@@ -774,15 +776,15 @@ void fe_drive_end( int more )
     summary_screen( more ? on : out );
 }
 
-void fe_all_end( int drives, u32 found, u32 fixed )
+void fe_all_end( int drives, unsigned int found, unsigned int fixed )
 {
     static const BTN btn[] = { { "&View Log", ID_LOG }, { "E&xit", ID_NEXT } };
 
     tx_free( &sum_text );
     if ( found == 0 ) {
-        tx_addf( &sum_text, "ScanDisk checked %u drives and found no problems.", (u32)drives );
+        tx_addf( &sum_text, "ScanDisk checked %u drives and found no problems.", (unsigned int)drives );
     } else {
-        tx_addf( &sum_text, "ScanDisk checked %u drives and found %,u problem%s.", (u32)drives,
+        tx_addf( &sum_text, "ScanDisk checked %u drives and found %,u problem%s.", (unsigned int)drives,
                  found, found == 1 ? "" : "s" );
         tx_addf( &sum_text, "%,u %s repaired.", fixed, fixed == 1 ? "was" : "were" );
     }

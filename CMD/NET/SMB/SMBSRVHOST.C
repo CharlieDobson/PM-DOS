@@ -14,8 +14,8 @@
 #include <io.h>
 
 static SOCKET g_sock;
-static int io_send( void *ctx, const unsigned char *buf, int len ) { (void)ctx; return send( g_sock, (const char *)buf, len, 0 ); }
-static int io_recv( void *ctx, unsigned char *buf, int len ) { (void)ctx; return recv( g_sock, (char *)buf, len, 0 ); }
+static int io_send( void *ctx, const uint8_t *buf, int len ) { (void)ctx; return send( g_sock, (const char *)buf, len, 0 ); }
+static int io_recv( void *ctx, uint8_t *buf, int len ) { (void)ctx; return recv( g_sock, (char *)buf, len, 0 ); }
 
 typedef struct { char root[260]; FILE *fh[16]; } hostfs;
 
@@ -43,7 +43,7 @@ static int joinpath( hostfs *fs, const char *rel, char *out )
     return 1;
 }
 
-static int h_open( void *ctx, const char *path, int write, int dispo, unsigned long *size, int *action )
+static int h_open( void *ctx, const char *path, int write, int dispo, uint32_t *size, int *action )
 {
     hostfs *fs = (hostfs *)ctx;
     char full[520];
@@ -62,19 +62,19 @@ static int h_open( void *ctx, const char *path, int write, int dispo, unsigned l
     if ( f == (FILE *)0 ) return -1;
 
     fseek( f, 0, SEEK_END );
-    *size = (unsigned long)ftell( f );
+    *size = (uint32_t)ftell( f );
     fseek( f, 0, SEEK_SET );
     fs->fh[slot] = f;
     return slot;
 }
-static int h_read( void *ctx, int h, unsigned long off, void *buf, int len )
+static int h_read( void *ctx, int h, uint32_t off, void *buf, int len )
 {
     hostfs *fs = (hostfs *)ctx;
     if ( h < 0 || h >= 16 || !fs->fh[h] ) return -1;
     fseek( fs->fh[h], (long)off, SEEK_SET );
     return (int)fread( buf, 1, (size_t)len, fs->fh[h] );
 }
-static int h_write( void *ctx, int h, unsigned long off, const void *buf, int len )
+static int h_write( void *ctx, int h, uint32_t off, const void *buf, int len )
 {
     hostfs *fs = (hostfs *)ctx;
     if ( h < 0 || h >= 16 || !fs->fh[h] ) return -1;
@@ -185,7 +185,7 @@ static int h_settime( void *ctx, int h, unsigned int date, unsigned int time )
     if ( !DosDateTimeToFileTime( (WORD)date, (WORD)time, &lft ) || !LocalFileTimeToFileTime( &lft, &ft ) ) return -1;
     return SetFileTime( (HANDLE)_get_osfhandle( _fileno( fs->fh[h] ) ), (FILETIME *)0, (FILETIME *)0, &ft ) ? 0 : -1;
 }
-static int h_disk( void *ctx, unsigned long *units, unsigned long *avail, unsigned long *unitsize )
+static int h_disk( void *ctx, uint32_t *units, uint32_t *avail, uint32_t *unitsize )
 {
     DWORD spc, bps, freec, totalc;
     if ( !GetDiskFreeSpaceA( ( (hostfs *)ctx )->root[0] ? ( (hostfs *)ctx )->root : (const char *)0, &spc, &bps, &freec, &totalc ) ) {

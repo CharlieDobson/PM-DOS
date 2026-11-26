@@ -82,7 +82,7 @@ int   mouse_present( void );
 /* character, a line along one of its edges - and those bits a text    */
 /* screen never sees.                                                  */
 /* ------------------------------------------------------------------ */
-typedef u32 CELL;
+typedef uint32_t CELL;
 
 #define CF_PIC_SHIFT    16              /* bits 16-21: a PIC_*, and the
                                            character is what it needs told */
@@ -113,26 +113,26 @@ enum {
 enum { BK_UNUSED, BK_USED, BK_DONE, BK_FIXED, BK_BAD, BK_READ, BK_WRITE, BK_NONE };
 
 typedef struct {
-    u8 desk;            /* the screen, the map, the two boxes under it */
-    u8 desk_title;      /* a box's title, a heading */
-    u8 done;            /* a block that has been optimized */
-    u8 bar;             /* the top line */
-    u8 bar_hot;         /* a letter that chooses, there and in the menu */
-    u8 bar_sel;         /* the menu's name while it is open, an item lit */
-    u8 hint;            /* the bottom line */
-    u8 hint_rule;       /* the stroke between what it says and the name */
-    u8 dlg;             /* a box */
-    u8 dlg_title;       /* its title, the name of a group in it */
-    u8 dlg_caption;     /* graphics: the bar its title is in */
-    u8 dlg_focus;       /* the round button the keys are on */
-    u8 err;             /* a box that says something is wrong */
-    u8 err_title;
-    u8 btn;             /* a button */
-    u8 btn_default;     /* the one Enter presses */
-    u8 btn_focus;       /* ...when the keys are on it */
-    u8 list_sel;        /* the line of a list that is chosen */
-    u8 track;           /* a scroll bar */
-    u8 shadow;
+    uint8_t desk;         /* the screen, the map, the two boxes under it */
+    uint8_t desk_title;   /* a box's title, a heading */
+    uint8_t done;         /* a block that has been optimized */
+    uint8_t bar;          /* the top line */
+    uint8_t bar_hot;      /* a letter that chooses, there and in the menu */
+    uint8_t bar_sel;      /* the menu's name while it is open, an item lit */
+    uint8_t hint;         /* the bottom line */
+    uint8_t hint_rule;    /* the stroke between what it says and the name */
+    uint8_t dlg;          /* a box */
+    uint8_t dlg_title;    /* its title, the name of a group in it */
+    uint8_t dlg_caption;  /* graphics: the bar its title is in */
+    uint8_t dlg_focus;    /* the round button the keys are on */
+    uint8_t err;          /* a box that says something is wrong */
+    uint8_t err_title;
+    uint8_t btn;          /* a button */
+    uint8_t btn_default;  /* the one Enter presses */
+    uint8_t btn_focus;    /* ...when the keys are on it */
+    uint8_t list_sel;     /* the line of a list that is chosen */
+    uint8_t track;        /* a scroll bar */
+    uint8_t shadow;
 } PALETTE;
 
 extern PALETTE pal;
@@ -141,24 +141,24 @@ extern int gfx_on;              /* the screen is a graphics one */
 
 void  scr_init( int graphics );
 void  scr_done( void );
-void  scr_ch( int row, int col, int ch, u8 attr );
-void  scr_putn( int row, int col, const char *text, int len, u8 attr );
-void  scr_put( int row, int col, const char *text, u8 attr );
-void  scr_center( int row, int left, int width, const char *text, u8 attr );
-void  scr_hot( int row, int col, const char *text, u8 attr, u8 hot_attr );
+void  scr_ch( int row, int col, int ch, uint8_t attr );
+void  scr_putn( int row, int col, const char *text, int len, uint8_t attr );
+void  scr_put( int row, int col, const char *text, uint8_t attr );
+void  scr_center( int row, int left, int width, const char *text, uint8_t attr );
+void  scr_hot( int row, int col, const char *text, uint8_t attr, uint8_t hot_attr );
 int   scr_hotlen( const char *text );
 int   scr_hotkey( const char *text );
-void  scr_fill( int row, int col, int len, int ch, u8 attr );
-void  scr_recolor( int row, int col, int len, u8 attr );
-void  scr_box( int top, int left, int bottom, int right, u8 attr, int twice );
+void  scr_fill( int row, int col, int len, int ch, uint8_t attr );
+void  scr_recolor( int row, int col, int len, uint8_t attr );
+void  scr_box( int top, int left, int bottom, int right, uint8_t attr, int twice );
 void  scr_shadow( int top, int left, int bottom, int right );
 void  scr_cursor( int row, int col, int kind );
 void  scr_flush( void );
 void  scr_dump( void );             /* test mode */
 void  scr_shot( void );             /* test mode */
 /* graphics only; a text screen is left as it is */
-void  scr_flag( int row, int col, int len, u32 flags );
-void  scr_pic( int row, int col, int pic, int data, u8 attr );
+void  scr_flag( int row, int col, int len, uint32_t flags );
+void  scr_pic( int row, int col, int pic, int data, uint8_t attr );
 
 /* ------------------------------------------------------------------ */
 /* GFX.C - the screen in a graphics mode                               */
@@ -209,19 +209,19 @@ typedef struct {
 /* a row, or a column, of buttons, where they were last drawn */
 typedef struct {
     const BTN *btn;
-    int count;
-    int width;                  /* of each */
-    int chosen;                 /* the one Enter presses */
-    int focus;                  /* 1 = the keys are on the buttons */
-    int armed;                  /* the one the mouse went down on, or -1 */
-    int row[BTN_MAX], col[BTN_MAX];
-    u8  ground;                 /* the colours they stand on */
+    int     count;
+    int     width;              /* of each */
+    int     chosen;             /* the one Enter presses */
+    int     focus;              /* 1 = the keys are on the buttons */
+    int     armed;              /* the one the mouse went down on, or -1 */
+    int     row[BTN_MAX], col[BTN_MAX];
+    uint8_t ground;             /* the colours they stand on */
 } BTNROW;
 
 void  btn_set( BTNROW *row, const BTN *btn, int count, int width, int chosen );
-void  btn_draw_at( BTNROW *row, int index, int at_row, int col, u8 ground );
+void  btn_draw_at( BTNROW *row, int index, int at_row, int col, uint8_t ground );
 /* all of them along one row, centred in "width" cells from "left" */
-void  btn_draw( BTNROW *row, int at_row, int left, int width, int gap, u8 ground );
+void  btn_draw( BTNROW *row, int at_row, int left, int width, int gap, uint8_t ground );
 int   btn_key( BTNROW *row, int key );  /* an id when one is chosen, else 0 */
 
 /* a group of round buttons, one of them chosen */
@@ -236,7 +236,7 @@ typedef struct {
     int wide;                   /* cells the mouse may press: both */
 } RADIO;
 
-void  radio_draw( const RADIO *grp, int focus, u8 attr );
+void  radio_draw( const RADIO *grp, int focus, uint8_t attr );
 int   radio_key( RADIO *grp, int key );     /* 1 = it took the key */
 int   radio_mouse( RADIO *grp );            /* 1 = the mouse chose one */
 

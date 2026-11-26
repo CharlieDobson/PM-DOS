@@ -78,75 +78,75 @@ enum { ST_LR, ST_MS, ST_IS };
 
 /* one granule of one channel, as the side information gives it */
 typedef struct {
-    u16  part23;                        /* part2_3_length: its bits */
-    u16  big_values;                    /* pairs, at most 288 */
-    u16  gain;                          /* global_gain */
-    u16  sfc;                           /* scalefac_compress */
-    u8   block_type;                    /* 0 normal, 1 start, 2 short, 3 stop */
-    u8   mixed;                         /* the lowest two subbands take the normal long window */
-    u8   wsf;                           /* window_switching_flag */
-    u8   table[3];
-    u8   sbg[3];                        /* subblock_gain */
-    u8   region0, region1;
-    u8   preflag;
-    u8   sfscale;
-    u8   count1tab;
+    uint16_t part23;                    /* part2_3_length: its bits */
+    uint16_t big_values;                /* pairs, at most 288 */
+    uint16_t gain;                      /* global_gain */
+    uint16_t sfc;                       /* scalefac_compress */
+    uint8_t  block_type;                /* 0 normal, 1 start, 2 short, 3 stop */
+    uint8_t  mixed;                     /* the lowest two subbands take the normal long window */
+    uint8_t  wsf;                       /* window_switching_flag */
+    uint8_t  table[3];
+    uint8_t  sbg[3];                    /* subblock_gain */
+    uint8_t  region0, region1;
+    uint8_t  preflag;
+    uint8_t  sfscale;
+    uint8_t  count1tab;
 } GRAN;
 
 /* a run of lines that shares a scale factor */
 typedef struct {
-    u16  start, end;                    /* lines, in the order the Huffman code gives them */
-    u16  freq;                          /* a short band: its first line within the window */
-    u8   sfb;
-    u8   win;                           /* 0..2 a short window, LONG_WIN a long band */
+    uint16_t start, end;                /* lines, in the order the Huffman code gives them */
+    uint16_t freq;                      /* a short band: its first line within the window */
+    uint8_t  sfb;
+    uint8_t  win;                       /* 0..2 a short window, LONG_WIN a long band */
 } BAND;
 
 /* the requantization of one band: x^(4/3) * 2^(q/4) */
 typedef struct {
-    const s32 *small;                   /* x^(4/3) * 2^(f/4) for x < 16, Q25 */
-    s32  frac;                          /* 2^(f/4), Q30 */
-    int  shift;                         /* the right shift of a small value: 0..45, 45 = 0 */
+    const int32_t *small;               /* x^(4/3) * 2^(f/4) for x < 16, Q25 */
+    int32_t frac;                       /* 2^(f/4), Q30 */
+    int     shift;                      /* the right shift of a small value: 0..45, 45 = 0 */
 } RQ;
 
 struct MP3L3 {
-    u32  sfreq;
-    u8   lsf;                           /* MPEG-2 or 2.5: one granule, other scale factors */
-    u8   is_scale;                      /* MPEG-2 intensity_scale */
-    u8   ov_count[2];                   /* subbands whose overlap may not be 0 */
-    u16  mdb;                           /* main_data_begin */
-    u32  res_len;
-    u8   res[RES_SIZE];
-    s32  xr[2][576];                    /* Huffman values, then the spectrum */
-    s32  ov[2][32 * 18];                /* the overlap, by subband */
-    s32  tmp[576];                      /* a short granule in subband order */
-    u8   scfsi[2][4];
-    u8   sfl[2][22];                    /* long scale factors */
-    u8   sfs[2][13][3];                 /* short scale factors */
-    u8   ismax_l[22];                   /* MPEG-2: the intensity position that means "none" */
-    u8   ismax_s[13];
-    GRAN gr[2][2];
-    BAND band[3][MAX_BANDS];            /* long, short, mixed */
-    int  nband[3];
-    u16  map[2][576];                   /* short and mixed: where each line goes in tmp */
-    u8   mode[MAX_BANDS];               /* the stereo plan of a granule */
-    u8   ispos[MAX_BANDS];
-    u32  eq576[576];                    /* the equalizer by long line, Q16 */
-    u32  eq192[192];                    /* and by short line */
+    uint32_t sfreq;
+    uint8_t  lsf;                       /* MPEG-2 or 2.5: one granule, other scale factors */
+    uint8_t  is_scale;                  /* MPEG-2 intensity_scale */
+    uint8_t  ov_count[2];               /* subbands whose overlap may not be 0 */
+    uint16_t mdb;                       /* main_data_begin */
+    uint32_t res_len;
+    uint8_t  res[RES_SIZE];
+    int32_t  xr[2][576];                /* Huffman values, then the spectrum */
+    int32_t  ov[2][32 * 18];            /* the overlap, by subband */
+    int32_t  tmp[576];                  /* a short granule in subband order */
+    uint8_t  scfsi[2][4];
+    uint8_t  sfl[2][22];                /* long scale factors */
+    uint8_t  sfs[2][13][3];             /* short scale factors */
+    uint8_t  ismax_l[22];               /* MPEG-2: the intensity position that means "none" */
+    uint8_t  ismax_s[13];
+    GRAN     gr[2][2];
+    BAND     band[3][MAX_BANDS];        /* long, short, mixed */
+    int      nband[3];
+    uint16_t map[2][576];               /* short and mixed: where each line goes in tmp */
+    uint8_t  mode[MAX_BANDS];           /* the stereo plan of a granule */
+    uint8_t  ispos[MAX_BANDS];
+    uint32_t eq576[576];                /* the equalizer by long line, Q16 */
+    uint32_t eq192[192];                /* and by short line */
 };
 
-static const u8 pretab[22] = {
+static const uint8_t pretab[22] = {
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 3, 3, 3, 2, 0
 };
 
 /* MPEG-1 scalefac_compress: slen1 and slen2 */
-static const u8 slen_mp1[2][16] = {
+static const uint8_t slen_mp1[2][16] = {
     { 0, 0, 0, 0, 3, 1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4 },
     { 0, 1, 2, 3, 0, 1, 2, 3, 1, 2, 3, 1, 2, 3, 2, 3 }
 };
 
 /* MPEG-2 (ISO 13818-3 table B.4, nr_of_sfb): how many scale factors
    each of the four slens covers, by table and by long, short, mixed */
-static const u8 lsf_nsf[6][3][4] = {
+static const uint8_t lsf_nsf[6][3][4] = {
     { {  6,  5,  5, 5 }, {  9,  9,  9, 9 }, {  6,  9,  9, 9 } },
     { {  6,  5,  7, 3 }, {  9,  9, 12, 6 }, {  6,  9, 12, 6 } },
     { { 11, 10,  0, 0 }, { 18, 18,  0, 0 }, { 15, 18,  0, 0 } },
@@ -166,24 +166,24 @@ static int band_kind( const GRAN *gr )
 /* ------------------------------------------------------------------ */
 /* the bands of a rate                                                 */
 /* ------------------------------------------------------------------ */
-static void band_set( BAND *band, u32 start, u32 end, u32 freq, int sfb, int win )
+static void band_set( BAND *band, unsigned int start, unsigned int end, unsigned int freq, int sfb, int win )
 {
-    band->start = (u16)start;
-    band->end = (u16)end;
-    band->freq = (u16)freq;
-    band->sfb = (u8)sfb;
-    band->win = (u8)win;
+    band->start = (uint16_t)start;
+    band->end = (uint16_t)end;
+    band->freq = (uint16_t)freq;
+    band->sfb = (uint8_t)sfb;
+    band->win = (uint8_t)win;
 }
 
 /* The bands of a granule in the order its lines come.  Mixed blocks
    are long up to line 36 (two subbands) and short above, where a short
    band that starts below a window's line 12 is cut there. */
-static int make_bands( BAND *band, u32 sfreq, int kind )
+static int make_bands( BAND *band, unsigned int sfreq, int kind )
 {
-    const u16 *sl = mp3_sfb_long + sfreq * 23;
-    const u16 *ss = mp3_sfb_short + sfreq * 14;
+    const uint16_t *sl = mp3_sfb_long + sfreq * 23;
+    const uint16_t *ss = mp3_sfb_short + sfreq * 14;
     int count = 0, sfb, win;
-    u32 line = 0, low, width;
+    unsigned int line = 0, low, width;
 
     if ( kind == KIND_LONG ) {
         for ( sfb = 0; sfb < 22; sfb++ ) {
@@ -218,24 +218,24 @@ static int make_bands( BAND *band, u32 sfreq, int kind )
 
 /* where each line of a short or mixed granule goes: subband, window,
    line within the window */
-static void make_map( u16 *map, const BAND *band, int count )
+static void make_map( uint16_t *map, const BAND *band, int count )
 {
     int bnd;
-    u32 i, freq;
+    unsigned int i, freq;
 
     for ( bnd = 0; bnd < count; bnd++ ) {
         for ( i = band[bnd].start; i < band[bnd].end && i < 576; i++ ) {
             if ( band[bnd].win == LONG_WIN ) {
-                map[i] = (u16)i;
+                map[i] = (uint16_t)i;
             } else {
                 freq = band[bnd].freq + (i - band[bnd].start);
-                map[i] = (u16)((freq / 6) * 18 + band[bnd].win * 6 + freq % 6);
+                map[i] = (uint16_t)((freq / 6) * 18 + band[bnd].win * 6 + freq % 6);
             }
         }
     }
 }
 
-int mp3_l3_open( MP3DEC *dec, u32 sfreq )
+int mp3_l3_open( MP3DEC *dec, unsigned int sfreq )
 {
     MP3L3 *l3;
     int kind;
@@ -249,7 +249,7 @@ int mp3_l3_open( MP3DEC *dec, u32 sfreq )
     }
     mem_set( l3, 0, sizeof( MP3L3 ) );
     l3->sfreq = sfreq;
-    l3->lsf = (u8)(sfreq >= 3);
+    l3->lsf = (uint8_t)(sfreq >= 3);
     for ( kind = 0; kind < 3; kind++ ) {
         l3->nband[kind] = make_bands( l3->band[kind], sfreq, kind );
     }
@@ -278,7 +278,7 @@ void mp3_l3_reset( MP3DEC *dec )
     }
 }
 
-void mp3_l3_eq( MP3DEC *dec, const EQSET *eq, u32 rate )
+void mp3_l3_eq( MP3DEC *dec, const EQSET *eq, uint32_t rate )
 {
     if ( dec->l3 != NULL ) {
         eq_curve( eq, rate, 576, dec->l3->eq576 );
@@ -290,7 +290,7 @@ void mp3_l3_eq( MP3DEC *dec, const EQSET *eq, u32 rate )
 /* side information                                                    */
 /* ------------------------------------------------------------------ */
 /* -> its bytes, or -1 if the frame is shorter */
-static int read_side( MP3L3 *l3, const MP3HDR *hdr, const u8 *data, u32 len )
+static int read_side( MP3L3 *l3, const MP3HDR *hdr, const uint8_t *data, unsigned int len )
 {
     MP3BITS bits;
     GRAN *gr;
@@ -301,42 +301,42 @@ static int read_side( MP3L3 *l3, const MP3HDR *hdr, const u8 *data, u32 len )
     } else {
         size = nch == 1 ? 17 : 32;
     }
-    if ( len < (u32)size ) {
+    if ( len < (unsigned int)size ) {
         return -1;
     }
-    mp3_bits_init( &bits, data, (u32)size, 0 );
+    mp3_bits_init( &bits, data, (unsigned int)size, 0 );
     if ( l3->lsf ) {
-        l3->mdb = (u16)mp3_bits_get( &bits, 8 );
+        l3->mdb = (uint16_t)mp3_bits_get( &bits, 8 );
         mp3_bits_get( &bits, nch == 1 ? 1 : 2 );
         mem_set( l3->scfsi, 0, sizeof( l3->scfsi ) );
     } else {
-        l3->mdb = (u16)mp3_bits_get( &bits, 9 );
+        l3->mdb = (uint16_t)mp3_bits_get( &bits, 9 );
         mp3_bits_get( &bits, nch == 1 ? 5 : 3 );
         for ( ch = 0; ch < nch; ch++ ) {
             for ( i = 0; i < 4; i++ ) {
-                l3->scfsi[ch][i] = (u8)mp3_bits_get( &bits, 1 );
+                l3->scfsi[ch][i] = (uint8_t)mp3_bits_get( &bits, 1 );
             }
         }
     }
     for ( gran = 0; gran < ngr; gran++ ) {
         for ( ch = 0; ch < nch; ch++ ) {
             gr = &l3->gr[gran][ch];
-            gr->part23 = (u16)mp3_bits_get( &bits, 12 );
-            gr->big_values = (u16)mp3_bits_get( &bits, 9 );
+            gr->part23 = (uint16_t)mp3_bits_get( &bits, 12 );
+            gr->big_values = (uint16_t)mp3_bits_get( &bits, 9 );
             if ( gr->big_values > 288 ) {
                 gr->big_values = 288;
             }
-            gr->gain = (u16)mp3_bits_get( &bits, 8 );
-            gr->sfc = (u16)mp3_bits_get( &bits, l3->lsf ? 9 : 4 );
-            gr->wsf = (u8)mp3_bits_get( &bits, 1 );
+            gr->gain = (uint16_t)mp3_bits_get( &bits, 8 );
+            gr->sfc = (uint16_t)mp3_bits_get( &bits, l3->lsf ? 9 : 4 );
+            gr->wsf = (uint8_t)mp3_bits_get( &bits, 1 );
             if ( gr->wsf ) {
-                gr->block_type = (u8)mp3_bits_get( &bits, 2 );
-                gr->mixed = (u8)mp3_bits_get( &bits, 1 );
-                gr->table[0] = (u8)mp3_bits_get( &bits, 5 );
-                gr->table[1] = (u8)mp3_bits_get( &bits, 5 );
+                gr->block_type = (uint8_t)mp3_bits_get( &bits, 2 );
+                gr->mixed = (uint8_t)mp3_bits_get( &bits, 1 );
+                gr->table[0] = (uint8_t)mp3_bits_get( &bits, 5 );
+                gr->table[1] = (uint8_t)mp3_bits_get( &bits, 5 );
                 gr->table[2] = 0;
                 for ( i = 0; i < 3; i++ ) {
-                    gr->sbg[i] = (u8)mp3_bits_get( &bits, 3 );
+                    gr->sbg[i] = (uint8_t)mp3_bits_get( &bits, 3 );
                 }
                 gr->region0 = 7;
                 gr->region1 = 13;
@@ -344,15 +344,15 @@ static int read_side( MP3L3 *l3, const MP3HDR *hdr, const u8 *data, u32 len )
                 gr->block_type = 0;
                 gr->mixed = 0;
                 for ( i = 0; i < 3; i++ ) {
-                    gr->table[i] = (u8)mp3_bits_get( &bits, 5 );
+                    gr->table[i] = (uint8_t)mp3_bits_get( &bits, 5 );
                     gr->sbg[i] = 0;
                 }
-                gr->region0 = (u8)mp3_bits_get( &bits, 4 );
-                gr->region1 = (u8)mp3_bits_get( &bits, 3 );
+                gr->region0 = (uint8_t)mp3_bits_get( &bits, 4 );
+                gr->region1 = (uint8_t)mp3_bits_get( &bits, 3 );
             }
-            gr->preflag = (u8)(l3->lsf ? 0 : mp3_bits_get( &bits, 1 ));
-            gr->sfscale = (u8)mp3_bits_get( &bits, 1 );
-            gr->count1tab = (u8)mp3_bits_get( &bits, 1 );
+            gr->preflag = (uint8_t)(l3->lsf ? 0 : mp3_bits_get( &bits, 1 ));
+            gr->sfscale = (uint8_t)mp3_bits_get( &bits, 1 );
+            gr->count1tab = (uint8_t)mp3_bits_get( &bits, 1 );
         }
     }
     return size;
@@ -363,7 +363,7 @@ static int read_side( MP3L3 *l3, const MP3HDR *hdr, const u8 *data, u32 len )
 /* ------------------------------------------------------------------ */
 static void scale_mpeg1( MP3L3 *l3, MP3BITS *bits, const GRAN *gr, int ch, int granule )
 {
-    static const u8 group[5] = { 0, 6, 11, 16, 21 };
+    static const uint8_t group[5] = { 0, 6, 11, 16, 21 };
     int slen1 = slen_mp1[0][gr->sfc & 15], slen2 = slen_mp1[1][gr->sfc & 15];
     int sfb, win, part;
 
@@ -371,13 +371,13 @@ static void scale_mpeg1( MP3L3 *l3, MP3BITS *bits, const GRAN *gr, int ch, int g
         sfb = 0;
         if ( gr->mixed ) {
             for ( sfb = 0; sfb < 8; sfb++ ) {
-                l3->sfl[ch][sfb] = (u8)mp3_bits_get( bits, slen1 );
+                l3->sfl[ch][sfb] = (uint8_t)mp3_bits_get( bits, slen1 );
             }
             sfb = 3;
         }
         for ( ; sfb < 12; sfb++ ) {
             for ( win = 0; win < 3; win++ ) {
-                l3->sfs[ch][sfb][win] = (u8)mp3_bits_get( bits, sfb < 6 ? slen1 : slen2 );
+                l3->sfs[ch][sfb][win] = (uint8_t)mp3_bits_get( bits, sfb < 6 ? slen1 : slen2 );
             }
         }
         for ( win = 0; win < 3; win++ ) {
@@ -390,7 +390,7 @@ static void scale_mpeg1( MP3L3 *l3, MP3BITS *bits, const GRAN *gr, int ch, int g
             continue;                       /* the same as the first granule's */
         }
         for ( sfb = group[part]; sfb < group[part + 1]; sfb++ ) {
-            l3->sfl[ch][sfb] = (u8)mp3_bits_get( bits, part < 2 ? slen1 : slen2 );
+            l3->sfl[ch][sfb] = (uint8_t)mp3_bits_get( bits, part < 2 ? slen1 : slen2 );
         }
     }
     l3->sfl[ch][21] = 0;
@@ -401,7 +401,7 @@ static void scale_mpeg1( MP3L3 *l3, MP3BITS *bits, const GRAN *gr, int ch, int g
    its values are intensity positions. */
 static void scale_mpeg2( MP3L3 *l3, MP3BITS *bits, GRAN *gr, int ch, int is_right )
 {
-    u32 sfc = gr->sfc, rest;
+    uint32_t sfc = gr->sfc, rest;
     int slen[4], tab, kind, part, k, slot = 0, sfb, win, val, max;
 
     slen[2] = slen[3] = 0;
@@ -427,7 +427,7 @@ static void scale_mpeg2( MP3L3 *l3, MP3BITS *bits, GRAN *gr, int ch, int is_righ
         }
     } else {
         rest = sfc >> 1;
-        l3->is_scale = (u8)(sfc & 1);
+        l3->is_scale = (uint8_t)(sfc & 1);
         if ( rest < 180 ) {
             slen[0] = (int)(rest / 36);
             slen[1] = (int)((rest % 36) / 6);
@@ -456,18 +456,18 @@ static void scale_mpeg2( MP3L3 *l3, MP3BITS *bits, GRAN *gr, int ch, int is_righ
             if ( kind == KIND_LONG || (kind == KIND_MIXED && slot < 6) ) {
                 sfb = slot;
                 if ( sfb < 22 ) {
-                    l3->sfl[ch][sfb] = (u8)val;
+                    l3->sfl[ch][sfb] = (uint8_t)val;
                     if ( is_right ) {
-                        l3->ismax_l[sfb] = (u8)max;
+                        l3->ismax_l[sfb] = (uint8_t)max;
                     }
                 }
             } else {
                 sfb = kind == KIND_MIXED ? 3 + (slot - 6) / 3 : slot / 3;
                 win = kind == KIND_MIXED ? (slot - 6) % 3 : slot % 3;
                 if ( sfb < 13 ) {
-                    l3->sfs[ch][sfb][win] = (u8)val;
+                    l3->sfs[ch][sfb][win] = (uint8_t)val;
                     if ( is_right ) {
-                        l3->ismax_s[sfb] = (u8)max;
+                        l3->ismax_s[sfb] = (uint8_t)max;
                     }
                 }
             }
@@ -482,7 +482,7 @@ static void scale_mpeg2( MP3L3 *l3, MP3BITS *bits, GRAN *gr, int ch, int is_righ
    the end of the data here: the loops stop soon after it, and the
    reservoir has HUFF_SLACK zeroed bytes behind its data for them */
 #define FILL        while ( count <= 24 ) { \
-                        cache |= (u32)*at++ << (24 - count); \
+                        cache |= (uint32_t)*at++ << (24 - count); \
                         count += 8; \
                     }
 
@@ -492,18 +492,21 @@ static void scale_mpeg2( MP3L3 *l3, MP3BITS *bits, GRAN *gr, int ch, int is_righ
    and the next granule starts where part2_3_length says).  -> how
    many lines may be nonzero.  Written for registers: this runs once
    for every pair of spectral lines. */
-static u32 huffman( const MP3BITS *bits, u32 end, const GRAN *gr, u32 sfreq, s32 *xr, u32 stop )
+static unsigned int huffman( const MP3BITS *bits, unsigned int end, const GRAN *gr, unsigned int sfreq, int32_t *xr,
+                             unsigned int stop )
 {
-    const u16 *sl = mp3_sfb_long + sfreq * 23;
-    const u8 *at = bits->data + bits->pos, *beyond;
-    const u16 *tab;
+    const uint16_t *sl = mp3_sfb_long + sfreq * 23;
+    const uint8_t *at = bits->data + bits->pos, *beyond;
+    const uint16_t *tab;
     const MP3HTAB *ht;
-    s32 *out = xr, *upto;
-    u32 cache = bits->cache, bigv = (u32)gr->big_values * 2, reg1, reg2, limit, entry, val;
+    int32_t *out = xr, *upto;
+    uint32_t cache = bits->cache;
+    unsigned int bigv = (unsigned int)gr->big_values * 2, reg1, reg2, limit;
+    uint32_t entry, val;
     int count = bits->count, region, nbits, rs, lin, xval, yval, mask, damaged = 0;
 
     if ( gr->wsf ) {
-        reg1 = gr->block_type == 2 ? 3 * (u32)mp3_sfb_short[sfreq * 14 + 3] : sl[8];
+        reg1 = gr->block_type == 2 ? 3 * (unsigned int)mp3_sfb_short[sfreq * 14 + 3] : sl[8];
         reg2 = 576;
     } else {
         region = gr->region0 + 1;
@@ -564,7 +567,7 @@ static u32 huffman( const MP3BITS *bits, u32 end, const GRAN *gr, u32 sfreq, s32
                     cache <<= lin;
                     count -= lin;
                 }
-                mask = (int)((s32)cache >> 31);
+                mask = (int)((int32_t)cache >> 31);
                 xval = (xval ^ mask) - mask;
                 cache <<= 1;
                 count--;
@@ -576,7 +579,7 @@ static u32 huffman( const MP3BITS *bits, u32 end, const GRAN *gr, u32 sfreq, s32
                     cache <<= lin;
                     count -= lin;
                 }
-                mask = (int)((s32)cache >> 31);
+                mask = (int)((int32_t)cache >> 31);
                 yval = (yval ^ mask) - mask;
                 cache <<= 1;
                 count--;
@@ -590,13 +593,13 @@ static u32 huffman( const MP3BITS *bits, u32 end, const GRAN *gr, u32 sfreq, s32
             }
         }
     }
-    if ( (u32)(at - bits->data) * 8 - (u32)count > end ) {
+    if ( (unsigned int)(at - bits->data) * 8 - (unsigned int)count > end ) {
         damaged = 1;
     }
     /* count1: four values of 0 or 1 at a time */
     upto = xr + (stop < 576 ? stop : 576);
     while ( !damaged && out < upto && out <= xr + 572
-            && (u32)(at - bits->data) * 8 - (u32)count < end ) {
+            && (unsigned int)(at - bits->data) * 8 - (unsigned int)count < end ) {
         FILL
         if ( gr->count1tab ) {
             val = (~cache >> 28) & 15;
@@ -617,13 +620,13 @@ static u32 huffman( const MP3BITS *bits, u32 end, const GRAN *gr, u32 sfreq, s32
                 out[region] = 0;
             }
         }
-        if ( (u32)(at - bits->data) * 8 - (u32)count > end ) {
+        if ( (unsigned int)(at - bits->data) * 8 - (unsigned int)count > end ) {
             break;                          /* a code cut off by the end: not one */
         }
         out += 4;
     }
-    limit = (u32)(out - xr);
-    mem_set( out, 0, (576 - limit) * sizeof( s32 ) );
+    limit = (unsigned int)(out - xr);
+    mem_set( out, 0, (576 - limit) * sizeof( int32_t ) );
     while ( limit > 0 && xr[limit - 1] == 0 ) {
         limit--;
     }
@@ -651,9 +654,9 @@ static void rq_make( RQ *rq, int power )
 
 /* a value of 16 or more: x^(4/3) * 2^(f/4) in Q11, then shifted to Q26
    and held below 16 */
-static s32 rq_big( const RQ *rq, s32 mag )
+static int32_t rq_big( const RQ *rq, int32_t mag )
 {
-    s32 val = fx_mulhi( (s32)mp3_pow43[mag], rq->frac );
+    int32_t val = fx_mulhi( (int32_t)mp3_pow43[mag], rq->frac );
     int left = 14 - rq->shift;
 
     if ( left >= 0 ) {
@@ -663,9 +666,9 @@ static s32 rq_big( const RQ *rq, s32 mag )
     return left > 30 ? 0 : val >> left;
 }
 
-static s32 rq_value( const RQ *rq, s32 val )
+static int32_t rq_value( const RQ *rq, int32_t val )
 {
-    s32 mag = val < 0 ? -val : val, res;
+    int32_t mag = val < 0 ? -val : val, res;
 
     if ( mag == 0 ) {
         return 0;
@@ -682,19 +685,19 @@ static s32 rq_value( const RQ *rq, s32 val )
    to dst.  Without add, src is dst.  The two loops are written apart and
    walk pointers, so that the table and the shift stay in registers: this
    runs once for every spectral line. */
-static void rq_band( s32 *dst, const s32 *src, u32 start, u32 end, int power, int add )
+static void rq_band( int32_t *dst, const int32_t *src, unsigned int start, unsigned int end, int power, int add )
 {
     RQ rq;
-    const s32 *small, *at, *stop;
-    s32 *to;
-    s32 val;
+    const int32_t *small, *at, *stop;
+    int32_t *to;
+    int32_t val;
     int shift;
 
     rq_make( &rq, power );
     to = dst + start;
     if ( rq.shift >= 45 ) {
         if ( !add ) {
-            mem_set( to, 0, (end - start) * sizeof( s32 ) );
+            mem_set( to, 0, (end - start) * sizeof( int32_t ) );
         }
         return;
     }
@@ -741,7 +744,7 @@ static int scale_q( const MP3L3 *l3, const GRAN *gr, int ch, const BAND *band )
 }
 
 /* every band of one channel below "top", the power moved by "extra" */
-static void rq_channel( MP3L3 *l3, const GRAN *gr, int ch, u32 top, int extra )
+static void rq_channel( MP3L3 *l3, const GRAN *gr, int ch, unsigned int top, int extra )
 {
     const BAND *band = l3->band[band_kind( gr )];
     int count = l3->nband[band_kind( gr )], bnd;
@@ -772,15 +775,15 @@ static void lsf_is( const MP3L3 *l3, int pos, int *left, int *right )
 /* Which bands are intensity stereo: those above the last nonzero value
    of the right channel (in a short granule, of the right channel's
    window), whose position is not the one that means "none" */
-static void make_plan( MP3L3 *l3, const BAND *band, int count, u32 nz1, int ms, int is )
+static void make_plan( MP3L3 *l3, const BAND *band, int count, unsigned int nz1, int ms, int is )
 {
-    const s32 *right = l3->xr[1];
+    const int32_t *right = l3->xr[1];
     int bnd, seen_any = 0, seen[3], nonzero, sfb, pos, none;
-    u32 i, stop;
+    unsigned int i, stop;
 
     seen[0] = seen[1] = seen[2] = 0;
     for ( bnd = count - 1; bnd >= 0; bnd-- ) {
-        l3->mode[bnd] = (u8)(ms ? ST_MS : ST_LR);
+        l3->mode[bnd] = (uint8_t)(ms ? ST_MS : ST_LR);
         if ( !is ) {
             continue;
         }
@@ -820,7 +823,7 @@ static void make_plan( MP3L3 *l3, const BAND *band, int count, u32 nz1, int ms, 
         }
         if ( !none ) {
             l3->mode[bnd] = ST_IS;
-            l3->ispos[bnd] = (u8)pos;
+            l3->ispos[bnd] = (uint8_t)pos;
         }
     }
 }
@@ -829,15 +832,15 @@ static void make_plan( MP3L3 *l3, const BAND *band, int count, u32 nz1, int ms, 
    be nonzero; *both is 1 when xr[1] is a channel of its own to
    transform (stereo out, or one channel out of two whose block types
    differ) */
-static u32 do_stereo( MP3DEC *dec, MP3L3 *l3, int gran, const u32 *nz, int *both )
+static unsigned int do_stereo( MP3DEC *dec, MP3L3 *l3, int gran, const unsigned int *nz, int *both )
 {
     const MP3HDR *hdr = &dec->hdr;
     const GRAN *gr0 = &l3->gr[gran][0], *gr1 = &l3->gr[gran][1];
     const BAND *band;
-    s32 *xr0 = l3->xr[0], *xr1 = l3->xr[1];
-    u32 lim = dec->nsb == 32 ? 576 : 18 * (u32)dec->nsb + 18, top, i, start, end;
+    int32_t *xr0 = l3->xr[0], *xr1 = l3->xr[1];
+    unsigned int lim = dec->nsb == 32 ? 576 : 18 * (unsigned int)dec->nsb + 18, top, i, start, end;
     int count, bnd, kind, ms = 0, is = 0, extra, q0, q1, dl, dr, combine;
-    s32 mid, side, val, part;
+    int32_t mid, side, val, part;
     RQ rql, rqr;
 
     *both = 0;
@@ -938,18 +941,18 @@ static u32 do_stereo( MP3DEC *dec, MP3L3 *l3, int gran, const u32 *nz, int *both
 }
 
 /* the equalizer: every line times its gain */
-static void do_eq( MP3L3 *l3, const GRAN *gr, s32 *xr, u32 top )
+static void do_eq( MP3L3 *l3, const GRAN *gr, int32_t *xr, unsigned int top )
 {
     const BAND *band = l3->band[band_kind( gr )];
-    const u32 *gain;
+    const uint32_t *gain;
     int count = l3->nband[band_kind( gr )], bnd;
-    u32 i;
+    unsigned int i;
 
     for ( bnd = 0; bnd < count && band[bnd].start < top; bnd++ ) {
         gain = band[bnd].win == LONG_WIN ? l3->eq576 + band[bnd].start : l3->eq192 + band[bnd].freq;
         for ( i = band[bnd].start; i < band[bnd].end; i++ ) {
             if ( xr[i] != 0 ) {
-                xr[i] = mp3_mul16( xr[i], (s32)gain[i - band[bnd].start] );
+                xr[i] = mp3_mul16( xr[i], (int32_t)gain[i - band[bnd].start] );
             }
         }
     }
@@ -959,11 +962,11 @@ static void do_eq( MP3L3 *l3, const GRAN *gr, s32 *xr, u32 top )
 /* the hybrid filter bank                                              */
 /* ------------------------------------------------------------------ */
 /* alias reduction across the first "bounds" subband edges */
-static void alias( s32 *xr, int bounds )
+static void alias( int32_t *xr, int bounds )
 {
-    const s32 *coef;
-    s32 *lo, *hi;
-    s32 low, high, sum;
+    const int32_t *coef;
+    int32_t *lo, *hi;
+    int32_t low, high, sum;
     int sb, i;
 
     for ( sb = 1; sb <= bounds; sb++ ) {
@@ -983,10 +986,10 @@ static void alias( s32 *xr, int bounds )
 }
 
 /* out[i] = sum of z[m] cos(pi (2i + 1) m / 18), i and m 0..8 */
-static void dct9( const s32 *in, s32 *out, int fast )
+static void dct9( const int32_t *in, int32_t *out, int fast )
 {
-    const s32 *cs = mp3_c9;              /* cos 10, 20, 40, 50, 70, 80, 30 degrees */
-    s32 t3, base, ev1, ev3, ev5, ev7, od1, od3, od5, od7;
+    const int32_t *cs = mp3_c9;          /* cos 10, 20, 40, 50, 70, 80, 30 degrees */
+    int32_t t3, base, ev1, ev3, ev5, ev7, od1, od3, od5, od7;
 
     t3 = mp3_mul31( cs[6], in[3] );
     base = in[0] + (in[6] >> 1);
@@ -1023,11 +1026,11 @@ static void dct9( const s32 *in, s32 *out, int fast )
 }
 
 /* 18 lines into 36 windowed samples: the first 18 onto the overlap and
-   out (every 32nd s32), the last 18 the new overlap.  add: onto out and
+   out (every 32nd int32_t), the last 18 the new overlap.  add: onto out and
    the overlap as they are.  fast: the 9-point DCTs with fewer multiplies */
-static void imdct36( const s32 *in, s32 *ov, s32 *out, const s32 *win, int add, int fast )
+static void imdct36( const int32_t *in, int32_t *ov, int32_t *out, const int32_t *win, int add, int fast )
 {
-    s32 even[9], odd[9], ev[9], od[9], cv[18], part, low, high, next0, next1;
+    int32_t even[9], odd[9], ev[9], od[9], cv[18], part, low, high, next0, next1;
     int i;
 
     even[0] = in[0];
@@ -1066,9 +1069,9 @@ static void imdct36( const s32 *in, s32 *ov, s32 *out, const s32 *win, int add, 
 }
 
 /* one short window: 6 lines into 12 windowed samples */
-static void imdct12_win( const s32 *in, const s32 *win, s32 *out )
+static void imdct12_win( const int32_t *in, const int32_t *win, int32_t *out )
 {
-    s32 z1, z2, z3, z4, z5, t2, t3, e0, e1, e2, o0, o1, o2, cv[6];
+    int32_t z1, z2, z3, z4, z5, t2, t3, e0, e1, e2, o0, o1, o2, cv[6];
     int slot;
 
     z1 = in[1] + in[0];
@@ -1100,10 +1103,10 @@ static void imdct12_win( const s32 *in, const s32 *win, s32 *out )
 }
 
 /* three short windows, overlapped at 6, 12 and 18 within the 36 */
-static void imdct12( const s32 *in, s32 *ov, s32 *out, int parity, int add )
+static void imdct12( const int32_t *in, int32_t *ov, int32_t *out, int parity, int add )
 {
-    const s32 *win = mp3_cws + parity * 12;
-    s32 win0[12], win1[12], win2[12], val;
+    const int32_t *win = mp3_cws + parity * 12;
+    int32_t win0[12], win1[12], win2[12], val;
     int slot;
 
     imdct12_win( in, win, win0 );
@@ -1142,19 +1145,19 @@ static void imdct12( const s32 *in, s32 *ov, s32 *out, int parity, int add )
 /* One channel's spectrum (nonzero below "top") into 18 slots of
    subband samples, with the overlap "ov".  add: onto what another
    channel has put there. */
-static void hybrid( MP3DEC *dec, MP3L3 *l3, s32 *xr, const GRAN *gr, u32 top, s32 *ov,
-                    u8 *ov_count, s32 *out, int add )
+static void hybrid( MP3DEC *dec, MP3L3 *l3, int32_t *xr, const GRAN *gr, unsigned int top, int32_t *ov,
+                    uint8_t *ov_count, int32_t *out, int add )
 {
-    const u16 *map;
-    s32 *data = xr, *ovs, *dst;
-    u32 i, dest, high = 0, sbn, nsb = dec->nsb;
+    const uint16_t *map;
+    int32_t *data = xr, *ovs, *dst;
+    unsigned int i, dest, high = 0, sbn, nsb = dec->nsb;
     int sb, slot, bt;
 
     sbn = (top + 17) / 18;
     if ( gr->block_type == 2 ) {
         /* short blocks into subband order */
         map = l3->map[gr->mixed ? 1 : 0];
-        mem_set( l3->tmp, 0, 18 * nsb * sizeof( s32 ) );
+        mem_set( l3->tmp, 0, 18 * nsb * sizeof( int32_t ) );
         for ( i = 0; i < top; i++ ) {
             dest = map[i];
             l3->tmp[dest] = xr[i];
@@ -1179,7 +1182,7 @@ static void hybrid( MP3DEC *dec, MP3L3 *l3, s32 *xr, const GRAN *gr, u32 top, s3
     for ( sb = 0; sb < (int)nsb; sb++ ) {
         ovs = ov + sb * 18;
         dst = out + sb;
-        if ( (u32)sb < sbn ) {
+        if ( (unsigned int)sb < sbn ) {
             if ( gr->block_type == 2 && !(gr->mixed && sb < 2) ) {
                 imdct12( data + sb * 18, ovs, dst, sb & 1, add );
             } else {
@@ -1200,30 +1203,30 @@ static void hybrid( MP3DEC *dec, MP3L3 *l3, s32 *xr, const GRAN *gr, u32 top, s3
         }
     }
     if ( !add || sbn > *ov_count ) {
-        *ov_count = (u8)sbn;
+        *ov_count = (uint8_t)sbn;
     }
 }
 
 /* ------------------------------------------------------------------ */
 /* a frame                                                             */
 /* ------------------------------------------------------------------ */
-void mp3_layer3( MP3DEC *dec, const u8 *frame, u32 len )
+void mp3_layer3( MP3DEC *dec, const uint8_t *frame, unsigned int len )
 {
     MP3L3 *l3 = dec->l3;
     const MP3HDR *hdr = &dec->hdr;
     MP3BITS bits;
     GRAN *gr;
-    u32 head = 4 + (hdr->crc ? 2 : 0), mdlen = 0, start = 0, avail, at = 0, end, top, stop;
-    u32 nz[2];
+    unsigned int head = 4 + (hdr->crc ? 2 : 0), mdlen = 0, start = 0, avail, at = 0, end, top, stop;
+    unsigned int nz[2];
     int side = -1, ngr = l3->lsf ? 1 : 2, nch = hdr->channels, gran, ch, ok, both;
-    s32 *out;
+    int32_t *out;
 
     if ( len >= head ) {
         side = read_side( l3, hdr, frame + head, len - head );
     }
     ok = side >= 0;
     if ( ok ) {
-        mdlen = len - head - (u32)side;
+        mdlen = len - head - (unsigned int)side;
         if ( mdlen > MP3_MAXFRAME ) {
             mdlen = MP3_MAXFRAME;
         }
@@ -1240,12 +1243,12 @@ void mp3_layer3( MP3DEC *dec, const u8 *frame, u32 len )
         start = l3->res_len - l3->mdb;
     }
     if ( mdlen > 0 ) {
-        mem_cpy( l3->res + l3->res_len, frame + head + (u32)side, mdlen );
+        mem_cpy( l3->res + l3->res_len, frame + head + (unsigned int)side, mdlen );
         l3->res_len += mdlen;
     }
     mem_set( l3->res + l3->res_len, 0, HUFF_SLACK );    /* what the Huffman reads may run into */
     avail = (l3->res_len - start) * 8;
-    dec->slots = 18 * (u32)ngr;
+    dec->slots = 18 * (unsigned int)ngr;
     for ( gran = 0; gran < ngr; gran++ ) {
         nz[0] = nz[1] = 0;
         for ( ch = 0; ch < nch && ok; ch++ ) {
@@ -1265,7 +1268,7 @@ void mp3_layer3( MP3DEC *dec, const u8 *frame, u32 len )
                 /* the lines heard at this rate, but all of the right channel
                    when intensity stereo needs to know where it ends */
                 stop = dec->nsb == 32 || (ch == 1 && hdr->mode == MODE_JOINT && (hdr->mode_ext & 1))
-                       ? 576 : 18 * (u32)dec->nsb + 18;
+                       ? 576 : 18 * (unsigned int)dec->nsb + 18;
                 nz[ch] = huffman( &bits, end, gr, l3->sfreq, l3->xr[ch], stop );
             } else {
                 mem_set( l3->xr[ch], 0, sizeof( l3->xr[ch] ) );     /* damaged: silence */

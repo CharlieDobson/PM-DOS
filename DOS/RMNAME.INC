@@ -551,6 +551,151 @@ f60_bad:
         jmp     i21_fail
 
 ;=====================================================================
+; F1h - PM-DOS's own calls.  The kernel has many; RMDOS has one, and any
+; other AL is answered as a function number past the table is.
+;
+; AL = 2Ah: THE LONG NAME OF A FILE.  DS:DX -> its 8.3 path, ES:DI -> 261
+; bytes for the name, one byte a character as the kernel's own lfn_buf
+; has it.  CF with AX = 2 if the file has none.  UNDELETE.386 asks,
+; because the rename that moves a file into \RECYCLED drops the name.
+;
+; It goes to the disk even when a redirector holds the drive: with
+; 32-bit file access IFSMGR does, and it has no long names to give.  A
+; name only counts if its pieces run down to 1 with the checksum of the
+; entry behind them, so a stale sector can only ever mean "none".
+;=====================================================================
+fnF1:
+        cmp     byte ptr [bp+F_AX],2Ah
+        je      lf_go
+        mov     byte ptr [bp+F_AX],0
+        jmp     i21_ok
+lf_go:
+        mov     es,[bp+F_DS]
+        mov     si,[bp+F_DX]
+        call    rd_path                 ; -> EBX parent, rd_fcb, SI volume
+        jc      lf_none
+        mov     byte ptr [lf_expect],0
+        mov     eax,ebx
+        call    dir_first
+        jc      lf_none
+lf_sector:
+        mov     eax,dword ptr [rd_dfsec]
+        call    dir_win
+        jc      lf_none
+        xor     bx,bx
+lf_entry:
+        mov     al,byte ptr [rd_dirbuf + bx]
+        or      al,al
+        jz      lf_none                 ; the end of the directory
+        cmp     al,0E5h
+        je      lf_reset
+        mov     ah,byte ptr [rd_dirbuf + bx + DE_ATTR]
+        and     ah,3Fh
+        cmp     ah,0Fh
+        je      lf_frag
+
+        ; an ordinary entry: is it the file?
+        push    si
+        push    es
+        push    cs
+        pop     es
+        lea     si,[rd_dirbuf + bx]
+        mov     di,OFFSET rd_fcb
+        mov     cx,11
+        cld
+        repe    cmpsb
+        pop     es
+        pop     si
+        je      lf_found
+lf_reset:
+        mov     byte ptr [lf_expect],0
+lf_next:
+        add     bx,DE_LEN
+        cmp     bx,SECSIZE
+        jb      lf_entry
+        call    dir_next
+        jnc     lf_sector
+lf_none:
+        mov     ax,ERR_NOFILE
+        jmp     i21_fail
+
+lf_found:
+        cmp     byte ptr [lf_expect],1  ; did the pieces run down to 1?
+        jne     lf_none
+        xor     al,al                   ; ...for this entry?
+        mov     cx,11
+lf_sum:
+        ror     al,1
+        add     al,byte ptr [rd_dirbuf + bx]
+        inc     bx
+        loop    lf_sum
+        cmp     al,[lf_ck]
+        jne     lf_none
+        mov     word ptr [bp+F_AX],0
+        jmp     i21_ok
+
+lf_frag:
+        mov     al,byte ptr [rd_dirbuf + bx]
+        mov     ah,byte ptr [rd_dirbuf + bx + 0Dh]
+        test    al,40h
+        jz      lf_more
+        and     al,3Fh                  ; the first piece met is the last
+        jz      lf_reset                ; of the name
+        cmp     al,20
+        ja      lf_reset
+        mov     [lf_expect],al
+        mov     [lf_ck],ah
+        movzx   di,al                   ; the NUL goes where the name ends
+        imul    di,di,13
+        add     di,[bp+F_DI]
+        mov     es,[bp+F_ES]
+        mov     byte ptr es:[di],0
+        jmp     short lf_copy
+lf_more:
+        and     al,3Fh
+        jz      lf_reset
+        cmp     ah,[lf_ck]
+        jne     lf_reset
+        mov     ah,[lf_expect]
+        or      ah,ah
+        jz      lf_reset
+        dec     ah                      ; exactly the next one down
+        cmp     al,ah
+        jne     lf_reset
+        mov     [lf_expect],al
+lf_copy:
+        movzx   di,byte ptr [lf_expect]
+        dec     di
+        imul    di,di,13
+        add     di,[bp+F_DI]
+        mov     es,[bp+F_ES]
+        push    si
+        cld
+        lea     si,[rd_dirbuf + bx + 1]
+        mov     cx,5
+        call    lf_ucs
+        lea     si,[rd_dirbuf + bx + 0Eh]
+        mov     cx,6
+        call    lf_ucs
+        lea     si,[rd_dirbuf + bx + 1Ch]
+        mov     cx,2
+        call    lf_ucs
+        pop     si
+        jmp     lf_next
+
+;--- lf_ucs - CX characters at DS:SI -> bytes at ES:DI.  As the kernel's
+;--- lw_ucs: anything past ASCII's byte range becomes '_'.
+lf_ucs:
+        lodsw
+        or      ah,ah
+        jz      lfu_put
+        mov     al,'_'
+lfu_put:
+        stosb
+        loop    lf_ucs
+        ret
+
+;=====================================================================
 ; 29h - parse a file name into an FCB.  DS:SI -> the text, ES:DI -> the
 ; FCB, AL = what to leave alone:
 ;
@@ -747,6 +892,8 @@ rn_drv2     db  0
 rn_new      db  11 dup(' ')
 rn_old      db  11 dup(' ')
 rn_ent      db  DE_LEN dup(0)
+lf_expect   db  0                       ; F1h AL=2Ah: the piece due next,
+lf_ck       db  0                       ; and their checksum
 rn_dot      db  '.          '
 rn_dotdot   db  '..         '
 p29_res     db  0                       ; FFh: the drive letter is no drive

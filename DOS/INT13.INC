@@ -26,10 +26,11 @@
 ; with the medium around every transfer (see vol_syncdrv in FAT.INC).
 ;
 ; DRIVES THE KERNEL DOES NOT KNOW are reflected to the BIOS untouched.
-; The block layer has slots for two floppies and two hard disks; a
-; machine with a third disk has one this kernel never scanned, holding
+; The block layer has slots for two floppies and eight hard disks,
+; 80h to 87h; a ninth disk is one this kernel never scanned, holding
 ; no volume of ours and no cache to be wrong, and the honest answer for
-; it is the BIOS's.
+; it is the BIOS's.  Up to 2026-11-17 that was the third disk, and 82h
+; with a stick in the first USB unit was the stick.
 ;
 ; Included by DOSMAIN.ASM after VDM.INC - it works on vdm_ctx.
 ;=====================================================================
@@ -699,9 +700,20 @@ i13_forget:
 ; controller and audible.
 ;
 ; Called once at boot; a machine does not grow a disk while it runs.
+;
+; AND THE DISKS PAST THE BIOS'S COUNT THAT THE KERNEL DRIVES ITSELF: a
+; third and fourth disk on a board whose BIOS knew two are 82h and 83h
+; to the IDE driver (ATA.INC, ata_number), and a program walking the
+; disks by this count would stop before them.  The highest number the
+; block layer has a geometry for, then, if that is past the BIOS's.
+; The block layer asks the BIOS nothing about a number from 82h on that
+; the BIOS did not count, so this costs no BIOS call there.
 ;=====================================================================
 i13_count_drives:
         push    eax
+        push    ebx
+        push    ecx
+        push    edx
         movzx   eax,word ptr ds:[BDA_EQUIP]
         test    al,1                            ; bit 0: any floppies?
         jz      i13_nofd
@@ -713,8 +725,27 @@ i13_nofd:
         xor     eax,eax
 i13_fdok:
         mov     [i13_fdcount],al
-        mov     al,byte ptr ds:[BDA_HDCOUNT]
+        movzx   eax,byte ptr ds:[BDA_HDCOUNT]
         mov     [i13_hdcount],al
+        mov     ecx,MAX_PHYS                    ; ECX = a count to try: the
+icd_past:                                       ; disk 80h + ECX - 1
+        cmp     ecx,eax
+        jbe     icd_done                        ; no more than the BIOS's
+        push    eax
+        push    ecx
+        lea     eax,[ecx+80h-1]
+        call    dword ptr ds:[IOS_DRVGEO]
+        pop     ecx
+        pop     eax
+        jnc     icd_found
+        dec     ecx
+        jmp     short icd_past
+icd_found:
+        mov     [i13_hdcount],cl
+icd_done:
+        pop     edx
+        pop     ecx
+        pop     ebx
         pop     eax
         ret
 

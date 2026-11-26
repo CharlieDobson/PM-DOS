@@ -237,11 +237,11 @@ cmp_tail:
         mov     edx,RD_TAILEND
 cmp_lay:
         mov     [cmv_hashp],ax
-        add     ax,CM_HASHN * 2
-        mov     [cmv_bncp],ax
-        add     ax,CM_EBYTES
+        movzx   eax,ax                  ; in thirty-two bits: with no room
+        add     eax,CM_HASHN * 2        ; at all - a trace build's image -
+        mov     [cmv_bncp],ax           ; the sums pass 64K, and sixteen
+        add     eax,CM_EBYTES           ; bits made that look like room
         mov     [cmv_dirp],ax
-        movzx   eax,ax
         cmp     edx,eax
         jbe     cmp_none
         sub     edx,eax
@@ -1128,14 +1128,24 @@ cma_drive:
         or      dl,dl
         jz      cma_state
         or      byte ptr [si+VOL_FLAGS],VF_STALE
+        ; AND rd_shared COUNTS THE DRIVES WHOSE READS ARE OFF (2026-11-21):
+        ; that is IFSMGR taking a disk for Windows' own file system, and
+        ; from then until it gives the disk back this DOS is one of two
+        ; that write it - see i21_cdone in RMDOS.ASM for what follows.
         cmp     dl,1
         jne     cma_d2
+        test    byte ptr [si+VOL_FLAGS],VF_NOREAD
+        jz      cma_state
         and     byte ptr [si+VOL_FLAGS],NOT VF_NOREAD AND 0FFh
+        dec     byte ptr [rd_shared]
         jmp     short cma_state
 cma_d2:
         cmp     dl,2
         jne     cma_d3
+        test    byte ptr [si+VOL_FLAGS],VF_NOREAD
+        jnz     cma_dropit
         or      byte ptr [si+VOL_FLAGS],VF_NOREAD
+        inc     byte ptr [rd_shared]
         jmp     short cma_dropit
 cma_d3:
         cmp     dl,3
@@ -1460,4 +1470,6 @@ cmv_tseg    dw  0
 cmv_hashp   dw  0
 cmv_bncp    dw  0
 cmv_dirp    dw  0
+rd_shared   db  0                       ; drives whose reads the cache has been
+                                        ; told to leave alone - see cma_drive
 cmv_nmax    dw  0                       ; directory entries the room holds

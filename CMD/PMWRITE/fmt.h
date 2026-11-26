@@ -26,40 +26,40 @@
  */
 typedef struct OUT OUT;
 
-OUT  *out_file( const char *path );     /* created, or emptied; NULL if it cannot be */
-OUT  *out_mem( void );                  /* NULL if there is no memory */
-int   out_close( OUT *out );            /* -> out_error(); an OUT in memory is freed */
-int   out_error( const OUT *out );      /* 0, a DOS error code, or WE_NOMEM */
-void  out_fail( OUT *out, int error );  /* a writer's own reason to stop */
-void  out_put( OUT *out, const void *data, u32 len );
-void  out_byte( OUT *out, int value );
-void  out_le16( OUT *out, u32 value );
-void  out_le32( OUT *out, u32 value );
-void  out_be16( OUT *out, u32 value );
-void  out_be32( OUT *out, u32 value );
-void  out_fill( OUT *out, int value, u32 count );
-void  out_str( OUT *out, const char *text );
+OUT     *out_file( const char *path );        /* created, or emptied; NULL if it cannot be */
+OUT     *out_mem( void );                     /* NULL if there is no memory */
+int      out_close( OUT *out );               /* -> out_error(); an OUT in memory is freed */
+int      out_error( const OUT *out );         /* 0, a DOS error code, or WE_NOMEM */
+void     out_fail( OUT *out, int error );     /* a writer's own reason to stop */
+void     out_put( OUT *out, const void *data, unsigned int len );
+void     out_byte( OUT *out, int value );
+void     out_le16( OUT *out, uint32_t value );
+void     out_le32( OUT *out, uint32_t value );
+void     out_be16( OUT *out, uint32_t value );
+void     out_be32( OUT *out, uint32_t value );
+void     out_fill( OUT *out, int value, unsigned int count );
+void     out_str( OUT *out, const char *text );
 void  __cdecl out_fmt( OUT *out, const char *fmt, ... );    /* sfmt's: 512 bytes at most */
-u32   out_tell( const OUT *out );
-void  out_seek( OUT *out, u32 pos );    /* anywhere up to the end */
-u32   out_size( const OUT *out );       /* the end */
+uint32_t out_tell( const OUT *out );
+void     out_seek( OUT *out, uint32_t pos );  /* anywhere up to the end */
+uint32_t out_size( const OUT *out );          /* the end */
 /* an OUT in memory: its bytes, which are the OUT's until it is closed */
-u8   *out_data( OUT *out, u32 *len );
+uint8_t *out_data( OUT *out, uint32_t *len );
 /* ...or taken away from it: the caller's to xfree, and the OUT is empty */
-u8   *out_take( OUT *out, u32 *len );
+uint8_t *out_take( OUT *out, uint32_t *len );
 
 /* ------------------------------------------------------------------ */
 /* reading bytes that may not be there                                 */
 /* ------------------------------------------------------------------ */
-#define LE16( ptr )     ((u32)((const u8 *)(ptr))[0] | ((u32)((const u8 *)(ptr))[1] << 8))
-#define LE32( ptr )     (LE16( ptr ) | (LE16( (const u8 *)(ptr) + 2 ) << 16))
-#define BE16( ptr )     (((u32)((const u8 *)(ptr))[0] << 8) | (u32)((const u8 *)(ptr))[1])
-#define BE32( ptr )     ((BE16( ptr ) << 16) | BE16( (const u8 *)(ptr) + 2 ))
+#define LE16( ptr )     ((uint32_t)((const uint8_t *)(ptr))[0] | ((uint32_t)((const uint8_t *)(ptr))[1] << 8))
+#define LE32( ptr )     (LE16( ptr ) | (LE16( (const uint8_t *)(ptr) + 2 ) << 16))
+#define BE16( ptr )     (((uint32_t)((const uint8_t *)(ptr))[0] << 8) | (uint32_t)((const uint8_t *)(ptr))[1])
+#define BE32( ptr )     ((BE16( ptr ) << 16) | BE16( (const uint8_t *)(ptr) + 2 ))
 
 /* 1 if "count" bytes at "pos" are inside "len" bytes: written so that
    no sum can wrap */
 #define IN_RANGE( pos, count, len ) \
-    ((u32)(pos) <= (u32)(len) && (u32)(count) <= (u32)(len) - (u32)(pos))
+    ((uint32_t)(pos) <= (uint32_t)(len) && (uint32_t)(count) <= (uint32_t)(len) - (uint32_t)(pos))
 
 /* ------------------------------------------------------------------ */
 /* code pages and UTF-8 (CP.C)                                         */
@@ -81,29 +81,29 @@ u8   *out_take( OUT *out, u32 *len );
 #define CP_LATIN1       28591   /* ISO 8859-1: a byte is its own code point */
 #define CP_UTF8         65001
 
-int   cp_known( int codepage );
+int      cp_known( int codepage );
 /* a byte of a code page as Unicode: 0xFFFD for one that is nothing */
-u16   cp_to_uni( int codepage, int byte );
+uint16_t cp_to_uni( int codepage, int byte );
 /* ...and back: the byte, or -1 when the code page has no such character */
-int   cp_from_uni( int codepage, u32 code );
+int      cp_from_uni( int codepage, uint32_t code );
 /* the nearest thing in ASCII to a character no code page had: "(c)",
    "...", a letter without its accent.  -> how many bytes, 0 for none;
    "out" has room for 8. */
-int   uni_fallback( u32 code, char *out );
+int      uni_fallback( uint32_t code, char *out );
 /* ...so: a character written in a code page, as itself or as the
    nearest thing, or as '?'.  -> bytes written (1 to 8). */
-int   cp_put( int codepage, u32 code, char *out );
+int      cp_put( int codepage, uint32_t code, char *out );
 
 /* the next character of UTF-8 at *cur, which moves past it; bad bytes
    are 0xFFFD each.  "end" is where the text stops. */
-u32   utf8_get( const u8 **cur, const u8 *end );
-int   utf8_put( u8 *out, u32 code );            /* -> 1 to 4 bytes */
+uint32_t utf8_get( const uint8_t **cur, const uint8_t *end );
+int      utf8_put( uint8_t *out, uint32_t code ); /* -> 1 to 4 bytes */
 /* UTF-16 at text[*pos], which moves past it: a whole character */
-u32   utf16_get( const u16 *text, u32 len, u32 *pos );
+uint32_t utf16_get( const uint16_t *text, unsigned int len, unsigned int *pos );
 /* a document's own text as UTF-8, to an OUT */
-void  out_utf8( OUT *out, const u16 *text, u32 len );
+void     out_utf8( OUT *out, const uint16_t *text, unsigned int len );
 /* UTF-8 into a fixed buffer, cut at a character if it does not fit */
-void  utf8_copy( char *dst, u32 max, const u16 *text, u32 len );
+void     utf8_copy( char *dst, unsigned int max, const uint16_t *text, unsigned int len );
 
 /* ------------------------------------------------------------------ */
 /* the formats                                                         */
@@ -137,9 +137,9 @@ typedef struct {
      * signature of its own answers from the bytes' look and the
      * extension, and never above 60.
      */
-    int (*detect)( const u8 *data, u32 len, const char *ext );
+    int (*detect)( const uint8_t *data, uint32_t len, const char *ext );
     /* the file into an empty document (wd_new's): WE_* */
-    int (*load)( const u8 *data, u32 len, WDOC *doc );
+    int (*load)( const uint8_t *data, uint32_t len, WDOC *doc );
     /* the document to a file, as the kind "variant" says: WE_*.  NULL
        for a format that is only read. */
     int (*save)( WDOC *doc, OUT *out, int variant );
@@ -154,7 +154,7 @@ extern const FORMAT *const formats[];   /* FMTTAB.C: FMT_COUNT entries, [0] NULL
 const FORMAT *fmt_get( int id );
 /* which format a file is: the one that is surest, FMT_NONE for none.
    Plain text is the answer for anything that looks like text. */
-int   fmt_detect( const u8 *data, u32 len, const char *name );
+int   fmt_detect( const uint8_t *data, uint32_t len, const char *name );
 /* a format by its name on a command line ("DOCX", "WORDSTAR"), and a
    variant by the start of its name; -1 for neither */
 int   fmt_by_tag( const char *tag );

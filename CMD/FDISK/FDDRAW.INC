@@ -117,8 +117,10 @@ dp_draw:
 dpd_named:
         mov     al,' '
         call    scr_putc
-        cmp     dword ptr [tui_ndisks],1
-        jbe     dpd_inside
+        mov     eax,dword ptr [tui_dmask]       ; more than one disk offered
+        lea     edx,[eax-1]                     ; (tu_dlist): a bit left once
+        test    eax,edx                         ; the lowest is cleared
+        jz      dpd_inside
         mov     ebx,DP_TOP
         mov     ecx,DP_RIGHT - 18
         call    scr_at

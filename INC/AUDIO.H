@@ -76,27 +76,27 @@
 
 /* AUD_INFO's buffer */
 typedef struct {
-    u32  sig;                 /* AUD_SIGVAL */
-    u16  version;             /* AUD_VERSION */
-    u16  flags;               /* AUDF_* */
-    u32  rate_min;            /* frames a second the card can play */
-    u32  rate_max;            /* ...one channel */
-    u32  rate_max2;           /* ...two channels (lower on some cards) */
-    u8   bits;                /* AUDB_*: the sample sizes it plays */
-    u8   channels;            /* 1 or 2 */
-    u8   irq;                 /* the line, or AUD_NONE */
-    u8   dma8;                /* ISA DMA channels, or AUD_NONE */
-    u8   dma16;
-    u8   spare;
-    u16  port;                /* the card's first port, 0 if none */
-    u16  fm_port;             /* the FM chip's, 0 if none */
-    u16  mpu_port;            /* the MIDI port's, 0 if none */
-    u16  version_hw;          /* the card's own version (a Sound
+    uint32_t sig;             /* AUD_SIGVAL */
+    uint16_t version;         /* AUD_VERSION */
+    uint16_t flags;           /* AUDF_* */
+    uint32_t rate_min;        /* frames a second the card can play */
+    uint32_t rate_max;        /* ...one channel */
+    uint32_t rate_max2;       /* ...two channels (lower on some cards) */
+    uint8_t  bits;            /* AUDB_*: the sample sizes it plays */
+    uint8_t  channels;        /* 1 or 2 */
+    uint8_t  irq;             /* the line, or AUD_NONE */
+    uint8_t  dma8;            /* ISA DMA channels, or AUD_NONE */
+    uint8_t  dma16;
+    uint8_t  spare;
+    uint16_t port;            /* the card's first port, 0 if none */
+    uint16_t fm_port;         /* the FM chip's, 0 if none */
+    uint16_t mpu_port;        /* the MIDI port's, 0 if none */
+    uint16_t version_hw;      /* the card's own version (a Sound
                                  Blaster's DSP: major * 256 + minor) */
-    u16  spare2;
-    u32  pciaddr;             /* BUS_PCIENUM's address, 0 on ISA */
-    u32  ring_max;            /* the biggest ring AUD_OPEN makes */
-    char name[32];            /* ASCIIZ: "Sound Blaster 16" */
+    uint16_t spare2;
+    uint32_t pciaddr;         /* BUS_PCIENUM's address, 0 on ISA */
+    uint32_t ring_max;        /* the biggest ring AUD_OPEN makes */
+    char     name[32];        /* ASCIIZ: "Sound Blaster 16" */
 } AUD_INFOBLOCK;
 
 #define AUDI_LEN     76
@@ -119,17 +119,17 @@ typedef struct {
 /* AUD_OPEN's buffer: what is wanted goes in, what the card does comes
    back.  Samples are interleaved, left first. */
 typedef struct {
-    u32  rate;                /* frames a second */
-    u8   bits;                /* 8 or 16 */
-    u8   channels;            /* 1 or 2 */
-    u16  spare;
-    u32  ring;                /* bytes of ring wanted, 0 for the driver's
+    uint32_t rate;            /* frames a second */
+    uint8_t  bits;            /* 8 or 16 */
+    uint8_t  channels;        /* 1 or 2 */
+    uint16_t spare;
+    uint32_t ring;            /* bytes of ring wanted, 0 for the driver's
                                  choice; out: the ring made */
-    u32  block;               /* bytes the card plays between two
+    uint32_t block;           /* bytes the card plays between two
                                  interrupts, 0 for the driver's choice -
                                  smaller times events more finely; out:
                                  what was set */
-    u32  events;              /* event records the queue should hold, 0
+    uint32_t events;          /* event records the queue should hold, 0
                                  for none; out: what it holds */
 } AUD_OPENBLOCK;
 
@@ -137,17 +137,17 @@ typedef struct {
 
 /* AUD_STATUS's buffer */
 typedef struct {
-    u32  played;              /* frames played since AUD_OPEN or AUD_STOP
+    uint32_t played;          /* frames played since AUD_OPEN or AUD_STOP
                                  (counts on past 2^32) */
-    u32  queued;              /* bytes in the ring not yet played */
-    u32  room;                /* bytes AUD_WRITE would take now */
-    u32  underruns;           /* times the ring ran dry while playing,
+    uint32_t queued;          /* bytes in the ring not yet played */
+    uint32_t room;            /* bytes AUD_WRITE would take now */
+    uint32_t underruns;       /* times the ring ran dry while playing,
                                  since AUD_OPEN */
-    u32  irqs;                /* the card's interrupts */
-    u32  ev_queued;           /* events waiting */
-    u32  ev_room;             /* events AUD_EVENTS would take now */
-    u8   state;               /* AUDST_* */
-    u8   spare[3];
+    uint32_t irqs;            /* the card's interrupts */
+    uint32_t ev_queued;       /* events waiting */
+    uint32_t ev_room;         /* events AUD_EVENTS would take now */
+    uint8_t  state;           /* AUDST_* */
+    uint8_t  spare[3];
 } AUD_STATBLOCK;
 
 #define AUDS_LEN     32
@@ -161,11 +161,11 @@ typedef struct {
 
 /* An event: 8 bytes, the layout of MPLAY's DECEV */
 typedef struct {
-    u32  frame;               /* due when "played" reaches this */
-    u8   kind;                /* AUDE_* */
-    u8   reg;                 /* AUDE_OPL: the register */
-    u8   val;                 /* AUDE_OPL: the value; AUDE_MPU: the byte */
-    u8   bank;                /* AUDE_OPL: 0, or 1 for the OPL3's second
+    uint32_t frame;           /* due when "played" reaches this */
+    uint8_t  kind;            /* AUDE_* */
+    uint8_t  reg;             /* AUDE_OPL: the register */
+    uint8_t  val;             /* AUDE_OPL: the value; AUDE_MPU: the byte */
+    uint8_t  bank;            /* AUDE_OPL: 0, or 1 for the OPL3's second
                                  register set */
 } AUDEV;
 

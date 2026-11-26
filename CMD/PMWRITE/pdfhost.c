@@ -86,10 +86,10 @@ static const char *why_text( int why )
     return "?";
 }
 
-static u8 *read_file( const char *path, u32 *len )
+static uint8_t *read_file( const char *path, uint32_t *len )
 {
     FILE *file = fopen( path, "rb" );
-    u8 *data;
+    uint8_t *data;
     long size;
 
     if ( file == NULL ) {
@@ -98,25 +98,25 @@ static u8 *read_file( const char *path, u32 *len )
     fseek( file, 0, SEEK_END );
     size = ftell( file );
     fseek( file, 0, SEEK_SET );
-    data = (u8 *)malloc( (size_t)size + 1 );
+    data = (uint8_t *)malloc( (size_t)size + 1 );
     if ( data == NULL || fread( data, 1, (size_t)size, file ) != (size_t)size ) {
         fclose( file );
         free( data );
         return NULL;
     }
     fclose( file );
-    *len = (u32)size;
+    *len = (uint32_t)size;
     return data;
 }
 
 /* rows of one byte (gray, with a palette) or three, the top one first */
-static int write_bmp( const char *path, const u8 *pix, int width, int height, int bpp, u32 pitch )
+static int write_bmp( const char *path, const uint8_t *pix, int width, int height, int bpp, unsigned int pitch )
 {
     FILE *out = fopen( path, "wb" );
-    u8 head[54], pal[4];
-    u32 stride = ((u32)width * (u32)bpp + 3) & ~3UL;
-    u32 size = stride * (u32)height, offset = bpp == 1 ? 54 + 1024 : 54;
-    u8 *row;
+    uint8_t head[54], pal[4];
+    uint32_t stride = ((uint32_t)width * (uint32_t)bpp + 3) & ~3UL;
+    uint32_t size = stride * (uint32_t)height, offset = bpp == 1 ? 54 + 1024 : 54;
+    uint8_t *row;
     int line, index;
 
     if ( out == NULL ) {
@@ -125,25 +125,25 @@ static int write_bmp( const char *path, const u8 *pix, int width, int height, in
     memset( head, 0, sizeof( head ) );
     head[0] = 'B';
     head[1] = 'M';
-    *(u32 *)(head + 2) = offset + size;
-    *(u32 *)(head + 10) = offset;
-    *(u32 *)(head + 14) = 40;
-    *(s32 *)(head + 18) = width;
-    *(s32 *)(head + 22) = height;
-    *(u16 *)(head + 26) = 1;
-    *(u16 *)(head + 28) = (u16)(bpp * 8);
-    *(u32 *)(head + 34) = size;
+    *(uint32_t *)(head + 2) = offset + size;
+    *(uint32_t *)(head + 10) = offset;
+    *(uint32_t *)(head + 14) = 40;
+    *(int32_t *)(head + 18) = width;
+    *(int32_t *)(head + 22) = height;
+    *(uint16_t *)(head + 26) = 1;
+    *(uint16_t *)(head + 28) = (uint16_t)(bpp * 8);
+    *(uint32_t *)(head + 34) = size;
     fwrite( head, 1, 54, out );
     if ( bpp == 1 ) {
         for ( index = 0; index < 256; index++ ) {
-            pal[0] = pal[1] = pal[2] = (u8)index;
+            pal[0] = pal[1] = pal[2] = (uint8_t)index;
             pal[3] = 0;
             fwrite( pal, 1, 4, out );
         }
     }
-    row = (u8 *)calloc( 1, stride );
+    row = (uint8_t *)calloc( 1, stride );
     for ( line = height - 1; line >= 0; line-- ) {
-        memcpy( row, pix + (u32)line * pitch, (u32)width * (u32)bpp );
+        memcpy( row, pix + (unsigned int)line * pitch, (unsigned int)width * (unsigned int)bpp );
         fwrite( row, 1, stride, out );
     }
     free( row );
@@ -201,8 +201,8 @@ static int render_page( int index, const char *path, int zoom, int gray )
         cv.width = view.width;
         cv.height = view.height;
         cv.bpp = gray ? 1 : 3;
-        cv.stride = (u32)cv.width * (u32)cv.bpp;
-        cv.pix = (u8 *)malloc( cv.stride * (u32)cv.height );
+        cv.stride = (unsigned int)cv.width * (unsigned int)cv.bpp;
+        cv.pix = (uint8_t *)malloc( cv.stride * (unsigned int)cv.height );
         cv.org_x = cv.org_y = 0;
         canvas_clear( &cv, 0xFFFFFFUL );
         page_render( &page, &view, &cv );
@@ -294,14 +294,14 @@ static void look_none( const TEXTCH *ch )
 static int cmd_leak( int rounds, int count, char **paths )
 {
     static JMPBUF trap;
-    static u16 words[] = { 'P', 'M', 'W', 'R', 'I', 'T', 'E', ' ', 0xA9, ' ', 0x20AC };
+    static uint16_t words[] = { 'P', 'M', 'W', 'R', 'I', 'T', 'E', ' ', 0xA9, ' ', 0x20AC };
     WFONT swiss;
     PVBLOCK block;
     COVER cover;
     PAGE page;
     VIEW view;
     char **lines;
-    u32 start = heap_in_use(), after;
+    unsigned int start = heap_in_use(), after;
     int round, file, index, pages, wide, high, got, why, failed = 0, drawn = 0;
 
     memset( &swiss, 0, sizeof( swiss ) );
@@ -310,7 +310,7 @@ static int cmd_leak( int rounds, int count, char **paths )
     cover.width = 400;
     cover.height = 40;
     cover.stride = 400;
-    cover.pix = (u8 *)calloc( 400, 40 );
+    cover.pix = (uint8_t *)calloc( 400, 40 );
     printf( "heap in use at the start: %lu\n", (unsigned long)start );
     for ( round = 1; round <= rounds; round++ ) {
         for ( file = 0; file < count; file++ ) {
@@ -331,9 +331,9 @@ static int cmd_leak( int rounds, int count, char **paths )
                     block.width = wide;
                     block.height = high;
                     block.bpp = (index & 1) ? 1 : 3;
-                    block.stride = (u32)wide * (u32)block.bpp;
+                    block.stride = (unsigned int)wide * (unsigned int)block.bpp;
                     block.org_x = block.org_y = 0;
-                    block.pix = (u8 *)malloc( block.stride * (u32)high );
+                    block.pix = (uint8_t *)malloc( block.stride * (unsigned int)high );
                     pdfview_render( index, PV_ZOOM( 72, 50 ), 0, &block );
                     free( block.pix );
                     drawn++;
@@ -381,7 +381,7 @@ static int cmd_leak( int rounds, int count, char **paths )
 static int cmd_view( int argc, char **argv )
 {
     PVBLOCK block;
-    s32 zoom = PV_ZOOM( 72, atoi( argv[5] ) ), wide_pt, high_pt;
+    int32_t zoom = PV_ZOOM( 72, atoi( argv[5] ) ), wide_pt, high_pt;
     int page = atoi( argv[3] ) - 1, turn = atoi( argv[6] ), gray = 0, at = 7, wide, high, why;
 
     why = open_file( argv[2] );
@@ -414,8 +414,8 @@ static int cmd_view( int argc, char **argv )
     }
     block.bpp = gray ? 1 : 3;
     /* rows further apart than they are wide, as a screen's may be */
-    block.stride = (u32)block.width * (u32)block.bpp + 5;
-    block.pix = (u8 *)malloc( block.stride * (u32)block.height );
+    block.stride = (unsigned int)block.width * (unsigned int)block.bpp + 5;
+    block.pix = (uint8_t *)malloc( block.stride * (unsigned int)block.height );
     why = pdfview_render( page, zoom, turn, &block );
     if ( why != PV_OK ) {
         printf( "page %d: %s\n", page + 1, why_text( why ) );
@@ -450,8 +450,9 @@ static int cmd_lines( const char *path, int page )
    drawn afterwards: the picture must not have disturbed it */
 static int cmd_jpeg( const char *in_path, const char *out_path, const char *pdf_path, const char *page_path )
 {
-    u8 *data, *pix;
-    u32 len, wide, high, before;
+    uint8_t *data, *pix;
+    uint32_t len, wide, high;
+    unsigned int before;
 
     if ( pdf_path != NULL && open_file( pdf_path ) != PV_OK ) {
         printf( "%s: cannot be opened\n", pdf_path );
@@ -523,7 +524,7 @@ static int cmd_fonts( void )
     TFINFO info;
     TFACE *face;
     const char *name;
-    u32 index, before = heap_in_use();
+    unsigned int index, before = heap_in_use();
     int style, ascent, descent, gap, made, count = 0;
 
     for ( index = 0; (name = tf_family( index )) != NULL; index++ ) {
@@ -560,10 +561,11 @@ static int style_named( const char *text )
 }
 
 /* UTF-8 from the command line, or \uXXXX, as UTF-16 */
-static u32 to_utf16( const char *text, u16 *out, u32 max )
+static unsigned int to_utf16( const char *text, uint16_t *out, unsigned int max )
 {
-    const u8 *cur = (const u8 *)text;
-    u32 len = 0, code;
+    const uint8_t *cur = (const uint8_t *)text;
+    unsigned int len = 0;
+    uint32_t code;
 
     while ( *cur && len + 2 < max ) {
         if ( cur[0] == '\\' && cur[1] == 'u' && strlen( (const char *)cur ) >= 6 ) {
@@ -576,15 +578,15 @@ static u32 to_utf16( const char *text, u16 *out, u32 max )
         } else if ( cur[0] < 0x80 ) {
             code = *cur++;
         } else if ( (cur[0] & 0xE0) == 0xC0 && cur[1] ) {
-            code = ((u32)(cur[0] & 0x1F) << 6) | (cur[1] & 0x3F);
+            code = ((uint32_t)(cur[0] & 0x1F) << 6) | (cur[1] & 0x3F);
             cur += 2;
         } else if ( (cur[0] & 0xF0) == 0xE0 && cur[1] && cur[2] ) {
-            code = ((u32)(cur[0] & 0x0F) << 12) | ((u32)(cur[1] & 0x3F) << 6) | (cur[2] & 0x3F);
+            code = ((uint32_t)(cur[0] & 0x0F) << 12) | ((uint32_t)(cur[1] & 0x3F) << 6) | (cur[2] & 0x3F);
             cur += 3;
         } else {
             code = *cur++;
         }
-        out[len++] = (u16)code;
+        out[len++] = (uint16_t)code;
     }
     return len;
 }
@@ -592,31 +594,31 @@ static u32 to_utf16( const char *text, u16 *out, u32 max )
 /* black on white, from a block of coverage */
 static int write_cover( const char *path, COVER *cover )
 {
-    u32 index, count = (u32)cover->width * (u32)cover->height;
+    unsigned int index, count = (unsigned int)cover->width * (unsigned int)cover->height;
 
     for ( index = 0; index < count; index++ ) {
-        cover->pix[index] = (u8)(255 - cover->pix[index]);
+        cover->pix[index] = (uint8_t)(255 - cover->pix[index]);
     }
     return write_bmp( path, cover->pix, cover->width, cover->height, 1, cover->stride );
 }
 
-static const u16 pangram[] = {
+static const uint16_t pangram[] = {
     'T','h','e',' ','q','u','i','c','k',' ','b','r','o','w','n',' ','f','o','x',' ','j','u','m','p','s',' ',
     'o','v','e','r',' ','t','h','e',' ','l','a','z','y',' ','d','o','g','.',' ','0','1','2','3','4','5','6',
     '7','8','9'
 };
-static const u16 capitals[] = {
+static const uint16_t capitals[] = {
     'A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z',
     ' ','(','a',')',' ','[','b',']',' ','{','c','}',' ','&',' ','@',' ','#',' ','$','1','2','.','5','0',' ',
     '9','9','%'
 };
 /* the drawings SFONT.C was given for PMWRITE, in Latin-1's order and then the rest */
-static const u16 later[] = {
+static const uint16_t later[] = {
     0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6, 0xA7, 0xA8, 0xA9, 0xAA, 0xAB, 0xAC, 0xAE, 0xAF, 0xB0, 0xB1, 0xB2,
     0xB3, 0xB4, 0xB5, 0xB6, 0xB8, 0xB9, 0xBA, 0xBB, 0xBC, 0xBD, 0xBE, 0xBF, 0xD0, 0xD7, 0xD8, 0xDE, 0xDF,
     0xF0, 0xF7, 0xF8, 0xFE, 0x20AC, 0x201E, 0x2020, 0x2021, 0x2030, 0x2039, 0x201C, 0x201D, 0x2122, 0x203A
 };
-static const u16 mixed[] = {
+static const uint16_t mixed[] = {
     0x201C, 'Q', 'u', 'o', 't', 'e', 'd', 0x201D, ' ', 0x2018, 'o', 'n', 'e', 0x2019, ' ', 0x2013, ' ',
     0x2014, ' ', 0x2026, ' ', 0x2022, ' ', 0xFB01, ' ', 0xFB02, ' ', 0xC6, 0xE6, 0x152, 0x153, ' ', 0xC0,
     0xC9, 0xCE, 0xD5, 0xDC, 0xE0, 0xE9, 0xEE, 0xF5, 0xFC, 0xE7, 0xF1, 0x160, 0x17E, ' ', 0xA3, '5', ' ',
@@ -629,8 +631,8 @@ static const u16 mixed[] = {
 static int cmd_sheet( const char *path, const char *base, int sizes, char **points )
 {
     static const struct {
-        const u16 *text;
-        u32 len;
+        const uint16_t *text;
+        unsigned int len;
     } lines[SHEET_LINES] = {
         { pangram, sizeof( pangram ) / 2 }, { capitals, sizeof( capitals ) / 2 },
         { later, sizeof( later ) / 2 }, { mixed, sizeof( mixed ) / 2 }
@@ -638,7 +640,7 @@ static int cmd_sheet( const char *path, const char *base, int sizes, char **poin
     WFONT font;
     COVER cover;
     TFACE *face;
-    s32 em, end, widest = 0, ypos = 0;
+    int32_t em, end, widest = 0, ypos = 0;
     int ascent, descent, gap, size, style, line, pass, row, height = 0;
 
     if ( !font_named( base, &font ) ) {
@@ -651,7 +653,7 @@ static int cmd_sheet( const char *path, const char *base, int sizes, char **poin
     for ( pass = 0; pass < 2; pass++ ) {
         ypos = I2FX( 4 );
         for ( size = 0; size < sizes; size++ ) {
-            em = (s32)(atof( points[size] ) * 96.0 / 72.0 * 65536.0);
+            em = (int32_t)(atof( points[size] ) * 96.0 / 72.0 * 65536.0);
             for ( style = 0; style < 3; style++ ) {
                 face = tf_face( &font, style == 1 ? CF_BOLD : (style == 2 ? CF_ITALIC : 0) );
                 tf_metrics( face, &ascent, &descent, &gap );
@@ -670,8 +672,8 @@ static int cmd_sheet( const char *path, const char *base, int sizes, char **poin
         if ( pass == 0 ) {
             cover.width = (int)FX_CEIL( widest ) + 8;
             cover.height = height = (int)FX_CEIL( ypos ) + 4;
-            cover.stride = (u32)cover.width;
-            cover.pix = (u8 *)calloc( cover.stride, (size_t)cover.height );
+            cover.stride = (unsigned int)cover.width;
+            cover.pix = (uint8_t *)calloc( cover.stride, (size_t)cover.height );
         }
     }
     row = write_cover( path, &cover );
@@ -684,12 +686,12 @@ static int cmd_sheet( const char *path, const char *base, int sizes, char **poin
 static int cmd_type( const char *path, const char *base, const char *style, const char *points,
                      const char *text )
 {
-    static u16 wide[512];
+    static uint16_t wide[512];
     WFONT font;
     COVER cover;
     TFACE *face;
-    s32 em = (s32)(atof( points ) * 96.0 / 72.0 * 65536.0), end;
-    u32 len = to_utf16( text, wide, 512 );
+    int32_t em = (int32_t)(atof( points ) * 96.0 / 72.0 * 65536.0), end;
+    unsigned int len = to_utf16( text, wide, 512 );
     int ascent, descent, gap;
 
     if ( !font_named( base, &font ) ) {
@@ -701,8 +703,8 @@ static int cmd_type( const char *path, const char *base, const char *style, cons
     end = tf_draw( face, em, I2FX( 4 ), 0, wide, len, NULL );
     cover.width = (int)FX_CEIL( end ) + 8;
     cover.height = (int)FX_CEIL( mul_div( em, ascent + descent + gap, 1000 ) ) + 8;
-    cover.stride = (u32)cover.width;
-    cover.pix = (u8 *)calloc( cover.stride, (size_t)cover.height );
+    cover.stride = (unsigned int)cover.width;
+    cover.pix = (uint8_t *)calloc( cover.stride, (size_t)cover.height );
     tf_draw( face, em, I2FX( 4 ), I2FX( 4 ) + mul_div( em, ascent, 1000 ), wide, len, &cover );
     if ( getenv( "PWRECLAIM" ) != NULL ) {
         /* SET PWRECLAIM=1: the shapes and then the font files given
@@ -712,10 +714,10 @@ static int cmd_type( const char *path, const char *base, const char *style, cons
         int gave = tf_reclaim();
 
         gave += tf_reclaim();
-        again.pix = (u8 *)calloc( cover.stride, (size_t)cover.height );
+        again.pix = (uint8_t *)calloc( cover.stride, (size_t)cover.height );
         tf_draw( face, em, I2FX( 4 ), I2FX( 4 ) + mul_div( em, ascent, 1000 ), wide, len, &again );
         printf( "tf_reclaim gave back %d times; drawn again: %s\n", gave,
-                memcmp( again.pix, cover.pix, cover.stride * (u32)cover.height ) == 0 ? "the same" : "DIFFERENT" );
+                memcmp( again.pix, cover.pix, cover.stride * (unsigned int)cover.height ) == 0 ? "the same" : "DIFFERENT" );
         free( again.pix );
     }
     write_cover( path, &cover );
@@ -729,7 +731,7 @@ static int cmd_widths( const char *base, const char *style )
 {
     WFONT font;
     TFACE *face;
-    u32 code;
+    uint32_t code;
 
     if ( !font_named( base, &font ) ) {
         printf( "no base is called %s\n", base );
@@ -746,7 +748,7 @@ static int cmd_widths( const char *base, const char *style )
 
 static void dump( OBJ *obj, int depth )
 {
-    u32 index;
+    unsigned int index;
 
     switch ( obj->type ) {
     case T_NULL:
@@ -816,9 +818,9 @@ int main( int argc, char **argv )
     PAGE page;
     OBJ *obj;
     IN *in;
-    u8 *data = NULL, buf[4096];
+    uint8_t *data = NULL, buf[4096];
     const char *pw;
-    u32 len, got;
+    uint32_t len, got;
     int why, index, first, last;
 
     /* SET PDFSFONT=RIGHT: a PDF's built-in font drawn as it should be,
@@ -939,11 +941,11 @@ int main( int argc, char **argv )
             }
         }
     } else if ( strcmp( argv[1], "obj" ) == 0 && argc >= 4 ) {
-        obj = pdf_load( (u32)atol( argv[3] ) );
+        obj = pdf_load( (uint32_t)atol( argv[3] ) );
         dump( obj, 0 );
         printf( "\n" );
     } else if ( strcmp( argv[1], "stream" ) == 0 && argc >= 4 ) {
-        in = pdf_stream( pdf_load( (u32)atol( argv[3] ) ) );
+        in = pdf_stream( pdf_load( (uint32_t)atol( argv[3] ) ) );
         if ( in == NULL ) {
             fprintf( stderr, "no stream, or a filter this cannot undo\n" );
             return 3;

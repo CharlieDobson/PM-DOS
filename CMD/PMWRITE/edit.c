@@ -21,12 +21,12 @@ static int   type_kind = 1;     /* we_begin_more's: changes after each word */
 /* small things                                                        */
 /* ------------------------------------------------------------------ */
 
-static WPARA *para_of( const EDITOR *ed, u32 index )
+static WPARA *para_of( const EDITOR *ed, unsigned int index )
 {
     return ed->story->para[index < ed->story->count ? index : ed->story->count - 1];
 }
 
-static int is_low_half( u32 unit )
+static int is_low_half( uint32_t unit )
 {
     return unit >= 0xDC00 && unit <= 0xDFFF;
 }
@@ -65,7 +65,7 @@ static WPOS step_left( const EDITOR *ed, WPOS pos )
 }
 
 /* 0 a space, 1 part of a word, 2 anything else */
-static int char_class( u32 code )
+static int char_class( uint32_t code )
 {
     if ( code == ' ' || code == WCH_TAB || code == WCH_NBSP || code == WCH_LINE || code == WCH_PAGE ) {
         return 0;
@@ -141,7 +141,7 @@ void ed_sel( const EDITOR *ed, WPOS *from, WPOS *to )
 
 /* can the end of paragraph "index" be taken out, joining it to the
    next?  Not when that would run one table cell into another. */
-static int can_join( const EDITOR *ed, u32 index )
+static int can_join( const EDITOR *ed, unsigned int index )
 {
     const WPARA *para, *next;
 
@@ -160,7 +160,7 @@ static int can_join( const EDITOR *ed, u32 index )
 static void drop_sel( EDITOR *ed )
 {
     WPOS from, to, start, end;
-    u32 index;
+    unsigned int index;
     int plain = 1;
 
     if ( !ed_has_sel( ed ) ) {
@@ -286,7 +286,7 @@ void ed_set_story( EDITOR *ed, STORY *story )
     moved( ed, 0 );
 }
 
-void ed_set_view( EDITOR *ed, s32 width, s32 height )
+void ed_set_view( EDITOR *ed, int width, int height )
 {
     ed->view_w = width > GRID_W ? width : GRID_W;
     ed->view_h = height > GRID_H ? height : GRID_H;
@@ -294,7 +294,7 @@ void ed_set_view( EDITOR *ed, s32 width, s32 height )
 
 static void scroll_clamp( EDITOR *ed )
 {
-    s32 most = lay_height( ed->lay ) - ed->view_h;
+    int most = lay_height( ed->lay ) - ed->view_h;
 
     if ( ed->scroll_y > most ) {
         ed->scroll_y = most;
@@ -310,7 +310,7 @@ static void scroll_clamp( EDITOR *ed )
 
 void ed_update( EDITOR *ed )
 {
-    s32 x, y, height, edge = ed->grid ? GRID_W : 240;
+    int x, y, height, edge = ed->grid ? GRID_W : 240;
 
     if ( !lay_update( ed->lay ) ) {
         ed->no_memory = 1;
@@ -352,13 +352,13 @@ void ed_update( EDITOR *ed )
     }
 }
 
-void ed_scroll_to( EDITOR *ed, s32 y )
+void ed_scroll_to( EDITOR *ed, int y )
 {
     ed->scroll_y = y;
     scroll_clamp( ed );
 }
 
-void ed_scroll_by( EDITOR *ed, s32 lines )
+void ed_scroll_by( EDITOR *ed, int lines )
 {
     ed->scroll_y += lines * (ed->grid ? GRID_H : 240);
     scroll_clamp( ed );
@@ -429,8 +429,8 @@ void ed_move( EDITOR *ed, int how, int select )
 {
     LINFO info;
     WPOS pos = ed->caret, from, to, target;
-    s32 x, y, height, jump, top, high, block_top, block_h;
-    u32 line;
+    int x, y, height, jump, top, high, block_top, block_h;
+    unsigned int line;
     int keep_x = 0;
 
     lay_update( ed->lay );
@@ -549,7 +549,7 @@ void ed_move( EDITOR *ed, int how, int select )
     }
 }
 
-void ed_click( EDITOR *ed, s32 x, s32 y, int select )
+void ed_click( EDITOR *ed, int x, int y, int select )
 {
     lay_update( ed->lay );
     ed_goto( ed, lay_hit( ed->lay, x, y ), select );
@@ -604,23 +604,23 @@ void ed_select_all( EDITOR *ed )
 /* typing                                                              */
 /* ------------------------------------------------------------------ */
 
-static void put_code( EDITOR *ed, u32 code )
+static void put_code( EDITOR *ed, uint32_t code )
 {
-    u16 units[2];
-    u32 count = 1;
+    uint16_t units[2];
+    unsigned int count = 1;
 
     if ( code >= 0x10000UL ) {
         code -= 0x10000UL;
-        units[0] = (u16)(0xD800 + (code >> 10));
-        units[1] = (u16)(0xDC00 + (code & 0x3FF));
+        units[0] = (uint16_t)(0xD800 + (code >> 10));
+        units[1] = (uint16_t)(0xDC00 + (code & 0x3FF));
         count = 2;
     } else {
-        units[0] = (u16)code;
+        units[0] = (uint16_t)code;
     }
     we_insert( ed->doc, ed->story, &ed->caret, units, count, wd_chp( ed->doc, &ed->type_chp ) );
 }
 
-void ed_type( EDITOR *ed, u32 code )
+void ed_type( EDITOR *ed, uint32_t code )
 {
     CHP chp = ed->type_chp;
     int set = ed->type_set;
@@ -649,7 +649,7 @@ void ed_type( EDITOR *ed, u32 code )
     }
 }
 
-void ed_break( EDITOR *ed, u32 code )
+void ed_break( EDITOR *ed, uint32_t code )
 {
     if ( code != WCH_LINE && code != WCH_PAGE ) {
         return;
@@ -842,7 +842,7 @@ int ed_insert_row( EDITOR *ed )
 {
     const STORY *story = ed->story;
     WPOS pos = ed->caret;
-    u32 index = ed->caret.para;
+    unsigned int index = ed->caret.para;
 
     while ( index < story->count && (story->para[index]->pap.flags & (PF_INTABLE | PF_ROWEND)) == PF_INTABLE ) {
         index++;
@@ -863,7 +863,7 @@ int ed_insert_row( EDITOR *ed )
 /* what the table commands share: the change, as one action that Undo
    takes back, with the caret put where the change says.  1 if anything
    was changed. */
-static int table_done( EDITOR *ed, u32 serial, WPOS pos )
+static int table_done( EDITOR *ed, unsigned int serial, WPOS pos )
 {
     int changed = we_serial( ed->doc ) != serial;
 
@@ -878,7 +878,7 @@ static int table_done( EDITOR *ed, u32 serial, WPOS pos )
 int ed_insert_row_above( EDITOR *ed )
 {
     WPOS pos = ed->caret;
-    u32 serial = we_serial( ed->doc );
+    unsigned int serial = we_serial( ed->doc );
 
     if ( !ed_in_table( ed ) ) {
         return 0;
@@ -892,7 +892,7 @@ int ed_insert_row_above( EDITOR *ed )
 int ed_delete_rows( EDITOR *ed )
 {
     WPOS pos = ed->caret;
-    u32 serial = we_serial( ed->doc ), from = ed->anchor.para, to = ed->caret.para;
+    unsigned int serial = we_serial( ed->doc ), from = ed->anchor.para, to = ed->caret.para;
 
     if ( !ed_in_table( ed ) ) {
         return 0;
@@ -906,7 +906,7 @@ int ed_delete_rows( EDITOR *ed )
 int ed_insert_col( EDITOR *ed, int after )
 {
     WPOS pos = ed->caret;
-    u32 serial = we_serial( ed->doc );
+    unsigned int serial = we_serial( ed->doc );
 
     if ( !ed_in_table( ed ) ) {
         return 0;
@@ -921,7 +921,7 @@ int ed_insert_col( EDITOR *ed, int after )
 int ed_delete_col( EDITOR *ed )
 {
     WPOS pos = ed->caret;
-    u32 serial = we_serial( ed->doc );
+    unsigned int serial = we_serial( ed->doc );
 
     if ( !ed_in_table( ed ) ) {
         return 0;
@@ -932,14 +932,14 @@ int ed_delete_col( EDITOR *ed )
     return table_done( ed, serial, pos );
 }
 
-s32 ed_col_width( const EDITOR *ed )
+int ed_col_width( const EDITOR *ed )
 {
     return we_col_width( ed->story, ed->caret.para );
 }
 
-int ed_set_col_width( EDITOR *ed, s32 width )
+int ed_set_col_width( EDITOR *ed, int width )
 {
-    u32 serial = we_serial( ed->doc );
+    unsigned int serial = we_serial( ed->doc );
 
     if ( !ed_in_table( ed ) ) {
         return 0;
@@ -951,7 +951,7 @@ int ed_set_col_width( EDITOR *ed, s32 width )
 }
 
 /* is paragraph "index" in a table, and not the last of its cell? */
-static int cell_goes_on( const STORY *story, u32 index )
+static int cell_goes_on( const STORY *story, unsigned int index )
 {
     return (story->para[index]->pap.flags & (PF_INTABLE | PF_CELLEND)) == PF_INTABLE;
 }
@@ -960,7 +960,7 @@ int ed_cell_step( EDITOR *ed, int back )
 {
     const STORY *story = ed->story;
     WPOS pos;
-    u32 index = ed->caret.para;
+    unsigned int index = ed->caret.para;
 
     if ( !ed_in_table( ed ) ) {
         return 0;
@@ -1002,7 +1002,7 @@ int ed_cell_step( EDITOR *ed, int back )
     return 1;
 }
 
-int ed_insert_image( EDITOR *ed, const u8 *data, u32 len, int fmt, s32 width, s32 height )
+int ed_insert_image( EDITOR *ed, const uint8_t *data, uint32_t len, int fmt, int width, int height )
 {
     int obj = wd_image_new( ed->doc, data, len, fmt, width, height );
 
@@ -1037,7 +1037,7 @@ STORY *ed_insert_note( EDITOR *ed, int kind )
     story = obj < 0 ? NULL : wd_note_story( ed->doc, obj );
     if ( story != NULL ) {
         pap_init( &pap );
-        pap.style = (u8)wd_style( ed->doc, "Footnote Text", STY_FOOTNOTE );
+        pap.style = (uint8_t)wd_style( ed->doc, "Footnote Text", STY_FOOTNOTE );
         if ( wd_para_add( ed->doc, story, &pap ) == NULL ) {
             story = NULL;
         }
@@ -1061,7 +1061,7 @@ STORY *ed_note_near( EDITOR *ed )
 {
     const WPARA *para = para_of( ed, ed->caret.para );
     STORY *story;
-    u32 off;
+    unsigned int off;
     int obj;
 
     if ( ed->story != &ed->doc->body ) {
@@ -1121,7 +1121,7 @@ void ed_redo( EDITOR *ed )
 /* looks                                                               */
 /* ------------------------------------------------------------------ */
 
-void ed_set_chp( EDITOR *ed, u32 mask, const CHP *value, u16 flag_mask )
+void ed_set_chp( EDITOR *ed, uint32_t mask, const CHP *value, uint16_t flag_mask )
 {
     WPOS from, to, caret = ed->caret, anchor = ed->anchor;
 
@@ -1138,11 +1138,11 @@ void ed_set_chp( EDITOR *ed, u32 mask, const CHP *value, u16 flag_mask )
     type_kind ^= 3;
 }
 
-void ed_toggle( EDITOR *ed, u16 flag )
+void ed_toggle( EDITOR *ed, uint16_t flag )
 {
     CHP value;
     WPOS from, to;
-    u16 mask = flag;
+    uint16_t mask = flag;
     int on;
 
     if ( flag & (CF_SUPER | CF_SUB) ) {
@@ -1158,13 +1158,13 @@ void ed_toggle( EDITOR *ed, u16 flag )
         on = (ed->type_chp.flags & flag) != flag;
     }
     mem_set( &value, 0, sizeof( value ) );
-    value.flags = (u16)(on ? flag : 0);
+    value.flags = (uint16_t)(on ? flag : 0);
     ed_set_chp( ed, CM_FLAGS, &value, mask );
 }
 
 /* the paragraphs a paragraph command is for: the selection's, without
    the last one when the selection only just reaches its start */
-static void para_span( const EDITOR *ed, u32 *first, u32 *last )
+static void para_span( const EDITOR *ed, unsigned int *first, unsigned int *last )
 {
     WPOS from, to;
 
@@ -1176,10 +1176,10 @@ static void para_span( const EDITOR *ed, u32 *first, u32 *last )
     }
 }
 
-void ed_set_pap( EDITOR *ed, u32 mask, const PAP *value, u16 flag_mask )
+void ed_set_pap( EDITOR *ed, uint32_t mask, const PAP *value, uint16_t flag_mask )
 {
     WPOS caret = ed->caret, anchor = ed->anchor;
-    u32 first, last;
+    unsigned int first, last;
 
     para_span( ed, &first, &last );
     act_begin( ed );
@@ -1194,15 +1194,15 @@ void ed_set_style( EDITOR *ed, int style )
     const WSTYLE *from;
     WPOS caret = ed->caret, anchor = ed->anchor, start, end;
     PAP pap;
-    u32 first, last;
+    unsigned int first, last;
 
-    if ( style < 0 || (u32)style >= ed->doc->nstyle ) {
+    if ( style < 0 || (unsigned int)style >= ed->doc->nstyle ) {
         return;
     }
     from = &ed->doc->style[style];
     para_span( ed, &first, &last );
     pap = from->pap;
-    pap.style = (u8)style;
+    pap.style = (uint8_t)style;
     start.para = first;
     start.off = 0;
     end.para = last;
@@ -1223,7 +1223,7 @@ void ed_indent( EDITOR *ed, int more )
 {
     WPOS caret = ed->caret, anchor = ed->anchor;
     PAP pap;
-    u32 first, last, index;
+    unsigned int first, last, index;
 
     para_span( ed, &first, &last );
     act_begin( ed );
@@ -1268,7 +1268,7 @@ const PAP *ed_cur_pap( EDITOR *ed )
 /* find and replace                                                    */
 /* ------------------------------------------------------------------ */
 
-int ed_find( EDITOR *ed, const u16 *what, u32 len, int flags )
+int ed_find( EDITOR *ed, const uint16_t *what, unsigned int len, int flags )
 {
     WPOS from, to, at, start;
     int found;
@@ -1304,11 +1304,11 @@ int ed_find( EDITOR *ed, const u16 *what, u32 len, int flags )
 }
 
 /* the text at a place replaced: the new text takes the look of the old */
-static void replace_at( EDITOR *ed, WPOS at, u32 len, const u16 *with, u32 with_len )
+static void replace_at( EDITOR *ed, WPOS at, unsigned int len, const uint16_t *with, unsigned int with_len )
 {
     const WPARA *para = para_of( ed, at.para );
     WPOS end = at;
-    u16 chp = at.off < para->len ? para->attr[at.off] : 0;
+    uint16_t chp = at.off < para->len ? para->attr[at.off] : 0;
 
     end.off += len;
     we_delete( ed->doc, ed->story, at, end );
@@ -1316,7 +1316,7 @@ static void replace_at( EDITOR *ed, WPOS at, u32 len, const u16 *with, u32 with_
     we_insert( ed->doc, ed->story, &ed->caret, with, with_len, chp );
 }
 
-int ed_replace( EDITOR *ed, const u16 *what, u32 len, const u16 *with, u32 with_len, int flags )
+int ed_replace( EDITOR *ed, const uint16_t *what, unsigned int len, const uint16_t *with, unsigned int with_len, int flags )
 {
     WPOS from, to, at;
 
@@ -1332,10 +1332,10 @@ int ed_replace( EDITOR *ed, const u16 *what, u32 len, const u16 *with, u32 with_
     return !ed->no_memory;
 }
 
-u32 ed_replace_all( EDITOR *ed, const u16 *what, u32 len, const u16 *with, u32 with_len, int flags )
+unsigned int ed_replace_all( EDITOR *ed, const uint16_t *what, unsigned int len, const uint16_t *with, unsigned int with_len, int flags )
 {
     WPOS at, from;
-    u32 count = 0, serial;
+    unsigned int count = 0, serial;
 
     if ( len == 0 ) {
         return 0;
@@ -1364,11 +1364,11 @@ u32 ed_replace_all( EDITOR *ed, const u16 *what, u32 len, const u16 *with, u32 w
 /* for the status bar                                                  */
 /* ------------------------------------------------------------------ */
 
-void ed_where( EDITOR *ed, u32 *page, u32 *pages, u32 *line, u32 *col )
+void ed_where( EDITOR *ed, unsigned int *page, unsigned int *pages, unsigned int *line, unsigned int *col )
 {
     const LPAGE *start;
     LINFO info;
-    u32 index, caret_line, count = 0, para;
+    unsigned int index, caret_line, count = 0, para;
 
     lay_update( ed->lay );
     index = lay_page_of( ed->lay, ed->caret );

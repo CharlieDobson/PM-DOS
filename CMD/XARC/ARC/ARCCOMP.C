@@ -188,7 +188,7 @@ static void FreeList( char **list, int n )
 
 static void FreeEntries( ArcCompJob *j )
 {
-    UInt32 i;
+    unsigned i;
     if ( j->ents )
         for ( i = 0; i < j->nEnts; i++ ) free( j->ents[i].rel );
     free( j->ents );
@@ -379,7 +379,7 @@ static int BaseIndex( ArcCompJob *j, const char *dir )
  * carry it past 4 GB and back round to a figure under COMP_MAX_INPUT, and
  * the archive would be started; so it pins at the top instead, and the check
  * in ArcCompScan refuses. */
-static UInt32 AddSat( UInt32 total, UInt32 add )
+static uint32_t AddSat( uint32_t total, uint32_t add )
 {
     return ( total + add < total ) ? 0xFFFFFFFFUL : total + add;
 }
@@ -392,7 +392,7 @@ static int NewEntry( ArcCompJob *j, int base, const char *rel,
     if ( j->nEnts >= ARC_MAX_ENTRIES ) return SZ_ERR_TOOBIG;
     if ( j->nEnts == j->capEnts )
     {
-        UInt32 cap = j->capEnts ? j->capEnts * 2 : 256;
+        uint32_t cap = j->capEnts ? j->capEnts * 2 : 256;
         CompEntry *n = (CompEntry *)realloc( j->ents, cap * sizeof( CompEntry ) );
         if ( !n ) return SZ_ERR_MEMORY;
         j->ents = n;
@@ -401,8 +401,8 @@ static int NewEntry( ArcCompJob *j, int base, const char *rel,
     e = &j->ents[j->nEnts];
     memset( e, 0, sizeof( *e ) );
     if ( ( e->rel = DupStr( rel ) ) == 0 ) return SZ_ERR_MEMORY;
-    e->base    = (UInt16)base;
-    e->isDir   = (Byte)( isDir ? 1 : 0 );
+    e->base    = (uint16_t)base;
+    e->isDir   = (uint8_t)( isDir ? 1 : 0 );
     e->attr    = f->attr | ( isDir ? 0x10 : 0 );
     if ( !isDir ) e->attr &= ~0x10UL;
     e->size    = isDir ? 0 : f->size;
@@ -563,7 +563,7 @@ static int ScanItem( ArcCompJob *j, const char *item )
     const char *leaf;
     void    *h;
     int      n, base, rc = SZ_OK;
-    UInt32   before = j->nEnts;
+    uint32_t before = j->nEnts;
 
     if ( !_fullpath( full, item, sizeof( full ) ) )
         lstrcpyn( full, item, sizeof( full ) );
@@ -638,7 +638,7 @@ static ArcCompJob *g_sortJob;
 
 static int DupCmp( const void *a, const void *b )
 {
-    UInt32 x = *(const UInt32 *)a, y = *(const UInt32 *)b;
+    uint32_t x = *(const uint32_t *)a, y = *(const uint32_t *)b;
     int c = PathCmp( CompStoredName( g_sortJob, &g_sortJob->ents[x] ),
                      CompStoredName( g_sortJob, &g_sortJob->ents[y] ) );
     if ( c ) return c;
@@ -647,14 +647,15 @@ static int DupCmp( const void *a, const void *b )
 
 static int DropDuplicates( ArcCompJob *j )
 {
-    UInt32 *idx, i;
+    uint32_t *idx;
+    unsigned i;
 
     if ( j->nEnts < 2 ) return SZ_OK;
-    idx = (UInt32 *)malloc( j->nEnts * sizeof( UInt32 ) );
+    idx = (uint32_t *)malloc( j->nEnts * sizeof( uint32_t ) );
     if ( !idx ) return SZ_ERR_MEMORY;
     for ( i = 0; i < j->nEnts; i++ ) idx[i] = i;
     g_sortJob = j;
-    qsort( idx, j->nEnts, sizeof( UInt32 ), DupCmp );
+    qsort( idx, j->nEnts, sizeof( uint32_t ), DupCmp );
     for ( i = 1; i < j->nEnts; i++ )
     {
         CompEntry *prev = &j->ents[idx[i - 1]];
@@ -685,8 +686,8 @@ static int DropDuplicates( ArcCompJob *j )
 int ArcCompScan( ArcCompJob *j, const char *archivePath,
                  ArcCompProgress prog, void *user )
 {
-    int    i, rc = SZ_OK;
-    UInt32 k, files = 0;
+    int      i, rc = SZ_OK;
+    unsigned k, files = 0;
 
     FreeEntries( j );
     j->scanned = 0;
@@ -708,7 +709,7 @@ int ArcCompScan( ArcCompJob *j, const char *archivePath,
     if ( rc != SZ_OK ) return rc;
 
     /* The order the writers go through: scan order, without the dropped. */
-    j->order = (UInt32 *)malloc( ( j->nEnts ? j->nEnts : 1 ) * sizeof( UInt32 ) );
+    j->order = (uint32_t *)malloc( ( j->nEnts ? j->nEnts : 1 ) * sizeof( uint32_t ) );
     if ( !j->order ) return SZ_ERR_MEMORY;
     j->nOrder = 0;
     j->totalBytes = 0;
@@ -735,8 +736,8 @@ int ArcCompScan( ArcCompJob *j, const char *archivePath,
     return SZ_OK;
 }
 
-int    ArcCompCount( ArcCompJob *j )   { return (int)j->nOrder; }
-UInt32 ArcCompTotalKB( ArcCompJob *j )
+int      ArcCompCount( ArcCompJob *j )   { return (int)j->nOrder; }
+uint32_t ArcCompTotalKB( ArcCompJob *j )
 {
     /* Rounded up without adding first: a pinned total plus 1023 would wrap. */
     return j->totalBytes / 1024 + ( ( j->totalBytes & 1023 ) ? 1 : 0 );
@@ -745,21 +746,21 @@ UInt32 ArcCompTotalKB( ArcCompJob *j )
 /*===========================================================================
  * Sniffing: how should this file be packed?
  *===========================================================================*/
-static int StartsWith( const Byte *b, UInt32 n, const char *sig, UInt32 len )
+static int StartsWith( const uint8_t *b, uint32_t n, const char *sig, uint32_t len )
 {
     return n >= len && memcmp( b, sig, len ) == 0;
 }
 
-static UInt32 Get32( const Byte *p )
+static uint32_t Get32( const uint8_t *p )
 {
-    return (UInt32)p[0] | ( (UInt32)p[1] << 8 ) | ( (UInt32)p[2] << 16 ) | ( (UInt32)p[3] << 24 );
+    return (uint32_t)p[0] | ( (uint32_t)p[1] << 8 ) | ( (uint32_t)p[2] << 16 ) | ( (uint32_t)p[3] << 24 );
 }
 
-static UInt32 Get16( const Byte *p )   { return (UInt32)p[0] | ( (UInt32)p[1] << 8 ); }
-static UInt32 Get16BE( const Byte *p ) { return ( (UInt32)p[0] << 8 ) | (UInt32)p[1]; }
-static UInt32 Get32BE( const Byte *p )
+static uint32_t Get16( const uint8_t *p )   { return (uint32_t)p[0] | ( (uint32_t)p[1] << 8 ); }
+static uint32_t Get16BE( const uint8_t *p ) { return ( (uint32_t)p[0] << 8 ) | (uint32_t)p[1]; }
+static uint32_t Get32BE( const uint8_t *p )
 {
-    return ( (UInt32)p[0] << 24 ) | ( (UInt32)p[1] << 16 ) | ( (UInt32)p[2] << 8 ) | (UInt32)p[3];
+    return ( (uint32_t)p[0] << 24 ) | ( (uint32_t)p[1] << 16 ) | ( (uint32_t)p[2] << 8 ) | (uint32_t)p[3];
 }
 
 /*---- The Delta filter: sampled data ---------------------------------------
@@ -785,9 +786,9 @@ static UInt32 Get32BE( const Byte *p )
  *--------------------------------------------------------------------------- */
 #define SN_PHOTO_SAME_PCT  50          /* neighbouring pixels alike, at most */
 
-static int LooksPhotographic( const Byte *px, UInt32 n, UInt32 bpp )
+static int LooksPhotographic( const uint8_t *px, uint32_t n, uint32_t bpp )
 {
-    UInt32 i, pairs = 0, same = 0;
+    unsigned i, pairs = 0, same = 0;
 
     if ( n < bpp * 64 ) return 0;                   /* too little to judge */
     for ( i = bpp; i + bpp <= n; i += bpp )
@@ -798,18 +799,18 @@ static int LooksPhotographic( const Byte *px, UInt32 n, UInt32 bpp )
     return pairs != 0 && same * 100 <= pairs * SN_PHOTO_SAME_PCT;
 }
 
-static unsigned SniffDelta( const Byte *b, UInt32 n, UInt32 fileSize )
+static unsigned SniffDelta( const uint8_t *b, uint32_t n, uint32_t fileSize )
 {
     /* WAV: RIFF....WAVE, then chunks; the frame size is in "fmt ". */
     if ( n >= 12 && StartsWith( b, n, "RIFF", 4 ) && memcmp( b + 8, "WAVE", 4 ) == 0 )
     {
-        UInt32 p = 12;
+        uint32_t p = 12;
         while ( p + 8 <= n )
         {
-            UInt32 len = Get32( b + p + 4 );
+            uint32_t len = Get32( b + p + 4 );
             if ( memcmp( b + p, "fmt ", 4 ) == 0 )
             {
-                UInt32 tag, align;
+                uint32_t tag, align;
                 if ( len < 16 || p + 8 + 16 > n ) return 0;
                 tag   = Get16( b + p + 8 );
                 align = Get16( b + p + 8 + 12 );
@@ -827,14 +828,14 @@ static unsigned SniffDelta( const Byte *b, UInt32 n, UInt32 fileSize )
     if ( n >= 12 && StartsWith( b, n, "FORM", 4 ) &&
          ( memcmp( b + 8, "AIFF", 4 ) == 0 || memcmp( b + 8, "AIFC", 4 ) == 0 ) )
     {
-        UInt32 p = 12;
-        int    aifc = ( b[11] == 'C' );
+        uint32_t p = 12;
+        int      aifc = ( b[11] == 'C' );
         while ( p + 8 <= n )
         {
-            UInt32 len = Get32BE( b + p + 4 );
+            uint32_t len = Get32BE( b + p + 4 );
             if ( memcmp( b + p, "COMM", 4 ) == 0 )
             {
-                UInt32 frame;
+                uint32_t frame;
                 if ( len < 18 || p + 8 + 18 > n ) return 0;
                 if ( aifc )
                 {
@@ -855,10 +856,10 @@ static unsigned SniffDelta( const Byte *b, UInt32 n, UInt32 fileSize )
     /* BMP: uncompressed 16-, 24- or 32-bit pixels, if they look photographic. */
     if ( n >= 54 && b[0] == 'B' && b[1] == 'M' )
     {
-        UInt32 off  = Get32( b + 10 );
-        UInt32 hsz  = Get32( b + 14 );
-        UInt32 bpp  = Get16( b + 28 );
-        UInt32 comp = Get32( b + 30 );
+        uint32_t off  = Get32( b + 10 );
+        uint32_t hsz  = Get32( b + 14 );
+        uint32_t bpp  = Get16( b + 28 );
+        uint32_t comp = Get32( b + 30 );
         if ( hsz < 40 ) return 0;                   /* the old OS/2 header */
         if ( comp != 0 && comp != 3 ) return 0;     /* BI_RGB, BI_BITFIELDS */
         if ( bpp != 16 && bpp != 24 && bpp != 32 ) return 0;
@@ -871,8 +872,8 @@ static unsigned SniffDelta( const Byte *b, UInt32 n, UInt32 fileSize )
      * optional footer and extension area). */
     if ( n >= 18 && fileSize >= 18 )
     {
-        UInt32 idLen = b[0], type = b[2], depth = b[16], desc = b[17];
-        UInt32 w = Get16( b + 12 ), hgt = Get16( b + 14 );
+        uint32_t idLen = b[0], type = b[2], depth = b[16], desc = b[17];
+        uint32_t w = Get16( b + 12 ), hgt = Get16( b + 14 );
         if ( b[1] == 0 && ( type == 2 || type == 3 ) &&
              ( ( type == 2 && ( depth == 24 || depth == 32 ) ) ||
                ( type == 3 && depth == 8 ) ) &&
@@ -880,8 +881,8 @@ static unsigned SniffDelta( const Byte *b, UInt32 n, UInt32 fileSize )
              ( desc & 0xC0 ) == 0 && ( ( desc & 0x0F ) == 0 || ( desc & 0x0F ) == 8 ) &&
              Get16( b + 3 ) == 0 && Get16( b + 5 ) == 0 && b[7] == 0 )
         {
-            UInt32 bpp    = depth / 8;
-            UInt32 expect = 18 + idLen + w * hgt * bpp;
+            uint32_t bpp    = depth / 8;
+            uint32_t expect = 18 + idLen + w * hgt * bpp;
             if ( fileSize >= expect && fileSize - expect <= 1024 && 18 + idLen < n )
                 return LooksPhotographic( b + 18 + idLen, n - 18 - idLen, bpp )
                        ? (unsigned)bpp : 0;
@@ -890,13 +891,13 @@ static unsigned SniffDelta( const Byte *b, UInt32 n, UInt32 fileSize )
     return 0;
 }
 
-int CompSniff( const Byte *b, UInt32 n, UInt32 fileSize, int *isText, unsigned *delta )
+int CompSniff( const uint8_t *b, uint32_t n, uint32_t fileSize, int *isText, unsigned *delta )
 {
-    static const Byte sig7z[6] = { 0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C };
-    static const Byte sigXz[6] = { 0xFD, '7', 'z', 'X', 'Z', 0 };
-    static const Byte sigPng[4] = { 0x89, 'P', 'N', 'G' };
-    UInt32 counts[256];
-    UInt32 i, ctrl = 0;
+    static const uint8_t sig7z[6] = { 0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C };
+    static const uint8_t sigXz[6] = { 0xFD, '7', 'z', 'X', 'Z', 0 };
+    static const uint8_t sigPng[4] = { 0x89, 'P', 'N', 'G' };
+    uint32_t counts[256];
+    unsigned i, ctrl = 0;
 
     if ( isText ) *isText = 0;
     if ( delta )  *delta  = 0;
@@ -906,7 +907,7 @@ int CompSniff( const Byte *b, UInt32 n, UInt32 fileSize, int *isText, unsigned *
      * whitespace (and a ^Z at the end, the DOS way). */
     for ( i = 0; i < n; i++ )
     {
-        Byte c = b[i];
+        uint8_t c = b[i];
         if ( c == 0 ) { ctrl = n; break; }
         if ( c < 32 && c != 9 && c != 10 && c != 13 && c != 12 && c != 26 ) ctrl++;
     }
@@ -941,10 +942,10 @@ int CompSniff( const Byte *b, UInt32 n, UInt32 fileSize, int *isText, unsigned *
      * touch, and it would only cost a little. */
     if ( n >= 64 && b[0] == 'M' && b[1] == 'Z' )
     {
-        UInt32 lfa = Get32( b + 0x3C );
+        uint32_t lfa = Get32( b + 0x3C );
         if ( lfa > 0 && lfa + 6 <= n )
         {
-            const Byte *h = b + lfa;
+            const uint8_t *h = b + lfa;
             if ( h[0] == 'P' && h[1] == 'E' && h[2] == 0 && h[3] == 0 )
             {
                 unsigned mach = (unsigned)h[4] | ( (unsigned)h[5] << 8 );
@@ -974,7 +975,7 @@ int CompSniff( const Byte *b, UInt32 n, UInt32 fileSize, int *isText, unsigned *
      * tried. */
     if ( n >= 4096 )
     {
-        UInt32 m = n & ~255UL, s = 0, chi;
+        uint32_t m = n & ~255UL, s = 0, chi;
         memset( counts, 0, sizeof( counts ) );
         for ( i = 0; i < m; i++ ) counts[b[i]]++;
         for ( i = 0; i < 256; i++ ) s += counts[i] * counts[i];
@@ -1016,8 +1017,8 @@ static void TempName( const char *target, char *dst, int size )
  * stop this part: the archive has already been made. */
 static void ClearArchiveBits( ArcCompJob *j )
 {
-    char   path[SZ_MAX_NAME * 2];
-    UInt32 k;
+    char     path[SZ_MAX_NAME * 2];
+    unsigned k;
 
     for ( k = 0; k < j->nOrder; k++ )
     {
@@ -1088,16 +1089,16 @@ int ArcCompRun( ArcCompJob *j, const char *archivePath,
 /*===========================================================================
  * Results
  *===========================================================================*/
-int    ArcCompFiles( ArcCompJob *j )      { return j->nFiles; }
-UInt32 ArcCompInBytes( ArcCompJob *j )    { return j->inBytes; }
-UInt32 ArcCompOutBytes( ArcCompJob *j )   { return j->outBytes; }
-int    ArcCompDuplicates( ArcCompJob *j ) { return j->nDup; }
-int    ArcCompUnreadable( ArcCompJob *j ) { return j->nUnread; }
-int    ArcCompTooLong( ArcCompJob *j )    { return j->nLong; }
-int    ArcCompTooBig( ArcCompJob *j )     { return j->nBig; }
-int    ArcCompMissing( ArcCompJob *j )    { return j->nMissing; }
+int      ArcCompFiles( ArcCompJob *j )      { return j->nFiles; }
+uint32_t ArcCompInBytes( ArcCompJob *j )    { return j->inBytes; }
+uint32_t ArcCompOutBytes( ArcCompJob *j )   { return j->outBytes; }
+int      ArcCompDuplicates( ArcCompJob *j ) { return j->nDup; }
+int      ArcCompUnreadable( ArcCompJob *j ) { return j->nUnread; }
+int      ArcCompTooLong( ArcCompJob *j )    { return j->nLong; }
+int      ArcCompTooBig( ArcCompJob *j )     { return j->nBig; }
+int      ArcCompMissing( ArcCompJob *j )    { return j->nMissing; }
 const char *ArcCompProblem( ArcCompJob *j ) { return j->problem; }
-UInt32 ArcCompDictSize( ArcCompJob *j )   { return j->dictSize; }
+uint32_t ArcCompDictSize( ArcCompJob *j )   { return j->dictSize; }
 
 int ArcCompSkipped( ArcCompJob *j )
 {

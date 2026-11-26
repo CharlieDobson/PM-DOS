@@ -2353,11 +2353,13 @@ dwp_ds:
         iretd
 
 dwp_bad:
+        call    vdm_scrtext             ; a screen the message can be read on
         mov     esi,OFFSET msgDpmiRaw
         call    dword ptr ds:[IOS_CONSTR]
         mov     eax,VDX_CRITERR
         jmp     vdm_killprog
 dwp_none:
+        call    vdm_scrtext
         mov     esi,OFFSET msgDpmiRawNone
         call    dword ptr ds:[IOS_CONSTR]
         jmp     vdm_abend
@@ -2512,13 +2514,23 @@ dcc_one:
 ;
 ; DPMI calls this "a locked API stack".  Nothing here is pageable, so
 ; locking it amounts to never freeing it, which is what happens.
+;
+; THE KERNEL'S MEMORY, NOT THE CLIENT'S.  It is first asked for by a
+; client's 0303h, when cur_own is that client, and arena_alloc gives a
+; block to cur_own: the client's exit freed it (vdm_cleanup's
+; arena_freeown) with dpmi_cbbase still pointing at it, and the next
+; client's callbacks built their frames in whatever had it by then.
+; Owner 0 is never swept, as fps_boot's is not.
 ;---------------------------------------------------------------------
 dpmi_cbstack:
         pushad
         cmp     dword ptr ds:[dpmi_cbbase],0
         jne     dck_have
+        push    dword ptr [cur_own]
+        mov     dword ptr [cur_own],0
         mov     ebx,DPMI_CBSTK
         call    arena_alloc
+        pop     dword ptr [cur_own]
         jc      dck_no
         mov     dword ptr ds:[dpmi_cbbase],eax
 dck_have:
@@ -3966,13 +3978,19 @@ deg_no:
 ; dpmi_excstack - the locked stack and its selector, made the first time
 ;               and described again for each client (the table it is
 ;               in is wiped by every mode switch).  CF if no memory.
+;               The kernel's memory, for dpmi_cbstack's reason: made
+;               while a client is cur_own, it was freed when that client
+;               ended and used again by the next.
 ;---------------------------------------------------------------------
 dpmi_excstack:
         pushad
         cmp     dword ptr ds:[dpmi_excbase],0
         jne     des_have
+        push    dword ptr [cur_own]
+        mov     dword ptr [cur_own],0
         mov     ebx,DPMI_EXCSTK
         call    arena_alloc
+        pop     dword ptr [cur_own]
         jc      des_none
         mov     dword ptr ds:[dpmi_excbase],eax
 des_have:
@@ -4266,7 +4284,16 @@ dfa_real:
         mov     dword ptr ds:[dpmi_ferr],edx
         mov     dword ptr ds:[dpmi_feip],ecx
         mov     dword ptr ds:[dpmi_fcs],ebx
+        mov     eax,cr2                 ; before the BIOS below: the page
+        mov     dword ptr ds:[dpmi_fcr2],eax    ; fault the client took
 
+        ; A screen the report can be read on (vdm_scrtext) - for a
+        ; client, which is a box ending.  With none it is a panic, and
+        ; the BIOS is not called from one.
+        cmp     dword ptr ds:[dpmi_active],0
+        je      dfa_say
+        call    vdm_scrtext
+dfa_say:
         mov     esi,OFFSET msgDpmiFault
         call    dword ptr ds:[IOS_CONSTR]
         mov     eax,dword ptr ds:[dpmi_fvec]
@@ -4290,7 +4317,7 @@ dfa_real:
         jne     dfa_nocr2
         mov     esi,OFFSET msgVdmCR2
         call    dword ptr ds:[IOS_CONSTR]
-        mov     eax,cr2
+        mov     eax,dword ptr ds:[dpmi_fcr2]
         call    vdm_hex32
 dfa_nocr2:
         mov     esi,OFFSET msgDpmiCR
@@ -4376,6 +4403,7 @@ dpmi_fvec       dd  0                   ; what the fault reporter was told
 dpmi_ferr       dd  0
 dpmi_feip       dd  0
 dpmi_fcs        dd  0
+dpmi_fcr2       dd  0                   ; and CR2, before anything else ran
 dpmi_fpeip      dd  -1                  ; the last coprocessor error a client
 dpmi_fpcs       dd  -1                  ; was sent, and the tick the run of
 dpmi_fpwhen     dd  0                   ; them began on - see dfa_fperr

@@ -54,15 +54,19 @@ typedef struct {
 } OPTIONS;
 
 typedef struct {
-    u32 hid_cnt, hid_clus;
-    u32 dir_cnt, dir_clus;
-    u32 fil_cnt, fil_clus;
-    u32 root_clus;              /* FAT32 root directory clusters    */
-    u32 bad_clus;
-    u32 orph_cnt, orph_clus;    /* recovered (or would-be) files     */
-    u32 lost_kept;              /* lost clusters left allocated      */
-    u32 cross_cnt;
-    int ftrunc;                 /* part of the tree was not processed */
+    unsigned int hid_cnt;
+    uint32_t     hid_clus;
+    unsigned int dir_cnt;
+    uint32_t     dir_clus;
+    unsigned int fil_cnt;
+    uint32_t     fil_clus;
+    uint32_t     root_clus;        /* FAT32 root directory clusters */
+    uint32_t     bad_clus;
+    unsigned int orph_cnt;         /* recovered (or would-be) files  */
+    uint32_t     orph_clus;
+    uint32_t     lost_kept;        /* lost clusters left allocated   */
+    unsigned int cross_cnt;
+    int          ftrunc;           /* part of the tree was not processed */
 } STATS;
 
 extern OPTIONS opt;
@@ -73,16 +77,16 @@ void chkdsk_main( void );       /* called by each SYS_*.C entry point */
 void chkdsk_abort( void );      /* unlock the drive and exit 255      */
 
 /* SCAN.C */
-void scan_pass1( void );
-void scan_pass2( void );
-void nofix_notice( void );
-int  errors_seen( void );
-void report_error( const char *path, const char *text );
-int  prompt_yn( const char *text );
-u32  entry_first( const u8 *ent );
-void entry_set_first( u8 *ent, u32 clus );
-void entry_stamp( u8 *ent );
-int  dir_fix( DIRBUF *dir, u32 idx );
+void     scan_pass1( void );
+void     scan_pass2( void );
+void     nofix_notice( void );
+int      errors_seen( void );
+void     report_error( const char *path, const char *text );
+int      prompt_yn( const char *text );
+uint32_t entry_first( const uint8_t *ent );
+void     entry_set_first( uint8_t *ent, uint32_t clus );
+void     entry_stamp( uint8_t *ent );
+int      dir_fix( DIRBUF *dir, unsigned int idx );
 
 /* LOST.C */
 void lost_chains( void );
@@ -93,23 +97,23 @@ void frag_check( void );
 /* LFN.C */
 #define LFN_MAX 255
 typedef struct {
-    int  active;                /* collecting a run of LFN entries    */
-    int  ok;                    /* run is consistent so far           */
-    u32  start;                 /* index of the first entry of run    */
-    int  expect;                /* next sequence number expected      */
-    u8   sum;                   /* checksum every entry must carry    */
-    u16  name[LFN_MAX + 14];
-    int  len;                   /* characters (from first entry)      */
+    int          active;        /* collecting a run of LFN entries    */
+    int          ok;            /* run is consistent so far           */
+    unsigned int start;         /* index of the first entry of run    */
+    int          expect;        /* next sequence number expected      */
+    uint8_t      sum;           /* checksum every entry must carry    */
+    uint16_t     name[LFN_MAX + 14];
+    int          len;           /* characters (from first entry)      */
 } LFNRUN;
 
-u8   lfn_checksum( const u8 *sfn );
-void lfn_begin( LFNRUN *run );
-int  lfn_add( LFNRUN *run, const u8 *ent, u32 idx ); /* 0 = previous run broken */
-int  lfn_match( LFNRUN *run, const u8 *sfn );        /* complete & valid for sfn */
-void lfn_oem( const LFNRUN *run, char *out );        /* LFN_MAX+1 bytes */
-void sfn_name( const u8 *ent, char *out );           /* "NAME.EXT", 13 bytes */
-int  sfn_is_dot( const u8 *ent );                    /* 1 = ".", 2 = ".." */
-int  wild_match( const char *pat, const char *name );
-int  fcb_match( const char *pat, const u8 *sfn );
+uint8_t lfn_checksum( const uint8_t *sfn );
+void    lfn_begin( LFNRUN *run );
+int     lfn_add( LFNRUN *run, const uint8_t *ent, unsigned int idx ); /* 0 = previous run broken */
+int     lfn_match( LFNRUN *run, const uint8_t *sfn );                 /* complete & valid for sfn */
+void    lfn_oem( const LFNRUN *run, char *out );                      /* LFN_MAX+1 bytes */
+void    sfn_name( const uint8_t *ent, char *out );                    /* "NAME.EXT", 13 bytes */
+int     sfn_is_dot( const uint8_t *ent );                             /* 1 = ".", 2 = ".." */
+int     wild_match( const char *pat, const char *name );
+int     fcb_match( const char *pat, const uint8_t *sfn );
 
 #endif

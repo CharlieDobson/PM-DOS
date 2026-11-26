@@ -12,15 +12,15 @@
 /* ------------------------------------------------------------------ */
 
 typedef struct {
-    int ended;
-    u8  buf[512];
+    int     ended;
+    uint8_t buf[512];
 } AHEX;
 
 static int ahex_fill( IN *in )
 {
     AHEX *st = IN_STATE( in, AHEX );
     IN *src = in->src;
-    u32 len = 0;
+    unsigned int len = 0;
     int ch, val, have = -1;
 
     while ( len < sizeof( st->buf ) && !st->ended ) {
@@ -28,7 +28,7 @@ static int ahex_fill( IN *in )
         if ( ch < 0 || ch == '>' ) {
             st->ended = 1;
             if ( have >= 0 ) {
-                st->buf[len++] = (u8)(have << 4);
+                st->buf[len++] = (uint8_t)(have << 4);
             }
             break;
         }
@@ -44,7 +44,7 @@ static int ahex_fill( IN *in )
         if ( have < 0 ) {
             have = val;
         } else {
-            st->buf[len++] = (u8)((have << 4) | val);
+            st->buf[len++] = (uint8_t)((have << 4) | val);
             have = -1;
         }
     }
@@ -63,15 +63,16 @@ IN *flt_ahex( IN *src )
 /* ------------------------------------------------------------------ */
 
 typedef struct {
-    int ended;
-    u8  buf[512];
+    int     ended;
+    uint8_t buf[512];
 } A85;
 
 static int a85_fill( IN *in )
 {
     A85 *st = IN_STATE( in, A85 );
     IN *src = in->src;
-    u32 len = 0, word = 0;
+    unsigned int len = 0;
+    uint32_t word = 0;
     int ch, have = 0, index;
 
     while ( len + 4 <= sizeof( st->buf ) && !st->ended ) {
@@ -83,7 +84,7 @@ static int a85_fill( IN *in )
                     word = word * 85 + 84;
                 }
                 for ( index = 0; index < have - 1; index++ ) {
-                    st->buf[len++] = (u8)(word >> (24 - index * 8));
+                    st->buf[len++] = (uint8_t)(word >> (24 - index * 8));
                 }
             }
             break;
@@ -98,12 +99,12 @@ static int a85_fill( IN *in )
         if ( ch < '!' || ch > 'u' ) {
             continue;
         }
-        word = word * 85 + (u32)(ch - '!');
+        word = word * 85 + (uint32_t)(ch - '!');
         if ( ++have == 5 ) {
-            st->buf[len++] = (u8)(word >> 24);
-            st->buf[len++] = (u8)(word >> 16);
-            st->buf[len++] = (u8)(word >> 8);
-            st->buf[len++] = (u8)word;
+            st->buf[len++] = (uint8_t)(word >> 24);
+            st->buf[len++] = (uint8_t)(word >> 16);
+            st->buf[len++] = (uint8_t)(word >> 8);
+            st->buf[len++] = (uint8_t)word;
             word = 0;
             have = 0;
         }
@@ -123,15 +124,15 @@ IN *flt_a85( IN *src )
 /* ------------------------------------------------------------------ */
 
 typedef struct {
-    int ended;
-    u8  buf[512];
+    int     ended;
+    uint8_t buf[512];
 } RLE;
 
 static int rle_fill( IN *in )
 {
     RLE *st = IN_STATE( in, RLE );
     IN *src = in->src;
-    u32 len = 0, count;
+    unsigned int len = 0, count;
     int ch, val;
 
     while ( len + 128 <= sizeof( st->buf ) && !st->ended ) {
@@ -141,9 +142,9 @@ static int rle_fill( IN *in )
             break;
         }
         if ( ch < 128 ) {
-            count = in_read( src, st->buf + len, (u32)ch + 1 );
+            count = in_read( src, st->buf + len, (uint32_t)ch + 1 );
             len += count;
-            if ( count != (u32)ch + 1 ) {
+            if ( count != (uint32_t)ch + 1 ) {
                 st->ended = 1;
             }
         } else {
@@ -152,8 +153,8 @@ static int rle_fill( IN *in )
                 st->ended = 1;
                 break;
             }
-            mem_set( st->buf + len, val, (u32)(257 - ch) );
-            len += (u32)(257 - ch);
+            mem_set( st->buf + len, val, (uint32_t)(257 - ch) );
+            len += (uint32_t)(257 - ch);
         }
     }
     in->cur = st->buf;
@@ -173,20 +174,20 @@ IN *flt_rle( IN *src )
 #define LZW_OUT     8192
 
 typedef struct {
-    u32 bits;
-    int nbits, width, next, prev, early, ended;
-    u16 prefix[4096];
-    u8  suffix[4096];
-    u8  first[4096];                /* the first byte of each string */
-    u8  rev[4096];
-    u8  buf[LZW_OUT + 4096];
+    uint32_t bits;
+    int      nbits, width, next, prev, early, ended;
+    uint16_t prefix[4096];
+    uint8_t  suffix[4096];
+    uint8_t  first[4096];           /* the first byte of each string */
+    uint8_t  rev[4096];
+    uint8_t  buf[LZW_OUT + 4096];
 } LZW;
 
 static int lzw_fill( IN *in )
 {
     LZW *st = IN_STATE( in, LZW );
     IN *src = in->src;
-    u32 len = 0;
+    unsigned int len = 0;
     int ch, code, walk, count;
 
     while ( len < LZW_OUT && !st->ended ) {
@@ -196,7 +197,7 @@ static int lzw_fill( IN *in )
                 st->ended = 1;
                 break;
             }
-            st->bits = (st->bits << 8) | (u32)ch;
+            st->bits = (st->bits << 8) | (uint32_t)ch;
             st->nbits += 8;
         }
         if ( st->ended ) {
@@ -219,7 +220,7 @@ static int lzw_fill( IN *in )
                 st->ended = 1;
                 break;
             }
-            st->buf[len++] = (u8)code;
+            st->buf[len++] = (uint8_t)code;
             st->prev = code;
             continue;
         }
@@ -232,18 +233,18 @@ static int lzw_fill( IN *in )
         count = 0;
         walk = code;
         if ( code == st->next ) {
-            st->rev[count++] = st->prev < 256 ? (u8)st->prev : st->first[st->prev];
+            st->rev[count++] = st->prev < 256 ? (uint8_t)st->prev : st->first[st->prev];
             walk = st->prev;
         }
         while ( walk > 255 && count < 4095 ) {
             st->rev[count++] = st->suffix[walk];
             walk = st->prefix[walk];
         }
-        st->rev[count++] = (u8)walk;
+        st->rev[count++] = (uint8_t)walk;
         if ( st->next < 4096 ) {
-            st->prefix[st->next] = (u16)st->prev;
-            st->suffix[st->next] = (u8)walk;
-            st->first[st->next] = st->prev < 256 ? (u8)st->prev : st->first[st->prev];
+            st->prefix[st->next] = (uint16_t)st->prev;
+            st->suffix[st->next] = (uint8_t)walk;
+            st->first[st->next] = st->prev < 256 ? (uint8_t)st->prev : st->first[st->prev];
             st->next++;
         }
         while ( count ) {
@@ -277,8 +278,8 @@ IN *flt_lzw( IN *src, int early )
 
 typedef struct {
     int predictor, bpp, bpc;
-    u32 rowlen;
-    u8 *prev, *row;
+    unsigned int rowlen;
+    uint8_t *prev, *row;
 } PRED;
 
 static int paeth( int left, int up, int upleft )
@@ -298,8 +299,8 @@ static int pred_fill( IN *in )
 {
     PRED *st = IN_STATE( in, PRED );
     IN *src = in->src;
-    u8 *row = st->row, *prev = st->prev, *swap;
-    u32 got, at;
+    uint8_t *row = st->row, *prev = st->prev, *swap;
+    unsigned int got, at;
     int tag = 0, bpp = st->bpp, left, upleft, sum;
 
     if ( st->predictor >= 10 ) {
@@ -318,38 +319,38 @@ static int pred_fill( IN *in )
     if ( st->predictor >= 10 ) {
         switch ( tag ) {
         case 1:
-            for ( at = (u32)bpp; at < st->rowlen; at++ ) {
-                row[at] = (u8)(row[at] + row[at - bpp]);
+            for ( at = (unsigned int)bpp; at < st->rowlen; at++ ) {
+                row[at] = (uint8_t)(row[at] + row[at - bpp]);
             }
             break;
         case 2:
             for ( at = 0; at < st->rowlen; at++ ) {
-                row[at] = (u8)(row[at] + prev[at]);
+                row[at] = (uint8_t)(row[at] + prev[at]);
             }
             break;
         case 3:
             for ( at = 0; at < st->rowlen; at++ ) {
-                left = at >= (u32)bpp ? row[at - bpp] : 0;
-                row[at] = (u8)(row[at] + ((left + prev[at]) >> 1));
+                left = at >= (unsigned int)bpp ? row[at - bpp] : 0;
+                row[at] = (uint8_t)(row[at] + ((left + prev[at]) >> 1));
             }
             break;
         case 4:
             for ( at = 0; at < st->rowlen; at++ ) {
-                left = at >= (u32)bpp ? row[at - bpp] : 0;
-                upleft = at >= (u32)bpp ? prev[at - bpp] : 0;
-                row[at] = (u8)(row[at] + paeth( left, prev[at], upleft ));
+                left = at >= (unsigned int)bpp ? row[at - bpp] : 0;
+                upleft = at >= (unsigned int)bpp ? prev[at - bpp] : 0;
+                row[at] = (uint8_t)(row[at] + paeth( left, prev[at], upleft ));
             }
             break;
         }
     } else if ( st->bpc == 8 ) {            /* TIFF's: each sample from the one before */
-        for ( at = (u32)bpp; at < st->rowlen; at++ ) {
-            row[at] = (u8)(row[at] + row[at - bpp]);
+        for ( at = (unsigned int)bpp; at < st->rowlen; at++ ) {
+            row[at] = (uint8_t)(row[at] + row[at - bpp]);
         }
     } else if ( st->bpc == 16 ) {
-        for ( at = (u32)bpp; at + 1 < st->rowlen; at += 2 ) {
+        for ( at = (unsigned int)bpp; at + 1 < st->rowlen; at += 2 ) {
             sum = ((row[at] << 8) | row[at + 1]) + ((row[at - bpp] << 8) | row[at - bpp + 1]);
-            row[at] = (u8)(sum >> 8);
-            row[at + 1] = (u8)sum;
+            row[at] = (uint8_t)(sum >> 8);
+            row[at + 1] = (uint8_t)sum;
         }
     }
     in->cur = row;
@@ -364,21 +365,21 @@ IN *flt_predict( IN *src, int predictor, int colors, int bpc, int columns )
 {
     IN *in;
     PRED *st;
-    u32 rowlen;
+    unsigned int rowlen;
 
     if ( colors < 1 || colors > 32 || columns < 1 || columns > 1000000L ||
          (bpc != 1 && bpc != 2 && bpc != 4 && bpc != 8 && bpc != 16) ||
          (predictor != 2 && predictor < 10) ) {
         return src;
     }
-    rowlen = ((u32)columns * (u32)colors * (u32)bpc + 7) / 8;
+    rowlen = ((unsigned int)columns * (unsigned int)colors * (unsigned int)bpc + 7) / 8;
     in = in_new( sizeof( PRED ) + rowlen * 2, pred_fill, src );
     st = IN_STATE( in, PRED );
     st->predictor = predictor;
     st->bpc = bpc;
     st->bpp = (colors * bpc + 7) / 8;
     st->rowlen = rowlen;
-    st->prev = (u8 *)(st + 1);
+    st->prev = (uint8_t *)(st + 1);
     st->row = st->prev + rowlen;
     return in;
 }

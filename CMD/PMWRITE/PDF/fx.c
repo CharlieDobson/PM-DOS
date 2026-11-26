@@ -16,28 +16,28 @@
 /* integers                                                            */
 /* ------------------------------------------------------------------ */
 
-s32 mul_div( s32 lhs, s32 rhs, s32 den )
+int32_t mul_div( int32_t lhs, int32_t rhs, int32_t den )
 {
-    u32 ula, urh, ude, hi, lo, quo;
+    uint32_t ula, urh, ude, hi, lo, quo;
     int neg = 0;
 
     if ( lhs < 0 ) {
         neg ^= 1;
-        ula = (u32)-lhs;
+        ula = (uint32_t)-lhs;
     } else {
-        ula = (u32)lhs;
+        ula = (uint32_t)lhs;
     }
     if ( rhs < 0 ) {
         neg ^= 1;
-        urh = (u32)-rhs;
+        urh = (uint32_t)-rhs;
     } else {
-        urh = (u32)rhs;
+        urh = (uint32_t)rhs;
     }
     if ( den < 0 ) {
         neg ^= 1;
-        ude = (u32)-den;
+        ude = (uint32_t)-den;
     } else {
-        ude = (u32)den;
+        ude = (uint32_t)den;
     }
     hi = umul_hi( ula, urh );
     lo = ula * urh;
@@ -48,7 +48,7 @@ s32 mul_div( s32 lhs, s32 rhs, s32 den )
     if ( quo > 0x7FFFFFFFUL ) {
         quo = 0x7FFFFFFFUL;
     }
-    return neg ? -(s32)quo : (s32)quo;
+    return neg ? -(int32_t)quo : (int32_t)quo;
 }
 
 fx fx_div( fx num, fx den )
@@ -56,9 +56,9 @@ fx fx_div( fx num, fx den )
     return mul_div( num, FX_ONE, den );
 }
 
-u32 isqrt( u32 val )
+uint32_t isqrt( uint32_t val )
 {
-    u32 root = 0, bit = 0x40000000UL;
+    uint32_t root = 0, bit = 0x40000000UL;
 
     while ( bit > val ) {
         bit >>= 2;
@@ -82,7 +82,7 @@ fx fx_sqrt( fx val )
     if ( val <= 0 ) {
         return 0;
     }
-    root = (fx)(isqrt( (u32)val ) << 8);
+    root = (fx)(isqrt( (uint32_t)val ) << 8);
     if ( root == 0 ) {
         return 0;
     }
@@ -91,7 +91,7 @@ fx fx_sqrt( fx val )
 
 fx fx_hypot( fx dx, fx dy )
 {
-    u32 ax = (u32)(dx < 0 ? -dx : dx), ay = (u32)(dy < 0 ? -dy : dy);
+    uint32_t ax = (uint32_t)(dx < 0 ? -dx : dx), ay = (uint32_t)(dy < 0 ? -dy : dy);
     int shift = 0;
 
     while ( (ax | ay) > 0x7FFFUL ) {
@@ -109,7 +109,7 @@ static int sine_made;
 
 static void sine_make( void )
 {
-    s32 cs = 0x40000000L, sn = 0, next;     /* 2.30 */
+    int32_t cs = 0x40000000L, sn = 0, next; /* 2.30 */
     int deg;
 
     for ( deg = 0; deg <= 90; deg++ ) {
@@ -153,7 +153,7 @@ fx fx_cos( int deg )
    polynomial.  Good to three or four digits, which is a colour. */
 fx fx_pow( fx base, fx expo )
 {
-    s32 whole, frac, mant, prod, result;
+    int32_t whole, frac, mant, prod, result;
     int bit, top;
 
     if ( expo == FX_ONE ) {
@@ -165,7 +165,7 @@ fx fx_pow( fx base, fx expo )
     if ( base <= 0 ) {
         return 0;
     }
-    top = bit_top( (u32)base );
+    top = bit_top( (uint32_t)base );
     whole = top - 16;
     mant = top > 16 ? base >> (top - 16) : base << (16 - top);     /* 1.0 to 2.0 */
     frac = 0;
@@ -202,7 +202,7 @@ fx fx_pow( fx base, fx expo )
 /* REAL                                                                */
 /* ------------------------------------------------------------------ */
 
-static REAL real_norm( s32 man, s32 exp )
+static REAL real_norm( int32_t man, int32_t exp )
 {
     REAL out;
     int top;
@@ -212,7 +212,7 @@ static REAL real_norm( s32 man, s32 exp )
         out.exp = 0;
         return out;
     }
-    top = bit_top( man < 0 ? (u32)-man : (u32)man );
+    top = bit_top( man < 0 ? (uint32_t)-man : (uint32_t)man );
     if ( top > 29 ) {
         man >>= top - 29;
         exp += top - 29;
@@ -225,7 +225,7 @@ static REAL real_norm( s32 man, s32 exp )
     return out;
 }
 
-REAL real_int( s32 val )
+REAL real_int( int32_t val )
 {
     return real_norm( val, 0 );
 }
@@ -251,7 +251,7 @@ REAL real_mul( REAL lhs, REAL rhs )
 
 /* (num << 30) / den: the quotient of two normalised mantissas is
    between a half and two, so it fits */
-static s32 shl30_div( s32 num, s32 den );
+static int32_t shl30_div( int32_t num, int32_t den );
 #pragma aux shl30_div =     \
     "mov  edx,eax"          \
     "sar  edx,2"            \
@@ -270,7 +270,7 @@ REAL real_div( REAL lhs, REAL rhs )
 REAL real_add( REAL lhs, REAL rhs )
 {
     REAL swap;
-    s32 diff;
+    int32_t diff;
 
     if ( lhs.man == 0 ) {
         return rhs;
@@ -292,7 +292,7 @@ REAL real_add( REAL lhs, REAL rhs )
 
 fx real_to_fx( REAL val )
 {
-    s32 shift = val.exp + 16;
+    int32_t shift = val.exp + 16;
 
     if ( val.man == 0 || shift < -31 ) {
         return 0;
@@ -306,7 +306,7 @@ fx real_to_fx( REAL val )
     return (val.man + (1L << (-shift - 1))) >> -shift;
 }
 
-s32 real_to_int( REAL val )
+int32_t real_to_int( REAL val )
 {
     if ( val.man == 0 || val.exp < -31 ) {
         return 0;
@@ -323,9 +323,9 @@ s32 real_to_int( REAL val )
     return val.man >> -val.exp;
 }
 
-REAL real_dec( u32 digits, int scale )
+REAL real_dec( uint32_t digits, int scale )
 {
-    REAL val = real_int( (s32)digits ), ten = real_int( 10 );
+    REAL val = real_int( (int32_t)digits ), ten = real_int( 10 );
 
     for ( ; scale > 0; scale-- ) {
         val = real_div( val, ten );
@@ -423,13 +423,13 @@ void fmat_point( const FMAT *mat, fx px, fx py, fx *ox, fx *oy )
 /* log2 of a positive number */
 fx fx_log2( fx val )
 {
-    s32 mant, frac = 0;
+    int32_t mant, frac = 0;
     int bit, top;
 
     if ( val <= 0 ) {
         return -FX_MAX;
     }
-    top = bit_top( (u32)val );
+    top = bit_top( (uint32_t)val );
     mant = top > 16 ? val >> (top - 16) : val << (16 - top);
     for ( bit = 15; bit >= 0; bit-- ) {
         mant = fx_mul( mant, mant );

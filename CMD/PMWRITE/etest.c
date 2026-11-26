@@ -29,8 +29,8 @@ void out_of_memory( void )
 static char *dump_of( WDOC *doc )
 {
     OUT *out = out_mem();
-    u8 *data;
-    u32 len;
+    uint8_t *data;
+    uint32_t len;
     char *text;
 
     wd_dump( doc, out );
@@ -58,18 +58,18 @@ static void same( const char *what, const char *lhs, const char *rhs )
     }
 }
 
-static u32 wide( const char *text, u16 *out )
+static unsigned int wide( const char *text, uint16_t *out )
 {
-    u32 len = 0;
+    unsigned int len = 0;
 
     while ( text[len] ) {
-        out[len] = (u16)(u8)text[len];
+        out[len] = (uint16_t)(uint8_t)text[len];
         len++;
     }
     return len;
 }
 
-static WPOS at( u32 para, u32 off )
+static WPOS at( unsigned int para, unsigned int off )
 {
     WPOS pos;
 
@@ -78,10 +78,10 @@ static WPOS at( u32 para, u32 off )
     return pos;
 }
 
-static void type( WDOC *doc, WPOS *pos, const char *text, u16 chp )
+static void type( WDOC *doc, WPOS *pos, const char *text, uint16_t chp )
 {
-    u16 buf[256];
-    u32 len = wide( text, buf );
+    uint16_t buf[256];
+    unsigned int len = wide( text, buf );
 
     we_begin( doc, &doc->body, *pos );
     we_insert( doc, &doc->body, pos, buf, len, chp );
@@ -92,7 +92,7 @@ static void type( WDOC *doc, WPOS *pos, const char *text, u16 chp )
 static char *plain( WDOC *doc )
 {
     static char buf[4096];
-    u32 pi, index, used = 0;
+    unsigned int pi, index, used = 0;
 
     for ( pi = 0; pi < doc->body.count; pi++ ) {
         if ( pi ) {
@@ -116,11 +116,11 @@ int main( void )
     PAP pap;
     WTAB tabs[2];
     char *empty, *stage[10];
-    u16 buf[64];
-    u16 bold;
-    u32 len;
+    uint16_t buf[64];
+    uint16_t bold;
+    unsigned int len;
     int step, img;
-    static const u8 fake_png[8] = { 0x89, 'P', 'N', 'G', 13, 10, 26, 10 };
+    static const uint8_t fake_png[8] = { 0x89, 'P', 'N', 'G', 13, 10, 26, 10 };
 
     wd_finish( doc );
     empty = dump_of( doc );

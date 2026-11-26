@@ -75,30 +75,30 @@ extern OPTIONS opt;
 /* a volume                                                            */
 /* ------------------------------------------------------------------ */
 typedef struct {
-    int  drive;                 /* 0 = A:                                  */
-    int  fattype;               /* 12, 16 or 32                            */
-    u32  bps;                   /* bytes per sector                        */
-    u32  spc;                   /* sectors per cluster                     */
-    u32  bpc;                   /* bytes per cluster                       */
-    u32  rsvd;                  /* reserved sectors                        */
-    u32  nfats;
-    u32  fatsz;                 /* sectors per FAT                         */
-    u32  root_ents;             /* FAT12/16 root directory entries         */
-    u32  root_sec;              /* FAT12/16 first root directory sector    */
-    u32  root_secs;             /* FAT12/16 root directory sectors         */
-    u32  root_clus;             /* FAT32 first root directory cluster      */
-    u32  data_sec;              /* first sector of cluster 2               */
-    u32  tot_sec;
-    u32  nclus;                 /* number of data clusters                 */
-    u32  maxclus;               /* highest valid cluster number (nclus+1)  */
-    u32  eoc_min;               /* entries >= this end a chain             */
-    u32  bad_val;               /* bad cluster marker                      */
-    u32  eoc_val;               /* value written to end a chain            */
-    int  mirror;                /* FAT32: all FATs kept in step            */
-    u32  active_fat;            /* FAT32: the FAT used when they are not   */
-    u32  fsinfo_sec;            /* FAT32: FSInfo sector, 0 = none          */
-    u8  *fat;                   /* the FAT, whole                          */
-    u32  fatbytes;              /* the part of a FAT that describes clusters */
+    int      drive;             /* 0 = A:                                  */
+    int      fattype;           /* 12, 16 or 32                            */
+    uint32_t bps;               /* bytes per sector                        */
+    uint32_t spc;               /* sectors per cluster                     */
+    uint32_t bpc;               /* bytes per cluster                       */
+    uint32_t rsvd;              /* reserved sectors                        */
+    uint32_t nfats;
+    uint32_t fatsz;             /* sectors per FAT                         */
+    uint32_t root_ents;         /* FAT12/16 root directory entries         */
+    uint32_t root_sec;          /* FAT12/16 first root directory sector    */
+    uint32_t root_secs;         /* FAT12/16 root directory sectors         */
+    uint32_t root_clus;         /* FAT32 first root directory cluster      */
+    uint32_t data_sec;          /* first sector of cluster 2               */
+    uint32_t tot_sec;
+    uint32_t nclus;             /* number of data clusters                 */
+    uint32_t maxclus;           /* highest valid cluster number (nclus+1)  */
+    uint32_t eoc_min;           /* entries >= this end a chain             */
+    uint32_t bad_val;           /* bad cluster marker                      */
+    uint32_t eoc_val;           /* value written to end a chain            */
+    int      mirror;            /* FAT32: all FATs kept in step            */
+    uint32_t active_fat;        /* FAT32: the FAT used when they are not   */
+    uint32_t fsinfo_sec;        /* FAT32: FSInfo sector, 0 = none          */
+    uint8_t *fat;               /* the FAT, whole                          */
+    uint32_t fatbytes;          /* the part of a FAT that describes clusters */
 } VOLUME;
 
 extern VOLUME vol;
@@ -106,38 +106,38 @@ extern VOLUME vol;
 #define CLUS_OK( clus ) ((clus) >= 2 && (clus) <= vol.maxclus)
 #define IS_EOC( val )   ((val) >= vol.eoc_min)
 
-int   vol_open( int drive );            /* 0 = a FAT volume is there */
-void  vol_close( void );
-void  bpb_from_dpb( const u8 *dpb, u8 *sector );    /* for SYS_D32.C */
-u32   clus_lba( u32 clus );
-int   read_secs( u32 lba, u32 count, void *buf );   /* 0 = read */
-int   write_secs( u32 lba, u32 count, const void *buf, int kind );
-int   fat_load( void );                 /* 0 = read; -1 = it would not read */
-u32   fat_get( u32 clus );
-void  fat_set( u32 clus, u32 val );
-int   fat_commit( void );               /* what changed, to every copy kept */
-u32   fat_differing( void );            /* sectors in which a copy disagrees
+int      vol_open( int drive );         /* 0 = a FAT volume is there */
+void     vol_close( void );
+void     bpb_from_dpb( const uint8_t *dpb, uint8_t *sector );   /* for SYS_D32.C */
+uint32_t clus_lba( uint32_t clus );
+int      read_secs( uint32_t lba, uint32_t count, void *buf );  /* 0 = read */
+int      write_secs( uint32_t lba, uint32_t count, const void *buf, int kind );
+int      fat_load( void );              /* 0 = read; -1 = it would not read */
+uint32_t fat_get( uint32_t clus );
+void     fat_set( uint32_t clus, uint32_t val );
+int      fat_commit( void );            /* what changed, to every copy kept */
+uint32_t fat_differing( void );         /* sectors in which a copy disagrees
                                            with the one in memory */
-void  fsinfo_update( u32 free_clusters, u32 next_free );
+void     fsinfo_update( uint32_t free_clusters, uint32_t next_free );
 
 /* A directory read whole into memory.  A FAT12/16 root has fixed_root
    set; everything else is a list of clusters. */
 typedef struct {
-    int  fixed_root;
-    U32LIST clus;
-    u32  nent;                  /* 32-byte entries in data */
-    u8  *data;
+    int          fixed_root;
+    U32LIST      clus;
+    unsigned int nent;          /* 32-byte entries in data */
+    uint8_t     *data;
 } DIRBUF;
 
-int   dir_load_root( DIRBUF *dir );
-int   dir_load_list( DIRBUF *dir, const U32LIST *clus );
-void  dir_free( DIRBUF *dir );
-int   dir_write_entry( DIRBUF *dir, u32 idx );  /* the sector it is in */
-int   dir_write_all( DIRBUF *dir );             /* every sector, first to last */
+int      dir_load_root( DIRBUF *dir );
+int      dir_load_list( DIRBUF *dir, const U32LIST *clus );
+void     dir_free( DIRBUF *dir );
+int      dir_write_entry( DIRBUF *dir, unsigned int idx );  /* the sector it is in */
+int      dir_write_all( DIRBUF *dir );                      /* every sector, first to last */
 /* sector "sec" of the directory, from "image" and not from its own copy */
-int   dir_write_sec( DIRBUF *dir, const u8 *image, u32 sec );
-u32   entry_first( const u8 *ent );
-void  entry_set_first( u8 *ent, u32 clus );
+int      dir_write_sec( DIRBUF *dir, const uint8_t *image, unsigned int sec );
+uint32_t entry_first( const uint8_t *ent );
+void     entry_set_first( uint8_t *ent, uint32_t clus );
 
 /* ------------------------------------------------------------------ */
 /* the tree: every file and directory, and who has each cluster        */
@@ -151,30 +151,30 @@ void  entry_set_first( u8 *ent, u32 clus );
 #define N_ROOT      1           /* the root directory */
 
 typedef struct {
-    u32  parent;                /* the directory it is in: a node */
-    u32  ent;                   /* its 8.3 entry in that directory */
-    u32  first;                 /* its first cluster, 0 = it has none */
-    u32  nclus;
-    u32  target;                /* where it is to start, 0 = nowhere new */
-    u32  dir;                   /* NF_DIR: which of dirs[] */
-    u8   flags;
-    u8   attr;
+    unsigned int parent;        /* the directory it is in: a node */
+    unsigned int ent;           /* its 8.3 entry in that directory */
+    uint32_t     first;         /* its first cluster, 0 = it has none */
+    uint32_t     nclus;
+    uint32_t     target;        /* where it is to start, 0 = nowhere new */
+    unsigned int dir;           /* NF_DIR: which of dirs[] */
+    uint8_t      flags;
+    uint8_t      attr;
 } NODE;
 
 typedef struct {
-    u32    node;
-    DIRBUF buf;
-    u32   *who;                 /* for each entry: the node it is the 8.3
+    unsigned int  node;
+    DIRBUF        buf;
+    unsigned int *who;          /* for each entry: the node it is the 8.3
                                    entry of, or N_NONE */
-    u32    dead;                /* deleted entries ahead of the end mark */
+    unsigned int  dead;         /* deleted entries ahead of the end mark */
 } DIRINFO;
 
-extern NODE    *nodes;
-extern u32      nnodes;
-extern DIRINFO *dirs;
-extern u32      ndirs;
-extern u32     *own;            /* for each cluster: the node that has it */
-extern u32     *prev;           /* ...and the cluster before it in that
+extern NODE         *nodes;
+extern unsigned int  nnodes;
+extern DIRINFO      *dirs;
+extern unsigned int  ndirs;
+extern unsigned int *own;       /* for each cluster: the node that has it */
+extern uint32_t     *prev;      /* ...and the cluster before it in that
                                    node's chain, 0 = it is the first */
 
 /* what is wrong with a drive: bits, and how much of each */
@@ -186,15 +186,15 @@ extern u32     *prev;           /* ...and the cluster before it in that
 #define FSE_DIR         0x20    /* a directory that is not laid out as one */
 
 typedef struct {
-    int  errors;                /* FSE_* */
-    u32  lost;                  /* lost clusters */
-    u32  cross;                 /* cross-linked files */
-    u32  files, folders;        /* what there is */
-    u32  used, free, bad, fixed;    /* clusters */
-    u32  frag_items;            /* files and directories in pieces */
-    u32  movable;               /* clusters of what may be moved */
-    u32  gaps;                  /* free clusters below the last one in use */
-    u32  top;                   /* the last cluster in use */
+    int          errors;        /* FSE_* */
+    uint32_t     lost;          /* lost clusters */
+    unsigned int cross;         /* cross-linked files */
+    unsigned int files, folders; /* what there is */
+    uint32_t     used, free, bad, fixed; /* clusters */
+    unsigned int frag_items;    /* files and directories in pieces */
+    uint32_t     movable;       /* clusters of what may be moved */
+    uint32_t     gaps;          /* free clusters below the last one in use */
+    uint32_t     top;           /* the last cluster in use */
 } DRIVESTAT;
 
 extern DRIVESTAT dst;
@@ -205,23 +205,24 @@ void  tree_stats( void );       /* dst, from the tree as it stands now */
 void  tree_unplace( void );     /* a new run: nothing is in its final place */
 int   tree_percent( void );     /* how much of the drive is not fragmented */
 int   tree_recommend( void );   /* METHOD_* */
-const char *node_name( u32 node, char *buf );   /* "NAME.EXT", 13 bytes */
+const char *node_name( unsigned int node, char *buf ); /* "NAME.EXT", 13 bytes */
 
 /* ------------------------------------------------------------------ */
 /* the map: the drive as blocks of clusters                            */
 /* ------------------------------------------------------------------ */
 typedef struct {
-    u32 used;                   /* clusters of the block in use */
-    u32 fixed;                  /* ...by something that is not moved */
-    u32 bad;
-    u32 done;                   /* ...in their final place */
+    uint32_t used;              /* clusters of the block in use */
+    uint32_t fixed;             /* ...by something that is not moved */
+    uint32_t bad;
+    uint32_t done;              /* ...in their final place */
 } BLOCK;
 
-extern BLOCK *blocks;
-extern u32    nblocks, per_block;
+extern BLOCK       *blocks;
+extern unsigned int nblocks;
+extern uint32_t     per_block;
 
-void  map_build( u32 cells );   /* a map of at most that many blocks */
-void  map_count( u32 clus, int used, int fixed, int done );     /* +1 or -1 each */
+void  map_build( unsigned int cells ); /* a map of at most that many blocks */
+void  map_count( uint32_t clus, int used, int fixed, int done ); /* +1 or -1 each */
 #define BLOCK_OF( clus ) (((clus) - 2) / per_block)
 
 /* ------------------------------------------------------------------ */
@@ -243,27 +244,27 @@ enum {
 };
 
 /* DIRS.C: a directory put in order, in memory only */
-int   dir_arrange( u32 dirno, int sort );   /* 1 = it has to be written now */
-int   dir_check( u32 dirno, int sort );     /* 1 = arranging would change it */
-void  dir_children( u32 dirno, int sort, U32LIST *out );    /* in that order */
+int   dir_arrange( unsigned int dirno, int sort );  /* 1 = it has to be written now */
+int   dir_check( unsigned int dirno, int sort );    /* 1 = arranging would change it */
+void  dir_children( unsigned int dirno, int sort, U32LIST *out ); /* in that order */
 void  dir_forget( void );
 
 /* what dir_arrange last changed, for whoever has to write it */
 typedef struct {
-    u32  dirno;
-    int  sorted;                /* not only squeezed: entries went both ways */
-    u32  old_end, new_end;      /* entries in use, before and after */
-    u8  *old;                   /* the directory as it was */
+    unsigned int dirno;
+    int          sorted;        /* not only squeezed: entries went both ways */
+    unsigned int old_end, new_end; /* entries in use, before and after */
+    uint8_t     *old;           /* the directory as it was */
 } ARRANGED;
 extern ARRANGED arranged;
 
 /* MOVE.C: 0, or DFE_READ / DFE_WRITE with nothing changed */
-int   move_run( u32 node, u32 before, const u32 *src, u32 count, u32 dst );
-int   move_dir( u32 dirno, u32 dst );       /* a whole directory, from memory */
-int   dir_rewrite( u32 dirno );             /* where it is */
-u32   move_limit( void );                   /* the most clusters in one move */
-void  move_done( void );
-extern u32 move_error_clus;                 /* the cluster a failure was at */
+int      move_run( unsigned int node, uint32_t before, const uint32_t *src, uint32_t count, uint32_t dst );
+int      move_dir( unsigned int dirno, uint32_t dst );  /* a whole directory, from memory */
+int      dir_rewrite( unsigned int dirno );             /* where it is */
+uint32_t move_limit( void );                            /* the most clusters in one move */
+void     move_done( void );
+extern uint32_t move_error_clus;                        /* the cluster a failure was at */
 
 int   optimize( void );         /* DFE_* */
 int   optimize_needed( void );  /* 1 = the chosen method has work to do */
@@ -282,20 +283,20 @@ enum { DONE_ANOTHER, DONE_CONFIGURE, DONE_EXIT };
 
 void  fe_start( void );
 void  fe_finish( void );
-void  fe_suspend( void );                   /* the screen given back while
-                                               another program runs... */
-void  fe_resume( void );                    /* ...and taken again */
-void  fe_drive( int loaded );               /* a drive has been read: its map;
-                                               0 = there is none any more */
-void  fe_reading( const char *what );       /* the tree is being read: a
-                                               directory's name, or NULL */
-void  fe_run( int running );                /* a drive is being optimized */
+void  fe_suspend( void );                            /* the screen given back while
+                                                        another program runs... */
+void  fe_resume( void );                             /* ...and taken again */
+void  fe_drive( int loaded );                        /* a drive has been read: its map;
+                                                        0 = there is none any more */
+void  fe_reading( const char *what );                /* the tree is being read: a
+                                                        directory's name, or NULL */
+void  fe_run( int running );                         /* a drive is being optimized */
 /* a move: the clusters being read or written, 0 clusters for neither */
-void  fe_activity( int what, u32 clus, u32 count );
-void  fe_progress( u32 done, u32 total );   /* clusters put where they go */
-int   fe_stop_asked( void );                /* 1 = stop here */
-int   fe_log_drive( void );                 /* test mode: the drive the log is
-                                               on, which cannot be optimized; -1 */
+void  fe_activity( int what, uint32_t clus, uint32_t count );
+void  fe_progress( uint32_t done, uint32_t total );  /* clusters put where they go */
+int   fe_stop_asked( void );                         /* 1 = stop here */
+int   fe_log_drive( void );                          /* test mode: the drive the log is
+                                                        on, which cannot be optimized; -1 */
 
 int   fe_menu( void );                      /* the Optimize menu: a GO_* */
 int   fe_pick_drive( int now );             /* a drive, or -1 */

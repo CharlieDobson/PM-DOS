@@ -23,7 +23,7 @@
 #include "fix.h"
 #include "trig.h"
 
-static const s32 atan_tab[30] = {
+static const int32_t atan_tab[30] = {
     843314857L, 497837829L, 263043837L, 133525159L, 67021687L, 33543516L,
     16775851L, 8388437L, 4194283L, 2097149L, 1048576L, 524288L, 262144L,
     131072L, 65536L, 32768L, 16384L, 8192L, 4096L, 2048L, 1024L, 512L,
@@ -33,14 +33,14 @@ static const s32 atan_tab[30] = {
 #define CORDIC_K        652032874L      /* the gain thirty steps bring, in Q30 */
 #define HALF_PI_Q30     1686629713L
 
-void fx_sincos( u32 turn, s32 *sin_out, s32 *cos_out )
+void fx_sincos( uint32_t turn, int32_t *sin_out, int32_t *cos_out )
 {
-    s32 x = CORDIC_K, y = 0, z, nx;
-    u32 quadrant = turn >> 30;
+    int32_t x = CORDIC_K, y = 0, z, nx;
+    uint32_t quadrant = turn >> 30;
     int i;
 
     /* the angle into its quadrant, as radians in Q30 */
-    z = fx_mulsh( (s32)(turn & 0x3FFFFFFFUL), HALF_PI_Q30, 30 );
+    z = fx_mulsh( (int32_t)(turn & 0x3FFFFFFFUL), HALF_PI_Q30, 30 );
     for ( i = 0; i < 30; i++ ) {
         if ( z >= 0 ) {
             nx = x - (y >> i);

@@ -42,16 +42,16 @@ typedef struct {
     int     failed;
 } ZipOut;
 
-static int PutBytes( ZipOut *o, const void *p, UInt32 n )
+static int PutBytes( ZipOut *o, const void *p, uint32_t n )
 {
     if ( !o->failed && n && fwrite( p, 1, n, o->f ) != n ) o->failed = 1;
     return !o->failed;
 }
 
-static void Put16( Byte *p, UInt32 v ) { p[0] = (Byte)v; p[1] = (Byte)( v >> 8 ); }
-static void Put32( Byte *p, UInt32 v ) { Put16( p, v & 0xFFFF ); Put16( p + 2, v >> 16 ); }
+static void Put16( uint8_t *p, uint32_t v ) { p[0] = (uint8_t)v; p[1] = (uint8_t)( v >> 8 ); }
+static void Put32( uint8_t *p, uint32_t v ) { Put16( p, v & 0xFFFF ); Put16( p + 2, v >> 16 ); }
 
-static int DeflSink( void *user, const Byte *data, UInt32 len )
+static int DeflSink( void *user, const uint8_t *data, uint32_t len )
 {
     return PutBytes( (ZipOut *)user, data, len );
 }
@@ -74,7 +74,7 @@ static void ZipName( ArcCompJob *j, const CompEntry *e, char *dst, int size )
     }
 }
 
-static void LocalHeader( Byte *h, const CompEntry *e, unsigned nameLen )
+static void LocalHeader( uint8_t *h, const CompEntry *e, unsigned nameLen )
 {
     unsigned ver = ( e->method == 8 ) ? ZIP_VER_DEFLATE : ZIP_VER_STORE;
     if ( e->isDir ) ver = ZIP_VER_DEFLATE;
@@ -94,7 +94,7 @@ static void LocalHeader( Byte *h, const CompEntry *e, unsigned nameLen )
 
 static int WriteLocal( ZipOut *o, const CompEntry *e, const char *name )
 {
-    Byte h[30];
+    uint8_t h[30];
     unsigned n = (unsigned)strlen( name );
     LocalHeader( h, e, n );
     PutBytes( o, h, 30 );
@@ -103,18 +103,18 @@ static int WriteLocal( ZipOut *o, const CompEntry *e, const char *name )
 
 /* Copy the source to the archive unchanged, 'want' bytes or to its end,
  * keeping the CRC and the count.  0 on a read error. */
-static int CopyStored( ArcCompJob *j, ZipOut *o, FILE *src, Byte *buf,
+static int CopyStored( ArcCompJob *j, ZipOut *o, FILE *src, uint8_t *buf,
                        CompEntry *e, int idx, const char *name )
 {
-    UInt32 crc = Crc32Init(), total = 0;
+    uint32_t crc = Crc32Init(), total = 0;
     size_t n;
 
     while ( ( n = fread( buf, 1, COMP_IOBUF, src ) ) > 0 )
     {
-        crc = Crc32Update( crc, buf, (UInt32)n );
-        total += (UInt32)n;
-        j->doneBytes += (UInt32)n;
-        if ( !PutBytes( o, buf, (UInt32)n ) ) break;
+        crc = Crc32Update( crc, buf, (uint32_t)n );
+        total += (uint32_t)n;
+        j->doneBytes += (uint32_t)n;
+        if ( !PutBytes( o, buf, (uint32_t)n ) ) break;
         if ( !CompProgress( j, idx, (int)j->nOrder, name ) ) break;
     }
     e->crc = Crc32Done( crc );
@@ -127,14 +127,15 @@ int ZipWriteArchive( ArcCompJob *j, FILE *f )
 {
     ZipOut   o;
     DeflEnc *d = 0;
-    Byte    *buf;
+    uint8_t *buf;
     char     name[SZ_MAX_NAME + 2];
-    UInt32   k, nCentral = 0, cdStart, cdSize, endPos;
+    unsigned k, nCentral = 0;
+    uint32_t cdStart, cdSize, endPos;
     int      rc = SZ_OK;
 
     o.f = f;
     o.failed = 0;
-    buf = (Byte *)malloc( COMP_IOBUF );
+    buf = (uint8_t *)malloc( COMP_IOBUF );
     if ( !buf ) return SZ_ERR_MEMORY;
     if ( DeflCreate( &d ) != SZ_OK ) { free( buf ); return SZ_ERR_MEMORY; }
 
@@ -153,7 +154,7 @@ int ZipWriteArchive( ArcCompJob *j, FILE *f )
             break;
         }
 
-        e->offset = (UInt32)ftell( f );
+        e->offset = (uint32_t)ftell( f );
 
         if ( e->isDir )
         {
@@ -170,8 +171,8 @@ int ZipWriteArchive( ArcCompJob *j, FILE *f )
 
         /* Look at the start of it, then decide. */
         got = fread( buf, 1, COMP_IOBUF, src );
-        e->kind = (Byte)CompSniff( buf, (UInt32)got, e->size, &isText, 0 );
-        e->text = (Byte)isText;
+        e->kind = (uint8_t)CompSniff( buf, (uint32_t)got, e->size, &isText, 0 );
+        e->text = (uint8_t)isText;
         e->method = ( got == 0 || e->kind == CK_PACKED ) ? 0 : 8;
         e->crc = e->packed = e->realSize = 0;
         WriteLocal( &o, e, name );
@@ -179,15 +180,15 @@ int ZipWriteArchive( ArcCompJob *j, FILE *f )
 
         if ( e->method == 8 )
         {
-            UInt32 crc = Crc32Init(), total = 0;
+            uint32_t crc = Crc32Init(), total = 0;
 
             DeflReset( d, DeflSink, &o );
             while ( got > 0 )
             {
-                crc = Crc32Update( crc, buf, (UInt32)got );
-                total += (UInt32)got;
-                j->doneBytes += (UInt32)got;
-                if ( DeflFeed( d, buf, (UInt32)got ) != SZ_OK ) break;
+                crc = Crc32Update( crc, buf, (uint32_t)got );
+                total += (uint32_t)got;
+                j->doneBytes += (uint32_t)got;
+                if ( DeflFeed( d, buf, (uint32_t)got ) != SZ_OK ) break;
                 if ( !CompProgress( j, (int)k, (int)j->nOrder, CompStoredName( j, e ) ) )
                 {
                     rc = SZ_ERR_CANCEL;
@@ -216,13 +217,13 @@ int ZipWriteArchive( ArcCompJob *j, FILE *f )
         else
         {
             /* Stored from the start: the first buffer is already read. */
-            UInt32 crc = Crc32Init(), total = 0;
+            uint32_t crc = Crc32Init(), total = 0;
             while ( got > 0 )
             {
-                crc = Crc32Update( crc, buf, (UInt32)got );
-                total += (UInt32)got;
-                j->doneBytes += (UInt32)got;
-                if ( !PutBytes( &o, buf, (UInt32)got ) ) break;
+                crc = Crc32Update( crc, buf, (uint32_t)got );
+                total += (uint32_t)got;
+                j->doneBytes += (uint32_t)got;
+                if ( !PutBytes( &o, buf, (uint32_t)got ) ) break;
                 if ( !CompProgress( j, (int)k, (int)j->nOrder, CompStoredName( j, e ) ) )
                 {
                     rc = SZ_ERR_CANCEL;
@@ -262,11 +263,11 @@ int ZipWriteArchive( ArcCompJob *j, FILE *f )
     /* The central directory: every entry written, in the same order. */
     if ( rc == SZ_OK )
     {
-        cdStart = (UInt32)ftell( f );
+        cdStart = (uint32_t)ftell( f );
         for ( k = 0; k < j->nOrder; k++ )
         {
             CompEntry *e = &j->ents[ j->order[k] ];
-            Byte       c[46];
+            uint8_t    c[46];
             unsigned   n;
 
             if ( e->state != CS_DONE ) continue;
@@ -292,9 +293,9 @@ int ZipWriteArchive( ArcCompJob *j, FILE *f )
             PutBytes( &o, c, 46 );
             PutBytes( &o, name, n );
         }
-        cdSize = (UInt32)ftell( f ) - cdStart;
+        cdSize = (uint32_t)ftell( f ) - cdStart;
         {
-            Byte z[22];
+            uint8_t z[22];
             Put32( z,      0x06054B50UL );
             Put16( z + 4,  0 );
             Put16( z + 6,  0 );
@@ -306,7 +307,7 @@ int ZipWriteArchive( ArcCompJob *j, FILE *f )
             PutBytes( &o, z, 22 );
         }
         if ( fflush( f ) != 0 ) o.failed = 1;
-        endPos = (UInt32)ftell( f );
+        endPos = (uint32_t)ftell( f );
 
         /* An entry written again as stored was shorter the second time, and
          * what came after it moved up: whatever lies past the end now is

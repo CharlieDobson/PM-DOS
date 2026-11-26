@@ -333,7 +333,7 @@ static int scroll_click( int r, int vis )
 static void scroll_hold( int x, int y, int r, int vis )
 {
     EVENT ev;
-    u32 next = ev_clock() + REPEAT_FIRST, now;
+    uint32_t next = ev_clock() + REPEAT_FIRST, now;
     int mx, my;
 
     if ( ev_testing() ) {

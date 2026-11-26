@@ -15,51 +15,51 @@
 #define NW 12                               /* words in a coordinate */
 
 /* secp384r1 domain parameters (big-endian, 48 bytes each). */
-static const unsigned char P_BYTES[48] = {
+static const uint8_t P_BYTES[48] = {
  0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
  0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFE,
  0xFF,0xFF,0xFF,0xFF,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0xFF,0xFF,0xFF,0xFF };
-static const unsigned char B_BYTES[48] = {
+static const uint8_t B_BYTES[48] = {
  0xB3,0x31,0x2F,0xA7,0xE2,0x3E,0xE7,0xE4,0x98,0x8E,0x05,0x6B,0xE3,0xF8,0x2D,0x19,
  0x18,0x1D,0x9C,0x6E,0xFE,0x81,0x41,0x12,0x03,0x14,0x08,0x8F,0x50,0x13,0x87,0x5A,
  0xC6,0x56,0x39,0x8D,0x8A,0x2E,0xD1,0x9D,0x2A,0x85,0xC8,0xED,0xD3,0xEC,0x2A,0xEF };
-static const unsigned char GX_BYTES[48] = {
+static const uint8_t GX_BYTES[48] = {
  0xAA,0x87,0xCA,0x22,0xBE,0x8B,0x05,0x37,0x8E,0xB1,0xC7,0x1E,0xF3,0x20,0xAD,0x74,
  0x6E,0x1D,0x3B,0x62,0x8B,0xA7,0x9B,0x98,0x59,0xF7,0x41,0xE0,0x82,0x54,0x2A,0x38,
  0x55,0x02,0xF2,0x5D,0xBF,0x55,0x29,0x6C,0x3A,0x54,0x5E,0x38,0x72,0x76,0x0A,0xB7 };
-static const unsigned char GY_BYTES[48] = {
+static const uint8_t GY_BYTES[48] = {
  0x36,0x17,0xDE,0x4A,0x96,0x26,0x2C,0x6F,0x5D,0x9E,0x98,0xBF,0x92,0x92,0xDC,0x29,
  0xF8,0xF4,0x1D,0xBD,0x28,0x9A,0x14,0x7C,0xE9,0xDA,0x31,0x13,0xB5,0xF0,0xB8,0xC0,
  0x0A,0x60,0xB1,0xCE,0x1D,0x7E,0x81,0x9D,0x7A,0x43,0x1D,0x7C,0x90,0xEA,0x0E,0x5F };
-static const unsigned char N_BYTES[48] = {
+static const uint8_t N_BYTES[48] = {
  0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
  0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xC7,0x63,0x4D,0x81,0xF4,0x37,0x2D,0xDF,
  0x58,0x1A,0x0D,0xB2,0x48,0xB0,0xA7,0x7A,0xEC,0xEC,0x19,0x6A,0xCC,0xC5,0x29,0x73 };
 
-static u32    MODP[NW], MODP2[NW], PINV;    /* p, p-2 (the inverse's exponent), -p^-1 mod 2^32 */
-static u32    RR[NW], RONE[NW], UNIT[NW];   /* R^2 and R mod p, plain 1 */
-static u32    BM[NW], GXM[NW], GYM[NW];     /* b and G in Montgomery form */
-static bignum N, N2;                        /* the order n, and n-2 (inverse mod n) */
-static int    g_init = 0;
+static uint32_t MODP[NW], MODP2[NW], PINV;   /* p, p-2 (the inverse's exponent), -p^-1 mod 2^32 */
+static uint32_t RR[NW], RONE[NW], UNIT[NW];  /* R^2 and R mod p, plain 1 */
+static uint32_t BM[NW], GXM[NW], GYM[NW];    /* b and G in Montgomery form */
+static bignum   N, N2;                       /* the order n, and n-2 (inverse mod n) */
+static int      g_init = 0;
 
 /* --- field ops mod p (Montgomery form) ----------------------------------- */
 #define fp_mul( r, a, b )   bn_w_mont( (r), (a), (b), MODP, NW, PINV )
 #define fp_add( r, a, b )   bn_w_addmod( (r), (a), (b), MODP, NW )
 #define fp_sub( r, a, b )   bn_w_submod( (r), (a), (b), MODP, NW )
-#define fp_copy( r, a )     memcpy( (r), (a), NW * sizeof( u32 ) )
-static void fp_sqr( u32 *r, const u32 *a ) { fp_mul( r, a, a ); }
-static void fp_inv( u32 *r, const u32 *a ) { bn_w_mont_pow( r, a, MODP2, 32 * NW, MODP, NW, PINV, RONE ); }
-static void fp_mul2( u32 *r, const u32 *a ) { fp_add( r, a, a ); }
-static void fp_mul3( u32 *r, const u32 *a ) { u32 t[NW]; fp_add( t, a, a ); fp_add( r, t, a ); }
-static void fp_mul4( u32 *r, const u32 *a ) { u32 t[NW]; fp_mul2( t, a ); fp_mul2( r, t ); }
-static void fp_mul8( u32 *r, const u32 *a ) { u32 t[NW]; fp_mul4( t, a ); fp_mul2( r, t ); }
-static void to_mont( u32 *r, const u32 *a ) { fp_mul( r, a, RR ); }
-static void from_mont( u32 *r, const u32 *a ) { fp_mul( r, a, UNIT ); }
+#define fp_copy( r, a )     memcpy( (r), (a), NW * sizeof( uint32_t ) )
+static void fp_sqr( uint32_t *r, const uint32_t *a ) { fp_mul( r, a, a ); }
+static void fp_inv( uint32_t *r, const uint32_t *a ) { bn_w_mont_pow( r, a, MODP2, 32 * NW, MODP, NW, PINV, RONE ); }
+static void fp_mul2( uint32_t *r, const uint32_t *a ) { fp_add( r, a, a ); }
+static void fp_mul3( uint32_t *r, const uint32_t *a ) { uint32_t t[NW]; fp_add( t, a, a ); fp_add( r, t, a ); }
+static void fp_mul4( uint32_t *r, const uint32_t *a ) { uint32_t t[NW]; fp_mul2( t, a ); fp_mul2( r, t ); }
+static void fp_mul8( uint32_t *r, const uint32_t *a ) { uint32_t t[NW]; fp_mul4( t, a ); fp_mul2( r, t ); }
+static void to_mont( uint32_t *r, const uint32_t *a ) { fp_mul( r, a, RR ); }
+static void from_mont( uint32_t *r, const uint32_t *a ) { fp_mul( r, a, UNIT ); }
 
 static void ec_init( void )
 {
     bignum t, p;
-    u32 plain[NW];
+    uint32_t plain[NW];
     if ( g_init ) return;
     bn_w_from_bytes( MODP, NW, P_BYTES, 48 );
     fp_copy( MODP2, MODP );
@@ -83,7 +83,7 @@ static void ec_init( void )
 }
 
 /* --- Jacobian point (Z == 0 means point at infinity) --------------------- */
-typedef struct { u32 X[NW], Y[NW], Z[NW]; } jpoint;
+typedef struct { uint32_t X[NW], Y[NW], Z[NW]; } jpoint;
 
 static void jp_infinity( jpoint *r ) { memset( r->X, 0, sizeof( r->X ) ); fp_copy( r->Y, RONE ); memset( r->Z, 0, sizeof( r->Z ) ); }
 static int  jp_is_inf( const jpoint *p ) { return bn_w_is_zero( p->Z, NW ); }
@@ -91,7 +91,7 @@ static int  jp_is_inf( const jpoint *p ) { return bn_w_is_zero( p->Z, NW ); }
 /* R = 2*P  (a = -3 doubling; R may alias P) */
 static void jp_double( jpoint *R, const jpoint *P )
 {
-    u32 delta[NW], gamma[NW], beta[NW], alpha[NW], t[NW], u[NW], x3[NW], y3[NW], z3[NW];
+    uint32_t delta[NW], gamma[NW], beta[NW], alpha[NW], t[NW], u[NW], x3[NW], y3[NW], z3[NW];
 
     if ( jp_is_inf( P ) ) { *R = *P; return; }
 
@@ -126,8 +126,8 @@ static void jp_double( jpoint *R, const jpoint *P )
 /* R = P + Q  (Jacobian; R must not alias P or Q) */
 static void jp_add( jpoint *R, const jpoint *P, const jpoint *Q )
 {
-    u32 z1z1[NW], z2z2[NW], u1[NW], u2[NW], s1[NW], s2[NW], h[NW], i[NW], j[NW];
-    u32 r[NW], v[NW], t[NW], t2[NW], x3[NW], y3[NW], z3[NW];
+    uint32_t z1z1[NW], z2z2[NW], u1[NW], u2[NW], s1[NW], s2[NW], h[NW], i[NW], j[NW];
+    uint32_t r[NW], v[NW], t[NW], t2[NW], x3[NW], y3[NW], z3[NW];
 
     if ( jp_is_inf( P ) ) { *R = *Q; return; }
     if ( jp_is_inf( Q ) ) { *R = *P; return; }
@@ -173,7 +173,7 @@ static void jp_add( jpoint *R, const jpoint *P, const jpoint *Q )
 
 /* R = k*P, k plain (not Montgomery), NW words: four doublings, then one
    add from the table, per 4 bits of k, most significant first. */
-static void jp_mul( jpoint *R, const u32 *k, const jpoint *P )
+static void jp_mul( jpoint *R, const uint32_t *k, const jpoint *P )
 {
     jpoint tab[16], acc, tmp;
     int i, digit, started = 0;
@@ -200,9 +200,9 @@ static void jp_mul( jpoint *R, const u32 *k, const jpoint *P )
 
 /* Convert Jacobian R to affine (x,y), plain (out of Montgomery form).
    Returns -1 if R is the infinity. */
-static int jp_affine( const jpoint *R, u32 *x, u32 *y )
+static int jp_affine( const jpoint *R, uint32_t *x, uint32_t *y )
 {
-    u32 zi[NW], zi2[NW], zi3[NW];
+    uint32_t zi[NW], zi2[NW], zi3[NW];
     if ( jp_is_inf( R ) ) return -1;
     fp_inv( zi, R->Z );
     fp_sqr( zi2, zi );
@@ -215,9 +215,9 @@ static int jp_affine( const jpoint *R, u32 *x, u32 *y )
 }
 
 /* Is (x,y), in Montgomery form, on the curve y^2 = x^3 - 3x + b (mod p)? */
-static int on_curve( const u32 *x, const u32 *y )
+static int on_curve( const uint32_t *x, const uint32_t *y )
 {
-    u32 lhs[NW], rhs[NW], t[NW];
+    uint32_t lhs[NW], rhs[NW], t[NW];
     fp_sqr( lhs, y );                       /* y^2 */
     fp_sqr( t, x );                         /* x^2 */
     fp_mul( rhs, t, x );                    /* x^3 */
@@ -229,9 +229,9 @@ static int on_curve( const u32 *x, const u32 *y )
 
 /* A SEC1 uncompressed point as a Jacobian point (Z = 1), after checking that
    the coordinates are < p and the point is on the curve.  0 / -1. */
-static int load_point( jpoint *Q, const unsigned char pub[97] )
+static int load_point( jpoint *Q, const uint8_t pub[97] )
 {
-    u32 x[NW], y[NW];
+    uint32_t x[NW], y[NW];
     if ( pub[0] != 0x04 ) return -1;
     bn_w_from_bytes( x, NW, pub + 1, 48 );
     bn_w_from_bytes( y, NW, pub + 49, 48 );
@@ -250,14 +250,14 @@ static void base_point( jpoint *G )
 
 /* --- public API ---------------------------------------------------------- */
 
-int ecdsa_verify_p384( const unsigned char pub[97],
-                       const unsigned char *hash, int hashlen,
-                       const unsigned char *r, int rlen,
-                       const unsigned char *s, int slen )
+int ecdsa_verify_p384( const uint8_t pub[97],
+                       const uint8_t *hash, int hashlen,
+                       const uint8_t *r, int rlen,
+                       const uint8_t *s, int slen )
 {
     bignum R, S, E, w, u1, u2, rx, v;
     jpoint G, Q, P1, P2, Rp;
-    u32 x[NW], y[NW];
+    uint32_t x[NW], y[NW];
     int zlen = hashlen;
     ec_init();
 
@@ -292,11 +292,11 @@ int ecdsa_verify_p384( const unsigned char pub[97],
 
 /* pub <- d*G for the private scalar d (made by rng, reduced mod n, nonzero),
    both written big-endian / SEC1 uncompressed.  0 / -1. */
-int ecp384_keygen( nst_rng *rng, unsigned char priv[48], unsigned char pub[97] )
+int ecp384_keygen( nst_rng *rng, uint8_t priv[48], uint8_t pub[97] )
 {
     jpoint G, R;
     bignum d;
-    u32 x[NW], y[NW];
+    uint32_t x[NW], y[NW];
     int tries;
     ec_init();
 
@@ -320,12 +320,12 @@ int ecp384_keygen( nst_rng *rng, unsigned char priv[48], unsigned char pub[97] )
 
 /* out <- the X coordinate of priv * peer, after checking peer is a point on
    the curve.  0 / -1. */
-int ecp384_ecdh( const unsigned char priv[48], const unsigned char peer[97],
-                 unsigned char out[48] )
+int ecp384_ecdh( const uint8_t priv[48], const uint8_t peer[97],
+                 uint8_t out[48] )
 {
     jpoint Q, R;
     bignum d;
-    u32 sx[NW], sy[NW];
+    uint32_t sx[NW], sy[NW];
     ec_init();
 
     if ( load_point( &Q, peer ) != 0 ) return -1;

@@ -51,16 +51,16 @@
 
 #define GRID_ROWS   60                  /* the text screen is held to these */
 #define GRID_COLS   132
-#define GRID_CELLS  ((u32)GRID_ROWS * GRID_COLS)
+#define GRID_CELLS  ((unsigned)GRID_ROWS * GRID_COLS)
 
-static int  rows = 25, cols = 80;
-static int  line_cols = 80;             /* the text screen's own width */
-static int  gfx;
-static CELL *want, *shown;
-static u16 *dos_screen;
-static int  dos_rows, dos_cols, dos_row, dos_col, char_height = 16;
-static int  narrow_mode = -1;           /* the 40-column mode to go back to */
-static u8   picture_no;
+static int       rows = 25, cols = 80;
+static int       line_cols = 80;        /* the text screen's own width */
+static int       gfx;
+static CELL     *want, *shown;
+static uint16_t *dos_screen;
+static int       dos_rows, dos_cols, dos_row, dos_col, char_height = 16;
+static int       narrow_mode = -1;      /* the 40-column mode to go back to */
+static uint8_t   picture_no;
 
 /* ------------------------------------------------------------------ */
 /* the kernel's console                                                */
@@ -87,29 +87,29 @@ static void text_size( int *nrows, int *ncols )
     }
 }
 
-static void put_cells( u32 first, const u16 *cells, u32 count )
+static void put_cells( uint32_t first, const uint16_t *cells, uint32_t count )
 {
     REGS regs;
 
     xa_clear( &regs );
     regs.ebx = first;
     regs.ecx = count;
-    regs.esi = (u32)cells;
+    regs.esi = (uint32_t)cells;
     xa_dos( &regs, 0xF004 );
 }
 
-static void get_cells( u32 first, u16 *cells, u32 count )
+static void get_cells( uint32_t first, uint16_t *cells, uint32_t count )
 {
     REGS regs;
 
     xa_clear( &regs );
     regs.ebx = first;
     regs.ecx = count;
-    regs.edi = (u32)cells;
+    regs.edi = (uint32_t)cells;
     xa_dos( &regs, 0xF005 );
 }
 
-static void cursor_shape( u32 shape )
+static void cursor_shape( uint32_t shape )
 {
     REGS regs;
 
@@ -123,7 +123,7 @@ static void cursor_to( int row, int col )
     REGS regs;
 
     xa_clear( &regs );
-    regs.edx = ((u32)row << 8) | (u32)col;
+    regs.edx = ((uint32_t)row << 8) | (uint32_t)col;
     xa_dos( &regs, 0xF002 );
 }
 
@@ -133,7 +133,7 @@ static void text_mode( int mode )
     REGS regs;
 
     xa_clear( &regs );
-    regs.ebx = (u32)mode;
+    regs.ebx = (uint32_t)mode;
     xa_dos( &regs, 0xF00C );
 }
 
@@ -142,12 +142,12 @@ static void text_mode( int mode )
 static int bios_mode( void )
 {
     REGS regs;
-    u8 mode = 0;
+    uint8_t mode = 0;
 
     xa_clear( &regs );
     regs.ebx = 0x449;
     regs.ecx = 1;
-    regs.edi = (u32)&mode;
+    regs.edi = (uint32_t)&mode;
     if ( xa_dos( &regs, 0xF120 ) ) {
         return -1;
     }
@@ -161,7 +161,7 @@ static int bios_mode( void )
 /* nothing on the glass is known: the next flush draws every cell */
 static void grid_forget( void )
 {
-    u32 at;
+    unsigned at;
 
     for ( at = 0; at < GRID_CELLS; at++ ) {
         shown[at] = 0xFFFFFFFFUL;
@@ -171,7 +171,7 @@ static void grid_forget( void )
 /* a blank grid of the present size */
 static void grid_reset( void )
 {
-    u32 cells = (u32)rows * cols, at;
+    unsigned cells = (unsigned)rows * cols, at;
 
     for ( at = 0; at < cells; at++ ) {
         want[at] = CELL_MAKE( ' ', 0x07 );
@@ -204,9 +204,9 @@ int scr_open( int graphics )
     xa_dos( &regs, 0xF001 );
     dos_row = (int)((regs.edx >> 8) & 0xFF);
     dos_col = (int)(regs.edx & 0xFF);
-    dos_screen = (u16 *)malloc( (u32)dos_rows * dos_cols * 2 );
+    dos_screen = (uint16_t *)malloc( (unsigned)dos_rows * dos_cols * 2 );
     if ( dos_screen ) {
-        get_cells( 0, dos_screen, (u32)dos_rows * dos_cols );
+        get_cells( 0, dos_screen, (uint32_t)dos_rows * dos_cols );
     }
     rows = dos_rows > GRID_ROWS ? GRID_ROWS : dos_rows;
     cols = dos_cols > GRID_COLS ? GRID_COLS : dos_cols;
@@ -259,10 +259,10 @@ void scr_close( void )
         narrow_mode = -1;
     }
     if ( dos_screen ) {
-        put_cells( 0, dos_screen, (u32)dos_rows * dos_cols );
+        put_cells( 0, dos_screen, (uint32_t)dos_rows * dos_cols );
     }
-    cursor_shape( char_height >= 14 ? ((u32)(char_height - 3) << 8) | (u32)(char_height - 2)
-                                    : ((u32)(char_height - 2) << 8) | (u32)(char_height - 1) );
+    cursor_shape( char_height >= 14 ? ((uint32_t)(char_height - 3) << 8) | (uint32_t)(char_height - 2)
+                                    : ((uint32_t)(char_height - 2) << 8) | (uint32_t)(char_height - 1) );
     cursor_to( dos_row, dos_col );
 }
 
@@ -274,9 +274,9 @@ int df_has_pictures( void ) { return gfx; }
 int df_cell_w( void )       { return 8; }
 int df_cell_h( void )       { return gfx ? GFX_CELL_H : 8; }
 
-static u8 attr_of( int fg, int bg )
+static uint8_t attr_of( int fg, int bg )
 {
-    return (u8)((fg & 0x0F) | ((bg & 0x0F) << 4));
+    return (uint8_t)((fg & 0x0F) | ((bg & 0x0F) << 4));
 }
 
 static CELL *cell_ptr( int row, int col )
@@ -284,12 +284,12 @@ static CELL *cell_ptr( int row, int col )
     if ( !want || row < 1 || row > rows || col < 1 || col > cols ) {
         return NULL;
     }
-    return &want[(u32)(row - 1) * cols + (col - 1)];
+    return &want[(unsigned)(row - 1) * cols + (col - 1)];
 }
 
 void df_text( int row, int col, const char *text, int fg, int bg )
 {
-    u8 attr = attr_of( fg, bg );
+    uint8_t attr = attr_of( fg, bg );
     CELL *at;
 
     if ( text == NULL ) {
@@ -322,7 +322,7 @@ void df_fill( int top, int left, int bottom, int right, int bg )
 
 void df_clear( int fg, int bg )
 {
-    u32 at, cells = (u32)rows * cols;
+    unsigned at, cells = (unsigned)rows * cols;
     CELL blank = CELL_MAKE( ' ', attr_of( fg, bg ) );
 
     for ( at = 0; at < cells; at++ ) {
@@ -382,7 +382,7 @@ int df_picture_open( int top, int left, int bottom, int right, int bg )
     if ( !gfx_picture_open( top - 1, left - 1, bottom - top + 1, right - left + 1, bg ) ) {
         return 0;
     }
-    picture_no = (u8)(picture_no == 0xFF ? 1 : picture_no + 1);
+    picture_no = (uint8_t)(picture_no == 0xFF ? 1 : picture_no + 1);
     for ( row = top; row <= bottom; row++ ) {
         for ( col = left; col <= right; col++ ) {
             at = cell_ptr( row, col );
@@ -447,16 +447,16 @@ CELL df_cell_at( int row, int col )
 
 void df_flush( void )
 {
-    static u16 run[132];
+    static uint16_t run[132];
     int row, first, last, col;
-    u32 base;
+    unsigned base;
 
     if ( want == NULL ) {
         return;
     }
     if ( gfx ) {
         for ( row = 0; row < rows; row++ ) {
-            base = (u32)row * cols;
+            base = (unsigned)row * cols;
             for ( col = 0; col < cols; col++ ) {
                 if ( want[base + col] != shown[base + col] ) {
                     gfx_cell( row, col, want[base + col] );
@@ -468,7 +468,7 @@ void df_flush( void )
         return;
     }
     for ( row = 0; row < rows; row++ ) {
-        base = (u32)row * cols;
+        base = (unsigned)row * cols;
         for ( first = 0; first < cols && want[base + first] == shown[base + first]; first++ ) {
         }
         if ( first == cols ) {
@@ -477,10 +477,10 @@ void df_flush( void )
         for ( last = cols - 1; want[base + last] == shown[base + last]; last-- ) {
         }
         for ( col = first; col <= last; col++ ) {
-            run[col - first] = (u16)want[base + col];
+            run[col - first] = (uint16_t)want[base + col];
             shown[base + col] = want[base + col];
         }
-        put_cells( (u32)row * line_cols + first, run, (u32)(last - first + 1) );
+        put_cells( (uint32_t)row * line_cols + first, run, (uint32_t)(last - first + 1) );
     }
 }
 
@@ -526,7 +526,7 @@ static int   down;                      /* the buttons, as the events have them 
 static EVENT queue[MQ_SIZE];
 static int   q_head, q_tail;
 
-static void call33( REGS *regs, u32 func )
+static void call33( REGS *regs, uint32_t func )
 {
     regs->eax = func;
     int33( regs );
@@ -604,13 +604,13 @@ static void mouse_poll( void )
     for ( button = 0; button < 2; button++ ) {
         bit = 1 << button;
         xa_clear( &regs );
-        regs.ebx = (u32)button;
+        regs.ebx = (uint32_t)button;
         call33( &regs, 0x0005 );
         presses = (int)(regs.ebx & 0xFFFF);
         px = (int)(regs.ecx & 0xFFFF);
         py = (int)(regs.edx & 0xFFFF);
         xa_clear( &regs );
-        regs.ebx = (u32)button;
+        regs.ebx = (uint32_t)button;
         call33( &regs, 0x0006 );
         releases = (int)(regs.ebx & 0xFFFF);
         rx = (int)(regs.ecx & 0xFFFF);
@@ -674,14 +674,14 @@ static void ev_mouse_reset( void )
         mouse_xmax = 639;
         mouse_ymax = GFX_ROWS * GFX_CELL_H - 1;
         xa_clear( &regs );
-        regs.edx = (u32)mouse_xmax;
+        regs.edx = (uint32_t)mouse_xmax;
         call33( &regs, 0x0007 );
         xa_clear( &regs );
-        regs.edx = (u32)mouse_ymax;
+        regs.edx = (uint32_t)mouse_ymax;
         call33( &regs, 0x0008 );
         xa_clear( &regs );
         regs.ecx = 320;
-        regs.edx = (u32)(mouse_ymax / 2);
+        regs.edx = (uint32_t)(mouse_ymax / 2);
         call33( &regs, 0x0004 );
     } else {
         xa_clear( &regs );
@@ -751,8 +751,8 @@ void ev_mouse_cell( int *x, int *y )
 
 static int shift_seen, alt_armed;
 static int testing, poll_keys, test_shift, test_eof;
-static u32 test_clock;
-static u32 log_handle;
+static uint32_t test_clock;
+static uint32_t log_handle;
 static int log_open;
 static char log_path[260];
 static int shots;
@@ -760,19 +760,19 @@ static int shots;
 static int stdin_byte( void )
 {
     REGS regs;
-    u8 ch;
+    uint8_t ch;
 
     xa_clear( &regs );
     regs.ebx = 0;
     regs.ecx = 1;
-    regs.edx = (u32)&ch;
+    regs.edx = (uint32_t)&ch;
     if ( xa_dos( &regs, 0x3F00 ) || regs.eax == 0 ) {
         return -1;
     }
     return ch;
 }
 
-static void log_write( const char *text, u32 len )
+static void log_write( const char *text, uint32_t len )
 {
     REGS regs;
 
@@ -782,7 +782,7 @@ static void log_write( const char *text, u32 len )
     xa_clear( &regs );
     regs.ebx = log_handle;
     regs.ecx = len;
-    regs.edx = (u32)text;
+    regs.edx = (uint32_t)text;
     xa_dos( &regs, 0x4000 );
 }
 
@@ -799,7 +799,7 @@ void ev_init( void )
             testing = 1;
             poll_keys = getenv( "TVPOLL" ) != NULL;
             xa_clear( &regs );
-            regs.edx = (u32)log;
+            regs.edx = (uint32_t)log;
             if ( xa_dos( &regs, 0x3C00 ) == 0 ) {
                 log_handle = AX( regs );
                 log_open = 1;
@@ -824,11 +824,11 @@ void ev_break_off( void )
     REGS regs;
 
     xa_clear( &regs );
-    regs.edx = (u32)break_handler;
+    regs.edx = (uint32_t)break_handler;
     xa_dos( &regs, 0x2523 );
 }
 
-u32 ev_clock( void )
+uint32_t ev_clock( void )
 {
     REGS regs;
 
@@ -849,13 +849,13 @@ void scr_dump( const char *why )
 {
     char line[140];
     int row, col, len;
-    u8 ch;
+    uint8_t ch;
 
     if ( !log_open ) {
         return;
     }
     len = sprintf( line, "--- %s\r\n", why );
-    log_write( line, (u32)len );
+    log_write( line, (uint32_t)len );
     for ( row = 1; row <= rows; row++ ) {
         for ( col = 1; col <= cols && col <= 132; col++ ) {
             ch = CELL_CHAR( df_cell_at( row, col ) );
@@ -881,7 +881,7 @@ void scr_dump( const char *why )
         len = col - 1;
         line[len++] = '\r';
         line[len++] = '\n';
-        log_write( line, (u32)len );
+        log_write( line, (uint32_t)len );
     }
 }
 
@@ -891,7 +891,7 @@ static void scr_dump_attrs( void )
     static const char hex[] = "0123456789ABCDEF";
     char line[300];
     int row, col, len;
-    u8 attr;
+    uint8_t attr;
 
     for ( row = 1; row <= rows; row++ ) {
         len = 0;
@@ -902,7 +902,7 @@ static void scr_dump_attrs( void )
         }
         line[len++] = '\r';
         line[len++] = '\n';
-        log_write( line, (u32)len );
+        log_write( line, (uint32_t)len );
     }
 }
 
@@ -926,7 +926,7 @@ static void scr_shot( void )
     df_flush();
     ok = gfx_snapshot( path );
     len = sprintf( line, "[picture %s%s]\r\n", path, ok ? "" : " NOT WRITTEN" );
-    log_write( line, (u32)len );
+    log_write( line, (uint32_t)len );
 }
 
 /* test mode: FEh, the buttons, a row and a column - the pointer is put
@@ -942,15 +942,15 @@ static void test_mouse( int buttons, int row, int col )
     }
     xa_clear( &regs );
     if ( gfx ) {
-        regs.ecx = (u32)(col * 8 + 4);
-        regs.edx = (u32)(row * GFX_CELL_H + GFX_CELL_H / 2);
+        regs.ecx = (uint32_t)(col * 8 + 4);
+        regs.edx = (uint32_t)(row * GFX_CELL_H + GFX_CELL_H / 2);
     } else {
-        regs.ecx = (u32)(col * (mouse_xmax + 1) / cols + 1);
-        regs.edx = (u32)(row * (mouse_ymax + 1) / rows + 1);
+        regs.ecx = (uint32_t)(col * (mouse_xmax + 1) / cols + 1);
+        regs.edx = (uint32_t)(row * (mouse_ymax + 1) / rows + 1);
     }
     call33( &regs, 0x0004 );
     xa_clear( &regs );
-    regs.ebx = (u32)(buttons & 7);
+    regs.ebx = (uint32_t)(buttons & 7);
     xa_dos( &regs, 0xF00B );
     mouse_poll();
 }
@@ -1079,7 +1079,7 @@ static int ev_get( EVENT *ev, int wait )
             return 1;
         }
         xa_clear( &regs );
-        regs.edx = ((u32)((mouse_on ? 2 : 0) | (wait ? 0 : 1)) << 8) | (u32)(shift_seen & 0xFF);
+        regs.edx = ((uint32_t)((mouse_on ? 2 : 0) | (wait ? 0 : 1)) << 8) | (uint32_t)(shift_seen & 0xFF);
         xa_dos( &regs, 0xF008 );
         shift = (int)(regs.ebx & 0xFFFF);
         got = (int)(regs.eax & 0xFF);

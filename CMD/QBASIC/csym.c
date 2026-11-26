@@ -58,10 +58,10 @@ void c_expect_msg( const char *what )
 /* the code                                                            */
 /* ------------------------------------------------------------------ */
 
-static void code_room( u32 more )
+static void code_room( unsigned int more )
 {
-    u8 *grown;
-    u32 cap;
+    uint8_t *grown;
+    unsigned int cap;
 
     if ( cc->code_len + more <= cc->code_cap ) {
         return;
@@ -74,7 +74,7 @@ static void code_room( u32 more )
     while ( cap < cc->code_len + more ) {
         cap *= 2;
     }
-    grown = (u8 *)try_realloc( cc->code, cap );
+    grown = (uint8_t *)try_realloc( cc->code, cap );
     if ( grown == NULL ) {
         c_fail( "Out of memory" );
     }
@@ -85,11 +85,11 @@ static void code_room( u32 more )
 void c_emit( int byte )
 {
     code_room( 1 );
-    cc->code[cc->code_len++] = (u8)byte;
+    cc->code[cc->code_len++] = (uint8_t)byte;
 }
 
 /* the compile's own memory, freed with it */
-void *c_pool( u32 size )
+void *c_pool( unsigned int size )
 {
     void *mem = pool_alloc( cc->pool, size );
 
@@ -99,7 +99,7 @@ void *c_pool( u32 size )
     return mem;
 }
 
-char *c_pool_strn( const char *text, u32 len )
+char *c_pool_strn( const char *text, unsigned int len )
 {
     char *copy = pool_strn( cc->pool, text, len );
 
@@ -109,17 +109,17 @@ char *c_pool_strn( const char *text, u32 len )
     return copy;
 }
 
-void c_emit16( u32 val )
+void c_emit16( uint32_t val )
 {
     code_room( 2 );
-    *(u16 *)(cc->code + cc->code_len) = (u16)val;
+    *(uint16_t *)(cc->code + cc->code_len) = (uint16_t)val;
     cc->code_len += 2;
 }
 
-void c_emit32( u32 val )
+void c_emit32( uint32_t val )
 {
     code_room( 4 );
-    *(u32 *)(cc->code + cc->code_len) = val;
+    *(uint32_t *)(cc->code + cc->code_len) = val;
     cc->code_len += 4;
 }
 
@@ -137,12 +137,12 @@ void c_emitd( double val )
     cc->code_len += 8;
 }
 
-void c_patch32( u32 at, u32 val )
+void c_patch32( unsigned int at, uint32_t val )
 {
-    *(u32 *)(cc->code + at) = val;
+    *(uint32_t *)(cc->code + at) = val;
 }
 
-u32 c_here( void )
+unsigned int c_here( void )
 {
     return cc->code_len;
 }
@@ -152,7 +152,7 @@ void c_op( int op )
     c_emit( op );
 }
 
-void c_op32( int op, u32 val )
+void c_op32( int op, uint32_t val )
 {
     c_emit( op );
     c_emit32( val );
@@ -161,17 +161,17 @@ void c_op32( int op, u32 val )
 void c_rt( int routine )
 {
     c_emit( OP_RT );
-    c_emit16( (u32)routine );
+    c_emit16( (uint32_t)routine );
 }
 
-void c_push_l( s32 val )
+void c_push_l( int32_t val )
 {
-    c_op32( OP_CI, (u32)val );
+    c_op32( OP_CI, (uint32_t)val );
 }
 
-u32 c_jump( int op )
+unsigned int c_jump( int op )
 {
-    u32 at;
+    unsigned int at;
 
     c_emit( op );
     at = cc->code_len;
@@ -179,10 +179,10 @@ u32 c_jump( int op )
     return at;
 }
 
-u32 c_const_str( const char *text, u32 len )
+unsigned int c_const_str( const char *text, unsigned int len )
 {
     STR **grown;
-    u32 cap;
+    unsigned int cap;
 
     if ( cc->nconsts == cc->consts_cap ) {
         cap = cc->consts_cap ? cc->consts_cap * 2 : 256;
@@ -313,12 +313,12 @@ void c_name_of( TOKEN *tok, char *upper )
 /* scopes and names                                                    */
 /* ------------------------------------------------------------------ */
 
-static u32 name_hash( const char *upper )
+static unsigned int name_hash( const char *upper )
 {
-    u32 hash = 0;
+    uint32_t hash = 0;
 
     while ( *upper ) {
-        hash = hash * 31 + (u8)*upper++;
+        hash = hash * 31 + (uint8_t)*upper++;
     }
     return hash % NBUCKET;
 }
@@ -367,21 +367,21 @@ SYM *sym_find( SCOPE *scope, const char *upper, int tkey, int kind )
 SYM *sym_add( SCOPE *scope, const char *upper, int tkey, int kind )
 {
     SYM *sym = (SYM *)c_pool( sizeof( SYM ) );
-    u32 hash = name_hash( upper );
+    unsigned int hash = name_hash( upper );
 
     str_cpyn( sym->name, upper, sizeof( sym->name ) );
-    sym->tkey = (u8)tkey;
-    sym->kind = (u8)kind;
+    sym->tkey = (uint8_t)tkey;
+    sym->kind = (uint8_t)kind;
     sym->addr = NOADDR;
     sym->next = scope->bucket[hash];
     scope->bucket[hash] = sym;
     return sym;
 }
 
-u32 scope_alloc( SCOPE *scope, u32 size, int is_static )
+unsigned int scope_alloc( SCOPE *scope, unsigned int size, int is_static )
 {
-    u32 *where = is_static ? &scope->ssize : &scope->size;
-    u32 off;
+    unsigned int *where = is_static ? &scope->ssize : &scope->size;
+    unsigned int off;
 
     if ( size >= 4 ) {
         *where = (*where + 3u) & ~3u;
@@ -406,13 +406,13 @@ u32 scope_alloc( SCOPE *scope, u32 size, int is_static )
     return off;
 }
 
-static void list_add( u32 **list, u32 *count, u32 *cap, u32 val )
+static void list_add( unsigned int **list, unsigned int *count, unsigned int *cap, unsigned int val )
 {
-    u32 *grown;
+    unsigned int *grown;
 
     if ( *count == *cap ) {
-        u32 ncap = *cap ? *cap * 2 : 16;
-        grown = (u32 *)try_realloc( *list, ncap * sizeof( u32 ) );
+        unsigned int ncap = *cap ? *cap * 2 : 16;
+        grown = (unsigned int *)try_realloc( *list, ncap * sizeof( unsigned int ) );
         if ( grown == NULL ) {
             c_fail( "Out of memory" );          /* the list and its size as they were */
         }
@@ -422,19 +422,19 @@ static void list_add( u32 **list, u32 *count, u32 *cap, u32 val )
     (*list)[(*count)++] = val;
 }
 
-void scope_note_str( SCOPE *scope, u32 off )
+void scope_note_str( SCOPE *scope, unsigned int off )
 {
     list_add( &scope->rel_str, &scope->nrel_str, &scope->cap_str, off );
 }
 
-void scope_note_arr( SCOPE *scope, u32 off )
+void scope_note_arr( SCOPE *scope, unsigned int off )
 {
     list_add( &scope->rel_arr, &scope->nrel_arr, &scope->cap_arr, off );
 }
 
 /* a string or an array in a procedure's static block: let go of when
    the run ends, not when the call does */
-void scope_note_static( SCOPE *scope, u32 off, int is_array )
+void scope_note_static( SCOPE *scope, unsigned int off, int is_array )
 {
     if ( is_array ) {
         list_add( &scope->srel_arr, &scope->nsrel_arr, &scope->cap_sarr, off );
@@ -457,7 +457,7 @@ int type_default( SCOPE *scope, const char *upper )
 /* types                                                               */
 /* ------------------------------------------------------------------ */
 
-u32 type_size( QTYPE type )
+unsigned int type_size( QTYPE type )
 {
     switch ( TKIND( type ) ) {
     case TY_INT:    return 2;
@@ -497,7 +497,7 @@ SYM *type_find( const char *upper )
     return NULL;
 }
 
-int rec_field( int rec, const char *upper, QTYPE *type, u32 *offset )
+int rec_field( int rec, const char *upper, QTYPE *type, unsigned int *offset )
 {
     RECDEF *def = &cc->recs[rec];
     int i;
@@ -525,7 +525,7 @@ QTYPE parse_as_type( int allow_any, int allow_fixed )
     CELL val;
     QTYPE vtype;
     STR *sval;
-    s32 len;
+    int32_t len;
 
     if ( tok->kind == TK_KW ) {
         switch ( tok->kw ) {
@@ -550,8 +550,8 @@ QTYPE parse_as_type( int allow_any, int allow_fixed )
             if ( !const_expr( &val, &vtype, &sval ) || !IS_NUMT( vtype ) ) {
                 c_fail( "Invalid constant" );
             }
-            len = vtype == TY_SINGLE ? (s32)fp_round( val.s ) :
-                  vtype == TY_DOUBLE ? (s32)fp_round( val.d ) : val.l;
+            len = vtype == TY_SINGLE ? (int32_t)fp_round( val.s ) :
+                  vtype == TY_DOUBLE ? (int32_t)fp_round( val.d ) : val.l;
             if ( len < 1 || len > STR_MAX ) {
                 c_fail_tok( "Overflow" );
             }
@@ -575,10 +575,10 @@ QTYPE parse_as_type( int allow_any, int allow_fixed )
    argument passed by value.  In the module it is the module's; in a
    procedure it is the call's own, so that a recursive call gets fresh
    ones. */
-u32 c_temp( QTYPE type, u8 *scope_out )
+unsigned int c_temp( QTYPE type, uint8_t *scope_out )
 {
     SCOPE *scope;
-    u32 off;
+    unsigned int off;
 
     if ( cc->immediate ) {
         scope = &cc->module;                /* a frame's size is fixed by now */

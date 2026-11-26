@@ -23,24 +23,24 @@
 #include "pdf.h"
 
 #define OC_SIZE     2048            /* objects of the page, by number */
-static u32  *oc_num;                /* from the heap: static, they would be 16K */
-static OBJ **oc_obj;                /* of zeroes in the program's file */
+static uint32_t *oc_num;            /* from the heap: static, they would be 16K */
+static OBJ     **oc_obj;            /* of zeroes in the program's file */
 static int  load_depth;
 
 /* a decoded object stream, kept from page to page: most pages take
    their objects from one or two */
 typedef struct {
-    u32  num;
-    u32 *offs;                      /* where each object starts, from "first" */
-    u8  *data;
-    u32  len, count, first;
-    u32  stamp;
-    int  in_pool;                   /* the page's memory, not the heap's */
+    uint32_t  num;
+    uint32_t *offs;                 /* where each object starts, from "first" */
+    uint8_t  *data;
+    uint32_t  len, count, first;
+    uint32_t  stamp;
+    int       in_pool;              /* the page's memory, not the heap's */
 } OSTM;
 
 #define OSTM_SLOTS  3
-static OSTM ostm[OSTM_SLOTS];
-static u32  ostm_clock;
+static OSTM     ostm[OSTM_SLOTS];
+static uint32_t ostm_clock;
 
 int pdf_count_pages( void );
 int cache_reclaim( void );          /* GLYPH.C: the caches of fonts and glyphs */
@@ -86,7 +86,7 @@ void pdf_page_end( void )
     /* nothing is allocated here: this is what is called when a page
        has been given up for want of memory */
     if ( oc_num ) {
-        mem_set( oc_num, 0, OC_SIZE * sizeof( u32 ) );
+        mem_set( oc_num, 0, OC_SIZE * sizeof( uint32_t ) );
     }
     load_depth = 0;
     lex_reset();
@@ -97,9 +97,9 @@ void pdf_page_begin( void )
 {
     pdf_page_end();
     if ( oc_num == NULL ) {
-        oc_num = (u32 *)xalloc( OC_SIZE * (sizeof( u32 ) + sizeof( OBJ * )) );
+        oc_num = (uint32_t *)xalloc( OC_SIZE * (sizeof( uint32_t ) + sizeof( OBJ * )) );
         oc_obj = (OBJ **)(oc_num + OC_SIZE);
-        mem_set( oc_num, 0, OC_SIZE * sizeof( u32 ) );
+        mem_set( oc_num, 0, OC_SIZE * sizeof( uint32_t ) );
     }
     doc.page_pool = pool_new();
 }
@@ -132,17 +132,17 @@ int pdf_reclaim( void )
 /* reading an object where it lies                                     */
 /* ------------------------------------------------------------------ */
 
-static int read_uint( IN *in, u32 *val )
+static int read_uint( IN *in, uint32_t *val )
 {
     int ch = lex_skip_ws( in );
-    u32 num = 0;
+    uint32_t num = 0;
 
     if ( ch < '0' || ch > '9' ) {
         return 0;
     }
     while ( ch >= '0' && ch <= '9' ) {
         in->cur++;
-        num = num * 10 + (u32)(ch - '0');
+        num = num * 10 + (uint32_t)(ch - '0');
         ch = in_peek( in );
     }
     *val = num;
@@ -151,12 +151,12 @@ static int read_uint( IN *in, u32 *val )
 
 /* "n g obj", the object, and where its data starts if it is a stream.
    "pos" is from the file's "%PDF".  0 if there is no object there. */
-static int read_object_at( u32 pos, POOL *pool, OBJ *out, u32 *num_out )
+static int read_object_at( uint32_t pos, POOL *pool, OBJ *out, uint32_t *num_out )
 {
     IN *in = in_file( doc.base + pos, 0xFFFFFFFFUL );
     LEX lex;
     OBJ num, gen, word;
-    u32 at;
+    uint32_t at;
     int ch, good = 0;
 
     out->type = T_NULL;
@@ -164,19 +164,19 @@ static int read_object_at( u32 pos, POOL *pool, OBJ *out, u32 *num_out )
     if ( lex_obj( &lex, &num ) == T_INT && lex_obj( &lex, &gen ) == T_INT &&
          lex_obj( &lex, &word ) == T_OP && str_cmp( lex.word, "obj" ) == 0 ) {
         good = 1;
-        lex.num = (u32)num.u.ival;
-        lex.gen = (u16)gen.u.ival;
-        lex.crypt = (u8)(doc.encrypted && doc.str_crypt != CRYPT_NONE);
+        lex.num = (uint32_t)num.u.ival;
+        lex.gen = (uint16_t)gen.u.ival;
+        lex.crypt = (uint8_t)(doc.encrypted && doc.str_crypt != CRYPT_NONE);
         lex_obj( &lex, out );
         if ( out->type == T_OP || out->type == T_EOF ) {
             out->type = T_NULL;             /* "obj endobj" */
         }
         if ( num_out ) {
-            *num_out = (u32)num.u.ival;
+            *num_out = (uint32_t)num.u.ival;
         }
         if ( out->type == T_DICT ) {
-            out->u.dict->num = (u32)num.u.ival;
-            out->u.dict->gen = (u16)gen.u.ival;
+            out->u.dict->num = (uint32_t)num.u.ival;
+            out->u.dict->gen = (uint16_t)gen.u.ival;
             if ( lex_skip_ws( in ) == 's' && lex_obj( &lex, &word ) == T_OP &&
                  str_cmp( lex.word, "stream" ) == 0 ) {
                 at = in_tell( in );
@@ -199,15 +199,15 @@ static int read_object_at( u32 pos, POOL *pool, OBJ *out, u32 *num_out )
 /* object streams                                                      */
 /* ------------------------------------------------------------------ */
 
-static OSTM *ostm_find( u32 num )
+static OSTM *ostm_find( uint32_t num )
 {
     OSTM *slot;
     OBJ *stm;
     DICT *dict;
     IN *in;
-    u8 *data;
-    u32 *offs, *block;
-    u32 len, count, first, index, skip;
+    uint8_t *data;
+    uint32_t *offs, *block;
+    uint32_t len, count, first, index, skip;
     int at, oldest = 0;
 
     for ( at = 0; at < OSTM_SLOTS; at++ ) {
@@ -227,13 +227,13 @@ static OSTM *ostm_find( u32 num )
     if ( stm->type != T_STREAM ) {
         return NULL;
     }
-    count = (u32)dict_int( dict, "N", 0 );
-    first = (u32)dict_int( dict, "First", 0 );
+    count = (uint32_t)dict_int( dict, "N", 0 );
+    first = (uint32_t)dict_int( dict, "First", 0 );
     data = pdf_stream_all( stm, &len, 32UL * 1024 * 1024 );
     if ( data == NULL || first > len || count > first ) {
         return NULL;
     }
-    offs = (u32 *)pool_big( doc.page_pool, (count + 1) * sizeof( u32 ) );
+    offs = (uint32_t *)pool_big( doc.page_pool, (count + 1) * sizeof( uint32_t ) );
     in = in_mem( data, first );
     for ( index = 0; index < count; index++ ) {
         if ( !read_uint( in, &skip ) || !read_uint( in, &offs[index] ) ) {
@@ -250,14 +250,14 @@ static OSTM *ostm_find( u32 num )
     slot->count = count;
     slot->first = first;
     slot->stamp = ++ostm_clock;
-    block = (u32 *)try_alloc( count * sizeof( u32 ) + len );
+    block = (uint32_t *)try_alloc( count * sizeof( uint32_t ) + len );
     if ( block ) {
-        mem_cpy( block, offs, count * sizeof( u32 ) );
+        mem_cpy( block, offs, count * sizeof( uint32_t ) );
         mem_cpy( block + count, data, len );
         pool_unbig( offs );
         pool_unbig( data );
         slot->offs = block;
-        slot->data = (u8 *)(block + count);
+        slot->data = (uint8_t *)(block + count);
         slot->in_pool = 0;
     } else {
         slot->offs = offs;
@@ -267,12 +267,12 @@ static OSTM *ostm_find( u32 num )
     return slot;
 }
 
-static void read_object_in( u32 stmnum, u32 index, u32 num, POOL *pool, OBJ *out )
+static void read_object_in( uint32_t stmnum, uint32_t index, uint32_t num, POOL *pool, OBJ *out )
 {
     OSTM *slot = ostm_find( stmnum );
     IN *in;
     LEX lex;
-    u32 start;
+    uint32_t start;
 
     out->type = T_NULL;
     if ( slot == NULL || index >= slot->count ) {
@@ -298,11 +298,11 @@ static void read_object_in( u32 stmnum, u32 index, u32 num, POOL *pool, OBJ *out
 /* an object by number                                                 */
 /* ------------------------------------------------------------------ */
 
-static OBJ *load_into( u32 num, POOL *pool )
+static OBJ *load_into( uint32_t num, POOL *pool )
 {
     OBJ *obj = (OBJ *)pool_alloc( pool, sizeof( OBJ ) );
     XENT *ent;
-    u32 found;
+    uint32_t found;
 
     if ( num >= doc.xref_count ) {
         return obj;
@@ -318,9 +318,9 @@ static OBJ *load_into( u32 num, POOL *pool )
     return obj;
 }
 
-OBJ *pdf_load( u32 num )
+OBJ *pdf_load( uint32_t num )
 {
-    u32 slot = num & (OC_SIZE - 1);
+    uint32_t slot = num & (OC_SIZE - 1);
     OBJ *obj;
     int probe;
 
@@ -355,10 +355,10 @@ OBJ *pdf_load( u32 num )
 
 #define XREF_MAX    8388608UL       /* object numbers PDF allows: below 2^23 */
 
-static void xref_need( u32 count )
+static void xref_need( unsigned int count )
 {
     XENT *grown;
-    u32 cap;
+    unsigned int cap;
 
     if ( count <= doc.xref_count ) {
         return;
@@ -377,7 +377,7 @@ static void xref_need( u32 count )
     doc.xref_count = cap;
 }
 
-static void xref_set( u32 num, int type, u32 pos, u32 gen )
+static void xref_set( uint32_t num, int type, uint32_t pos, uint32_t gen )
 {
     XENT *ent;
 
@@ -387,9 +387,9 @@ static void xref_set( u32 num, int type, u32 pos, u32 gen )
     xref_need( num + 1 );
     ent = &doc.xref[num];
     if ( ent->type == 0 ) {
-        ent->type = (u8)type;
+        ent->type = (uint8_t)type;
         ent->pos = pos;
-        ent->gen = (u16)gen;
+        ent->gen = (uint16_t)gen;
     }
 }
 
@@ -398,7 +398,9 @@ static DICT *xref_table( IN *in )
 {
     LEX lex;
     OBJ obj;
-    u32 first, count, index, pos, gen;
+    uint32_t first, count;
+    unsigned int index;
+    uint32_t pos, gen;
     int ch;
 
     for ( ;; ) {
@@ -440,9 +442,9 @@ static DICT *xref_table( IN *in )
     return obj.u.dict;
 }
 
-static u32 be_field( const u8 *data, int width )
+static uint32_t be_field( const uint8_t *data, int width )
 {
-    u32 val = 0;
+    uint32_t val = 0;
 
     while ( width-- > 0 ) {
         val = (val << 8) | *data++;
@@ -452,14 +454,16 @@ static u32 be_field( const u8 *data, int width )
 
 /* the object at "pos" is a cross-reference stream: its dictionary is
    the trailer */
-static DICT *xref_stream( u32 pos )
+static DICT *xref_stream( uint32_t pos )
 {
     OBJ *stm = (OBJ *)pool_alloc( doc.pool, sizeof( OBJ ) );
     DICT *dict;
     ARR *widths, *index;
     IN *in;
-    u8 rec[24];
-    u32 first, count, at, pair, type, size;
+    uint8_t rec[24];
+    uint32_t first, count;
+    unsigned int at, pair;
+    uint32_t type, size;
     int w0, w1, w2;
 
     if ( !read_object_at( pos, doc.pool, stm, NULL ) || stm->type != T_STREAM ) {
@@ -477,7 +481,7 @@ static DICT *xref_stream( u32 pos )
     if ( w0 < 0 || w1 < 0 || w2 < 0 || w0 > 8 || w1 > 8 || w2 > 8 || w0 + w1 + w2 == 0 ) {
         return NULL;
     }
-    size = (u32)dict_int( dict, "Size", 0 );
+    size = (uint32_t)dict_int( dict, "Size", 0 );
     index = dict_arr( dict, "Index" );
     in = pdf_stream( stm );
     if ( in == NULL ) {
@@ -488,8 +492,8 @@ static DICT *xref_stream( u32 pos )
             if ( pair + 1 >= index->count ) {
                 break;
             }
-            first = (u32)obj_int( arr_get( index, pair ) );
-            count = (u32)obj_int( arr_get( index, pair + 1 ) );
+            first = (uint32_t)obj_int( arr_get( index, pair ) );
+            count = (uint32_t)obj_int( arr_get( index, pair + 1 ) );
         } else {
             if ( pair ) {
                 break;
@@ -501,7 +505,7 @@ static DICT *xref_stream( u32 pos )
             break;
         }
         for ( at = 0; at < count; at++ ) {
-            if ( in_read( in, rec, (u32)(w0 + w1 + w2) ) != (u32)(w0 + w1 + w2) ) {
+            if ( in_read( in, rec, (uint32_t)(w0 + w1 + w2) ) != (uint32_t)(w0 + w1 + w2) ) {
                 break;
             }
             type = w0 ? be_field( rec, w0 ) : 1;
@@ -517,7 +521,7 @@ static DICT *xref_stream( u32 pos )
 }
 
 /* one section, table or stream, at "pos": its trailer, or NULL */
-static DICT *xref_section( u32 pos )
+static DICT *xref_section( uint32_t pos )
 {
     IN *in;
     DICT *trailer = NULL;
@@ -541,11 +545,11 @@ static DICT *xref_section( u32 pos )
     return trailer;
 }
 
-static int xref_chain( u32 start )
+static int xref_chain( uint32_t start )
 {
     DICT *trailer;
-    u32 pos = start, seen[64];
-    s32 other;
+    uint32_t pos = start, seen[64];
+    int32_t other;
     int rounds, at;
 
     for ( rounds = 0; rounds < 64; rounds++ ) {
@@ -564,13 +568,13 @@ static int xref_chain( u32 start )
         }
         other = dict_int( trailer, "XRefStm", -1 );
         if ( other > 0 ) {
-            xref_section( (u32)other );
+            xref_section( (uint32_t)other );
         }
         other = dict_int( trailer, "Prev", -1 );
         if ( other <= 0 ) {
             break;
         }
-        pos = (u32)other;
+        pos = (uint32_t)other;
     }
     return doc.trailer != NULL;
 }
@@ -581,7 +585,7 @@ static int xref_chain( u32 start )
 
 #define RB_TRAILERS 8
 
-static DICT *dict_one( const char *key, u32 refnum )
+static DICT *dict_one( const char *key, uint32_t refnum )
 {
     DICT *dict = (DICT *)pool_alloc( doc.pool, sizeof( DICT ) + sizeof( DENT ) );
 
@@ -589,7 +593,7 @@ static DICT *dict_one( const char *key, u32 refnum )
     dict->ents = (DENT *)(dict + 1);
     dict->ents[0].key = key;
     dict->ents[0].val.type = T_REF;
-    dict->ents[0].val.u.ival = (s32)refnum;
+    dict->ents[0].val.u.ival = (int32_t)refnum;
     return dict;
 }
 
@@ -600,7 +604,7 @@ static void rebuild_streams( void )
     OBJ *obj, *type;
     OSTM *slot;
     IN *in;
-    u32 num, index, inner, skip, limit = doc.xref_count, catalog = 0;
+    uint32_t num, index, inner, skip, limit = doc.xref_count, catalog = 0;
 
     for ( num = 1; num < limit; num++ ) {
         if ( doc.xref[num].type != 1 ) {
@@ -650,9 +654,9 @@ static int xref_rebuild( void )
     LEX lex;
     OBJ obj;
     char word[8];
-    u32 pos, tok_start = 0, tok_val = 0, tok_len = 0;
-    u32 num1 = 0, num2 = 0, pos1 = 0, pos2 = 0;
-    u32 trailers[RB_TRAILERS];
+    uint32_t pos, tok_start = 0, tok_val = 0, tok_len = 0;
+    uint32_t num1 = 0, num2 = 0, pos1 = 0, pos2 = 0;
+    uint32_t trailers[RB_TRAILERS];
     int ch, tok_int = 0, have = 0, tcount = 0, at;
 
     if ( doc.xref ) {
@@ -680,10 +684,10 @@ static int xref_rebuild( void )
                         xref_need( num1 + 1 );
                         doc.xref[num1].type = 1;
                         doc.xref[num1].pos = pos1 - doc.base;
-                        doc.xref[num1].gen = (u16)num2;
+                        doc.xref[num1].gen = (uint16_t)num2;
                     } else if ( tok_len == 7 && str_cmp( word, "trailer" ) == 0 ) {
                         if ( tcount == RB_TRAILERS ) {
-                            mem_cpy( trailers, trailers + 1, sizeof( trailers ) - sizeof( u32 ) );
+                            mem_cpy( trailers, trailers + 1, sizeof( trailers ) - sizeof( uint32_t ) );
                             tcount--;
                         }
                         trailers[tcount++] = pos;
@@ -706,7 +710,7 @@ static int xref_rebuild( void )
             tok_val = 0;
         }
         if ( ch >= '0' && ch <= '9' && tok_int && tok_len < 10 ) {
-            tok_val = tok_val * 10 + (u32)(ch - '0');
+            tok_val = tok_val * 10 + (uint32_t)(ch - '0');
         } else {
             tok_int = 0;
         }
@@ -735,10 +739,10 @@ static int xref_rebuild( void )
 /* opening                                                             */
 /* ------------------------------------------------------------------ */
 
-static u32 find_startxref( void )
+static uint32_t find_startxref( void )
 {
-    u8 tail[2048];
-    u32 len = doc.size < sizeof( tail ) ? doc.size : sizeof( tail ), at, val = 0;
+    uint8_t tail[2048];
+    uint32_t len = doc.size < sizeof( tail ) ? doc.size : sizeof( tail ), at, val = 0;
     IN *in = in_file( doc.size - len, len );
     int found = -1;
 
@@ -752,10 +756,10 @@ static u32 find_startxref( void )
     if ( found < 0 ) {
         return 0;
     }
-    for ( at = (u32)found + 9; at < len && IS_WS( tail[at] ); at++ ) {
+    for ( at = (uint32_t)found + 9; at < len && IS_WS( tail[at] ); at++ ) {
     }
     for ( ; at < len && tail[at] >= '0' && tail[at] <= '9'; at++ ) {
-        val = val * 10 + (u32)(tail[at] - '0');
+        val = val * 10 + (uint32_t)(tail[at] - '0');
     }
     return val;
 }
@@ -769,7 +773,7 @@ static int root_good( void )
         return 0;
     }
     if ( ref->type == T_REF ) {
-        root = load_into( (u32)ref->u.ival, doc.pool );
+        root = load_into( (uint32_t)ref->u.ival, doc.pool );
     } else {
         root = ref;
     }
@@ -779,9 +783,9 @@ static int root_good( void )
 
 static int open_inner( void )
 {
-    u8 head[1024];
+    uint8_t head[1024];
     IN *in = in_file( 0, sizeof( head ) );
-    u32 len = in_read( in, head, sizeof( head ) ), start;
+    uint32_t len = in_read( in, head, sizeof( head ) ), start;
     OBJ *enc, *ident;
     const char *version;
     int at, why;
@@ -791,9 +795,9 @@ static int open_inner( void )
     if ( at < 0 ) {
         return PE_NOTPDF;
     }
-    doc.base = (u32)at;
+    doc.base = (uint32_t)at;
     doc.ver_major = 1;
-    if ( (u32)at + 7 < len && head[at + 5] >= '0' && head[at + 5] <= '9' ) {
+    if ( (uint32_t)at + 7 < len && head[at + 5] >= '0' && head[at + 5] <= '9' ) {
         doc.ver_major = head[at + 5] - '0';
         if ( head[at + 6] == '.' && head[at + 7] >= '0' && head[at + 7] <= '9' ) {
             doc.ver_minor = head[at + 7] - '0';
@@ -829,7 +833,7 @@ static int open_inner( void )
     enc = dict_raw( doc.trailer, "Encrypt" );
     if ( enc && enc->type != T_NULL ) {
         if ( enc->type == T_REF ) {
-            enc = load_into( (u32)enc->u.ival, doc.pool );
+            enc = load_into( (uint32_t)enc->u.ival, doc.pool );
         }
         if ( obj_dict( enc ) == NULL ) {
             return PE_CRYPT;
@@ -887,7 +891,7 @@ int pdf_open( const char *path )
 
 /* A file that is in memory already, all of it.  The bytes are read
    where they lie, so they must stay there until pdf_close. */
-int pdf_open_mem( const u8 *data, u32 len )
+int pdf_open_mem( const uint8_t *data, uint32_t len )
 {
     pdf_close();
     if ( data == NULL || len == 0 ) {

@@ -76,55 +76,55 @@
 #define R5_SALT_LEN   16
 #define R5_IV_LEN     16
 
-static const unsigned char RAR5_SIG[8] =
+static const uint8_t RAR5_SIG[8] =
     { 0x52, 0x61, 0x72, 0x21, 0x1A, 0x07, 0x01, 0x00 };
 
 /*---- buffered reader over one header body -------------------------------- */
 typedef struct {
-    const Byte *p;
-    const Byte *end;
-    int         err;
+    const uint8_t *p;
+    const uint8_t *end;
+    int            err;
 } BRd;
 
-static UInt32 BrVint( BRd *b )
+static uint32_t BrVint( BRd *b )
 {
-    UInt32 val = 0;
-    int    shift = 0;
+    uint32_t val = 0;
+    int      shift = 0;
     for ( ;; )
     {
-        Byte c;
+        uint8_t c;
         if ( b->p >= b->end ) { b->err = 1; break; }
         c = *b->p++;
         if ( shift < 32 )
-            val |= ( (UInt32)( c & 0x7F ) ) << shift;
+            val |= ( (uint32_t)( c & 0x7F ) ) << shift;
         shift += 7;
         if ( !( c & 0x80 ) ) break;
     }
     return val;
 }
 
-static UInt32 BrU32( BRd *b )
+static uint32_t BrU32( BRd *b )
 {
-    UInt32 v;
+    uint32_t v;
     if ( b->p + 4 > b->end ) { b->err = 1; return 0; }
-    v = (UInt32)b->p[0] | ( (UInt32)b->p[1] << 8 ) |
-        ( (UInt32)b->p[2] << 16 ) | ( (UInt32)b->p[3] << 24 );
+    v = (uint32_t)b->p[0] | ( (uint32_t)b->p[1] << 8 ) |
+        ( (uint32_t)b->p[2] << 16 ) | ( (uint32_t)b->p[3] << 24 );
     b->p += 4;
     return v;
 }
 
 /* Read a vint straight from the file (for the HeaderSize field). */
-static int RdVintFile( VolFile *fp, UInt32 *val, int *nBytes )
+static int RdVintFile( VolFile *fp, uint32_t *val, int *nBytes )
 {
-    UInt32 v = 0;
-    int    shift = 0, n = 0, c;
+    uint32_t v = 0;
+    int      shift = 0, n = 0, c;
     for ( ;; )
     {
         c = VolGetc( fp );
         if ( c == EOF ) return -1;
         n++;
         if ( shift < 32 )
-            v |= ( (UInt32)( c & 0x7F ) ) << shift;
+            v |= ( (uint32_t)( c & 0x7F ) ) << shift;
         shift += 7;
         if ( !( c & 0x80 ) ) break;
     }
@@ -133,13 +133,13 @@ static int RdVintFile( VolFile *fp, UInt32 *val, int *nBytes )
 }
 
 /*---- Unix time -> FILETIME (UTC), no __int64 ----------------------------- */
-static void UnixToFileTime( UInt32 t, UInt32 *lo, UInt32 *hi )
+static void UnixToFileTime( uint32_t t, uint32_t *lo, uint32_t *hi )
 {
     SYSTEMTIME st;
     FILETIME   ft;
-    long   days = (long)( t / 86400UL );
-    UInt32 secs = t % 86400UL;
-    long   z, era, doe, yoe, y, doy, mp, d, m;
+    long     days = (long)( t / 86400UL );
+    uint32_t secs = t % 86400UL;
+    long     z, era, doe, yoe, y, doy, mp, d, m;
 
     z   = days + 719468;
     era = ( z >= 0 ? z : z - 146096 ) / 146097;
@@ -179,13 +179,13 @@ static void UnixToFileTime( UInt32 t, UInt32 *lo, UInt32 *hi )
  * one memcmp.
  */
 typedef struct {
-    int  encrypted;
-    int  kdfCount;                    /* log2 of the PBKDF2 iteration count */
-    int  tweakCrc;                    /* stored CRC is an HMAC, not a CRC   */
-    int  hasPswCheck;
-    Byte salt[ R5_SALT_LEN ];
-    Byte iv[ R5_IV_LEN ];
-    Byte pswCheck[8];
+    int     encrypted;
+    int     kdfCount;                 /* log2 of the PBKDF2 iteration count */
+    int     tweakCrc;                 /* stored CRC is an HMAC, not a CRC   */
+    int     hasPswCheck;
+    uint8_t salt[ R5_SALT_LEN ];
+    uint8_t iv[ R5_IV_LEN ];
+    uint8_t pswCheck[8];
 } Rar5Crypt;
 
 /* One run of an entry's data inside one volume - see the same type in
@@ -193,15 +193,15 @@ typedef struct {
  * flag encoding differs (SPLIT_BEFORE/AFTER live in the common block header
  * here rather than in the file-header flags). */
 typedef struct {
-    long   off;
-    UInt32 len;
+    long     off;
+    uint32_t len;
 } Rar5Piece;
 
 struct Rar5Archive {
     VolFile   *fp;
     int        numEntries;
     int        cap;                   /* entries the tables can hold */
-    UInt32     arcFlags;              /* the first volume's main header    */
+    uint32_t   arcFlags;              /* the first volume's main header    */
     Rar5Entry *entries;
     long      *dataOffset;
     Rar5Crypt *crypt;                 /* parallel to entries               */
@@ -219,11 +219,11 @@ struct Rar5Archive {
 
     /* Derived-key cache, valid while cachedSalt/cachedCount match. */
     int        keyValid;
-    Byte       cachedSalt[ R5_SALT_LEN ];
+    uint8_t    cachedSalt[ R5_SALT_LEN ];
     int        cachedCount;
-    Byte       key[32];
-    Byte       hashKey[32];
-    Byte       pswCheck[8];
+    uint8_t    key[32];
+    uint8_t    hashKey[32];
+    uint8_t    pswCheck[8];
 
     /* Encrypted HEADERS (-hp).  One key for the whole block chain, from the
      * salt in the crypt header - unlike the per-entry keys above, which change
@@ -231,7 +231,7 @@ struct Rar5Archive {
     int        hdrEncrypted;
     int        hdrKeyValid;
     int        hdrSawBlock;                /* an enciphered block was read   */
-    Byte       hdrKey[32];
+    uint8_t    hdrKey[32];
 };
 
 
@@ -245,10 +245,10 @@ static int Rar5Grow( Rar5Archive *z )
     long      *nd;
 
     if ( z->numEntries < z->cap ) return 1;
-    if ( (UInt32)z->numEntries >= SZ_MAX_FILES ) return -1;
+    if ( (uint32_t)z->numEntries >= SZ_MAX_FILES ) return -1;
 
     n = z->cap ? z->cap * 2 : 32;
-    if ( (UInt32)n > SZ_MAX_FILES ) n = (int)SZ_MAX_FILES;
+    if ( (uint32_t)n > SZ_MAX_FILES ) n = (int)SZ_MAX_FILES;
     if ( n <= z->numEntries ) return 0;
 
     ne = (Rar5Entry *)realloc( z->entries, (size_t)n * sizeof( Rar5Entry ) );
@@ -281,7 +281,7 @@ static int Rar5Grow( Rar5Archive *z )
 }
 
 /* Record one run of data for the entry being built - see RarAddPiece. */
-static int Rar5AddPiece( Rar5Archive *z, int entry, long off, UInt32 len )
+static int Rar5AddPiece( Rar5Archive *z, int entry, long off, uint32_t len )
 {
     if ( z->pieceN >= z->pieceCap )
     {
@@ -305,7 +305,7 @@ static int Rar5AddPiece( Rar5Archive *z, int entry, long off, UInt32 len )
 typedef struct {
     Rar5Archive *z;
     int          first, count, pi;
-    UInt32       used;
+    uint32_t     used;
     int          started;
 } Rar5DataReader;
 
@@ -319,15 +319,15 @@ static void Rar5DataInit( Rar5DataReader *r, Rar5Archive *z, int idx )
     r->started = 0;
 }
 
-static int Rar5DataRead( Rar5DataReader *r, void *buf, UInt32 len )
+static int Rar5DataRead( Rar5DataReader *r, void *buf, uint32_t len )
 {
-    Byte  *p    = (Byte *)buf;
-    UInt32 done = 0;
+    uint8_t *p    = (uint8_t *)buf;
+    uint32_t done = 0;
 
     while ( done < len )
     {
         Rar5Piece *pc;
-        UInt32     avail, take;
+        uint32_t   avail, take;
 
         if ( r->pi >= r->count ) return 0;
         pc = &r->z->pieces[ r->first + r->pi ];
@@ -425,25 +425,25 @@ static void BuildOut( char *dst, int dstSize,
  */
 #define RAR5_BLK_END  (-1)
 
-static int Rar5ReadBlock( Rar5Archive *z, long pos, Byte **hdrOut,
-                          UInt32 *headSizeOut, long *bodyOut )
+static int Rar5ReadBlock( Rar5Archive *z, long pos, uint8_t **hdrOut,
+                          uint32_t *headSizeOut, long *bodyOut )
 {
-    Byte  *hdr;
-    UInt32 headSize;
-    int    vLen;
+    uint8_t *hdr;
+    uint32_t headSize;
+    int      vLen;
 
     *hdrOut = NULL;
     if ( VolSeek( z->fp, pos, SEEK_SET ) != 0 ) return RAR5_BLK_END;
 
     if ( !z->hdrEncrypted )
     {
-        Byte crc[4];
+        uint8_t crc[4];
 
         if ( VolRead( crc, 1, 4, z->fp ) != 4 ) return RAR5_BLK_END;
         if ( RdVintFile( z->fp, &headSize, &vLen ) != 0 ) return RAR5_BLK_END;
         if ( headSize == 0 || headSize > 0x100000UL ) return SZ_ERR_FORMAT;
 
-        hdr = (Byte *)malloc( headSize );
+        hdr = (uint8_t *)malloc( headSize );
         if ( !hdr ) return SZ_ERR_MEMORY;
         if ( VolRead( hdr, 1, headSize, z->fp ) != headSize )
         { free( hdr ); return SZ_ERR_READ; }
@@ -456,15 +456,16 @@ static int Rar5ReadBlock( Rar5Archive *z, long pos, Byte **hdrOut,
     else
     {
         AesCbcState cbc;
-        Byte        iv[ R5_IV_LEN ];
-        Byte       *blk;
+        uint8_t     iv[ R5_IV_LEN ];
+        uint8_t    *blk;
         long        want, padded;
-        UInt32      i, v, shift;
+        uint32_t    v, shift;
+        unsigned    i;
 
         if ( VolRead( iv, 1, R5_IV_LEN, z->fp ) != R5_IV_LEN )
             return RAR5_BLK_END;
 
-        blk = (Byte *)malloc( 16 );
+        blk = (uint8_t *)malloc( 16 );
         if ( !blk ) return SZ_ERR_MEMORY;
         if ( VolRead( blk, 1, 16, z->fp ) != 16 )
         { free( blk ); return RAR5_BLK_END; }
@@ -476,9 +477,9 @@ static int Rar5ReadBlock( Rar5Archive *z, long pos, Byte **hdrOut,
         v = 0; shift = 0; vLen = 0;
         for ( i = 4; i < 16; i++ )
         {
-            Byte c = blk[i];
+            uint8_t c = blk[i];
             vLen++;
-            if ( shift < 32 ) v |= (UInt32)( c & 0x7F ) << shift;
+            if ( shift < 32 ) v |= (uint32_t)( c & 0x7F ) << shift;
             shift += 7;
             if ( !( c & 0x80 ) ) break;
         }
@@ -489,7 +490,7 @@ static int Rar5ReadBlock( Rar5Archive *z, long pos, Byte **hdrOut,
         want   = 4 + vLen + (long)headSize;
         padded = ( want + 15 ) & ~15L;
         {
-            Byte *nb = (Byte *)realloc( blk, (size_t)padded );
+            uint8_t *nb = (uint8_t *)realloc( blk, (size_t)padded );
             if ( !nb ) { free( blk ); return SZ_ERR_MEMORY; }
             blk = nb;
         }
@@ -498,7 +499,7 @@ static int Rar5ReadBlock( Rar5Archive *z, long pos, Byte **hdrOut,
             if ( VolRead( blk + 16, 1, (size_t)( padded - 16 ), z->fp )
                      != (size_t)( padded - 16 ) )
             { free( blk ); return SZ_ERR_BADPASS; }
-            AesCbcDecrypt( &cbc, blk + 16, (UInt32)( padded - 16 ) );
+            AesCbcDecrypt( &cbc, blk + 16, (uint32_t)( padded - 16 ) );
         }
 
         /* THE PASSWORD CHECK for every block after the first.  The crypt
@@ -507,12 +508,12 @@ static int Rar5ReadBlock( Rar5Archive *z, long pos, Byte **hdrOut,
          * but it is reported as BADPASS all the same, because the only way to
          * reach it with a valid check value is a CRC collision on the check,
          * and "wrong password" is the likelier truth. */
-        if ( Crc32Calc( blk + 4, (UInt32)( vLen + (long)headSize ) ) !=
-             ( (UInt32)blk[0] | ( (UInt32)blk[1] << 8 ) |
-               ( (UInt32)blk[2] << 16 ) | ( (UInt32)blk[3] << 24 ) ) )
+        if ( Crc32Calc( blk + 4, (uint32_t)( vLen + (long)headSize ) ) !=
+             ( (uint32_t)blk[0] | ( (uint32_t)blk[1] << 8 ) |
+               ( (uint32_t)blk[2] << 16 ) | ( (uint32_t)blk[3] << 24 ) ) )
         { free( blk ); return SZ_ERR_BADPASS; }
 
-        hdr = (Byte *)malloc( headSize );
+        hdr = (uint8_t *)malloc( headSize );
         if ( !hdr ) { free( blk ); return SZ_ERR_MEMORY; }
         memcpy( hdr, blk + 4 + vLen, headSize );
         free( blk );
@@ -526,10 +527,19 @@ static int Rar5ReadBlock( Rar5Archive *z, long pos, Byte **hdrOut,
 }
 
 /*---- open + walk the blocks ---------------------------------------------- */
+/* The next block: "len" bytes on from "body", or the largest long when a
+ * long cannot hold that.  That ends the walk, as any place past the volume
+ * does; a position that wrapped would go back to a block already read. */
+static long Rar5NextPos( long body, uint32_t len )
+{
+    if ( len > (uint32_t)( 0x7FFFFFFFL - body ) ) return 0x7FFFFFFFL;
+    return body + (long)len;
+}
+
 int Rar5OpenPw( const char *path, const char *pw, Rar5Archive **out )
 {
     Rar5Archive *z;
-    Byte         sig[8];
+    uint8_t      sig[8];
     long         pos;
     int          vol;
     int          lastSplitAfter = 0;
@@ -605,7 +615,7 @@ int Rar5OpenPw( const char *path, const char *pw, Rar5Archive **out )
 
         if ( vol > 0 )
         {
-            Byte s[8];
+            uint8_t s[8];
 
             if ( VolSeek( z->fp, volBase, SEEK_SET ) != 0 ||
                  VolRead( s, 1, 8, z->fp ) != 8 ||
@@ -617,12 +627,12 @@ int Rar5OpenPw( const char *path, const char *pw, Rar5Archive **out )
 
     for ( ;; )
     {
-        UInt32 headSize, dataSize = 0, extraSize = 0;
-        Byte  *hdr;
-        BRd    b;
-        UInt32 type, flags;
-        long   body;
-        int    brc;
+        uint32_t headSize, dataSize = 0, extraSize = 0;
+        uint8_t *hdr;
+        BRd      b;
+        uint32_t type, flags;
+        long     body;
+        int      brc;
 
         if ( pos >= volEnd ) break;          /* this volume is done */
 
@@ -648,8 +658,8 @@ int Rar5OpenPw( const char *path, const char *pw, Rar5Archive **out )
          * the difference is whether the front end prompts or gives up. */
         if ( type == H5_ENCRYPT )
         {
-            UInt32 encVer = BrVint( &b );
-            UInt32 encFlg = BrVint( &b );
+            uint32_t encVer = BrVint( &b );
+            uint32_t encFlg = BrVint( &b );
 
             if ( !z->havePw ) { free( hdr ); rc = SZ_ERR_PASSWORD; break; }
 
@@ -661,8 +671,8 @@ int Rar5OpenPw( const char *path, const char *pw, Rar5Archive **out )
             { free( hdr ); rc = SZ_ERR_UNSUPPORTED; break; }
 
             {
-                int         kdfCount = (int)*b.p++;
-                const Byte *salt     = b.p;
+                int            kdfCount = (int)*b.p++;
+                const uint8_t *salt     = b.p;
 
                 b.p += R5_SALT_LEN;
 
@@ -707,7 +717,7 @@ int Rar5OpenPw( const char *path, const char *pw, Rar5Archive **out )
          * to fit the .partN.rar pattern. */
         if ( type == H5_MAIN )
         {
-            UInt32 arcFlags = BrVint( &b );
+            uint32_t arcFlags = BrVint( &b );
 
             if ( vol == 0 && !b.err && !( arcFlags & H5A_VOLUME ) )
                 z->volumes = 1;
@@ -716,11 +726,11 @@ int Rar5OpenPw( const char *path, const char *pw, Rar5Archive **out )
 
         if ( type == H5_FILE )
         {
-            UInt32 fileFlags = BrVint( &b );
-            UInt32 unpSize    = BrVint( &b );
-            UInt32 attr       = BrVint( &b );
-            UInt32 mtime = 0, dcrc = 0, compInfo, nameLen, hostOS;
-            int    hasMtime = 0, hasCrc = 0;
+            uint32_t fileFlags = BrVint( &b );
+            uint32_t unpSize    = BrVint( &b );
+            uint32_t attr       = BrVint( &b );
+            uint32_t mtime = 0, dcrc = 0, compInfo, nameLen, hostOS;
+            int      hasMtime = 0, hasCrc = 0;
 
             if ( fileFlags & F5_MTIME ) { mtime = BrU32( &b ); hasMtime = 1; }
             if ( fileFlags & F5_CRC )   { dcrc  = BrU32( &b ); hasCrc = 1; }
@@ -748,22 +758,22 @@ int Rar5OpenPw( const char *path, const char *pw, Rar5Archive **out )
                 if ( fileFlags & F5_CRC )
                 { z->entries[last5].crc = dcrc; z->entries[last5].hasCrc = 1; }
                 free( hdr );
-                pos = body + (long)dataSize;
+                pos = Rar5NextPos( body, dataSize );
                 continue;
             }
 
             if ( !b.err )
             {
                 Rar5Entry *e;
-                UInt32 j; int k = 0, last;
-                UInt32 avail = (UInt32)( b.end - b.p );
-                int    g     = Rar5Grow( z );
+                unsigned j; int k = 0, last;
+                uint32_t avail = (uint32_t)( b.end - b.p );
+                int      g     = Rar5Grow( z );
 
                 if ( g <= 0 )
                 {
                     free( hdr );
                     rc = ( g < 0 )
-                       ? ArcCheckEntryCount( (UInt32)z->numEntries + 1 )
+                       ? ArcCheckEntryCount( (uint32_t)z->numEntries + 1 )
                        : SZ_ERR_MEMORY;
                     break;
                 }
@@ -822,8 +832,8 @@ int Rar5OpenPw( const char *path, const char *pw, Rar5Archive **out )
 
                         while ( x.p < x.end && !x.err )
                         {
-                            UInt32      recSize = BrVint( &x );
-                            const Byte *recEnd;
+                            uint32_t       recSize = BrVint( &x );
+                            const uint8_t *recEnd;
 
                             if ( x.err || recSize == 0 ) break;
                             recEnd = x.p + recSize;
@@ -831,8 +841,8 @@ int Rar5OpenPw( const char *path, const char *pw, Rar5Archive **out )
 
                             if ( BrVint( &x ) == X5_CRYPT && !x.err )
                             {
-                                UInt32 ver  = BrVint( &x );
-                                UInt32 cfl  = BrVint( &x );
+                                uint32_t ver  = BrVint( &x );
+                                uint32_t cfl  = BrVint( &x );
 
                                 /* Version 0 is the only one defined.  A later
                                  * one would have a layout we cannot guess, so
@@ -879,7 +889,7 @@ int Rar5OpenPw( const char *path, const char *pw, Rar5Archive **out )
         }
 
         free( hdr );
-        pos = body + (long)dataSize;
+        pos = Rar5NextPos( body, dataSize );
     }
     }   /* per-volume */
 
@@ -919,7 +929,7 @@ int Rar5Open( const char *path, Rar5Archive **out )
  * buffer and costs nothing worth reporting.  This exists so that the format
  * dispatch in ArcMemNeeded has an answer from every backend rather than a
  * silent zero that could equally mean "free" or "nobody asked". */
-UInt32 Rar5MemNeeded( Rar5Archive *r )
+uint32_t Rar5MemNeeded( Rar5Archive *r )
 {
     (void)r;
     return 512;
@@ -988,9 +998,9 @@ static int Rar5ExtractIndex( Rar5Archive *z, int idx, const char *destDir )
     AesCbcState   cbc;
     char          outPath[SZ_MAX_NAME * 4];
     FILE         *out;
-    UInt32        crc, remain;
+    uint32_t      crc, remain;
     unsigned int  toRead;
-    unsigned char buf[512];
+    uint8_t       buf[512];
     Rar5DataReader dr;
     int           rc;
 
@@ -1049,7 +1059,7 @@ static int Rar5ExtractIndex( Rar5Archive *z, int idx, const char *destDir )
      * real one. */
     remain = e->packed;
     {
-        UInt32 written = 0;
+        uint32_t written = 0;
 
         while ( remain > 0 )
         {
@@ -1090,7 +1100,7 @@ static int Rar5ExtractIndex( Rar5Archive *z, int idx, const char *destDir )
 
     if ( rc == SZ_OK && e->hasCrc )
     {
-        UInt32 got = Crc32Done( crc );
+        uint32_t got = Crc32Done( crc );
 
         /* An encrypted entry may store an HMAC of the CRC rather than the CRC
          * itself, so that the checksum cannot be used to test passwords
@@ -1264,17 +1274,17 @@ int Rar5NeedsPassword( Rar5Archive *r )
 
 typedef struct {
     Rar5Archive    *z;
-    const Byte     *del;
+    const uint8_t  *del;
     FILE           *out;          /* NULL while deciding                    */
     ArcCompProgress prog;
     void           *user;
-    Byte           *buf;
+    uint8_t        *buf;
     long            fileLen;
     int             keptN;        /* entries to write, from the first pass  */
     int             kept;         /* entries met so far that stay           */
-    UInt32          total;        /* bytes to write, from the first pass    */
-    UInt32          done;         /* bytes written                          */
-    UInt32          nextTick;
+    uint32_t        total;        /* bytes to write, from the first pass    */
+    uint32_t        done;         /* bytes written                          */
+    uint32_t        nextTick;
     const char     *name;         /* entry being copied, for the progress   */
 } Rar5Del;
 
@@ -1282,20 +1292,20 @@ static char g_rar5DelWhy[400];
 
 /* A vint that must fit 32 bits: *big is set when one does not, which BrVint
  * would quietly have cut short. */
-static UInt32 R5DelVint( BRd *b, int *big )
+static uint32_t R5DelVint( BRd *b, int *big )
 {
-    UInt32 val   = 0;
-    int    shift = 0;
+    uint32_t val   = 0;
+    int      shift = 0;
 
     for ( ;; )
     {
-        Byte c;
+        uint8_t c;
 
         if ( b->p >= b->end ) { b->err = 1; break; }
         c = *b->p++;
         if ( shift < 32 )
         {
-            val |= (UInt32)( c & 0x7F ) << shift;
+            val |= (uint32_t)( c & 0x7F ) << shift;
             if ( shift == 28 && ( c & 0x70 ) ) *big = 1;
         }
         else if ( c & 0x7F )
@@ -1306,16 +1316,16 @@ static UInt32 R5DelVint( BRd *b, int *big )
     return val;
 }
 
-static UInt32 R5PutVint( Byte *dst, UInt32 v )
+static uint32_t R5PutVint( uint8_t *dst, uint32_t v )
 {
-    UInt32 n = 0;
+    uint32_t n = 0;
 
     while ( v >= 0x80 )
     {
-        dst[n++] = (Byte)( ( v & 0x7F ) | 0x80 );
+        dst[n++] = (uint8_t)( ( v & 0x7F ) | 0x80 );
         v >>= 7;
     }
-    dst[n++] = (Byte)v;
+    dst[n++] = (uint8_t)v;
     return n;
 }
 
@@ -1329,7 +1339,7 @@ static int Rar5DelTick( Rar5Del *d )
 }
 
 /* Bytes from memory to the new archive (or only counted, while deciding). */
-static int Rar5DelPut( Rar5Del *d, const Byte *src, UInt32 len )
+static int Rar5DelPut( Rar5Del *d, const uint8_t *src, uint32_t len )
 {
     if ( !d->out ) { d->total += len; return SZ_OK; }
     if ( fwrite( src, 1, (size_t)len, d->out ) != (size_t)len )
@@ -1341,12 +1351,12 @@ static int Rar5DelPut( Rar5Del *d, const Byte *src, UInt32 len )
 /* Bytes [from, from + len) of the old archive to the new one, unchanged. */
 static int Rar5DelCopy( Rar5Del *d, long from, long len )
 {
-    if ( !d->out ) { d->total += (UInt32)len; return SZ_OK; }
+    if ( !d->out ) { d->total += (uint32_t)len; return SZ_OK; }
     if ( VolSeek( d->z->fp, from, SEEK_SET ) != 0 ) return SZ_ERR_READ;
 
     while ( len > 0 )
     {
-        UInt32 take = ( len > (long)R5_DEL_BUF ) ? R5_DEL_BUF : (UInt32)len;
+        uint32_t take = ( len > (long)R5_DEL_BUF ) ? R5_DEL_BUF : (uint32_t)len;
 
         if ( VolRead( d->buf, 1, take, d->z->fp ) != take ) return SZ_ERR_READ;
         if ( fwrite( d->buf, 1, (size_t)take, d->out ) != (size_t)take )
@@ -1373,17 +1383,17 @@ static int Rar5DelCopy( Rar5Del *d, long from, long len )
  * and only the vints at the front change size, so everything between the
  * archive flags and the extra area is carried across as bytes - the volume
  * number, and whatever a later RAR puts there. */
-static int Rar5DelMain( Rar5Del *d, const Byte *hdr, UInt32 headSize,
+static int Rar5DelMain( Rar5Del *d, const uint8_t *hdr, uint32_t headSize,
                         long pos, long body )
 {
-    Rar5Archive *z = d->z;
-    BRd          b, x;
-    UInt32       type, flags, extraSize = 0, dataSize = 0, arcFlags;
-    UInt32       newExtra, newSize, n, full, padded;
-    const Byte  *mid, *xStart;
-    const Byte  *loc = NULL, *locEnd = NULL;
-    Byte        *nb;
-    int          big = 0, rc;
+    Rar5Archive   *z = d->z;
+    BRd            b, x;
+    uint32_t       type, flags, extraSize = 0, dataSize = 0, arcFlags;
+    uint32_t       newExtra, newSize, n, full, padded;
+    const uint8_t *mid, *xStart;
+    const uint8_t *loc = NULL, *locEnd = NULL;
+    uint8_t       *nb;
+    int            big = 0, rc;
 
     b.p = hdr; b.end = hdr + headSize; b.err = 0;
     type  = R5DelVint( &b, &big );
@@ -1391,7 +1401,7 @@ static int Rar5DelMain( Rar5Del *d, const Byte *hdr, UInt32 headSize,
     if ( flags & H5F_EXTRA ) extraSize = R5DelVint( &b, &big );
     if ( flags & H5F_DATA )  dataSize  = R5DelVint( &b, &big );
     arcFlags = R5DelVint( &b, &big );
-    if ( b.err || big || extraSize > (UInt32)( b.end - b.p ) )
+    if ( b.err || big || extraSize > (uint32_t)( b.end - b.p ) )
         return SZ_ERR_FORMAT;
     mid    = b.p;
     xStart = hdr + headSize - extraSize;
@@ -1400,12 +1410,12 @@ static int Rar5DelMain( Rar5Del *d, const Byte *hdr, UInt32 headSize,
     x.p = xStart; x.end = hdr + headSize; x.err = 0;
     while ( x.p < x.end )
     {
-        const Byte *recStart = x.p;
-        UInt32      recSize  = R5DelVint( &x, &big );
-        const Byte *recEnd;
+        const uint8_t *recStart = x.p;
+        uint32_t       recSize  = R5DelVint( &x, &big );
+        const uint8_t *recEnd;
 
         if ( x.err || big || recSize == 0 ||
-             recSize > (UInt32)( x.end - x.p ) )
+             recSize > (uint32_t)( x.end - x.p ) )
             return SZ_ERR_FORMAT;
         recEnd = x.p + recSize;
         if ( R5DelVint( &x, &big ) == X5M_LOCATOR && !x.err && !loc )
@@ -1421,11 +1431,11 @@ static int Rar5DelMain( Rar5Del *d, const Byte *hdr, UInt32 headSize,
 
     /* Room for the CRC, the size vint, the body (which only shrinks) and the
      * cipher padding. */
-    nb = (Byte *)malloc( (size_t)headSize + 4 + R5_VINT_MAX + 16 );
+    nb = (uint8_t *)malloc( (size_t)headSize + 4 + R5_VINT_MAX + 16 );
     if ( !nb ) return SZ_ERR_MEMORY;
 
-    newExtra = extraSize - ( loc ? (UInt32)( locEnd - loc ) : 0 );
-    flags    = newExtra ? ( flags | H5F_EXTRA ) : ( flags & ~(UInt32)H5F_EXTRA );
+    newExtra = extraSize - ( loc ? (uint32_t)( locEnd - loc ) : 0 );
+    flags    = newExtra ? ( flags | H5F_EXTRA ) : ( flags & ~(uint32_t)H5F_EXTRA );
 
     /* The body first, at an offset that leaves room in front for the CRC and
      * the longest size vint; moved down once the size is known. */
@@ -1434,15 +1444,15 @@ static int Rar5DelMain( Rar5Del *d, const Byte *hdr, UInt32 headSize,
     n += R5PutVint( nb + n, flags );
     if ( newExtra )          n += R5PutVint( nb + n, newExtra );
     if ( flags & H5F_DATA )  n += R5PutVint( nb + n, dataSize );
-    n += R5PutVint( nb + n, arcFlags & ~(UInt32)H5A_RECOVERY );
+    n += R5PutVint( nb + n, arcFlags & ~(uint32_t)H5A_RECOVERY );
     memcpy( nb + n, mid, (size_t)( xStart - mid ) );
-    n += (UInt32)( xStart - mid );
+    n += (uint32_t)( xStart - mid );
     if ( loc )
     {
         memcpy( nb + n, xStart, (size_t)( loc - xStart ) );
-        n += (UInt32)( loc - xStart );
+        n += (uint32_t)( loc - xStart );
         memcpy( nb + n, locEnd, (size_t)( hdr + headSize - locEnd ) );
-        n += (UInt32)( hdr + headSize - locEnd );
+        n += (uint32_t)( hdr + headSize - locEnd );
     }
     else
     {
@@ -1452,18 +1462,18 @@ static int Rar5DelMain( Rar5Del *d, const Byte *hdr, UInt32 headSize,
     newSize = n - ( 4 + R5_VINT_MAX );
 
     {
-        Byte   sz[R5_VINT_MAX];
-        UInt32 szLen = R5PutVint( sz, newSize );
-        UInt32 crc;
+        uint8_t  sz[R5_VINT_MAX];
+        uint32_t szLen = R5PutVint( sz, newSize );
+        uint32_t crc;
 
         memmove( nb + 4 + szLen, nb + 4 + R5_VINT_MAX, (size_t)newSize );
         memcpy( nb + 4, sz, (size_t)szLen );
         full = 4 + szLen + newSize;
         crc  = Crc32Calc( nb + 4, szLen + newSize );
-        nb[0] = (Byte)( crc & 0xFF );
-        nb[1] = (Byte)( ( crc >> 8 ) & 0xFF );
-        nb[2] = (Byte)( ( crc >> 16 ) & 0xFF );
-        nb[3] = (Byte)( ( crc >> 24 ) & 0xFF );
+        nb[0] = (uint8_t)( crc & 0xFF );
+        nb[1] = (uint8_t)( ( crc >> 8 ) & 0xFF );
+        nb[2] = (uint8_t)( ( crc >> 16 ) & 0xFF );
+        nb[3] = (uint8_t)( ( crc >> 24 ) & 0xFF );
     }
 
     if ( !z->hdrEncrypted )
@@ -1479,7 +1489,7 @@ static int Rar5DelMain( Rar5Del *d, const Byte *hdr, UInt32 headSize,
     rc = SZ_OK;
     if ( d->out )
     {
-        Byte        iv[R5_IV_LEN];
+        uint8_t     iv[R5_IV_LEN];
         AesCbcState cbc;
 
         if ( VolSeek( z->fp, pos, SEEK_SET ) != 0 ||
@@ -1500,9 +1510,9 @@ static int Rar5DelMain( Rar5Del *d, const Byte *hdr, UInt32 headSize,
 
 /* The name of a service header ("CMT", "QO", "RR", "ACL", "STM"), which sits
  * where a file header keeps its name.  0 when the header is too short. */
-static int Rar5SubName( BRd *b, const Byte **name, UInt32 *nameLen )
+static int Rar5SubName( BRd *b, const uint8_t **name, uint32_t *nameLen )
 {
-    UInt32 fileFlags;
+    uint32_t fileFlags;
 
     fileFlags = BrVint( b );
     (void)BrVint( b );                                  /* unpacked size */
@@ -1512,7 +1522,7 @@ static int Rar5SubName( BRd *b, const Byte **name, UInt32 *nameLen )
     (void)BrVint( b );                                  /* compression   */
     (void)BrVint( b );                                  /* host OS       */
     *nameLen = BrVint( b );
-    if ( b->err || *nameLen > (UInt32)( b->end - b->p ) ) return 0;
+    if ( b->err || *nameLen > (uint32_t)( b->end - b->p ) ) return 0;
     *name = b->p;
     return 1;
 }
@@ -1535,14 +1545,14 @@ static int Rar5DelWalk( Rar5Del *d, const char **why )
 
     while ( rc == SZ_OK && pos < d->fileLen )
     {
-        Byte  *hdr;
-        UInt32 headSize, type, flags, dataSize = 0;
-        long   body, end;
-        BRd    b;
-        int    big  = 0;
-        int    keep = !drop;
-        int    stop = 0;
-        int    brc;
+        uint8_t *hdr;
+        uint32_t headSize, type, flags, dataSize = 0;
+        long     body, end;
+        BRd      b;
+        int      big  = 0;
+        int      keep = !drop;
+        int      stop = 0;
+        int      brc;
 
         brc = Rar5ReadBlock( z, pos, &hdr, &headSize, &body );
         if ( brc == RAR5_BLK_END ) break;
@@ -1563,7 +1573,7 @@ static int Rar5DelWalk( Rar5Del *d, const char **why )
             break;
         }
 
-        if ( dataSize > (UInt32)( 0x7FFFFFFFL - body ) )
+        if ( dataSize > (uint32_t)( 0x7FFFFFFFL - body ) )
         { free( hdr ); rc = SZ_ERR_FORMAT; break; }
         end = body + (long)dataSize;
         if ( end > d->fileLen ) { free( hdr ); rc = SZ_ERR_READ; break; }
@@ -1583,7 +1593,7 @@ static int Rar5DelWalk( Rar5Del *d, const char **why )
         else if ( type == H5_FILE )
         {
             const Rar5Entry *e;
-            UInt32           fileFlags, compInfo;
+            uint32_t         fileFlags, compInfo;
             int              gone, hasData;
 
             /* The reader made an entry of every file header in a single
@@ -1634,8 +1644,8 @@ static int Rar5DelWalk( Rar5Del *d, const char **why )
         }
         else if ( type == H5_SERVICE )
         {
-            const Byte *name;
-            UInt32      nameLen;
+            const uint8_t *name;
+            uint32_t       nameLen;
 
             if ( !Rar5SubName( &b, &name, &nameLen ) )
             { free( hdr ); rc = SZ_ERR_FORMAT; break; }
@@ -1661,7 +1671,7 @@ static int Rar5DelWalk( Rar5Del *d, const char **why )
     return rc;
 }
 
-int Rar5DeleteWrite( Rar5Archive *r, const Byte *del, FILE *out,
+int Rar5DeleteWrite( Rar5Archive *r, const uint8_t *del, FILE *out,
                      ArcCompProgress prog, void *user, const char **why )
 {
     Rar5Del d;
@@ -1691,7 +1701,7 @@ int Rar5DeleteWrite( Rar5Archive *r, const Byte *del, FILE *out,
     rc = Rar5DelWalk( &d, why );
     if ( rc != SZ_OK || !out ) return rc;
 
-    d.buf = (Byte *)malloc( R5_DEL_BUF );
+    d.buf = (uint8_t *)malloc( R5_DEL_BUF );
     if ( !d.buf ) return SZ_ERR_MEMORY;
     d.out      = out;
     d.prog     = prog;

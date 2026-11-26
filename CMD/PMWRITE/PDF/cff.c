@@ -14,11 +14,11 @@
 #include "gfx.h"
 
 typedef struct {
-    u32 count;
-    u32 offsize;
-    u32 offs;                   /* where the offsets are */
-    u32 base;                   /* what an offset is from */
-    u32 end;                    /* the byte after the whole INDEX */
+    uint32_t count;
+    uint32_t offsize;
+    uint32_t offs;              /* where the offsets are */
+    uint32_t base;              /* what an offset is from */
+    uint32_t end;               /* the byte after the whole INDEX */
 } CIDX;
 
 typedef struct {
@@ -27,33 +27,33 @@ typedef struct {
 } CFD;
 
 typedef struct {
-    POOL *pool;
-    u8   *data;
-    u32   len;
-    CIDX  gsubrs, chars, strings, fdarray;
-    u32   charset, encoding, fdselect;
-    int   glyphs, is_cid, units;
-    u16  *sids;                 /* each glyph's string, or character ID */
-    CFD  *fds;
-    int   nfds;
+    POOL     *pool;
+    uint8_t  *data;
+    uint32_t  len;
+    CIDX      gsubrs, chars, strings, fdarray;
+    uint32_t  charset, encoding, fdselect;
+    int       glyphs, is_cid, units;
+    uint16_t *sids;             /* each glyph's string, or character ID */
+    CFD      *fds;
+    int       nfds;
 } CFF;
 
 #define T2_STACK    48
 
 typedef struct {
-    CFF *cff;
-    CFD *fd;
-    fx   stack[T2_STACK + 2];
-    int  sp;
-    fx   xpos, ypos;
-    int  stems, have_width, open, depth, done;
-    u32  budget;                /* operators left, against a loop */
-    fx   trans[32];
+    CFF         *cff;
+    CFD         *fd;
+    fx           stack[T2_STACK + 2];
+    int          sp;
+    fx           xpos, ypos;
+    int          stems, have_width, open, depth, done;
+    unsigned int budget;        /* operators left, against a loop */
+    fx           trans[32];
 } T2;
 
-static u32 rd( const CFF *cff, u32 off, u32 size )
+static uint32_t rd( const CFF *cff, uint32_t off, uint32_t size )
 {
-    u32 val = 0;
+    uint32_t val = 0;
 
     if ( off > cff->len || size > cff->len - off ) {
         return 0;
@@ -65,9 +65,9 @@ static u32 rd( const CFF *cff, u32 off, u32 size )
 }
 
 /* an INDEX at "off": 0 if it is not all there */
-static int index_at( const CFF *cff, u32 off, CIDX *idx )
+static int index_at( const CFF *cff, uint32_t off, CIDX *idx )
 {
-    u32 last;
+    uint32_t last;
 
     mem_set( idx, 0, sizeof( *idx ) );
     if ( off > cff->len || cff->len - off < 2 ) {
@@ -90,9 +90,9 @@ static int index_at( const CFF *cff, u32 off, CIDX *idx )
 }
 
 /* entry "which" of an INDEX: where it is and how long */
-static int index_get( const CFF *cff, const CIDX *idx, u32 which, u32 *start, u32 *size )
+static int index_get( const CFF *cff, const CIDX *idx, uint32_t which, uint32_t *start, uint32_t *size )
 {
-    u32 from, to;
+    uint32_t from, to;
 
     if ( which >= idx->count ) {
         return 0;
@@ -112,15 +112,15 @@ static int index_get( const CFF *cff, const CIDX *idx, u32 which, u32 *start, u3
 /* ------------------------------------------------------------------ */
 
 typedef struct {
-    s32  vals[16];              /* the operands of the entry found, as integers */
-    REAL first;                 /* ...and the first as it was written */
-    int  count;
+    int32_t vals[16];           /* the operands of the entry found, as integers */
+    REAL    first;              /* ...and the first as it was written */
+    int     count;
 } DICTVAL;
 
 /* a real, in the packed decimal a DICT writes one in */
-static REAL dict_real( const CFF *cff, u32 *pos, u32 end )
+static REAL dict_real( const CFF *cff, uint32_t *pos, uint32_t end )
 {
-    u32 digits = 0;
+    uint32_t digits = 0;
     int scale = 0, kept = 0, dot = 0, neg = 0, expo = 0, eneg = 0, in_exp = 0, half = 0, nib, byte = 0;
     REAL val;
 
@@ -142,7 +142,7 @@ static REAL dict_real( const CFF *cff, u32 *pos, u32 end )
             if ( in_exp ) {
                 expo = expo * 10 + nib;
             } else if ( kept < 9 ) {
-                digits = digits * 10 + (u32)nib;
+                digits = digits * 10 + (uint32_t)nib;
                 if ( digits ) {
                     kept++;
                 }
@@ -175,9 +175,9 @@ static REAL dict_real( const CFF *cff, u32 *pos, u32 end )
 
 /* look for operator "want" (an escaped one is 0x0C00 + its second byte)
    in the DICT at start..start+size */
-static int dict_find( const CFF *cff, u32 start, u32 size, u32 want, DICTVAL *out )
+static int dict_find( const CFF *cff, uint32_t start, uint32_t size, uint32_t want, DICTVAL *out )
 {
-    u32 pos = start, end = start + size, op;
+    uint32_t pos = start, end = start + size, op;
     int b0;
     REAL real;
 
@@ -185,7 +185,7 @@ static int dict_find( const CFF *cff, u32 start, u32 size, u32 want, DICTVAL *ou
     while ( pos < end ) {
         b0 = cff->data[pos++];
         if ( b0 <= 21 ) {
-            op = (u32)b0;
+            op = (uint32_t)b0;
             if ( b0 == 12 && pos < end ) {
                 op = 0x0C00 + cff->data[pos++];
             }
@@ -197,10 +197,10 @@ static int dict_find( const CFF *cff, u32 start, u32 size, u32 want, DICTVAL *ou
         }
         real = real_int( 0 );
         if ( b0 == 28 ) {
-            real = real_int( (s16)rd( cff, pos, 2 ) );
+            real = real_int( (int16_t)rd( cff, pos, 2 ) );
             pos += 2;
         } else if ( b0 == 29 ) {
-            real = real_int( (s32)rd( cff, pos, 4 ) );
+            real = real_int( (int32_t)rd( cff, pos, 4 ) );
             pos += 4;
         } else if ( b0 == 30 ) {
             real = dict_real( cff, &pos, end );
@@ -224,42 +224,42 @@ static int dict_find( const CFF *cff, u32 start, u32 size, u32 want, DICTVAL *ou
 }
 
 /* a font DICT's Private DICT, for its local subroutines */
-static void private_of( CFF *cff, u32 start, u32 size, CFD *fd )
+static void private_of( CFF *cff, uint32_t start, uint32_t size, CFD *fd )
 {
     DICTVAL val;
-    u32 poff, psize;
+    uint32_t poff, psize;
 
     fd->has_subrs = 0;
     if ( !dict_find( cff, start, size, 18, &val ) || val.count < 2 ) {
         return;
     }
-    psize = (u32)val.vals[0];
-    poff = (u32)val.vals[1];
+    psize = (uint32_t)val.vals[0];
+    poff = (uint32_t)val.vals[1];
     if ( poff >= cff->len || psize > cff->len - poff ) {
         return;
     }
     if ( dict_find( cff, poff, psize, 19, &val ) && val.count >= 1 ) {
-        fd->has_subrs = index_at( cff, poff + (u32)val.vals[0], &fd->subrs );
+        fd->has_subrs = index_at( cff, poff + (uint32_t)val.vals[0], &fd->subrs );
     }
 }
 
 static void charset_read( CFF *cff )
 {
-    u32 pos = cff->charset, first, left;
+    uint32_t pos = cff->charset, first, left;
     int gid = 1, format, index;
 
-    cff->sids = (u16 *)pool_alloc( cff->pool, (u32)(cff->glyphs + 1) * sizeof( u16 ) );
+    cff->sids = (uint16_t *)pool_alloc( cff->pool, (uint32_t)(cff->glyphs + 1) * sizeof( uint16_t ) );
     if ( cff->charset <= 2 ) {
         /* a predefined one: the standard strings in order */
         for ( index = 0; index < cff->glyphs; index++ ) {
-            cff->sids[index] = (u16)index;
+            cff->sids[index] = (uint16_t)index;
         }
         return;
     }
     format = (int)rd( cff, pos++, 1 );
     if ( format == 0 ) {
         for ( ; gid < cff->glyphs; gid++, pos += 2 ) {
-            cff->sids[gid] = (u16)rd( cff, pos, 2 );
+            cff->sids[gid] = (uint16_t)rd( cff, pos, 2 );
         }
         return;
     }
@@ -268,18 +268,18 @@ static void charset_read( CFF *cff )
         left = rd( cff, pos + 2, format == 1 ? 1 : 2 );
         pos += format == 1 ? 3 : 4;
         for ( index = 0; index <= (int)left && gid < cff->glyphs; index++ ) {
-            cff->sids[gid++] = (u16)(first + (u32)index);
+            cff->sids[gid++] = (uint16_t)(first + (uint32_t)index);
         }
     }
 }
 
-void *cff_open( POOL *pool, u8 *data, u32 len )
+void *cff_open( POOL *pool, uint8_t *data, uint32_t len )
 {
     CFF *cff = (CFF *)pool_alloc( pool, sizeof( CFF ) );
     CIDX names, tops;
     DICTVAL val;
     REAL scale;
-    u32 top, top_size, start, size;
+    uint32_t top, top_size, start, size;
     int index;
 
     cff->pool = pool;
@@ -291,12 +291,12 @@ void *cff_open( POOL *pool, u8 *data, u32 len )
         return NULL;
     }
     if ( !dict_find( cff, top, top_size, 17, &val ) || val.count < 1 ||
-         !index_at( cff, (u32)val.vals[0], &cff->chars ) || cff->chars.count == 0 ) {
+         !index_at( cff, (uint32_t)val.vals[0], &cff->chars ) || cff->chars.count == 0 ) {
         return NULL;
     }
     cff->glyphs = (int)cff->chars.count;
-    cff->charset = dict_find( cff, top, top_size, 15, &val ) && val.count ? (u32)val.vals[0] : 0;
-    cff->encoding = dict_find( cff, top, top_size, 16, &val ) && val.count ? (u32)val.vals[0] : 0;
+    cff->charset = dict_find( cff, top, top_size, 15, &val ) && val.count ? (uint32_t)val.vals[0] : 0;
+    cff->encoding = dict_find( cff, top, top_size, 16, &val ) && val.count ? (uint32_t)val.vals[0] : 0;
     cff->is_cid = dict_find( cff, top, top_size, 0x0C1E, &val );
     cff->units = 1000;
     if ( dict_find( cff, top, top_size, 0x0C07, &val ) && val.count >= 1 && val.first.man > 0 ) {
@@ -309,16 +309,16 @@ void *cff_open( POOL *pool, u8 *data, u32 len )
     charset_read( cff );
 
     if ( dict_find( cff, top, top_size, 0x0C24, &val ) && val.count &&
-         index_at( cff, (u32)val.vals[0], &cff->fdarray ) && cff->fdarray.count ) {
+         index_at( cff, (uint32_t)val.vals[0], &cff->fdarray ) && cff->fdarray.count ) {
         /* a font of several font DICTs, each glyph in one of them */
         cff->nfds = (int)cff->fdarray.count;
-        cff->fds = (CFD *)pool_alloc( pool, (u32)cff->nfds * sizeof( CFD ) );
+        cff->fds = (CFD *)pool_alloc( pool, (uint32_t)cff->nfds * sizeof( CFD ) );
         for ( index = 0; index < cff->nfds; index++ ) {
-            if ( index_get( cff, &cff->fdarray, (u32)index, &start, &size ) ) {
+            if ( index_get( cff, &cff->fdarray, (uint32_t)index, &start, &size ) ) {
                 private_of( cff, start, size, &cff->fds[index] );
             }
         }
-        cff->fdselect = dict_find( cff, top, top_size, 0x0C25, &val ) && val.count ? (u32)val.vals[0] : 0;
+        cff->fdselect = dict_find( cff, top, top_size, 0x0C25, &val ) && val.count ? (uint32_t)val.vals[0] : 0;
     } else {
         cff->nfds = 1;
         cff->fds = (CFD *)pool_alloc( pool, sizeof( CFD ) );
@@ -339,9 +339,9 @@ int cff_units( void *prog )
 
 /* a string by number, as text that lasts: the standard ones are
    NAMES.C's, the font's own are copied */
-static const char *string_of( CFF *cff, u32 sid )
+static const char *string_of( CFF *cff, uint32_t sid )
 {
-    u32 start, size;
+    uint32_t start, size;
     char *copy;
 
     if ( sid < 391 ) {
@@ -360,7 +360,8 @@ int cff_glyph_named( void *prog, const char *name )
 {
     CFF *cff = (CFF *)prog;
     const char *known;
-    u32 len = str_len( name ), start, size;
+    unsigned int len = str_len( name );
+    uint32_t start, size;
     int gid;
 
     for ( gid = 0; gid < cff->glyphs; gid++ ) {
@@ -369,7 +370,7 @@ int cff_glyph_named( void *prog, const char *name )
             if ( known && str_cmp( known, name ) == 0 ) {
                 return gid;
             }
-        } else if ( index_get( cff, &cff->strings, (u32)cff->sids[gid] - 391, &start, &size ) &&
+        } else if ( index_get( cff, &cff->strings, (uint32_t)cff->sids[gid] - 391, &start, &size ) &&
                     size == len && mem_cmp( cff->data + start, name, len ) == 0 ) {
             return gid;
         }
@@ -377,15 +378,15 @@ int cff_glyph_named( void *prog, const char *name )
     return -1;
 }
 
-int cff_glyph_of_cid( void *prog, u32 cid )
+int cff_glyph_of_cid( void *prog, uint32_t cid )
 {
     CFF *cff = (CFF *)prog;
     int gid;
 
     if ( !cff->is_cid ) {
-        return cid < (u32)cff->glyphs ? (int)cid : 0;
+        return cid < (uint32_t)cff->glyphs ? (int)cid : 0;
     }
-    if ( cid < (u32)cff->glyphs && cff->sids[cid] == cid ) {
+    if ( cid < (uint32_t)cff->glyphs && cff->sids[cid] == cid ) {
         return (int)cid;
     }
     for ( gid = 0; gid < cff->glyphs; gid++ ) {
@@ -400,7 +401,9 @@ int cff_glyph_of_cid( void *prog, u32 cid )
 const char *cff_builtin_name( void *prog, int code )
 {
     CFF *cff = (CFF *)prog;
-    u32 pos = cff->encoding, count, index, first, left;
+    uint32_t pos = cff->encoding, count;
+    unsigned int index;
+    uint32_t first, left;
     int format, gid = 0, found = 0;
 
     if ( cff->encoding <= 1 ) {
@@ -422,7 +425,7 @@ const char *cff_builtin_name( void *prog, int code )
         for ( index = 0; index < count; index++, pos += 2 ) {
             first = rd( cff, pos, 1 );
             left = rd( cff, pos + 1, 1 );
-            if ( (u32)code >= first && (u32)code <= first + left ) {
+            if ( (uint32_t)code >= first && (uint32_t)code <= first + left ) {
                 gid += code - (int)first;
                 found = 1;
                 break;
@@ -454,7 +457,7 @@ const char *cff_builtin_name( void *prog, int code )
 /* Type 2 charstrings                                                  */
 /* ------------------------------------------------------------------ */
 
-static int subr_bias( u32 count )
+static int subr_bias( uint32_t count )
 {
     return count < 1240 ? 107 : (count < 33900UL ? 1131 : 32768L);
 }
@@ -492,18 +495,18 @@ static void t2_width( T2 *run, int extra )
     if ( !run->have_width ) {
         run->have_width = 1;
         if ( extra && run->sp > 0 ) {
-            mem_cpy( run->stack, run->stack + 1, (u32)(run->sp - 1) * sizeof( fx ) );
+            mem_cpy( run->stack, run->stack + 1, (uint32_t)(run->sp - 1) * sizeof( fx ) );
             run->sp--;
         }
     }
 }
 
-static void t2_run( T2 *run, u32 start, u32 size )
+static void t2_run( T2 *run, uint32_t start, uint32_t size )
 {
     CFF *cff = run->cff;
-    const u8 *data = cff->data;
+    const uint8_t *data = cff->data;
     fx *st = run->stack;
-    u32 pos = start, end = start + size, sub_start, sub_size;
+    uint32_t pos = start, end = start + size, sub_start, sub_size;
     fx hold, dx, dy;
     int b0, index, count, horiz, num;
 
@@ -521,7 +524,7 @@ static void t2_run( T2 *run, u32 start, u32 size )
                 run->sp = 0;                        /* more than can be: start over */
             }
             if ( b0 == 28 ) {
-                st[run->sp++] = I2FX( (s16)rd( cff, pos, 2 ) );
+                st[run->sp++] = I2FX( (int16_t)rd( cff, pos, 2 ) );
                 pos += 2;
             } else if ( b0 <= 246 ) {
                 st[run->sp++] = I2FX( b0 - 139 );
@@ -547,7 +550,7 @@ static void t2_run( T2 *run, u32 start, u32 size )
         case 20:                                    /* cntrmask */
             t2_width( run, run->sp & 1 );
             run->stems += run->sp / 2;
-            pos += (u32)(run->stems + 7) / 8;
+            pos += (uint32_t)(run->stems + 7) / 8;
             break;
         case 21:                                    /* rmoveto */
             t2_width( run, run->sp > 2 );
@@ -651,11 +654,11 @@ static void t2_run( T2 *run, u32 start, u32 size )
             num = (int)FX_FLOOR( st[--run->sp] );
             if ( b0 == 10 ) {
                 if ( !run->fd->has_subrs ||
-                     !index_get( cff, &run->fd->subrs, (u32)(num + subr_bias( run->fd->subrs.count )),
+                     !index_get( cff, &run->fd->subrs, (uint32_t)(num + subr_bias( run->fd->subrs.count )),
                                  &sub_start, &sub_size ) ) {
                     continue;
                 }
-            } else if ( !index_get( cff, &cff->gsubrs, (u32)(num + subr_bias( cff->gsubrs.count )),
+            } else if ( !index_get( cff, &cff->gsubrs, (uint32_t)(num + subr_bias( cff->gsubrs.count )),
                                     &sub_start, &sub_size ) ) {
                 continue;
             }
@@ -758,11 +761,13 @@ static void t2_run( T2 *run, u32 start, u32 size )
     }
 }
 
-int cff_outline( void *prog, u32 gid )
+int cff_outline( void *prog, uint32_t gid )
 {
     static T2 run;
     CFF *cff = (CFF *)prog;
-    u32 start, size, pos, count, index, first, fd = 0;
+    uint32_t start, size, pos, count;
+    unsigned int index;
+    uint32_t first, fd = 0;
     int format;
 
     if ( !index_get( cff, &cff->chars, gid, &start, &size ) ) {
@@ -783,7 +788,7 @@ int cff_outline( void *prog, u32 gid )
                 }
             }
         }
-        if ( fd >= (u32)cff->nfds ) {
+        if ( fd >= (uint32_t)cff->nfds ) {
             fd = 0;
         }
     }

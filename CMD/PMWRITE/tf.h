@@ -39,7 +39,7 @@ void  tf_font_dirs( const char *dirs, int usual );
 
 /* the families of the files that were found, in order of name: NULL
    past the last */
-const char *tf_family( u32 index );
+const char *tf_family( unsigned int index );
 
 /*
  * The face for a font of the document in a style (CF_BOLD, CF_ITALIC;
@@ -60,11 +60,11 @@ int   tf_flags( const TFACE *face );    /* the CF_BOLD | CF_ITALIC it was asked 
 
 /* how far a character moves the pen: thousandths of an em.  A
    character the face has no shape for is as wide as its stand-in. */
-u32   tf_advance( TFACE *face, u32 code );
+unsigned int tf_advance( TFACE *face, uint32_t code );
 
 /* 1 if the face has a shape of its own for the character: not a space,
    and not the box that stands for a character it has not got */
-int   tf_draws( TFACE *face, u32 code );
+int   tf_draws( TFACE *face, uint32_t code );
 
 /*
  * The shape of a character of a built-in face as the path of its pen,
@@ -73,7 +73,7 @@ int   tf_draws( TFACE *face, u32 code );
  * there is nothing to draw, or the character is one a font file draws:
  * of a file's face only the characters its stand-in draws have a path.
  */
-int   tf_path( TFACE *face, u32 code, void (*sink)( void *ctx, int move, s32 x, s32 y ), void *ctx, s32 *pen );
+int   tf_path( TFACE *face, uint32_t code, void (*sink)( void *ctx, int move, int x, int y ), void *ctx, int *pen );
 
 /* above and below the baseline, and the extra between lines, in
    thousandths of an em: a line of 12 point type is
@@ -88,12 +88,12 @@ void  tf_metrics( TFACE *face, int *ascent, int *descent, int *gap );
  * pen ends.  What falls outside the block is not drawn.
  */
 typedef struct {
-    u8  *pix;
-    int  width, height;
-    u32  stride;
+    uint8_t     *pix;
+    int          width, height;
+    unsigned int stride;
 } COVER;
 
-s32   tf_draw( TFACE *face, s32 em, s32 pen_x, s32 base_y, const u16 *text, u32 len, COVER *cover );
+int32_t tf_draw( TFACE *face, int32_t em, int32_t pen_x, int32_t base_y, const uint16_t *text, unsigned int len, COVER *cover );
 
 /*
  * What the coverage tf_draw makes is shown on.  "cut" is 0 for a
@@ -134,19 +134,19 @@ int   tf_made( TFACE *face );
 
 /* the file's glyph for a character, which is also how far it moves the
    pen for tf_advance: 0 if the file has none, and the stand-in is used */
-u32   tf_glyph( TFACE *face, u32 code );
+uint32_t tf_glyph( TFACE *face, uint32_t code );
 
 /* a glyph's width in thousandths of an em */
-u32   tf_glyph_advance( TFACE *face, u32 glyph );
+unsigned int tf_glyph_advance( TFACE *face, uint32_t glyph );
 
 /* what a PDF says about a font it holds: thousandths of an em */
 typedef struct {
-    char name[64];              /* what PostScript knows it by; never empty */
-    u32  glyphs;
-    s32  box[4];                /* left, bottom, right, top of every glyph */
-    s32  ascent, descent, cap;
-    s32  angle;                 /* degrees it leans, anticlockwise */
-    int  fixed, serif, symbol;
+    char     name[64];          /* what PostScript knows it by; never empty */
+    uint32_t glyphs;
+    int32_t  box[4];            /* left, bottom, right, top of every glyph */
+    int32_t  ascent, descent, cap;
+    int32_t  angle;             /* degrees it leans, anticlockwise */
+    int      fixed, serif, symbol;
 } TFINFO;
 
 int   tf_file_info( TFACE *face, TFINFO *info );        /* 0 for a built-in face */
@@ -158,6 +158,6 @@ int   tf_file_info( TFACE *face, TFINFO *info );        /* 0 for a built-in face
  * comes back whole.  NULL if there is no memory, or the face is not a
  * file's that tf_embed allows.
  */
-u8   *tf_subset( TFACE *face, const u8 *keep, u32 count, u32 *len );
+uint8_t *tf_subset( TFACE *face, const uint8_t *keep, unsigned int count, uint32_t *len );
 
 #endif

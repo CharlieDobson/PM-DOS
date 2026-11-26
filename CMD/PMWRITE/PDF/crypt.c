@@ -21,7 +21,7 @@
  */
 #include "pdf.h"
 
-static const u8 pad_string[32] = {
+static const uint8_t pad_string[32] = {
     0x28, 0xBF, 0x4E, 0x5E, 0x4E, 0x75, 0x8A, 0x41, 0x64, 0x00, 0x4E, 0x56, 0xFF, 0xFA, 0x01, 0x08,
     0x2E, 0x2E, 0x00, 0xB6, 0xD0, 0x68, 0x3E, 0x80, 0x2F, 0x0C, 0xA9, 0xFE, 0x64, 0x53, 0x69, 0x7A };
 
@@ -32,10 +32,10 @@ static const u8 pad_string[32] = {
 /* MD5                                                                 */
 /* ------------------------------------------------------------------ */
 
-static void md5_block( u32 *state, const u8 *data )
+static void md5_block( uint32_t *state, const uint8_t *data )
 {
-    static const u8 shifts[16] = { 7, 12, 17, 22, 5, 9, 14, 20, 4, 11, 16, 23, 6, 10, 15, 21 };
-    static const u32 sines[64] = {
+    static const uint8_t shifts[16] = { 7, 12, 17, 22, 5, 9, 14, 20, 4, 11, 16, 23, 6, 10, 15, 21 };
+    static const uint32_t sines[64] = {
         0xd76aa478UL, 0xe8c7b756UL, 0x242070dbUL, 0xc1bdceeeUL, 0xf57c0fafUL, 0x4787c62aUL,
         0xa8304613UL, 0xfd469501UL, 0x698098d8UL, 0x8b44f7afUL, 0xffff5bb1UL, 0x895cd7beUL,
         0x6b901122UL, 0xfd987193UL, 0xa679438eUL, 0x49b40821UL, 0xf61e2562UL, 0xc040b340UL,
@@ -47,12 +47,12 @@ static void md5_block( u32 *state, const u8 *data )
         0xf4292244UL, 0x432aff97UL, 0xab9423a7UL, 0xfc93a039UL, 0x655b59c3UL, 0x8f0ccc92UL,
         0xffeff47dUL, 0x85845dd1UL, 0x6fa87e4fUL, 0xfe2ce6e0UL, 0xa3014314UL, 0x4e0811a1UL,
         0xf7537e82UL, 0xbd3af235UL, 0x2ad7d2bbUL, 0xeb86d391UL };
-    u32 words[16], va = state[0], vb = state[1], vc = state[2], vd = state[3], func, temp;
+    uint32_t words[16], va = state[0], vb = state[1], vc = state[2], vd = state[3], func, temp;
     int index, pick;
 
     for ( index = 0; index < 16; index++ ) {
-        words[index] = (u32)data[index * 4] | ((u32)data[index * 4 + 1] << 8) |
-                       ((u32)data[index * 4 + 2] << 16) | ((u32)data[index * 4 + 3] << 24);
+        words[index] = (uint32_t)data[index * 4] | ((uint32_t)data[index * 4 + 1] << 8) |
+                       ((uint32_t)data[index * 4 + 2] << 16) | ((uint32_t)data[index * 4 + 3] << 24);
     }
     for ( index = 0; index < 64; index++ ) {
         if ( index < 16 ) {
@@ -90,9 +90,9 @@ void md5_init( MD5CTX *ctx )
     ctx->count = 0;
 }
 
-void md5_update( MD5CTX *ctx, const u8 *data, u32 len )
+void md5_update( MD5CTX *ctx, const uint8_t *data, uint32_t len )
 {
-    u32 have = ctx->count & 63, take;
+    uint32_t have = ctx->count & 63, take;
 
     ctx->count += len;
     while ( len ) {
@@ -108,25 +108,25 @@ void md5_update( MD5CTX *ctx, const u8 *data, u32 len )
     }
 }
 
-void md5_final( MD5CTX *ctx, u8 *digest )
+void md5_final( MD5CTX *ctx, uint8_t *digest )
 {
-    static const u8 pad[64] = { 0x80 };
-    u8 bits[8];
-    u32 count = ctx->count;
+    static const uint8_t pad[64] = { 0x80 };
+    uint8_t bits[8];
+    uint32_t count = ctx->count;
     int index;
 
     for ( index = 0; index < 8; index++ ) {
-        bits[index] = index < 4 ? (u8)((count << 3) >> (index * 8))
-                                : (index == 4 ? (u8)(count >> 29) : 0);
+        bits[index] = index < 4 ? (uint8_t)((count << 3) >> (index * 8))
+                                : (index == 4 ? (uint8_t)(count >> 29) : 0);
     }
     md5_update( ctx, pad, ((119 - (count & 63)) & 63) + 1 );
     md5_update( ctx, bits, 8 );
     for ( index = 0; index < 16; index++ ) {
-        digest[index] = (u8)(ctx->state[index >> 2] >> ((index & 3) * 8));
+        digest[index] = (uint8_t)(ctx->state[index >> 2] >> ((index & 3) * 8));
     }
 }
 
-void md5( const u8 *data, u32 len, u8 *digest )
+void md5( const uint8_t *data, uint32_t len, uint8_t *digest )
 {
     MD5CTX ctx;
 
@@ -140,20 +140,20 @@ void md5( const u8 *data, u32 len, u8 *digest )
 /* ------------------------------------------------------------------ */
 
 typedef struct {
-    u8  perm[256];
-    int ia, ib;
+    uint8_t perm[256];
+    int     ia, ib;
 } RC4;
 
-static void rc4_init( RC4 *rc4, const u8 *key, u32 keylen )
+static void rc4_init( RC4 *rc4, const uint8_t *key, uint32_t keylen )
 {
     int index, mix = 0;
-    u8 swap;
+    uint8_t swap;
 
     for ( index = 0; index < 256; index++ ) {
-        rc4->perm[index] = (u8)index;
+        rc4->perm[index] = (uint8_t)index;
     }
     for ( index = 0; index < 256; index++ ) {
-        mix = (mix + rc4->perm[index] + key[(u32)index % keylen]) & 255;
+        mix = (mix + rc4->perm[index] + key[(uint32_t)index % keylen]) & 255;
         swap = rc4->perm[index];
         rc4->perm[index] = rc4->perm[mix];
         rc4->perm[mix] = swap;
@@ -161,10 +161,10 @@ static void rc4_init( RC4 *rc4, const u8 *key, u32 keylen )
     rc4->ia = rc4->ib = 0;
 }
 
-static void rc4_run( RC4 *rc4, u8 *data, u32 len )
+static void rc4_run( RC4 *rc4, uint8_t *data, uint32_t len )
 {
     int ia = rc4->ia, ib = rc4->ib;
-    u8 swap;
+    uint8_t swap;
 
     while ( len-- ) {
         ia = (ia + 1) & 255;
@@ -179,14 +179,14 @@ static void rc4_run( RC4 *rc4, u8 *data, u32 len )
 }
 
 typedef struct {
-    RC4 rc4;
-    u8  buf[1024];
+    RC4     rc4;
+    uint8_t buf[1024];
 } RC4IN;
 
 static int rc4_fill( IN *in )
 {
     RC4IN *st = IN_STATE( in, RC4IN );
-    u32 got = in_read( in->src, st->buf, sizeof( st->buf ) );
+    uint32_t got = in_read( in->src, st->buf, sizeof( st->buf ) );
 
     rc4_run( &st->rc4, st->buf, got );
     in->cur = st->buf;
@@ -194,7 +194,7 @@ static int rc4_fill( IN *in )
     return got != 0;
 }
 
-IN *flt_rc4( IN *src, const u8 *key, u32 keylen )
+IN *flt_rc4( IN *src, const uint8_t *key, uint32_t keylen )
 {
     IN *in = in_new( sizeof( RC4IN ), rc4_fill, src );
 
@@ -206,33 +206,33 @@ IN *flt_rc4( IN *src, const u8 *key, u32 keylen )
 /* AES                                                                 */
 /* ------------------------------------------------------------------ */
 
-static u8  sbox[256], rsbox[256];
-static int sbox_made;
+static uint8_t sbox[256], rsbox[256];
+static int     sbox_made;
 
 typedef struct {
-    u8  round_key[240];
-    int rounds;
+    uint8_t round_key[240];
+    int     rounds;
 } AES;
 
-#define XTIME( val )    ((u8)(((val) << 1) ^ (((val) & 0x80) ? 0x1B : 0)))
+#define XTIME( val )    ((uint8_t)(((val) << 1) ^ (((val) & 0x80) ? 0x1B : 0)))
 
 /* the S-box is the inverse in GF(2^8) put through an affine map; made
    here by walking the field with a generator, 3, and its inverse */
 static void sbox_make( void )
 {
-    u8 gen = 1, inv = 1, val;
+    uint8_t gen = 1, inv = 1, val;
 
     do {
-        gen = (u8)(gen ^ XTIME( gen ));
-        inv ^= (u8)(inv << 1);
-        inv ^= (u8)(inv << 2);
-        inv ^= (u8)(inv << 4);
+        gen = (uint8_t)(gen ^ XTIME( gen ));
+        inv ^= (uint8_t)(inv << 1);
+        inv ^= (uint8_t)(inv << 2);
+        inv ^= (uint8_t)(inv << 4);
         if ( inv & 0x80 ) {
             inv ^= 0x09;
         }
-        val = (u8)(inv ^ ((inv << 1) | (inv >> 7)) ^ ((inv << 2) | (inv >> 6)) ^
-                   ((inv << 3) | (inv >> 5)) ^ ((inv << 4) | (inv >> 4)));
-        sbox[gen] = (u8)(val ^ 0x63);
+        val = (uint8_t)(inv ^ ((inv << 1) | (inv >> 7)) ^ ((inv << 2) | (inv >> 6)) ^
+                        ((inv << 3) | (inv >> 5)) ^ ((inv << 4) | (inv >> 4)));
+        sbox[gen] = (uint8_t)(val ^ 0x63);
     } while ( gen != 1 );
     sbox[0] = 0x63;
     for ( gen = 0; ; gen++ ) {
@@ -244,23 +244,23 @@ static void sbox_make( void )
     sbox_made = 1;
 }
 
-static void aes_key( AES *aes, const u8 *key, u32 keylen )
+static void aes_key( AES *aes, const uint8_t *key, uint32_t keylen )
 {
-    u32 words = keylen / 4, total, at;
-    u8 temp[4], swap, rcon = 1;
+    uint32_t words = keylen / 4, total, at;
+    uint8_t temp[4], swap, rcon = 1;
     int index;
 
     if ( !sbox_made ) {
         sbox_make();
     }
     aes->rounds = (int)words + 6;
-    total = 4 * ((u32)aes->rounds + 1);
+    total = 4 * ((uint32_t)aes->rounds + 1);
     mem_cpy( aes->round_key, key, keylen );
     for ( at = words; at < total; at++ ) {
         mem_cpy( temp, aes->round_key + (at - 1) * 4, 4 );
         if ( at % words == 0 ) {
             swap = temp[0];
-            temp[0] = (u8)(sbox[temp[1]] ^ rcon);
+            temp[0] = (uint8_t)(sbox[temp[1]] ^ rcon);
             temp[1] = sbox[temp[2]];
             temp[2] = sbox[temp[3]];
             temp[3] = sbox[swap];
@@ -271,14 +271,14 @@ static void aes_key( AES *aes, const u8 *key, u32 keylen )
             }
         }
         for ( index = 0; index < 4; index++ ) {
-            aes->round_key[at * 4 + index] = (u8)(aes->round_key[(at - words) * 4 + index] ^ temp[index]);
+            aes->round_key[at * 4 + index] = (uint8_t)(aes->round_key[(at - words) * 4 + index] ^ temp[index]);
         }
     }
 }
 
-static void add_round_key( const AES *aes, u8 *block, int round )
+static void add_round_key( const AES *aes, uint8_t *block, int round )
 {
-    const u8 *key = aes->round_key + round * 16;
+    const uint8_t *key = aes->round_key + round * 16;
     int index;
 
     for ( index = 0; index < 16; index++ ) {
@@ -286,9 +286,9 @@ static void add_round_key( const AES *aes, u8 *block, int round )
     }
 }
 
-static u8 gmul( u8 val, int by )
+static uint8_t gmul( uint8_t val, int by )
 {
-    u8 out = 0;
+    uint8_t out = 0;
 
     while ( by ) {
         if ( by & 1 ) {
@@ -300,9 +300,9 @@ static u8 gmul( u8 val, int by )
     return out;
 }
 
-static void aes_decrypt( const AES *aes, u8 *block )
+static void aes_decrypt( const AES *aes, uint8_t *block )
 {
-    u8 tmp[16];
+    uint8_t tmp[16];
     int round, col, index;
 
     add_round_key( aes, block, aes->rounds );
@@ -321,17 +321,17 @@ static void aes_decrypt( const AES *aes, u8 *block )
             tmp[1] = block[col + 1];
             tmp[2] = block[col + 2];
             tmp[3] = block[col + 3];
-            block[col]     = (u8)(gmul( tmp[0], 14 ) ^ gmul( tmp[1], 11 ) ^ gmul( tmp[2], 13 ) ^ gmul( tmp[3], 9 ));
-            block[col + 1] = (u8)(gmul( tmp[0], 9 ) ^ gmul( tmp[1], 14 ) ^ gmul( tmp[2], 11 ) ^ gmul( tmp[3], 13 ));
-            block[col + 2] = (u8)(gmul( tmp[0], 13 ) ^ gmul( tmp[1], 9 ) ^ gmul( tmp[2], 14 ) ^ gmul( tmp[3], 11 ));
-            block[col + 3] = (u8)(gmul( tmp[0], 11 ) ^ gmul( tmp[1], 13 ) ^ gmul( tmp[2], 9 ) ^ gmul( tmp[3], 14 ));
+            block[col]     = (uint8_t)(gmul( tmp[0], 14 ) ^ gmul( tmp[1], 11 ) ^ gmul( tmp[2], 13 ) ^ gmul( tmp[3], 9 ));
+            block[col + 1] = (uint8_t)(gmul( tmp[0], 9 ) ^ gmul( tmp[1], 14 ) ^ gmul( tmp[2], 11 ) ^ gmul( tmp[3], 13 ));
+            block[col + 2] = (uint8_t)(gmul( tmp[0], 13 ) ^ gmul( tmp[1], 9 ) ^ gmul( tmp[2], 14 ) ^ gmul( tmp[3], 11 ));
+            block[col + 3] = (uint8_t)(gmul( tmp[0], 11 ) ^ gmul( tmp[1], 13 ) ^ gmul( tmp[2], 9 ) ^ gmul( tmp[3], 14 ));
         }
     }
 }
 
-static void aes_encrypt( const AES *aes, u8 *block )
+static void aes_encrypt( const AES *aes, uint8_t *block )
 {
-    u8 tmp[16], all, first;
+    uint8_t tmp[16], all, first;
     int round, col, index;
 
     add_round_key( aes, block, 0 );
@@ -343,11 +343,11 @@ static void aes_encrypt( const AES *aes, u8 *block )
         if ( round < aes->rounds ) {
             for ( col = 0; col < 16; col += 4 ) {
                 first = block[col];
-                all = (u8)(block[col] ^ block[col + 1] ^ block[col + 2] ^ block[col + 3]);
-                block[col]     ^= (u8)(XTIME( (u8)(block[col] ^ block[col + 1]) ) ^ all);
-                block[col + 1] ^= (u8)(XTIME( (u8)(block[col + 1] ^ block[col + 2]) ) ^ all);
-                block[col + 2] ^= (u8)(XTIME( (u8)(block[col + 2] ^ block[col + 3]) ) ^ all);
-                block[col + 3] ^= (u8)(XTIME( (u8)(block[col + 3] ^ first) ) ^ all);
+                all = (uint8_t)(block[col] ^ block[col + 1] ^ block[col + 2] ^ block[col + 3]);
+                block[col]     ^= (uint8_t)(XTIME( (uint8_t)(block[col] ^ block[col + 1]) ) ^ all);
+                block[col + 1] ^= (uint8_t)(XTIME( (uint8_t)(block[col + 1] ^ block[col + 2]) ) ^ all);
+                block[col + 2] ^= (uint8_t)(XTIME( (uint8_t)(block[col + 2] ^ block[col + 3]) ) ^ all);
+                block[col + 3] ^= (uint8_t)(XTIME( (uint8_t)(block[col + 3] ^ first) ) ^ all);
             }
         }
         add_round_key( aes, block, round );
@@ -358,9 +358,9 @@ static void aes_encrypt( const AES *aes, u8 *block )
 }
 
 /* CBC, in place; "iv" is left ready for the block after */
-static void aes_cbc_decrypt( const AES *aes, u8 *iv, u8 *data, u32 len )
+static void aes_cbc_decrypt( const AES *aes, uint8_t *iv, uint8_t *data, uint32_t len )
 {
-    u8 keep[16];
+    uint8_t keep[16];
     int index;
 
     for ( ; len >= 16; len -= 16, data += 16 ) {
@@ -373,7 +373,7 @@ static void aes_cbc_decrypt( const AES *aes, u8 *iv, u8 *data, u32 len )
     }
 }
 
-static void aes_cbc_encrypt( const AES *aes, u8 *iv, u8 *data, u32 len )
+static void aes_cbc_encrypt( const AES *aes, uint8_t *iv, uint8_t *data, uint32_t len )
 {
     int index;
 
@@ -387,9 +387,9 @@ static void aes_cbc_encrypt( const AES *aes, u8 *iv, u8 *data, u32 len )
 }
 
 /* the padding off the end: 1 to 16 bytes, each saying how many */
-static u32 aes_unpad( const u8 *data, u32 len )
+static uint32_t aes_unpad( const uint8_t *data, uint32_t len )
 {
-    u32 pad;
+    uint32_t pad;
 
     if ( len == 0 ) {
         return 0;
@@ -399,17 +399,17 @@ static u32 aes_unpad( const u8 *data, u32 len )
 }
 
 typedef struct {
-    AES aes;
-    u8  iv[16];
-    int started;
-    u8  buf[1024];
+    AES     aes;
+    uint8_t iv[16];
+    int     started;
+    uint8_t buf[1024];
 } AESIN;
 
 static int aes_fill( IN *in )
 {
     AESIN *st = IN_STATE( in, AESIN );
     IN *src = in->src;
-    u32 got;
+    uint32_t got;
 
     if ( !st->started ) {
         st->started = 1;
@@ -427,7 +427,7 @@ static int aes_fill( IN *in )
     return got != 0;
 }
 
-IN *flt_aes( IN *src, const u8 *key, u32 keylen )
+IN *flt_aes( IN *src, const uint8_t *key, uint32_t keylen )
 {
     IN *in = in_new( sizeof( AESIN ), aes_fill, src );
 
@@ -439,7 +439,7 @@ IN *flt_aes( IN *src, const u8 *key, u32 keylen )
 /* SHA-256                                                             */
 /* ------------------------------------------------------------------ */
 
-static const u32 sha_k[64] = {
+static const uint32_t sha_k[64] = {
     0x428a2f98UL, 0x71374491UL, 0xb5c0fbcfUL, 0xe9b5dba5UL, 0x3956c25bUL, 0x59f111f1UL,
     0x923f82a4UL, 0xab1c5ed5UL, 0xd807aa98UL, 0x12835b01UL, 0x243185beUL, 0x550c7dc3UL,
     0x72be5d74UL, 0x80deb1feUL, 0x9bdc06a7UL, 0xc19bf174UL, 0xe49b69c1UL, 0xefbe4786UL,
@@ -452,14 +452,14 @@ static const u32 sha_k[64] = {
     0x5b9cca4fUL, 0x682e6ff3UL, 0x748f82eeUL, 0x78a5636fUL, 0x84c87814UL, 0x8cc70208UL,
     0x90befffaUL, 0xa4506cebUL, 0xbef9a3f7UL, 0xc67178f2UL };
 
-static void sha256_block( u32 *state, const u8 *data )
+static void sha256_block( uint32_t *state, const uint8_t *data )
 {
-    u32 words[64], reg[8], sum1, sum2;
+    uint32_t words[64], reg[8], sum1, sum2;
     int index;
 
     for ( index = 0; index < 16; index++ ) {
-        words[index] = ((u32)data[index * 4] << 24) | ((u32)data[index * 4 + 1] << 16) |
-                       ((u32)data[index * 4 + 2] << 8) | (u32)data[index * 4 + 3];
+        words[index] = ((uint32_t)data[index * 4] << 24) | ((uint32_t)data[index * 4 + 1] << 16) |
+                       ((uint32_t)data[index * 4 + 2] << 8) | (uint32_t)data[index * 4 + 3];
     }
     for ( ; index < 64; index++ ) {
         sum1 = ROR( words[index - 15], 7 ) ^ ROR( words[index - 15], 18 ) ^ (words[index - 15] >> 3);
@@ -486,11 +486,11 @@ static void sha256_block( u32 *state, const u8 *data )
     }
 }
 
-void sha256( const u8 *data, u32 len, u8 *digest )
+void sha256( const uint8_t *data, uint32_t len, uint8_t *digest )
 {
-    u32 state[8], at;
-    u8 last[128];
-    u32 rest, total;
+    uint32_t state[8], at;
+    uint8_t last[128];
+    uint32_t rest, total;
     int index;
 
     state[0] = 0x6a09e667UL;
@@ -509,16 +509,16 @@ void sha256( const u8 *data, u32 len, u8 *digest )
     mem_cpy( last, data + at, rest );
     last[rest] = 0x80;
     total = rest < 56 ? 64 : 128;
-    last[total - 4] = (u8)(len >> 21);
-    last[total - 3] = (u8)(len >> 13);
-    last[total - 2] = (u8)(len >> 5);
-    last[total - 1] = (u8)(len << 3);
+    last[total - 4] = (uint8_t)(len >> 21);
+    last[total - 3] = (uint8_t)(len >> 13);
+    last[total - 2] = (uint8_t)(len >> 5);
+    last[total - 1] = (uint8_t)(len << 3);
     sha256_block( state, last );
     if ( total == 128 ) {
         sha256_block( state, last + 64 );
     }
     for ( index = 0; index < 32; index++ ) {
-        digest[index] = (u8)(state[index >> 2] >> (24 - (index & 3) * 8));
+        digest[index] = (uint8_t)(state[index >> 2] >> (24 - (index & 3) * 8));
     }
 }
 
@@ -527,12 +527,12 @@ void sha256( const u8 *data, u32 len, u8 *digest )
 /* ------------------------------------------------------------------ */
 
 typedef struct {
-    u32 hi, lo;
+    uint32_t hi, lo;
 } U64;
 
 /* the low halves of the round constants; the high halves are sha_k's
    for the first 64, and the last 16 are here whole */
-static const u32 sha_k_lo[64] = {
+static const uint32_t sha_k_lo[64] = {
     0xd728ae22UL, 0x23ef65cdUL, 0xec4d3b2fUL, 0x8189dbbcUL, 0xf348b538UL, 0xb605d019UL,
     0xaf194f9bUL, 0xda6d8118UL, 0xa3030242UL, 0x45706fbeUL, 0x4ee4b28cUL, 0xd5ffb4e2UL,
     0xf27b896fUL, 0x3b1696b1UL, 0x25c71235UL, 0xcf692694UL, 0x9ef14ad2UL, 0x384f25e3UL,
@@ -564,7 +564,7 @@ static U64 add64( U64 lhs, U64 rhs )
 static U64 ror64( U64 val, int bits )
 {
     U64 out;
-    u32 swap;
+    uint32_t swap;
 
     if ( bits >= 32 ) {
         swap = val.hi;
@@ -598,17 +598,17 @@ static U64 xor3( U64 one, U64 two, U64 three )
     return out;
 }
 
-static void sha512_block( U64 *state, const u8 *data )
+static void sha512_block( U64 *state, const uint8_t *data )
 {
     static U64 words[80];
     U64 reg[8], sum1, sum2, pick, konst;
     int index;
 
     for ( index = 0; index < 16; index++ ) {
-        words[index].hi = ((u32)data[index * 8] << 24) | ((u32)data[index * 8 + 1] << 16) |
-                          ((u32)data[index * 8 + 2] << 8) | (u32)data[index * 8 + 3];
-        words[index].lo = ((u32)data[index * 8 + 4] << 24) | ((u32)data[index * 8 + 5] << 16) |
-                          ((u32)data[index * 8 + 6] << 8) | (u32)data[index * 8 + 7];
+        words[index].hi = ((uint32_t)data[index * 8] << 24) | ((uint32_t)data[index * 8 + 1] << 16) |
+                          ((uint32_t)data[index * 8 + 2] << 8) | (uint32_t)data[index * 8 + 3];
+        words[index].lo = ((uint32_t)data[index * 8 + 4] << 24) | ((uint32_t)data[index * 8 + 5] << 16) |
+                          ((uint32_t)data[index * 8 + 6] << 8) | (uint32_t)data[index * 8 + 7];
     }
     for ( ; index < 80; index++ ) {
         sum1 = xor3( ror64( words[index - 15], 1 ), ror64( words[index - 15], 8 ),
@@ -647,7 +647,7 @@ static void sha512_block( U64 *state, const u8 *data )
 }
 
 /* "bytes" of digest: 64 for SHA-512, 48 for SHA-384 */
-void sha512( const u8 *data, u32 len, u8 *digest, int bytes )
+void sha512( const uint8_t *data, uint32_t len, uint8_t *digest, int bytes )
 {
     static const U64 init512[8] = {
         { 0x6a09e667UL, 0xf3bcc908UL }, { 0xbb67ae85UL, 0x84caa73bUL }, { 0x3c6ef372UL, 0xfe94f82bUL },
@@ -658,8 +658,8 @@ void sha512( const u8 *data, u32 len, u8 *digest, int bytes )
         { 0x152fecd8UL, 0xf70e5939UL }, { 0x67332667UL, 0xffc00b31UL }, { 0x8eb44a87UL, 0x68581511UL },
         { 0xdb0c2e0dUL, 0x64f98fa7UL }, { 0x47b5481dUL, 0xbefa4fa4UL } };
     U64 state[8];
-    u8 last[256];
-    u32 at, rest, total;
+    uint8_t last[256];
+    uint32_t at, rest, total;
     int index;
 
     mem_cpy( state, bytes == 48 ? init384 : init512, sizeof( state ) );
@@ -671,17 +671,17 @@ void sha512( const u8 *data, u32 len, u8 *digest, int bytes )
     mem_cpy( last, data + at, rest );
     last[rest] = 0x80;
     total = rest < 112 ? 128 : 256;
-    last[total - 4] = (u8)(len >> 21);
-    last[total - 3] = (u8)(len >> 13);
-    last[total - 2] = (u8)(len >> 5);
-    last[total - 1] = (u8)(len << 3);
+    last[total - 4] = (uint8_t)(len >> 21);
+    last[total - 3] = (uint8_t)(len >> 13);
+    last[total - 2] = (uint8_t)(len >> 5);
+    last[total - 1] = (uint8_t)(len << 3);
     sha512_block( state, last );
     if ( total == 256 ) {
         sha512_block( state, last + 128 );
     }
     for ( index = 0; index < bytes; index++ ) {
-        digest[index] = (u8)((index & 4 ? state[index >> 3].lo : state[index >> 3].hi) >>
-                             (24 - (index & 3) * 8));
+        digest[index] = (uint8_t)((index & 4 ? state[index >> 3].lo : state[index >> 3].hi) >>
+                                  (24 - (index & 3) * 8));
     }
 }
 
@@ -689,18 +689,18 @@ void sha512( const u8 *data, u32 len, u8 *digest, int bytes )
 /* the standard security handler                                       */
 /* ------------------------------------------------------------------ */
 
-static u8  str_o[48], str_u[48], str_oe[32], str_ue[32];
-static u32 perms;
+static uint8_t  str_o[48], str_u[48], str_oe[32], str_ue[32];
+static uint32_t perms;
 
 /* PDF 2.0's hash (algorithm 2.B): SHA-256 to start, then rounds of
    AES-128 over the password, the hash so far and the owner's 48 bytes,
    sixty-four times over, with the cipher text choosing the next hash */
-static void hash_r6( const u8 *pw, u32 pwlen, const u8 *salt, const u8 *udata, u8 *out )
+static void hash_r6( const uint8_t *pw, uint32_t pwlen, const uint8_t *salt, const uint8_t *udata, uint8_t *out )
 {
-    u8 *work;
+    uint8_t *work;
     AES aes;
-    u8 key[64], input[127 + 8 + 48], iv[16];
-    u32 inlen = 0, klen = 32, piece, total, sum;
+    uint8_t key[64], input[127 + 8 + 48], iv[16];
+    uint32_t inlen = 0, klen = 32, piece, total, sum;
     int round, index;
 
     mem_cpy( input, pw, pwlen );
@@ -716,7 +716,7 @@ static void hash_r6( const u8 *pw, u32 pwlen, const u8 *salt, const u8 *udata, u
         mem_cpy( out, key, 32 );
         return;
     }
-    work = (u8 *)xalloc( (127 + 64 + 48) * 64 );
+    work = (uint8_t *)xalloc( (127 + 64 + 48) * 64 );
     for ( round = 0; ; round++ ) {
         piece = 0;
         mem_cpy( work, pw, pwlen );
@@ -728,7 +728,7 @@ static void hash_r6( const u8 *pw, u32 pwlen, const u8 *salt, const u8 *udata, u
             piece += 48;
         }
         for ( index = 1; index < 64; index++ ) {
-            mem_cpy( work + (u32)index * piece, work, piece );
+            mem_cpy( work + (uint32_t)index * piece, work, piece );
         }
         total = piece * 64;
         aes_key( &aes, key, 16 );
@@ -752,7 +752,7 @@ static void hash_r6( const u8 *pw, u32 pwlen, const u8 *salt, const u8 *udata, u
             klen = 64;
             break;
         }
-        if ( round >= 63 && work[total - 1] <= (u32)(round - 31) ) {
+        if ( round >= 63 && work[total - 1] <= (uint32_t)(round - 31) ) {
             break;
         }
     }
@@ -760,7 +760,7 @@ static void hash_r6( const u8 *pw, u32 pwlen, const u8 *salt, const u8 *udata, u
     xfree( work );
 }
 
-static void pad_password( const u8 *pw, u32 len, u8 *out )
+static void pad_password( const uint8_t *pw, uint32_t len, uint8_t *out )
 {
     if ( len > 32 ) {
         len = 32;
@@ -771,18 +771,18 @@ static void pad_password( const u8 *pw, u32 len, u8 *out )
 
 /* revisions 2 to 4: does this padded user password open the file?  The
    key is left in doc.key if so. */
-static int user_r4( const u8 *padded )
+static int user_r4( const uint8_t *padded )
 {
     MD5CTX ctx;
     RC4 rc4;
-    u8 digest[16], test[32], key[16], pbytes[4];
-    u32 keylen = doc.key_len;
+    uint8_t digest[16], test[32], key[16], pbytes[4];
+    uint32_t keylen = doc.key_len;
     int round, index;
 
-    pbytes[0] = (u8)perms;
-    pbytes[1] = (u8)(perms >> 8);
-    pbytes[2] = (u8)(perms >> 16);
-    pbytes[3] = (u8)(perms >> 24);
+    pbytes[0] = (uint8_t)perms;
+    pbytes[1] = (uint8_t)(perms >> 8);
+    pbytes[2] = (uint8_t)(perms >> 16);
+    pbytes[3] = (uint8_t)(perms >> 24);
     md5_init( &ctx );
     md5_update( &ctx, padded, 32 );
     md5_update( &ctx, str_o, 32 );
@@ -812,7 +812,7 @@ static int user_r4( const u8 *padded )
     md5_final( &ctx, test );
     for ( round = 0; round < 20; round++ ) {
         for ( index = 0; index < (int)keylen; index++ ) {
-            key[index] = (u8)(doc.key[index] ^ round);
+            key[index] = (uint8_t)(doc.key[index] ^ round);
         }
         rc4_init( &rc4, key, keylen );
         rc4_run( &rc4, test, 16 );
@@ -822,11 +822,11 @@ static int user_r4( const u8 *padded )
 
 /* the owner's password, revisions 2 to 4: it decrypts /O into the
    user's */
-static int owner_r4( const u8 *pw, u32 len )
+static int owner_r4( const uint8_t *pw, uint32_t len )
 {
     RC4 rc4;
-    u8 padded[32], digest[16], key[16], user[32];
-    u32 keylen = doc.key_len;
+    uint8_t padded[32], digest[16], key[16], user[32];
+    uint32_t keylen = doc.key_len;
     int round, index;
 
     pad_password( pw, len, padded );
@@ -843,7 +843,7 @@ static int owner_r4( const u8 *pw, u32 len )
     } else {
         for ( round = 19; round >= 0; round-- ) {
             for ( index = 0; index < (int)keylen; index++ ) {
-                key[index] = (u8)(digest[index] ^ round);
+                key[index] = (uint8_t)(digest[index] ^ round);
             }
             rc4_init( &rc4, key, keylen );
             rc4_run( &rc4, user, 32 );
@@ -852,10 +852,10 @@ static int owner_r4( const u8 *pw, u32 len )
     return user_r4( user );
 }
 
-static int password_r6( const u8 *pw, u32 len )
+static int password_r6( const uint8_t *pw, uint32_t len )
 {
     AES aes;
-    u8 hash[32], iv[16];
+    uint8_t hash[32], iv[16];
 
     if ( len > 127 ) {
         len = 127;
@@ -878,25 +878,25 @@ static int password_r6( const u8 *pw, u32 len )
     return 1;
 }
 
-int pdf_password( const char *pw, u32 len )
+int pdf_password( const char *pw, uint32_t len )
 {
-    u8 padded[32];
+    uint8_t padded[32];
     int good;
 
     if ( doc.crypt_rev >= 5 ) {
-        good = password_r6( (const u8 *)pw, len );
+        good = password_r6( (const uint8_t *)pw, len );
     } else {
-        pad_password( (const u8 *)pw, len, padded );
-        good = user_r4( padded ) || owner_r4( (const u8 *)pw, len );
+        pad_password( (const uint8_t *)pw, len, padded );
+        good = user_r4( padded ) || owner_r4( (const uint8_t *)pw, len );
     }
     doc.encrypted = good;
     return good;
 }
 
-static void copy_str( DICT *dict, const char *key, u8 *out, u32 max )
+static void copy_str( DICT *dict, const char *key, uint8_t *out, unsigned int max )
 {
     OBJ *val = dict_get( dict, key );
-    u32 len;
+    unsigned int len;
 
     mem_set( out, 0, max );
     if ( val->type == T_STR ) {
@@ -928,14 +928,14 @@ static int method_of( DICT *filters, const char *name )
 int crypt_setup( DICT *enc )
 {
     int version = (int)dict_int( enc, "V", 0 );
-    s32 bits = dict_int( enc, "Length", 40 );
+    int32_t bits = dict_int( enc, "Length", 40 );
     DICT *filters;
 
     if ( str_cmp( dict_name( enc, "Filter" ), "Standard" ) != 0 ) {
         return PE_CRYPT;
     }
     doc.crypt_rev = (int)dict_int( enc, "R", 2 );
-    perms = (u32)dict_int( enc, "P", 0 );
+    perms = (uint32_t)dict_int( enc, "P", 0 );
     doc.crypt_meta = (int)dict_int( enc, "EncryptMetadata", 1 );
     copy_str( enc, "O", str_o, sizeof( str_o ) );
     copy_str( enc, "U", str_u, sizeof( str_u ) );
@@ -972,45 +972,45 @@ int crypt_setup( DICT *enc )
     if ( doc.crypt_rev == 2 ) {
         bits = 40;
     }
-    doc.key_len = (u32)bits / 8;
+    doc.key_len = (uint32_t)bits / 8;
     if ( doc.key_len > 16 && version != 5 ) {
         doc.key_len = 16;
     }
     return pdf_password( "", 0 ) ? PE_NONE : PE_PASSWORD;
 }
 
-void crypt_object_key( u32 num, u32 gen, int aes, u8 *key, u32 *keylen )
+void crypt_object_key( uint32_t num, uint32_t gen, int aes, uint8_t *key, uint32_t *keylen )
 {
     MD5CTX ctx;
-    u8 tail[5], digest[16];
+    uint8_t tail[5], digest[16];
 
     if ( doc.crypt_rev >= 5 ) {
         mem_cpy( key, doc.key, 32 );
         *keylen = 32;
         return;
     }
-    tail[0] = (u8)num;
-    tail[1] = (u8)(num >> 8);
-    tail[2] = (u8)(num >> 16);
-    tail[3] = (u8)gen;
-    tail[4] = (u8)(gen >> 8);
+    tail[0] = (uint8_t)num;
+    tail[1] = (uint8_t)(num >> 8);
+    tail[2] = (uint8_t)(num >> 16);
+    tail[3] = (uint8_t)gen;
+    tail[4] = (uint8_t)(gen >> 8);
     md5_init( &ctx );
     md5_update( &ctx, doc.key, doc.key_len );
     md5_update( &ctx, tail, 5 );
     if ( aes ) {
-        md5_update( &ctx, (const u8 *)"sAlT", 4 );
+        md5_update( &ctx, (const uint8_t *)"sAlT", 4 );
     }
     md5_final( &ctx, digest );
     *keylen = doc.key_len + 5 > 16 ? 16 : doc.key_len + 5;
     mem_cpy( key, digest, *keylen );
 }
 
-void crypt_string( u32 num, u32 gen, u8 *data, u32 *len )
+void crypt_string( uint32_t num, uint32_t gen, uint8_t *data, uint32_t *len )
 {
     RC4 rc4;
     AES aes;
-    u8 key[32], iv[16];
-    u32 keylen, body;
+    uint8_t key[32], iv[16];
+    uint32_t keylen, body;
 
     if ( doc.str_crypt == CRYPT_NONE || *len == 0 ) {
         return;
@@ -1034,10 +1034,10 @@ void crypt_string( u32 num, u32 gen, u8 *data, u32 *len )
     data[*len] = 0;
 }
 
-IN *crypt_stream( IN *src, u32 num, u32 gen )
+IN *crypt_stream( IN *src, uint32_t num, uint32_t gen )
 {
-    u8 key[32];
-    u32 keylen;
+    uint8_t key[32];
+    uint32_t keylen;
 
     crypt_object_key( num, gen, doc.stm_crypt == CRYPT_AES, key, &keylen );
     if ( doc.stm_crypt == CRYPT_RC4 ) {
@@ -1049,32 +1049,32 @@ IN *crypt_stream( IN *src, u32 num, u32 gen )
 /* known answers, for the test program: 0 if every one comes out */
 int crypt_selftest( void )
 {
-    static const u8 md5_abc[4] = { 0x90, 0x01, 0x50, 0x98 };
-    static const u8 sha256_abc[4] = { 0xba, 0x78, 0x16, 0xbf };
-    static const u8 sha512_abc[4] = { 0xdd, 0xaf, 0x35, 0xa1 };
-    static const u8 sha512_end[4] = { 0xa5, 0x4c, 0xa4, 0x9f };
-    static const u8 sha384_abc[4] = { 0xcb, 0x00, 0x75, 0x3f };
-    static const u8 aes_out[4] = { 0x69, 0xc4, 0xe0, 0xd8 };
-    static const u8 aes256_out[4] = { 0x8e, 0xa2, 0xb7, 0xca };
-    static const u8 rc4_out[4] = { 0xbb, 0xf3, 0x16, 0xe8 };
+    static const uint8_t md5_abc[4] = { 0x90, 0x01, 0x50, 0x98 };
+    static const uint8_t sha256_abc[4] = { 0xba, 0x78, 0x16, 0xbf };
+    static const uint8_t sha512_abc[4] = { 0xdd, 0xaf, 0x35, 0xa1 };
+    static const uint8_t sha512_end[4] = { 0xa5, 0x4c, 0xa4, 0x9f };
+    static const uint8_t sha384_abc[4] = { 0xcb, 0x00, 0x75, 0x3f };
+    static const uint8_t aes_out[4] = { 0x69, 0xc4, 0xe0, 0xd8 };
+    static const uint8_t aes256_out[4] = { 0x8e, 0xa2, 0xb7, 0xca };
+    static const uint8_t rc4_out[4] = { 0xbb, 0xf3, 0x16, 0xe8 };
     AES aes;
     RC4 rc4;
-    u8 digest[64], block[16], key[32];
+    uint8_t digest[64], block[16], key[32];
     int index, bad = 0;
 
-    md5( (const u8 *)"abc", 3, digest );
+    md5( (const uint8_t *)"abc", 3, digest );
     bad |= mem_cmp( digest, md5_abc, 4 ) != 0;
-    sha256( (const u8 *)"abc", 3, digest );
+    sha256( (const uint8_t *)"abc", 3, digest );
     bad |= (mem_cmp( digest, sha256_abc, 4 ) != 0) << 1;
-    sha512( (const u8 *)"abc", 3, digest, 64 );
+    sha512( (const uint8_t *)"abc", 3, digest, 64 );
     bad |= (mem_cmp( digest, sha512_abc, 4 ) != 0 || mem_cmp( digest + 60, sha512_end, 4 ) != 0) << 2;
-    sha512( (const u8 *)"abc", 3, digest, 48 );
+    sha512( (const uint8_t *)"abc", 3, digest, 48 );
     bad |= (mem_cmp( digest, sha384_abc, 4 ) != 0) << 3;
     for ( index = 0; index < 32; index++ ) {
-        key[index] = (u8)index;
+        key[index] = (uint8_t)index;
     }
     for ( index = 0; index < 16; index++ ) {
-        block[index] = (u8)(index * 17);
+        block[index] = (uint8_t)(index * 17);
     }
     aes_key( &aes, key, 16 );
     aes_encrypt( &aes, block );
@@ -1087,7 +1087,7 @@ int crypt_selftest( void )
     aes_decrypt( &aes, block );
     bad |= (block[1] != 0x11 || block[15] != 0xFF) << 7;
     mem_cpy( block, "Plaintext", 9 );
-    rc4_init( &rc4, (const u8 *)"Key", 3 );
+    rc4_init( &rc4, (const uint8_t *)"Key", 3 );
     rc4_run( &rc4, block, 9 );
     bad |= (mem_cmp( block, rc4_out, 4 ) != 0) << 8;
     return bad;

@@ -13,22 +13,24 @@
 #ifndef NETSPLOR_PRF_H
 #define NETSPLOR_PRF_H
 
+#include <stdint.h>
+
 /* Fill 'out' (outlen bytes) with PRF output.
  *   secret/secretlen : the secret (e.g. master secret)
  *   label            : ASCII label, e.g. "master secret" / "key expansion"
  *   seed/seedlen     : the seed (typically client_random + server_random)
  */
-void tls12_prf(const unsigned char *secret, int secretlen,
+void tls12_prf(const uint8_t *secret, int secretlen,
                const char *label,
-               const unsigned char *seed, int seedlen,
-               unsigned char *out, int outlen);
+               const uint8_t *seed, int seedlen,
+               uint8_t *out, int outlen);
 
 /* Same PRF built on P_SHA384 - used by the AES_256_GCM_SHA384 suite, whose
  * key schedule and Finished verify_data use SHA-384 rather than SHA-256. */
-void tls12_prf_sha384(const unsigned char *secret, int secretlen,
+void tls12_prf_sha384(const uint8_t *secret, int secretlen,
                       const char *label,
-                      const unsigned char *seed, int seedlen,
-                      unsigned char *out, int outlen);
+                      const uint8_t *seed, int seedlen,
+                      uint8_t *out, int outlen);
 
 /* TLS 1.3 (RFC 8446 7.1).  hlen is the suite's hash size: 32 for SHA-256,
  * 48 for SHA-384.
@@ -39,11 +41,11 @@ void tls12_prf_sha384(const unsigned char *secret, int secretlen,
  */
 #define TLS13_LABEL_MAX  32
 #define TLS13_CTX_MAX    64
-void tls13_hkdf_extract( int hlen, const unsigned char *salt, int saltlen,
-                         const unsigned char *ikm, int ikmlen, unsigned char *out );
-void tls13_expand_label( int hlen, const unsigned char *secret,
+void tls13_hkdf_extract( int hlen, const uint8_t *salt, int saltlen,
+                         const uint8_t *ikm, int ikmlen, uint8_t *out );
+void tls13_expand_label( int hlen, const uint8_t *secret,
                          const char *label,
-                         const unsigned char *ctx, int ctxlen,
-                         unsigned char *out, int outlen );
+                         const uint8_t *ctx, int ctxlen,
+                         uint8_t *out, int outlen );
 
 #endif /* NETSPLOR_PRF_H */

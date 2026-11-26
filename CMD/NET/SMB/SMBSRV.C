@@ -18,10 +18,10 @@
 void *memcpy( void *to, const void *from, unsigned len );
 void *memset( void *to, int value, unsigned len );
 
-static void put16( unsigned char *p, unsigned int v ) { p[0] = (unsigned char)v; p[1] = (unsigned char)( v >> 8 ); }
-static void put32( unsigned char *p, unsigned long v ) { p[0] = (unsigned char)v; p[1] = (unsigned char)( v >> 8 ); p[2] = (unsigned char)( v >> 16 ); p[3] = (unsigned char)( v >> 24 ); }
-static unsigned int  get16( const unsigned char *p ) { return (unsigned int)p[0] | ( (unsigned int)p[1] << 8 ); }
-static unsigned long get32( const unsigned char *p ) { return (unsigned long)p[0] | ( (unsigned long)p[1] << 8 ) | ( (unsigned long)p[2] << 16 ) | ( (unsigned long)p[3] << 24 ); }
+static void put16( uint8_t *p, unsigned int v ) { p[0] = (uint8_t)v; p[1] = (uint8_t)( v >> 8 ); }
+static void put32( uint8_t *p, uint32_t v ) { p[0] = (uint8_t)v; p[1] = (uint8_t)( v >> 8 ); p[2] = (uint8_t)( v >> 16 ); p[3] = (uint8_t)( v >> 24 ); }
+static unsigned int  get16( const uint8_t *p ) { return (unsigned int)p[0] | ( (unsigned int)p[1] << 8 ); }
+static uint32_t      get32( const uint8_t *p ) { return (uint32_t)p[0] | ( (uint32_t)p[1] << 8 ) | ( (uint32_t)p[2] << 16 ) | ( (uint32_t)p[3] << 24 ); }
 static int slen( const char *s ) { int n = 0; while ( s[n] ) n++; return n; }
 
 #define SRV_BUF   33792
@@ -35,30 +35,30 @@ typedef struct {
     const srv_vfs *fs;
     void          *fsctx;
     const char    *share;
-    struct { int used; int vh; unsigned long pos; } fid[SRV_FIDS];
+    struct { int used; int vh; uint32_t pos; } fid[SRV_FIDS];
     int            lm;                  /* a LAN Manager dialect was chosen */
     int            cli_max;             /* the client's MaxBufferSize */
     /* the one search FIND_NEXT2 continues: its directory, pattern
        (11-byte FCB form, or all), search attributes and how many
        matching entries have gone */
     char           sdir[300];
-    unsigned char  spat[11];
+    uint8_t        spat[11];
     int            sall;
     unsigned int   sattr;
     int            ssent;
-    unsigned char  in[SRV_BUF];
-    unsigned char  out[SRV_BUF];
+    uint8_t        in[SRV_BUF];
+    uint8_t        out[SRV_BUF];
     int            inlen;
 } srv_conn;
 
 /* ---- transport ---- */
-static int send_all( srv_conn *c, const unsigned char *buf, int len )
+static int send_all( srv_conn *c, const uint8_t *buf, int len )
 {
     int off = 0, n;
     while ( off < len ) { n = c->send( c->ioctx, buf + off, len - off ); if ( n <= 0 ) return -1; off += n; }
     return 0;
 }
-static int read_n( srv_conn *c, unsigned char *buf, int n )
+static int read_n( srv_conn *c, uint8_t *buf, int n )
 {
     int off = 0, got;
     while ( off < n ) { got = c->recv( c->ioctx, buf + off, n - off ); if ( got <= 0 ) return -1; off += got; }
@@ -68,14 +68,14 @@ static int read_n( srv_conn *c, unsigned char *buf, int n )
 /* receive one NBT message into c->in; answer a session request on the spot */
 static int recv_msg( srv_conn *c )
 {
-    unsigned char hdr[4];
+    uint8_t hdr[4];
     int len;
     for ( ;; ) {
         if ( read_n( c, hdr, 4 ) < 0 ) return -1;
         len = ( ( hdr[1] & 1 ) << 16 ) | ( hdr[2] << 8 ) | hdr[3];
         if ( hdr[0] == 0x81 ) {                         /* SESSION REQUEST */
             if ( len > 0 ) { if ( len > SRV_BUF ) return -1; if ( read_n( c, c->in, len ) < 0 ) return -1; }
-            { unsigned char ok[4]; ok[0] = 0x82; ok[1] = 0; ok[2] = 0; ok[3] = 0; if ( send_all( c, ok, 4 ) < 0 ) return -1; }
+            { uint8_t ok[4]; ok[0] = 0x82; ok[1] = 0; ok[2] = 0; ok[3] = 0; if ( send_all( c, ok, 4 ) < 0 ) return -1; }
             continue;
         }
         if ( len == 0 ) continue;
@@ -87,9 +87,9 @@ static int recv_msg( srv_conn *c )
 
 /* an NT status as a LAN Manager client reads it: the DOS error class in
    the low byte, the code in the high word */
-static unsigned long dos_status( unsigned long nt )
+static uint32_t dos_status( uint32_t nt )
 {
-    unsigned long cls = 1, code;
+    uint32_t cls = 1, code;
     switch ( nt ) {
     case 0:            return 0;
     case 0xC0000034UL: code = 2;   break;      /* file not found */
@@ -106,17 +106,17 @@ static unsigned long dos_status( unsigned long nt )
 }
 
 /* build and send a reply: echoes tid/uid/pid/mid; words+bytes already laid out */
-static int reply( srv_conn *c, int cmd, unsigned long status,
+static int reply( srv_conn *c, int cmd, uint32_t status,
                   unsigned int tid, unsigned int uid, unsigned int pid, unsigned int mid,
-                  const unsigned char *words, int wlen,
-                  const unsigned char *bytes, int blen )
+                  const uint8_t *words, int wlen,
+                  const uint8_t *bytes, int blen )
 {
-    unsigned char *p = c->out + 4;      /* SMB header start */
+    uint8_t *p = c->out + 4;            /* SMB header start */
     int n;
     if ( wlen < 0 || blen < 0 || wlen > 510 || 4 + 33 + wlen + 2 + blen > SRV_BUF ) return -1;
     memset( c->out, 0, 37 );
     p[0] = 0xFF; p[1] = 'S'; p[2] = 'M'; p[3] = 'B';
-    p[4] = (unsigned char)cmd;
+    p[4] = (uint8_t)cmd;
     put32( p + 5, c->lm ? dos_status( status ) : status );
     p[9] = 0x88;                        /* Flags: reply + case-insensitive */
     put16( p + 10, c->lm ? 0 : 0x4001 );   /* Flags2: LONG_NAMES | NT_STATUS */
@@ -124,28 +124,28 @@ static int reply( srv_conn *c, int cmd, unsigned long status,
     put16( p + 26, pid );
     put16( p + 28, uid );
     put16( p + 30, mid );
-    p[32] = (unsigned char)( wlen / 2 );             /* WordCount */
+    p[32] = (uint8_t)( wlen / 2 );                   /* WordCount */
     if ( wlen ) memcpy( p + 33, words, (unsigned)wlen );
     put16( p + 33 + wlen, (unsigned int)blen );      /* ByteCount */
     if ( blen ) memcpy( p + 33 + wlen + 2, bytes, (unsigned)blen );
     n = 4 + 32 + 1 + wlen + 2 + blen;
     c->out[0] = 0; c->out[1] = 0;
     put16( c->out + 2, 0 );
-    c->out[2] = (unsigned char)( ( n - 4 ) >> 8 );
-    c->out[3] = (unsigned char)( n - 4 );
+    c->out[2] = (uint8_t)( ( n - 4 ) >> 8 );
+    c->out[3] = (uint8_t)( n - 4 );
     return send_all( c, c->out, n );
 }
 
 /* a reply with no words and no bytes: an error, or a bare "done" */
-static void reply0( srv_conn *c, int cmd, unsigned long status,
+static void reply0( srv_conn *c, int cmd, uint32_t status,
                     unsigned int tid, unsigned int uid, unsigned int pid, unsigned int mid )
 {
-    reply( c, cmd, status, tid, uid, pid, mid, (unsigned char *)0, 0, (unsigned char *)0, 0 );
+    reply( c, cmd, status, tid, uid, pid, mid, (uint8_t *)0, 0, (uint8_t *)0, 0 );
 }
 
 /* copy a leading-NUL-free ASCIIZ out of a byte field at 'bf'; -1 if the
    name does not fit 'cap' */
-static int getz( const unsigned char *bf, int max, char *dst, int cap )
+static int getz( const uint8_t *bf, int max, char *dst, int cap )
 {
     int i = 0;
     while ( i < max && i + 1 < cap && bf[i] ) { dst[i] = (char)bf[i]; i++; }
@@ -155,7 +155,7 @@ static int getz( const unsigned char *bf, int max, char *dst, int cap )
 }
 
 /* a path in the byte field after its 0x04 buffer-format byte */
-static int getpath( const unsigned char *bytes, int bc, char *dst, int cap )
+static int getpath( const uint8_t *bytes, int bc, char *dst, int cap )
 {
     if ( bc < 1 ) { dst[0] = 0; return -1; }
     return getz( bytes + 1, bc - 1, dst, cap );
@@ -173,20 +173,20 @@ static long days_from_civil( int year, int month, int day )
     doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
     return era * 146097 + (long)doe - 719468;
 }
-static unsigned long dos_utime( unsigned int date, unsigned int time )
+static uint32_t dos_utime( unsigned int date, unsigned int time )
 {
     int month = (int)( ( date >> 5 ) & 0x0F ), day = (int)( date & 0x1F );
     if ( date == 0 ) return 0;
     if ( month < 1 ) month = 1;
     if ( month > 12 ) month = 12;
     if ( day < 1 ) day = 1;
-    return (unsigned long)days_from_civil( 1980 + (int)( ( date >> 9 ) & 0x7F ), month, day ) * 86400UL +
+    return (uint32_t)days_from_civil( 1980 + (int)( ( date >> 9 ) & 0x7F ), month, day ) * 86400UL +
            ( ( time >> 11 ) & 0x1F ) * 3600UL + ( ( time >> 5 ) & 0x3F ) * 60UL + ( time & 0x1F ) * 2UL;
 }
-static void utime_dos( unsigned long t, unsigned int *date, unsigned int *time )
+static void utime_dos( uint32_t t, unsigned int *date, unsigned int *time )
 {
     long z = (long)( t / 86400UL ) + 719468L, era, doe, yoe, year, doy, mp, day, month;
-    unsigned long sod = t % 86400UL;
+    uint32_t sod = t % 86400UL;
     era = z / 146097;                                   /* t >= 0: z > 0 */
     doe = z - era * 146097;
     yoe = ( doe - doe / 1460 + doe / 36524 - doe / 146096 ) / 365;
@@ -207,7 +207,7 @@ static void utime_dos( unsigned long t, unsigned int *date, unsigned int *time )
 static char supper( char ch ) { return ( ch >= 'a' && ch <= 'z' ) ? (char)( ch - 32 ) : ch; }
 
 /* an 8.3 name -> its 11-byte FCB form ("." and ".." kept as they are) */
-static void name_fcb( const char *name, unsigned char *fcb )
+static void name_fcb( const char *name, uint8_t *fcb )
 {
     int i, pos = 0;
     const char *dot = (const char *)0, *p;
@@ -217,13 +217,13 @@ static void name_fcb( const char *name, unsigned char *fcb )
         return;
     }
     for ( p = name; *p; p++ ) if ( *p == '.' ) dot = p;
-    for ( p = name; *p && p != dot && pos < 8; p++ ) fcb[pos++] = (unsigned char)supper( *p );
-    if ( dot ) { pos = 8; for ( p = dot + 1; *p && pos < 11; p++ ) fcb[pos++] = (unsigned char)supper( *p ); }
+    for ( p = name; *p && p != dot && pos < 8; p++ ) fcb[pos++] = (uint8_t)supper( *p );
+    if ( dot ) { pos = 8; for ( p = dot + 1; *p && pos < 11; p++ ) fcb[pos++] = (uint8_t)supper( *p ); }
 }
 
 /* a wildcard pattern -> its FCB form ('*' fills with '?'); returns 1 for
    a pattern that matches every name ("*", "*.*", empty) */
-static int pat_fcb( const char *pat, unsigned char *fcb )
+static int pat_fcb( const char *pat, uint8_t *fcb )
 {
     int i, pos = 0;
     const char *p = pat;
@@ -231,24 +231,24 @@ static int pat_fcb( const char *pat, unsigned char *fcb )
     for ( i = 0; i < 11; i++ ) fcb[i] = ' ';
     while ( *p && *p != '.' ) {
         if ( *p == '*' ) { while ( pos < 8 ) fcb[pos++] = '?'; while ( *p && *p != '.' ) p++; break; }
-        if ( pos < 8 ) fcb[pos++] = (unsigned char)supper( *p );
+        if ( pos < 8 ) fcb[pos++] = (uint8_t)supper( *p );
         p++;
     }
     if ( *p == '.' ) p++;
     pos = 8;
     while ( *p ) {
         if ( *p == '*' ) { while ( pos < 11 ) fcb[pos++] = '?'; break; }
-        if ( pos < 11 ) fcb[pos++] = (unsigned char)supper( *p );
+        if ( pos < 11 ) fcb[pos++] = (uint8_t)supper( *p );
         p++;
     }
     return 0;
 }
 
-static int match_entry( const unsigned char *pat, int all, unsigned int sattr, const srv_dirent *de )
+static int match_entry( const uint8_t *pat, int all, unsigned int sattr, const srv_dirent *de )
 {
-    unsigned char fcb[11];
+    uint8_t fcb[11];
     int i;
-    if ( de->attr & 0x16UL & ~(unsigned long)sattr ) return 0;      /* H, S, D not asked for */
+    if ( de->attr & 0x16UL & ~(uint32_t)sattr ) return 0;           /* H, S, D not asked for */
     if ( all ) return 1;
     name_fcb( de->name, fcb );
     for ( i = 0; i < 11; i++ ) if ( pat[i] != '?' && pat[i] != fcb[i] ) return 0;
@@ -267,19 +267,19 @@ static const char *const lm_dialects[] = {
 };
 #define LM_DIALECTS 5
 
-static int streq( const unsigned char *a, int alen, const char *b )
+static int streq( const uint8_t *a, int alen, const char *b )
 {
     int i;
-    for ( i = 0; i < alen && b[i]; i++ ) if ( a[i] != (unsigned char)b[i] ) return 0;
+    for ( i = 0; i < alen && b[i]; i++ ) if ( a[i] != (uint8_t)b[i] ) return 0;
     return i == alen && b[i] == 0;
 }
 
-static void do_negotiate( srv_conn *c, const unsigned char *bytes, int bc,
+static void do_negotiate( srv_conn *c, const uint8_t *bytes, int bc,
                           unsigned int pid, unsigned int mid )
 {
-    unsigned char w[34], b[32];
+    uint8_t w[34], b[32];
     int nt = -1, lm = -1, o = 0, i = 0, k, bn;
-    static const unsigned char chal[8] = { 0x11,0x22,0x33,0x44,0x55,0x66,0x77,0x88 };
+    static const uint8_t chal[8] = { 0x11,0x22,0x33,0x44,0x55,0x66,0x77,0x88 };
 
     /* NT LM 0.12 when offered, else the newest LAN Manager dialect */
     while ( o < bc && bytes[o] == 0x02 ) {
@@ -293,7 +293,7 @@ static void do_negotiate( srv_conn *c, const unsigned char *bytes, int bc,
     bn = 8;
     memset( w, 0, sizeof( w ) );
     if ( nt >= 0 ) {
-        { static const char *dom = "WORKGROUP"; int n; for ( n = 0; dom[n]; n++ ) b[bn++] = (unsigned char)dom[n]; b[bn++] = 0; }
+        { static const char *dom = "WORKGROUP"; int n; for ( n = 0; dom[n]; n++ ) b[bn++] = (uint8_t)dom[n]; b[bn++] = 0; }
         put16( w + 0, (unsigned int)nt );            /* DialectIndex */
         w[2] = 0x03;                                 /* SecurityMode: user + challenge */
         put16( w + 3, 1 );                           /* MaxMpxCount */
@@ -320,7 +320,7 @@ static void do_negotiate( srv_conn *c, const unsigned char *bytes, int bc,
         reply( c, 0x72, 0, 0, 0, pid, mid, w, 26, b, bn );   /* the key alone, as WfW's own */
     } else {
         put16( w + 0, 0xFFFF );                      /* none of them */
-        reply( c, 0x72, 0, 0, 0, pid, mid, w, 2, (unsigned char *)0, 0 );
+        reply( c, 0x72, 0, 0, 0, pid, mid, w, 2, (uint8_t *)0, 0 );
     }
 }
 
@@ -345,15 +345,15 @@ static void close_all( srv_conn *c )
     for ( i = 0; i < SRV_FIDS; i++ ) if ( c->fid[i].used ) { c->fs->vclose( c->fsctx, c->fid[i].vh ); c->fid[i].used = 0; }
 }
 
-static void do_open( srv_conn *c, const unsigned char *words, const unsigned char *bytes, int bc,
+static void do_open( srv_conn *c, const uint8_t *words, const uint8_t *bytes, int bc,
                      unsigned int tid, unsigned int uid, unsigned int pid, unsigned int mid )
 {
     unsigned int access = get16( words + 6 );
     unsigned int openfn = get16( words + 16 );
     char path[300];
-    unsigned long size = 0;
+    uint32_t size = 0;
     int action = 1, dispo, write, vh, fid;
-    unsigned char w[30];
+    uint8_t w[30];
     srv_dirent st;
 
     if ( bc > 1 && bytes[0] == 0 ) { bytes++; bc--; }   /* a pad byte, as SMB1.C sent until the LAN Manager work */
@@ -379,16 +379,16 @@ static void do_open( srv_conn *c, const unsigned char *words, const unsigned cha
     put32( w + 12, size );                       /* DataSize */
     put16( w + 16, access & 0x7 );               /* GrantedAccess */
     put16( w + 22, (unsigned int)action );       /* Action */
-    reply( c, 0x2D, 0, tid, uid, pid, mid, w, 30, (unsigned char *)0, 0 );
+    reply( c, 0x2D, 0, tid, uid, pid, mid, w, 30, (uint8_t *)0, 0 );
 }
 
-static void do_read( srv_conn *c, const unsigned char *words,
+static void do_read( srv_conn *c, const uint8_t *words,
                      unsigned int tid, unsigned int uid, unsigned int pid, unsigned int mid )
 {
     int fx = fid_index( c, get16( words + 4 ) );
-    unsigned long off = get32( words + 6 );      /* low 32 (files here fit) */
+    uint32_t off = get32( words + 6 );           /* low 32 (files here fit) */
     int maxc = (int)get16( words + 10 );
-    unsigned char *p = c->out + 4;
+    uint8_t *p = c->out + 4;
     int n, total;
 
     if ( fx < 0 ) { reply0( c, 0x2E, 0xC0000008UL, tid, uid, pid, mid ); return; }
@@ -405,7 +405,7 @@ static void do_read( srv_conn *c, const unsigned char *words,
 
     n = c->fs->vread( c->fsctx, c->fid[fx].vh, off, p + 60, maxc );
     if ( n < 0 ) n = 0;
-    c->fid[fx].pos = off + (unsigned long)n;
+    c->fid[fx].pos = off + (uint32_t)n;
 
     put16( p + 43, (unsigned int)( n & 0xFFFF ) );         /* DataLength (words+10) */
     put16( p + 45, 60 );                                   /* DataOffset (words+12) */
@@ -413,20 +413,20 @@ static void do_read( srv_conn *c, const unsigned char *words,
     put16( p + 57, (unsigned int)( n + 1 ) );              /* ByteCount = pad + data */
 
     total = 4 + 60 + n;
-    c->out[0] = 0; c->out[1] = (unsigned char)( ( ( total - 4 ) >> 16 ) & 1 );
-    c->out[2] = (unsigned char)( ( total - 4 ) >> 8 );
-    c->out[3] = (unsigned char)( total - 4 );
+    c->out[0] = 0; c->out[1] = (uint8_t)( ( ( total - 4 ) >> 16 ) & 1 );
+    c->out[2] = (uint8_t)( ( total - 4 ) >> 8 );
+    c->out[3] = (uint8_t)( total - 4 );
     send_all( c, c->out, total );
 }
 
-static void do_write( srv_conn *c, const unsigned char *words, int wc, const unsigned char *smb,
+static void do_write( srv_conn *c, const uint8_t *words, int wc, const uint8_t *smb,
                       unsigned int tid, unsigned int uid, unsigned int pid, unsigned int mid )
 {
     int fx = fid_index( c, get16( words + 4 ) );
-    unsigned long off = get32( words + 6 );
+    uint32_t off = get32( words + 6 );
     int dlen = (int)get16( words + 20 ) | ( (int)get16( words + 18 ) << 16 );
     int doff = (int)get16( words + 22 );
-    unsigned char w[12];
+    uint8_t w[12];
     int n;
 
     if ( fx < 0 ) { reply0( c, 0x2F, 0xC0000008UL, tid, uid, pid, mid ); return; }
@@ -436,21 +436,21 @@ static void do_write( srv_conn *c, const unsigned char *words, int wc, const uns
     if ( dlen > c->inlen - doff ) dlen = c->inlen - doff;
     n = c->fs->vwrite( c->fsctx, c->fid[fx].vh, off, smb + doff, dlen );
     if ( n < 0 ) n = 0;
-    c->fid[fx].pos = off + (unsigned long)n;
+    c->fid[fx].pos = off + (uint32_t)n;
 
     memset( w, 0, sizeof( w ) );
     w[0] = 0xFF;
     put16( w + 4, (unsigned int)( n & 0xFFFF ) );    /* Count */
-    reply( c, 0x2F, 0, tid, uid, pid, mid, w, 12, (unsigned char *)0, 0 );
+    reply( c, 0x2F, 0, tid, uid, pid, mid, w, 12, (uint8_t *)0, 0 );
 }
 
 /* CLOSE: a LastWriteTime other than 0 and -1 is set on the file first */
-static void do_close( srv_conn *c, const unsigned char *words, int wc,
+static void do_close( srv_conn *c, const uint8_t *words, int wc,
                       unsigned int tid, unsigned int uid, unsigned int pid, unsigned int mid )
 {
     int fx = fid_index( c, get16( words ) );
     if ( fx >= 0 ) {
-        unsigned long t = ( wc >= 3 ) ? get32( words + 2 ) : 0;
+        uint32_t t = ( wc >= 3 ) ? get32( words + 2 ) : 0;
         if ( t != 0 && t != 0xFFFFFFFFUL ) {
             unsigned int date, time;
             utime_dos( t, &date, &time );
@@ -463,10 +463,10 @@ static void do_close( srv_conn *c, const unsigned char *words, int wc,
 }
 
 static void send_trans2( srv_conn *c, unsigned int tid, unsigned int uid, unsigned int pid, unsigned int mid,
-                         const unsigned char *parm, int plen, const unsigned char *data, int dlen )
+                         const uint8_t *parm, int plen, const uint8_t *data, int dlen )
 {
-    unsigned char w[20];
-    unsigned char *bp;
+    uint8_t w[20];
+    uint8_t *bp;
     int base = 32 + 1 + 20 + 2, ppad, poff, afterp, dpad, doff, blen;
 
     ppad = ( -base ) & 3; poff = base + ppad;
@@ -510,7 +510,7 @@ static int level_fixed( int level )
    resume key when 'keys'), 0x101, 0x102 or 0x104.  Returns the byte
    length; *cnt is the count (-1 when the directory is not there), *eos 1
    when the directory ran out, *lastname the last entry's name offset. */
-static int build_listing( srv_conn *c, int level, int keys, unsigned char *data, int cap,
+static int build_listing( srv_conn *c, int level, int keys, uint8_t *data, int cap,
                           int maxcount, int *cnt, int *eos, int *lastname )
 {
     void *it = c->fs->vfindopen( c->fsctx, c->sdir );
@@ -537,15 +537,15 @@ static int build_listing( srv_conn *c, int level, int keys, unsigned char *data,
         if ( off + entry + pad > cap ) { *eos = 0; break; }
         at = off;
         if ( level == 1 ) {
-            unsigned char *e = data + off;
-            if ( keys ) { put32( e, (unsigned long)( c->ssent + count + 1 ) ); e += 4; }   /* ResumeKey */
+            uint8_t *e = data + off;
+            if ( keys ) { put32( e, (uint32_t)( c->ssent + count + 1 ) ); e += 4; }        /* ResumeKey */
             put16( e + 0, de.dosdate );  put16( e + 2, de.dostime );     /* Creation */
             put16( e + 4, de.dosdate );  put16( e + 6, de.dostime );     /* LastAccess */
             put16( e + 8, de.dosdate );  put16( e + 10, de.dostime );    /* LastWrite */
             put32( e + 12, de.size );                                    /* DataSize */
             put32( e + 16, ( de.size + 511 ) & ~511UL );                 /* AllocationSize */
             put16( e + 20, (unsigned int)( de.attr & 0x37 ) );           /* Attributes */
-            e[22] = (unsigned char)namelen;                              /* FileNameLength */
+            e[22] = (uint8_t)namelen;                                    /* FileNameLength */
             memcpy( e + 23, de.name, (unsigned)( namelen + 1 ) );        /* the name and its NUL */
             *lastname = (int)( ( e + 23 ) - data );
         } else {
@@ -560,10 +560,10 @@ static int build_listing( srv_conn *c, int level, int keys, unsigned char *data,
             put32( data + off + 40, de.size ); put32( data + off + 44, 0 );          /* EndOfFile */
             put32( data + off + 48, ( de.size + 511 ) & ~511UL ); put32( data + off + 52, 0 );
             put32( data + off + 56, de.attr );                                       /* ExtFileAttributes */
-            put32( data + off + 60, (unsigned long)namelen );                        /* FileNameLength */
+            put32( data + off + 60, (uint32_t)namelen );                             /* FileNameLength */
             memcpy( data + off + fixed, de.name, (unsigned)( namelen + 1 ) );
             memset( data + off + fixed + namelen + 1, 0, (unsigned)pad );
-            put32( data + off, (unsigned long)( entry + pad ) );                     /* NextEntryOffset */
+            put32( data + off, (uint32_t)( entry + pad ) );                          /* NextEntryOffset */
             *lastname = off + fixed;
         }
         last = at;
@@ -577,12 +577,12 @@ static int build_listing( srv_conn *c, int level, int keys, unsigned char *data,
     return off;
 }
 
-static void do_trans2( srv_conn *c, const unsigned char *words, int wc, const unsigned char *smb,
+static void do_trans2( srv_conn *c, const uint8_t *words, int wc, const uint8_t *smb,
                        unsigned int tid, unsigned int uid, unsigned int pid, unsigned int mid )
 {
     int poff, pcnt, setup, maxdata, cap;
-    const unsigned char *parm;
-    static unsigned char data[SRV_BUF - 512];
+    const uint8_t *parm;
+    static uint8_t data[SRV_BUF - 512];
 
     /* the client's offsets are untrusted: keep the parameter block inside
        the received message */
@@ -606,7 +606,7 @@ static void do_trans2( srv_conn *c, const unsigned char *words, int wc, const un
         char spec[300];
         int i, cut = -1, cnt, eos, lastname, dlen, level = (int)get16( parm + 6 );
         int flags = (int)get16( parm + 4 ), want = (int)get16( parm + 2 );
-        unsigned char rparm[10];
+        uint8_t rparm[10];
         if ( getz( parm + 12, pcnt - 12, spec, sizeof( spec ) ) < 0 ) { reply0( c, 0x32, 0xC0000033UL, tid, uid, pid, mid ); return; }
         for ( i = 0; spec[i]; i++ ) if ( spec[i] == '\\' || spec[i] == '/' ) cut = i;
         if ( cut <= 0 ) { c->sdir[0] = '\\'; c->sdir[1] = 0; }
@@ -631,8 +631,8 @@ static void do_trans2( srv_conn *c, const unsigned char *words, int wc, const un
     } else if ( setup == 2 && pcnt >= 12 ) {      /* FIND_NEXT2 */
         int cnt, eos, lastname, dlen, level = (int)get16( parm + 4 );
         int flags = (int)get16( parm + 10 ), want = (int)get16( parm + 2 );
-        unsigned long key = get32( parm + 6 );
-        unsigned char rparm[8];
+        uint32_t key = get32( parm + 6 );
+        uint8_t rparm[8];
         if ( c->sdir[0] == 0 ) { reply0( c, 0x32, 0x80000006UL, tid, uid, pid, mid ); return; }
         if ( level != 1 && level_fixed( level ) == 0 ) {
             reply0( c, 0x32, 0xC0000148UL, tid, uid, pid, mid );
@@ -652,7 +652,7 @@ static void do_trans2( srv_conn *c, const unsigned char *words, int wc, const un
     }
 }
 
-static void do_pathop( srv_conn *c, int cmd, const unsigned char *bytes, int bc,
+static void do_pathop( srv_conn *c, int cmd, const uint8_t *bytes, int bc,
                        unsigned int tid, unsigned int uid, unsigned int pid, unsigned int mid )
 {
     char path[300];
@@ -668,7 +668,7 @@ static void do_pathop( srv_conn *c, int cmd, const unsigned char *bytes, int bc,
 }
 
 /* RENAME (0x07): two 0x04-tagged paths */
-static void do_rename( srv_conn *c, const unsigned char *bytes, int bc,
+static void do_rename( srv_conn *c, const uint8_t *bytes, int bc,
                        unsigned int tid, unsigned int uid, unsigned int pid, unsigned int mid )
 {
     char from[300], to[300];
@@ -680,12 +680,12 @@ static void do_rename( srv_conn *c, const unsigned char *bytes, int bc,
 }
 
 /* QUERY_INFORMATION (0x08) and CHECK_DIRECTORY (0x10), by path */
-static void do_qinfo( srv_conn *c, int cmd, const unsigned char *bytes, int bc,
+static void do_qinfo( srv_conn *c, int cmd, const uint8_t *bytes, int bc,
                       unsigned int tid, unsigned int uid, unsigned int pid, unsigned int mid )
 {
     char path[300];
     srv_dirent de;
-    unsigned char w[20];
+    uint8_t w[20];
 
     if ( getpath( bytes, bc, path, sizeof( path ) ) < 0 ) { reply0( c, cmd, 0xC0000033UL, tid, uid, pid, mid ); return; }
     if ( c->fs->vstat( c->fsctx, path, &de ) != 0 ) {
@@ -700,11 +700,11 @@ static void do_qinfo( srv_conn *c, int cmd, const unsigned char *bytes, int bc,
     put16( w + 0, (unsigned int)( de.attr & 0x37 ) );           /* FileAttributes */
     put32( w + 2, dos_utime( de.dosdate, de.dostime ) );        /* LastWriteTime */
     put32( w + 6, de.size );                                    /* FileSize */
-    reply( c, cmd, 0, tid, uid, pid, mid, w, 20, (unsigned char *)0, 0 );
+    reply( c, cmd, 0, tid, uid, pid, mid, w, 20, (uint8_t *)0, 0 );
 }
 
 /* SET_INFORMATION (0x09): the attributes (a time is not set by path) */
-static void do_setinfo( srv_conn *c, const unsigned char *words, int wc, const unsigned char *bytes, int bc,
+static void do_setinfo( srv_conn *c, const uint8_t *words, int wc, const uint8_t *bytes, int bc,
                         unsigned int tid, unsigned int uid, unsigned int pid, unsigned int mid )
 {
     char path[300];
@@ -716,8 +716,8 @@ static void do_setinfo( srv_conn *c, const unsigned char *words, int wc, const u
    told in bigger units */
 static void do_qdisk( srv_conn *c, unsigned int tid, unsigned int uid, unsigned int pid, unsigned int mid )
 {
-    unsigned long units = 0, avail = 0, unitsize = 512, per = 1;
-    unsigned char w[10];
+    uint32_t units = 0, avail = 0, unitsize = 512, per = 1;
+    uint8_t w[10];
 
     if ( c->fs->vdisk( c->fsctx, &units, &avail, &unitsize ) != 0 ) { reply0( c, 0x80, 0xC0000001UL, tid, uid, pid, mid ); return; }
     while ( unitsize >= 1024 && ( unitsize & 1 ) == 0 && per < 0x8000UL ) { unitsize >>= 1; per <<= 1; }  /* 512-byte blocks */
@@ -729,16 +729,16 @@ static void do_qdisk( srv_conn *c, unsigned int tid, unsigned int uid, unsigned 
     put16( w + 2, (unsigned int)per );           /* BlocksPerUnit */
     put16( w + 4, (unsigned int)unitsize );      /* BlockSize */
     put16( w + 6, (unsigned int)avail );         /* FreeUnits */
-    reply( c, 0x80, 0, tid, uid, pid, mid, w, 10, (unsigned char *)0, 0 );
+    reply( c, 0x80, 0, tid, uid, pid, mid, w, 10, (uint8_t *)0, 0 );
 }
 
 /* SEEK (0x12): the file position the client keeps on the server */
-static void do_seek( srv_conn *c, const unsigned char *words, int wc,
+static void do_seek( srv_conn *c, const uint8_t *words, int wc,
                      unsigned int tid, unsigned int uid, unsigned int pid, unsigned int mid )
 {
     int fx = ( wc >= 4 ) ? fid_index( c, get16( words ) ) : -1;
-    unsigned long off, base = 0;
-    unsigned char w[4];
+    uint32_t off, base = 0;
+    uint8_t w[4];
     srv_dirent st;
 
     if ( fx < 0 ) { reply0( c, 0x12, 0xC0000008UL, tid, uid, pid, mid ); return; }
@@ -750,16 +750,16 @@ static void do_seek( srv_conn *c, const unsigned char *words, int wc,
     }
     c->fid[fx].pos = base + off;
     put32( w, c->fid[fx].pos );
-    reply( c, 0x12, 0, tid, uid, pid, mid, w, 4, (unsigned char *)0, 0 );
+    reply( c, 0x12, 0, tid, uid, pid, mid, w, 4, (uint8_t *)0, 0 );
 }
 
 /* QUERY_INFORMATION2 (0x23): the dates and size of an open file */
-static void do_qinfo2( srv_conn *c, const unsigned char *words, int wc,
+static void do_qinfo2( srv_conn *c, const uint8_t *words, int wc,
                        unsigned int tid, unsigned int uid, unsigned int pid, unsigned int mid )
 {
     int fx = ( wc >= 1 ) ? fid_index( c, get16( words ) ) : -1;
     srv_dirent st;
-    unsigned char w[22];
+    uint8_t w[22];
 
     if ( fx < 0 || c->fs->vfstat( c->fsctx, c->fid[fx].vh, &st ) != 0 ) { reply0( c, 0x23, 0xC0000008UL, tid, uid, pid, mid ); return; }
     memset( w, 0, sizeof( w ) );
@@ -769,11 +769,11 @@ static void do_qinfo2( srv_conn *c, const unsigned char *words, int wc,
     put32( w + 12, st.size );                                    /* FileDataSize */
     put32( w + 16, ( st.size + 511 ) & ~511UL );                 /* FileAllocationSize */
     put16( w + 20, 0x20 );                                       /* FileAttributes */
-    reply( c, 0x23, 0, tid, uid, pid, mid, w, 22, (unsigned char *)0, 0 );
+    reply( c, 0x23, 0, tid, uid, pid, mid, w, 22, (uint8_t *)0, 0 );
 }
 
 /* SET_INFORMATION2 (0x22): the last-write date and time of an open file */
-static void do_setinfo2( srv_conn *c, const unsigned char *words, int wc,
+static void do_setinfo2( srv_conn *c, const uint8_t *words, int wc,
                          unsigned int tid, unsigned int uid, unsigned int pid, unsigned int mid )
 {
     int fx = ( wc >= 7 ) ? fid_index( c, get16( words ) ) : -1;
@@ -788,7 +788,7 @@ static void do_setinfo2( srv_conn *c, const unsigned char *words, int wc,
 /* open a file for the core OPEN / CREATE / CREATE_NEW; the FID, or 0 with
    *status set */
 static int core_open( srv_conn *c, const char *path, int write, int dispo,
-                      unsigned long *size, unsigned long *status )
+                      uint32_t *size, uint32_t *status )
 {
     int action = 1, vh, fid;
     vh = c->fs->vopen( c->fsctx, path, write, dispo, size, &action );
@@ -800,16 +800,16 @@ static int core_open( srv_conn *c, const char *path, int write, int dispo,
 }
 
 /* OPEN (0x02), CREATE (0x03), CREATE_NEW (0x0F) */
-static void do_core_open( srv_conn *c, int cmd, const unsigned char *words, int wc,
-                          const unsigned char *bytes, int bc,
+static void do_core_open( srv_conn *c, int cmd, const uint8_t *words, int wc,
+                          const uint8_t *bytes, int bc,
                           unsigned int tid, unsigned int uid, unsigned int pid, unsigned int mid )
 {
     char path[300];
-    unsigned long size = 0, status;
+    uint32_t size = 0, status;
     unsigned int access = ( wc >= 1 ) ? get16( words ) : 0;
     int fid;
     srv_dirent st;
-    unsigned char w[14];
+    uint8_t w[14];
 
     if ( getpath( bytes, bc, path, sizeof( path ) ) < 0 ) { reply0( c, cmd, 0xC0000033UL, tid, uid, pid, mid ); return; }
     if ( cmd == 0x0F && c->fs->vstat( c->fsctx, path, &st ) == 0 ) { reply0( c, cmd, 0xC0000035UL, tid, uid, pid, mid ); return; }
@@ -819,24 +819,24 @@ static void do_core_open( srv_conn *c, int cmd, const unsigned char *words, int 
 
     memset( w, 0, sizeof( w ) );
     put16( w + 0, (unsigned int)fid );                          /* FID */
-    if ( cmd != 0x02 ) { reply( c, cmd, 0, tid, uid, pid, mid, w, 2, (unsigned char *)0, 0 ); return; }
+    if ( cmd != 0x02 ) { reply( c, cmd, 0, tid, uid, pid, mid, w, 2, (uint8_t *)0, 0 ); return; }
     put16( w + 2, 0x20 );                                       /* FileAttributes */
     if ( c->fs->vfstat( c->fsctx, c->fid[fid - 1].vh, &st ) == 0 )
         put32( w + 4, dos_utime( st.dosdate, st.dostime ) );   /* LastWriteTime */
     put32( w + 8, size );                                       /* FileSize */
     put16( w + 12, access & 0x7 );                              /* AccessMode */
-    reply( c, cmd, 0, tid, uid, pid, mid, w, 14, (unsigned char *)0, 0 );
+    reply( c, cmd, 0, tid, uid, pid, mid, w, 14, (uint8_t *)0, 0 );
 }
 
 /* READ (0x0A): read straight into the reply's data, at offset 48 (header
    32, wc 1, five words, bc 2, buffer format 1, length 2) */
-static void do_core_read( srv_conn *c, const unsigned char *words, int wc,
+static void do_core_read( srv_conn *c, const uint8_t *words, int wc,
                           unsigned int tid, unsigned int uid, unsigned int pid, unsigned int mid )
 {
     int fx = ( wc >= 5 ) ? fid_index( c, get16( words ) ) : -1;
     int maxc, n, total;
-    unsigned long off;
-    unsigned char *p = c->out + 4;
+    uint32_t off;
+    uint8_t *p = c->out + 4;
 
     if ( fx < 0 ) { reply0( c, 0x0A, 0xC0000008UL, tid, uid, pid, mid ); return; }
     maxc = (int)get16( words + 2 );
@@ -851,7 +851,7 @@ static void do_core_read( srv_conn *c, const unsigned char *words, int wc,
 
     n = c->fs->vread( c->fsctx, c->fid[fx].vh, off, p + 48, maxc );
     if ( n < 0 ) n = 0;
-    c->fid[fx].pos = off + (unsigned long)n;
+    c->fid[fx].pos = off + (uint32_t)n;
 
     put16( p + 33, (unsigned int)n );            /* Count */
     put16( p + 43, (unsigned int)( n + 3 ) );    /* ByteCount */
@@ -860,20 +860,20 @@ static void do_core_read( srv_conn *c, const unsigned char *words, int wc,
 
     total = 4 + 48 + n;
     c->out[0] = 0; c->out[1] = 0;
-    c->out[2] = (unsigned char)( ( total - 4 ) >> 8 );
-    c->out[3] = (unsigned char)( total - 4 );
+    c->out[2] = (uint8_t)( ( total - 4 ) >> 8 );
+    c->out[3] = (uint8_t)( total - 4 );
     send_all( c, c->out, total );
 }
 
 /* WRITE (0x0B): a count of 0 cuts (or grows) the file at the offset */
-static void do_core_write( srv_conn *c, const unsigned char *words, int wc,
-                           const unsigned char *bytes, int bc,
+static void do_core_write( srv_conn *c, const uint8_t *words, int wc,
+                           const uint8_t *bytes, int bc,
                            unsigned int tid, unsigned int uid, unsigned int pid, unsigned int mid )
 {
     int fx = ( wc >= 5 ) ? fid_index( c, get16( words ) ) : -1;
     int count, n;
-    unsigned long off;
-    unsigned char w[2];
+    uint32_t off;
+    uint8_t w[2];
 
     if ( fx < 0 ) { reply0( c, 0x0B, 0xC0000008UL, tid, uid, pid, mid ); return; }
     count = (int)get16( words + 2 );
@@ -885,9 +885,9 @@ static void do_core_write( srv_conn *c, const unsigned char *words, int wc,
     }
     n = c->fs->vwrite( c->fsctx, c->fid[fx].vh, off, bytes + 3, count );
     if ( n < 0 ) { reply0( c, 0x0B, 0xC0000022UL, tid, uid, pid, mid ); return; }
-    c->fid[fx].pos = off + (unsigned long)n;
+    c->fid[fx].pos = off + (uint32_t)n;
     put16( w, (unsigned int)n );
-    reply( c, 0x0B, 0, tid, uid, pid, mid, w, 2, (unsigned char *)0, 0 );
+    reply( c, 0x0B, 0, tid, uid, pid, mid, w, 2, (uint8_t *)0, 0 );
 }
 
 /* SEARCH (0x81) and FCLOSE (0x84).  A search is resumed by the 21-byte key
@@ -900,12 +900,12 @@ static void do_core_write( srv_conn *c, const unsigned char *words, int wc,
 static char g_sdirs[SEARCH_SLOTS][300];
 static int  g_snext;
 
-static void do_search( srv_conn *c, int cmd, const unsigned char *words, int wc,
-                       const unsigned char *bytes, int bc,
+static void do_search( srv_conn *c, int cmd, const uint8_t *words, int wc,
+                       const uint8_t *bytes, int bc,
                        unsigned int tid, unsigned int uid, unsigned int pid, unsigned int mid )
 {
     char spec[300];
-    unsigned char key[21], pat[11], *out, *e;
+    uint8_t key[21], pat[11], *out, *e;
     int maxcount, slot, all, skip, given, count = 0, n, i, cap, keylen = 0;
     unsigned int sattr;
     void *it;
@@ -922,7 +922,7 @@ static void do_search( srv_conn *c, int cmd, const unsigned char *words, int wc,
         else keylen = 0;
     }
     if ( cmd == 0x84 ) {                             /* FCLOSE: nothing is held */
-        unsigned char w[2], b[3];
+        uint8_t w[2], b[3];
         put16( w, 0 ); b[0] = 0x05; b[1] = 0; b[2] = 0;
         reply( c, cmd, 0, tid, uid, pid, mid, w, 2, b, 3 );
         return;
@@ -965,13 +965,13 @@ static void do_search( srv_conn *c, int cmd, const unsigned char *words, int wc,
         given++;
         e = out + 3 + count * SEARCH_ENTRY;
         memset( e, 0, SEARCH_ENTRY );
-        e[1] = (unsigned char)slot;
+        e[1] = (uint8_t)slot;
         memcpy( e + 2, pat, 11 );
         put16( e + 13, (unsigned int)given );
-        e[15] = (unsigned char)sattr;
-        e[16] = (unsigned char)all;
+        e[15] = (uint8_t)sattr;
+        e[16] = (uint8_t)all;
         memcpy( e + 17, key + 17, 4 );               /* ClientState */
-        e[21] = (unsigned char)( de.attr & 0x37 );
+        e[21] = (uint8_t)( de.attr & 0x37 );
         put16( e + 22, de.dostime );
         put16( e + 24, de.dosdate );
         put32( e + 26, de.size );
@@ -984,7 +984,7 @@ static void do_search( srv_conn *c, int cmd, const unsigned char *words, int wc,
     out[0] = 0x05;                                   /* buffer format: variable block */
     put16( out + 1, (unsigned int)( count * SEARCH_ENTRY ) );
     {
-        unsigned char w[2];
+        uint8_t w[2];
         put16( w, (unsigned int)count );
         reply( c, cmd, 0, tid, uid, pid, mid, w, 2, out, 3 + count * SEARCH_ENTRY );
     }
@@ -1003,7 +1003,7 @@ void smbsrv_serve( smb_send_fn send, smb_recv_fn recv, void *ioctx,
     c->cli_max = SRV_BUF;
 
     for ( ;; ) {
-        const unsigned char *smb, *words, *bytes;
+        const uint8_t *smb, *words, *bytes;
         int wc, bc, cmd;
         unsigned int tid, pid, uid, mid;
 
@@ -1030,29 +1030,29 @@ void smbsrv_serve( smb_send_fn send, smb_recv_fn recv, void *ioctx,
         switch ( cmd ) {
         case 0x72: do_negotiate( c, bytes, bc, pid, mid ); break;
         case 0x73: {   /* SESSION_SETUP_ANDX: accept any */
-            unsigned char w[6]; unsigned char b[32]; int bn = 0; const char *s;
+            uint8_t w[6]; uint8_t b[32]; int bn = 0; const char *s;
             if ( wc >= 3 ) {                     /* MaxBufferSize, in both forms */
                 c->cli_max = (int)get16( words + 4 );
                 if ( c->cli_max < 1024 ) c->cli_max = 1024;
             }
             memset( w, 0, sizeof( w ) ); w[0] = 0xFF;
-            s = "Unix"; { int k; for ( k = 0; s[k]; k++ ) b[bn++] = (unsigned char)s[k]; } b[bn++] = 0;
-            s = smbsrv_name; { int k; for ( k = 0; s[k]; k++ ) b[bn++] = (unsigned char)s[k]; } b[bn++] = 0;
-            s = "WORKGROUP"; { int k; for ( k = 0; s[k]; k++ ) b[bn++] = (unsigned char)s[k]; } b[bn++] = 0;
+            s = "Unix"; { int k; for ( k = 0; s[k]; k++ ) b[bn++] = (uint8_t)s[k]; } b[bn++] = 0;
+            s = smbsrv_name; { int k; for ( k = 0; s[k]; k++ ) b[bn++] = (uint8_t)s[k]; } b[bn++] = 0;
+            s = "WORKGROUP"; { int k; for ( k = 0; s[k]; k++ ) b[bn++] = (uint8_t)s[k]; } b[bn++] = 0;
             reply( c, 0x73, 0, tid, 100, pid, mid, w, 6, b, bn );
             break; }
         case 0x75: {   /* TREE_CONNECT_ANDX */
-            unsigned char w[6]; unsigned char b[16]; int bn = 0;
+            uint8_t w[6]; uint8_t b[16]; int bn = 0;
             memset( w, 0, sizeof( w ) ); w[0] = 0xFF; put16( w + 4, 1 );   /* OptionalSupport */
             b[bn++] = 'A'; b[bn++] = ':'; b[bn++] = 0;
             b[bn++] = 'N'; b[bn++] = 'T'; b[bn++] = 'F'; b[bn++] = 'S'; b[bn++] = 0;
             reply( c, 0x75, 0, 1, uid, pid, mid, w, 6, b, bn );
             break; }
         case 0x71: reply0( c, 0x71, 0, tid, uid, pid, mid ); break;
-        case 0x74: { unsigned char w[6]; memset( w, 0, sizeof( w ) ); w[0] = 0xFF; reply( c, 0x74, 0, tid, uid, pid, mid, w, 6, (unsigned char *)0, 0 ); break; }
+        case 0x74: { uint8_t w[6]; memset( w, 0, sizeof( w ) ); w[0] = 0xFF; reply( c, 0x74, 0, tid, uid, pid, mid, w, 6, (uint8_t *)0, 0 ); break; }
         case 0x2B:     /* ECHO: the reply is longer than the request */
             if ( bc > SRV_BUF - 41 ) bc = SRV_BUF - 41;
-            reply( c, 0x2B, 0, tid, uid, pid, mid, (unsigned char *)words, 2, (unsigned char *)bytes, bc );
+            reply( c, 0x2B, 0, tid, uid, pid, mid, (uint8_t *)words, 2, (uint8_t *)bytes, bc );
             break;
         case 0x2D: if ( wc >= 15 ) do_open( c, words, bytes, bc, tid, uid, pid, mid ); else reply0( c, cmd, 0xC0000002UL, tid, uid, pid, mid ); break;
         case 0x2E: if ( wc >= 10 ) do_read( c, words, tid, uid, pid, mid ); else reply0( c, cmd, 0xC0000002UL, tid, uid, pid, mid ); break;
@@ -1080,8 +1080,8 @@ void smbsrv_serve( smb_send_fn send, smb_recv_fn recv, void *ioctx,
             reply0( c, cmd, 0, tid, uid, pid, mid );
             break;
         case 0x24: {   /* LOCKING_ANDX: one client, so no lock can conflict */
-            unsigned char w[4]; memset( w, 0, sizeof( w ) ); w[0] = 0xFF;
-            reply( c, 0x24, 0, tid, uid, pid, mid, w, 4, (unsigned char *)0, 0 );
+            uint8_t w[4]; memset( w, 0, sizeof( w ) ); w[0] = 0xFF;
+            reply( c, 0x24, 0, tid, uid, pid, mid, w, 4, (uint8_t *)0, 0 );
             break; }
         case 0x32: do_trans2( c, words, wc, smb, tid, uid, pid, mid ); break;
         default:   reply0( c, cmd, 0xC0000002UL, tid, uid, pid, mid ); break;

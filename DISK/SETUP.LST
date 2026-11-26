@@ -10,7 +10,8 @@
 ;   ROOT    the root of drive C: (only what the boot code and the kernel
 ;           look for there)
 ;   DOS     the PM-DOS directory, C:\DOS unless the user picks another
-;   SETUP   Setup's own, never installed (the boot code it writes)
+;   SETUP   Setup's own, never installed (the boot code it writes, and
+;           SETUP.MSG, the text it shows while it copies)
 ;   S       read-only, hidden and system
 ;   F       goes on a startup floppy (F7 at Setup's first screen)
 ;   R       a DOS file that also goes in the root: CMD.EXE, which the
@@ -45,6 +46,7 @@ BIN\BOOT16.BIN      SETUP   1
 BIN\BOOT32.BIN      SETUP   1
 BIN\BOOT2.BIN       SETUP   1
 BIN\MBRBOOT.BIN     SETUP   1
+DISK\SETUP.MSG      SETUP   1
 BIN\RMDOS.SYS       ROOT    S
 BIN\COMMAND.COM     DOS     F
 BIN\RMCD.SYS        DOS
@@ -100,6 +102,7 @@ README.TXT          DOS
 BIN\LRGDISK.386     DOS
 BIN\LRGSTAT.EXE     DOS
 BIN\PMDOS.386       DOS
+BIN\UNDELETE.386    DOS
 BIN\TCPIP.SYS       DOS
 BIN\NETBEUI.SYS     DOS
 BIN\SMBFS.SYS       DOS

@@ -43,7 +43,7 @@
  * every archiver's documentation quietly suggests sticking to ASCII.
  */
 #ifdef AC_OEM_PASSWORDS
-static const UInt16 g_highMap[128] = {
+static const uint16_t g_highMap[128] = {
 /* 80 */ 0x00C7,0x00FC,0x00E9,0x00E2,0x00E4,0x00E0,0x00E5,0x00E7,
 /* 88 */ 0x00EA,0x00EB,0x00E8,0x00EF,0x00EE,0x00EC,0x00C4,0x00C5,
 /* 90 */ 0x00C9,0x00E6,0x00C6,0x00F4,0x00F6,0x00F2,0x00FB,0x00F9,
@@ -63,27 +63,27 @@ static const UInt16 g_highMap[128] = {
 };
 #endif
 
-int PwToUtf16( const char *pw, Byte *out, int outMax )
+int PwToUtf16( const char *pw, uint8_t *out, int outMax )
 {
-    const Byte *p = (const Byte *)pw;
-    int         n = 0;
+    const uint8_t *p = (const uint8_t *)pw;
+    int            n = 0;
 
     while ( *p && n < outMax )
     {
-        UInt16 u;
+        uint16_t u;
 
         if ( *p < 0x80 )
-            u = (UInt16)*p;
+            u = (uint16_t)*p;
         else
 #ifdef AC_OEM_PASSWORDS
             u = g_highMap[ *p - 0x80 ];
 #else
-            u = (UInt16)*p;         /* Latin-1 / CP1252: the byte IS the code
+            u = (uint16_t)*p;       /* Latin-1 / CP1252: the byte IS the code
                                      * point across the range that matters   */
 #endif
 
-        out[ n * 2 + 0 ] = (Byte)( u & 0xFF );
-        out[ n * 2 + 1 ] = (Byte)( u >> 8 );
+        out[ n * 2 + 0 ] = (uint8_t)( u & 0xFF );
+        out[ n * 2 + 1 ] = (uint8_t)( u >> 8 );
         n++;
         p++;
     }
@@ -102,19 +102,19 @@ int PwToUtf16( const char *pw, Byte *out, int outMax )
  * real estate worth caring about.
  *===========================================================================*/
 
-static void ZcUpdate( ZipCryptState *zc, Byte c )
+static void ZcUpdate( ZipCryptState *zc, uint8_t c )
 {
-    Byte t;
+    uint8_t t;
 
     zc->k[0] = Crc32Update( zc->k[0], &c, 1 );
     zc->k[1] = ( zc->k[1] + ( zc->k[0] & 0xFF ) ) * 134775813UL + 1;
-    t        = (Byte)( zc->k[1] >> 24 );
+    t        = (uint8_t)( zc->k[1] >> 24 );
     zc->k[2] = Crc32Update( zc->k[2], &t, 1 );
 }
 
 void ZipCryptInit( ZipCryptState *zc, const char *pw )
 {
-    const Byte *p = (const Byte *)pw;
+    const uint8_t *p = (const uint8_t *)pw;
 
     zc->k[0] = 0x12345678UL;
     zc->k[1] = 0x23456789UL;
@@ -125,30 +125,30 @@ void ZipCryptInit( ZipCryptState *zc, const char *pw )
 }
 
 /* The key-stream byte, from the low 16 bits of k[2]. */
-static Byte ZcByte( ZipCryptState *zc )
+static uint8_t ZcByte( ZipCryptState *zc )
 {
-    UInt16 temp = (UInt16)( ( zc->k[2] | 2 ) & 0xFFFF );
+    uint16_t temp = (uint16_t)( ( zc->k[2] | 2 ) & 0xFFFF );
 
-    return (Byte)( ( ( UInt32)temp * ( temp ^ 1 ) ) >> 8 );
+    return (uint8_t)( ( ( uint32_t)temp * ( temp ^ 1 ) ) >> 8 );
 }
 
-void ZipCryptDecrypt( ZipCryptState *zc, Byte *buf, UInt32 len )
+void ZipCryptDecrypt( ZipCryptState *zc, uint8_t *buf, uint32_t len )
 {
     while ( len-- )
     {
         /* Decrypt, THEN stir the plaintext back in - the state advances on
          * what the file said, not on what was on the disk. */
-        *buf = (Byte)( *buf ^ ZcByte( zc ) );
+        *buf = (uint8_t)( *buf ^ ZcByte( zc ) );
         ZcUpdate( zc, *buf );
         buf++;
     }
 }
 
-int ZipCryptCheck( const Byte hdr12[12], UInt32 crc, UInt16 modTime,
+int ZipCryptCheck( const uint8_t hdr12[12], uint32_t crc, uint16_t modTime,
                    int hasDesc )
 {
-    Byte want = hasDesc ? (Byte)( modTime >> 8 )
-                        : (Byte)( crc >> 24 );
+    uint8_t want = hasDesc ? (uint8_t)( modTime >> 8 )
+                        : (uint8_t)( crc >> 24 );
 
     return hdr12[11] == want;
 }
@@ -167,7 +167,7 @@ int ZipCryptCheck( const Byte hdr12[12], UInt32 crc, UInt16 modTime,
  * an archive nobody has.  If one ever turns up, the honest fix is to export
  * the schedule from AES.C, not to duplicate the table.
  */
-static int RkExpand( Byte *rk, int *nr, const Byte *key, int keyBytes )
+static int RkExpand( uint8_t *rk, int *nr, const uint8_t *key, int keyBytes )
 {
     if ( keyBytes == 16 )
     {
@@ -184,7 +184,7 @@ static int RkExpand( Byte *rk, int *nr, const Byte *key, int keyBytes )
     return SZ_ERR_UNSUPPORTED;
 }
 
-int AesCtrInit( AesCtrState *s, const Byte *key, int keyBytes )
+int AesCtrInit( AesCtrState *s, const uint8_t *key, int keyBytes )
 {
     int rc = RkExpand( s->rk, &s->nr, key, keyBytes );
 
@@ -198,7 +198,7 @@ int AesCtrInit( AesCtrState *s, const Byte *key, int keyBytes )
     return SZ_OK;
 }
 
-void AesCtrXor( AesCtrState *s, Byte *buf, UInt32 len )
+void AesCtrXor( AesCtrState *s, uint8_t *buf, uint32_t len )
 {
     while ( len-- )
     {
@@ -228,8 +228,8 @@ void AesCtrXor( AesCtrState *s, Byte *buf, UInt32 len )
  * 7z folder can be larger than memory, so we need the streaming form.
  *===========================================================================*/
 
-int AesCbcInit( AesCbcState *s, const Byte *key, int keyBytes,
-                const Byte iv[16] )
+int AesCbcInit( AesCbcState *s, const uint8_t *key, int keyBytes,
+                const uint8_t iv[16] )
 {
     int rc = RkExpand( s->rk, &s->nr, key, keyBytes );
 
@@ -240,10 +240,10 @@ int AesCbcInit( AesCbcState *s, const Byte *key, int keyBytes,
     return SZ_OK;
 }
 
-void AesCbcDecrypt( AesCbcState *s, Byte *buf, UInt32 len )
+void AesCbcDecrypt( AesCbcState *s, uint8_t *buf, uint32_t len )
 {
-    Byte   prev[16];
-    UInt32 off;
+    uint8_t  prev[16];
+    unsigned off;
 
     for ( off = 0; off + 16 <= len; off += 16 )
     {
@@ -268,10 +268,10 @@ void AesCbcDecrypt( AesCbcState *s, Byte *buf, UInt32 len )
  * the case out would make this subtly not-HMAC and someone would reuse it.
  *===========================================================================*/
 
-void HmacSha1Init( HmacSha1Ctx *h, const Byte *key, int keyLen )
+void HmacSha1Init( HmacSha1Ctx *h, const uint8_t *key, int keyLen )
 {
-    Byte k[64], ipad[64];
-    int  i;
+    uint8_t k[64], ipad[64];
+    int     i;
 
     memset( k, 0, 64 );
     if ( keyLen > 64 )
@@ -281,8 +281,8 @@ void HmacSha1Init( HmacSha1Ctx *h, const Byte *key, int keyLen )
 
     for ( i = 0; i < 64; i++ )
     {
-        ipad[i]    = (Byte)( k[i] ^ 0x36 );
-        h->opad[i] = (Byte)( k[i] ^ 0x5C );
+        ipad[i]    = (uint8_t)( k[i] ^ 0x36 );
+        h->opad[i] = (uint8_t)( k[i] ^ 0x5C );
     }
 
     sha1_init( &h->ctx );
@@ -294,9 +294,9 @@ void HmacSha1Update( HmacSha1Ctx *h, const void *data, unsigned len )
     sha1_update( &h->ctx, data, len );
 }
 
-void HmacSha1Final( HmacSha1Ctx *h, Byte out[20] )
+void HmacSha1Final( HmacSha1Ctx *h, uint8_t out[20] )
 {
-    Byte     inner[20];
+    uint8_t  inner[20];
     SHA1_CTX o;
 
     sha1_final( &h->ctx, inner );
@@ -312,14 +312,14 @@ void HmacSha1Final( HmacSha1Ctx *h, Byte out[20] )
 
 #define AC_MAX_SALT  64         /* the formats use 8..16; 64 is headroom     */
 
-static void Pbkdf2Core( int sha256, const Byte *pw, int pwLen,
-                        const Byte *salt, int saltLen,
-                        UInt32 iter, Byte *out, int outLen )
+static void Pbkdf2Core( int sha256, const uint8_t *pw, int pwLen,
+                        const uint8_t *salt, int saltLen,
+                        unsigned iter, uint8_t *out, int outLen )
 {
-    Byte   sb[ AC_MAX_SALT + 4 ];
-    Byte   U[32], Un[32], T[32];
-    int    hLen = sha256 ? 32 : 20;
-    UInt32 blk  = 1;
+    uint8_t  sb[ AC_MAX_SALT + 4 ];
+    uint8_t  U[32], Un[32], T[32];
+    int      hLen = sha256 ? 32 : 20;
+    uint32_t blk  = 1;
 
     if ( saltLen > AC_MAX_SALT )
         saltLen = AC_MAX_SALT;
@@ -327,16 +327,16 @@ static void Pbkdf2Core( int sha256, const Byte *pw, int pwLen,
 
     while ( outLen > 0 )
     {
-        UInt32 j;
-        int    i, n;
+        unsigned j;
+        int      i, n;
 
         /* INT(blk) is big-endian, even though everything else in these
          * formats is little-endian.  RFC 2898 says network order and the
          * archivers followed it. */
-        sb[ saltLen + 0 ] = (Byte)( blk >> 24 );
-        sb[ saltLen + 1 ] = (Byte)( blk >> 16 );
-        sb[ saltLen + 2 ] = (Byte)( blk >> 8  );
-        sb[ saltLen + 3 ] = (Byte)( blk       );
+        sb[ saltLen + 0 ] = (uint8_t)( blk >> 24 );
+        sb[ saltLen + 1 ] = (uint8_t)( blk >> 16 );
+        sb[ saltLen + 2 ] = (uint8_t)( blk >> 8  );
+        sb[ saltLen + 3 ] = (uint8_t)( blk       );
 
         if ( sha256 )
             hmac_sha256( pw, pwLen, sb, saltLen + 4, U );
@@ -367,14 +367,14 @@ static void Pbkdf2Core( int sha256, const Byte *pw, int pwLen,
     }
 }
 
-void Pbkdf2Sha1( const Byte *pw, int pwLen, const Byte *salt, int saltLen,
-                 UInt32 iter, Byte *out, int outLen )
+void Pbkdf2Sha1( const uint8_t *pw, int pwLen, const uint8_t *salt, int saltLen,
+                 unsigned iter, uint8_t *out, int outLen )
 {
     Pbkdf2Core( 0, pw, pwLen, salt, saltLen, iter, out, outLen );
 }
 
-void Pbkdf2Sha256( const Byte *pw, int pwLen, const Byte *salt, int saltLen,
-                   UInt32 iter, Byte *out, int outLen )
+void Pbkdf2Sha256( const uint8_t *pw, int pwLen, const uint8_t *salt, int saltLen,
+                   unsigned iter, uint8_t *out, int outLen )
 {
     Pbkdf2Core( 1, pw, pwLen, salt, saltLen, iter, out, outLen );
 }
@@ -394,12 +394,12 @@ int ZipAesSaltLen( int strength )
     return 0;
 }
 
-int ZipAesDeriveKeys( const char *pw, const Byte *salt, int strength,
-                      Byte *cipherKey, Byte *macKey, Byte pwVerify[2],
+int ZipAesDeriveKeys( const char *pw, const uint8_t *salt, int strength,
+                      uint8_t *cipherKey, uint8_t *macKey, uint8_t pwVerify[2],
                       int *keyBytes )
 {
-    Byte material[ 32 + 32 + 2 ];
-    int  kb, total;
+    uint8_t material[ 32 + 32 + 2 ];
+    int     kb, total;
 
     if ( strength == 1 )
         kb = 16;
@@ -412,7 +412,7 @@ int ZipAesDeriveKeys( const char *pw, const Byte *salt, int strength,
 
     /* Zip AES hashes the password as raw BYTES, not UTF-16 - the one scheme
      * of the three that does, which is why PwToUtf16 is not called here. */
-    Pbkdf2Sha1( (const Byte *)pw, (int)strlen( pw ),
+    Pbkdf2Sha1( (const uint8_t *)pw, (int)strlen( pw ),
                 salt, ZipAesSaltLen( strength ), 1000, material, total );
 
     memcpy( cipherKey, material,      kb );
@@ -434,10 +434,10 @@ int ZipAesDeriveKeys( const char *pw, const Byte *salt, int strength,
  *===========================================================================*/
 
 void SzAesDeriveKey( const char *pw, int numCyclesPower,
-                     const Byte *salt, int saltLen, Byte key[32] )
+                     const uint8_t *salt, int saltLen, uint8_t key[32] )
 {
-    Byte pwW[ AC_MAX_PW_W ];
-    int  pwLen = PwToUtf16( pw, pwW, AC_MAX_PW ) * 2;
+    uint8_t pwW[ AC_MAX_PW_W ];
+    int     pwLen = PwToUtf16( pw, pwW, AC_MAX_PW ) * 2;
 
     if ( numCyclesPower == 0x3F )
     {
@@ -455,8 +455,8 @@ void SzAesDeriveKey( const char *pw, int numCyclesPower,
 
     {
         SHA256_CTX c;
-        Byte       ctr[8];
-        UInt32     i, rounds;
+        uint8_t    ctr[8];
+        unsigned   i, rounds;
 
         sha256_init( &c );
         memset( ctr, 0, 8 );
@@ -498,28 +498,28 @@ void SzAesDeriveKey( const char *pw, int numCyclesPower,
  * three times as much, and would produce three wrong answers.
  *===========================================================================*/
 
-void Rar5DeriveKeys( const char *pw, const Byte salt[16], int kdfCount,
-                     Byte key[32], Byte hashKey[32], Byte pswCheck[8] )
+void Rar5DeriveKeys( const char *pw, const uint8_t salt[16], int kdfCount,
+                     uint8_t key[32], uint8_t hashKey[32], uint8_t pswCheck[8] )
 {
-    Byte   sb[ 16 + 4 ];
-    Byte   U[32], Un[32], Fn[32];
-    Byte   check[32];
-    UInt32 counts[3];
-    Byte  *outs[3];
-    int    pwLen = (int)strlen( pw );
-    int    i, k;
+    uint8_t  sb[ 16 + 4 ];
+    uint8_t  U[32], Un[32], Fn[32];
+    uint8_t  check[32];
+    unsigned counts[3];
+    uint8_t *outs[3];
+    int      pwLen = (int)strlen( pw );
+    int      i, k;
 
     memcpy( sb, salt, 16 );
     sb[16] = 0; sb[17] = 0; sb[18] = 0; sb[19] = 1;   /* INT(1), big-endian */
 
-    hmac_sha256( (const Byte *)pw, pwLen, sb, 20, U );
+    hmac_sha256( (const uint8_t *)pw, pwLen, sb, 20, U );
     memcpy( Fn, U, 32 );                    /* the chain after one iteration */
 
     /* The first leg is 2^kdfCount MINUS ONE more, because the iteration above
      * already counts as the first.  kdfCount is a log: WinRAR writes 15 by
      * default, so this is 32768 rounds and not 15. */
     {
-        UInt32 total = ( kdfCount >= 24 ) ? ( 1UL << 24 ) : ( 1UL << kdfCount );
+        unsigned total = ( kdfCount >= 24 ) ? ( 1UL << 24 ) : ( 1UL << kdfCount );
         counts[0] = ( total > 0 ) ? total - 1 : 0;
     }
     counts[1] = 16;
@@ -530,11 +530,11 @@ void Rar5DeriveKeys( const char *pw, const Byte salt[16], int kdfCount,
 
     for ( i = 0; i < 3; i++ )
     {
-        UInt32 j;
+        unsigned j;
 
         for ( j = 0; j < counts[i]; j++ )
         {
-            hmac_sha256( (const Byte *)pw, pwLen, U, 32, Un );
+            hmac_sha256( (const uint8_t *)pw, pwLen, U, 32, Un );
             memcpy( U, Un, 32 );
             for ( k = 0; k < 32; k++ )
                 Fn[k] ^= U[k];
@@ -548,26 +548,26 @@ void Rar5DeriveKeys( const char *pw, const Byte salt[16], int kdfCount,
         pswCheck[ i & 7 ] ^= check[i];
 }
 
-UInt32 Rar5TweakCrc( UInt32 crc, const Byte hashKey[32] )
+uint32_t Rar5TweakCrc( uint32_t crc, const uint8_t hashKey[32] )
 {
-    Byte   raw[4], digest[32];
-    UInt32 out = 0;
-    int    i;
+    uint8_t  raw[4], digest[32];
+    uint32_t out = 0;
+    int      i;
 
     /* LITTLE-endian, like the rest of RAR5 - unrar spells this RawPut4.  It
      * was written big-endian here first, on the reasoning that a value being
      * fed to a hash is usually in network order; the result was a transform
      * that was wrong in a way nothing else could reveal, because the decrypted
      * DATA was already perfect and only the checksum comparison failed. */
-    raw[0] = (Byte)( crc       );
-    raw[1] = (Byte)( crc >> 8  );
-    raw[2] = (Byte)( crc >> 16 );
-    raw[3] = (Byte)( crc >> 24 );
+    raw[0] = (uint8_t)( crc       );
+    raw[1] = (uint8_t)( crc >> 8  );
+    raw[2] = (uint8_t)( crc >> 16 );
+    raw[3] = (uint8_t)( crc >> 24 );
 
     hmac_sha256( hashKey, 32, raw, 4, digest );
 
     for ( i = 0; i < 32; i++ )
-        out ^= (UInt32)digest[i] << ( ( i & 3 ) * 8 );
+        out ^= (uint32_t)digest[i] << ( ( i & 3 ) * 8 );
 
     return out;
 }
@@ -619,24 +619,24 @@ UInt32 Rar5TweakCrc( UInt32 crc, const Byte hashKey[32] )
 #define R3_MAXPW       127          /* WinRAR's own limit                   */
 
 typedef struct {
-    UInt32 h[5];
-    UInt32 lenLo, lenHi;            /* message length in BITS               */
-    Byte   buf[64];
-    int    nbuf;
+    uint32_t h[5];
+    uint32_t lenLo, lenHi;          /* message length in BITS               */
+    uint8_t  buf[64];
+    int      nbuf;
 } Rar3Sha;
 
 #define R3ROL(x,n)  ( ( (x) << (n) ) | ( (x) >> ( 32 - (n) ) ) )
 
 /* One SHA-1 block.  When 'writeBack' is set, p is the caller's own buffer and
  * the last sixteen schedule words are written back over it - see above. */
-static void Rar3ShaBlock( Rar3Sha *c, Byte *p, int writeBack )
+static void Rar3ShaBlock( Rar3Sha *c, uint8_t *p, int writeBack )
 {
-    UInt32 w[80], a, b, d, e, f, k, t;
-    int    i;
+    uint32_t w[80], a, b, d, e, f, k, t;
+    int      i;
 
     for ( i = 0; i < 16; i++ )
-        w[i] = ( (UInt32)p[i*4] << 24 ) | ( (UInt32)p[i*4+1] << 16 ) |
-               ( (UInt32)p[i*4+2] << 8 ) | (UInt32)p[i*4+3];
+        w[i] = ( (uint32_t)p[i*4] << 24 ) | ( (uint32_t)p[i*4+1] << 16 ) |
+               ( (uint32_t)p[i*4+2] << 8 ) | (uint32_t)p[i*4+3];
 
     for ( i = 16; i < 80; i++ )
     {
@@ -663,11 +663,11 @@ static void Rar3ShaBlock( Rar3Sha *c, Byte *p, int writeBack )
     if ( writeBack )
         for ( i = 0; i < 16; i++ )
         {
-            UInt32 v = w[64+i];
-            p[i*4+0] = (Byte)( v       );
-            p[i*4+1] = (Byte)( v >> 8  );
-            p[i*4+2] = (Byte)( v >> 16 );
-            p[i*4+3] = (Byte)( v >> 24 );
+            uint32_t v = w[64+i];
+            p[i*4+0] = (uint8_t)( v       );
+            p[i*4+1] = (uint8_t)( v >> 8  );
+            p[i*4+2] = (uint8_t)( v >> 16 );
+            p[i*4+3] = (uint8_t)( v >> 24 );
         }
 }
 
@@ -681,13 +681,13 @@ static void Rar3ShaInit( Rar3Sha *c )
 
 /* 'direct' says the caller's buffer is one this hash is allowed to corrupt;
  * it is 0 for the padding inside Rar3ShaFinal, which must not be touched. */
-static void Rar3ShaUpdate( Rar3Sha *c, Byte *data, int len, int direct )
+static void Rar3ShaUpdate( Rar3Sha *c, uint8_t *data, int len, int direct )
 {
     int fill;
 
-    c->lenLo += (UInt32)len << 3;
-    if ( c->lenLo < ( (UInt32)len << 3 ) ) c->lenHi++;
-    c->lenHi += (UInt32)len >> 29;
+    c->lenLo += (uint32_t)len << 3;
+    if ( c->lenLo < ( (uint32_t)len << 3 ) ) c->lenHi++;
+    c->lenHi += (uint32_t)len >> 29;
 
     /* Top the internal buffer up FIRST, even when it is empty.  That single
      * choice is what keeps short passwords on the correct-SHA-1 path. */
@@ -710,11 +710,11 @@ static void Rar3ShaUpdate( Rar3Sha *c, Byte *data, int len, int direct )
     }
 }
 
-static void Rar3ShaFinal( Rar3Sha *c, Byte out[20] )
+static void Rar3ShaFinal( Rar3Sha *c, uint8_t out[20] )
 {
-    Byte   pad[136];
-    int    n, i;
-    UInt32 lo = c->lenLo, hi = c->lenHi;
+    uint8_t  pad[136];
+    int      n, i;
+    uint32_t lo = c->lenLo, hi = c->lenHi;
 
     n = ( c->nbuf < 56 ) ? ( 56 - c->nbuf ) : ( 120 - c->nbuf );
     memset( pad, 0, sizeof( pad ) );
@@ -722,26 +722,26 @@ static void Rar3ShaFinal( Rar3Sha *c, Byte out[20] )
     Rar3ShaUpdate( c, pad, n, 0 );
     c->lenLo = lo; c->lenHi = hi;       /* padding is not message length */
 
-    pad[0] = (Byte)( hi >> 24 ); pad[1] = (Byte)( hi >> 16 );
-    pad[2] = (Byte)( hi >> 8  ); pad[3] = (Byte)( hi       );
-    pad[4] = (Byte)( lo >> 24 ); pad[5] = (Byte)( lo >> 16 );
-    pad[6] = (Byte)( lo >> 8  ); pad[7] = (Byte)( lo       );
+    pad[0] = (uint8_t)( hi >> 24 ); pad[1] = (uint8_t)( hi >> 16 );
+    pad[2] = (uint8_t)( hi >> 8  ); pad[3] = (uint8_t)( hi       );
+    pad[4] = (uint8_t)( lo >> 24 ); pad[5] = (uint8_t)( lo >> 16 );
+    pad[6] = (uint8_t)( lo >> 8  ); pad[7] = (uint8_t)( lo       );
     Rar3ShaUpdate( c, pad, 8, 0 );
 
     for ( i = 0; i < 5; i++ )
     {
-        out[i*4+0] = (Byte)( c->h[i] >> 24 );
-        out[i*4+1] = (Byte)( c->h[i] >> 16 );
-        out[i*4+2] = (Byte)( c->h[i] >> 8  );
-        out[i*4+3] = (Byte)( c->h[i]       );
+        out[i*4+0] = (uint8_t)( c->h[i] >> 24 );
+        out[i*4+1] = (uint8_t)( c->h[i] >> 16 );
+        out[i*4+2] = (uint8_t)( c->h[i] >> 8  );
+        out[i*4+3] = (uint8_t)( c->h[i]       );
     }
 }
 
-void Rar3DeriveKeys( const char *pw, const Byte salt[8],
-                     Byte key[16], Byte iv[16] )
+void Rar3DeriveKeys( const char *pw, const uint8_t salt[8],
+                     uint8_t key[16], uint8_t iv[16] )
 {
-    Byte    raw[ R3_MAXPW * 2 + 8 ];
-    Byte    digest[20], num[3];
+    uint8_t raw[ R3_MAXPW * 2 + 8 ];
+    uint8_t digest[20], num[3];
     Rar3Sha c, snap;
     int     rawLen, chars, i, j;
 
@@ -755,9 +755,9 @@ void Rar3DeriveKeys( const char *pw, const Byte salt[8],
     {
         Rar3ShaUpdate( &c, raw, rawLen, 1 );
 
-        num[0] = (Byte)( i       );
-        num[1] = (Byte)( i >> 8  );
-        num[2] = (Byte)( i >> 16 );
+        num[0] = (uint8_t)( i       );
+        num[1] = (uint8_t)( i >> 8  );
+        num[2] = (uint8_t)( i >> 16 );
         Rar3ShaUpdate( &c, num, 3, 1 );
 
         if ( ( i % ( R3_ROUNDS / R3_SNAPSHOTS ) ) == 0 )

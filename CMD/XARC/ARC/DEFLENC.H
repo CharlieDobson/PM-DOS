@@ -24,7 +24,7 @@
 
 /* Where compressed bytes go.  Return 0 to stop: the encoder then fails every
  * later call with SZ_ERR_WRITE. */
-typedef int (*DeflWrite)( void *user, const Byte *data, UInt32 len );
+typedef int (*DeflWrite)( void *user, const uint8_t *data, uint32_t len );
 
 typedef struct DeflEnc DeflEnc;
 
@@ -37,17 +37,17 @@ void DeflReset( DeflEnc *d, DeflWrite write, void *user );
 
 /* Compress 'len' more bytes.  SZ_OK, or SZ_ERR_WRITE when the callback
  * refused. */
-int  DeflFeed( DeflEnc *d, const Byte *data, UInt32 len );
+int  DeflFeed( DeflEnc *d, const uint8_t *data, uint32_t len );
 
 /* End the stream: everything still pending goes out, in a final block. */
 int  DeflFinish( DeflEnc *d );
 
 /* Bytes written through the callback since DeflReset. */
-UInt32 DeflOutBytes( DeflEnc *d );
+uint32_t DeflOutBytes( DeflEnc *d );
 
 void DeflFree( DeflEnc *d );
 
 /* What DeflCreate allocates, for the memory estimate. */
-UInt32 DeflMemNeeded( void );
+uint32_t DeflMemNeeded( void );
 
 #endif /* DEFLENC_H */

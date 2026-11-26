@@ -303,7 +303,7 @@ static int no_drive( const char *fmt, int drive )
 static int run_drive( int drive )
 {
     char date[16], time[16];
-    u16 dos_date, dos_time;
+    uint16_t dos_date, dos_time;
     int why;
 
     check_reset();
@@ -358,7 +358,7 @@ static int run_drive( int drive )
     return why;
 }
 
-static int summary_wanted( int setting, u32 found )
+static int summary_wanted( int setting, unsigned int found )
 {
     if ( opt.nosummary ) {
         return 0;
@@ -385,7 +385,7 @@ static void finish_log( void )
 
 static void check_drives( void )
 {
-    u32 found = 0, fixed = 0;
+    unsigned int found = 0, fixed = 0;
     int index, why = 0, left_logical = 0, left_surface = 0, stopped = 0, done = 0, more;
     char where[24];
 

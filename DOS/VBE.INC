@@ -61,6 +61,9 @@ VGA_GFXWIN      EQU     000A0000h               ; the graphics modes' window
 VGA_DACRD       EQU     3C7h                    ; the entry to read from
 VGA_DACWR       EQU     3C8h                    ; ...and to write to
 VGA_DACDATA     EQU     3C9h                    ; red, green, blue in turn
+VGA_GCIDX       EQU     3CEh                    ; the Graphics Controller's
+VGA_GCDATA      EQU     3CFh                    ; index and data ports
+GC_MISC         EQU     6                       ; bit 0: a graphics mode
 
 ;=====================================================================
 ; fF1_vbe - 21h/F1h AL=1Fh, the function in bits 16-23 of EAX.
@@ -415,7 +418,8 @@ vbb_ask:
 ;=====================================================================
 ; vbe_exit - EAX = an EXEC depth.  If the program there set a mode and
 ;            has not put it back, put back the one it found.  For 4Ch,
-;            a fault and VBF_RESTORE.  Everything preserved.
+;            a fault and VBF_RESTORE.  CF if a mode was set (dos_fault
+;            prints its report again then); everything else preserved.
 ;
 ; The one it found was either a parent's - which is set again, frame
 ; buffer and all, so that the parent's SEL_VBE still describes what it
@@ -437,8 +441,12 @@ vbe_exit:
         call    vbe_apply
 vex_set:
         mov     word ptr [vbe_cur],bx
+        popad
+        stc
+        ret
 vex_out:
         popad
+        clc
         ret
 
 ;=====================================================================
@@ -499,27 +507,9 @@ vap_window:
         ; THE TEXT MODE, as it was found, and the font that gave it more
         ; than 25 lines: the 8x8 for 43 or 50, the 8x14 for 28.
 vap_text:
-        movzx   eax,byte ptr [vbe_txtmode]
-        call    vbe_frame
-        mov     al,10h
-        call    dword ptr ds:[IOS_REALINT]
         mov     al,byte ptr [vbe_txtmode]
-        cmp     al,3
-        jbe     vap_rows
-        cmp     al,7
-        jne     vap_none                        ; a graphics mode, found
-vap_rows:
-        mov     al,byte ptr [vbe_txtrows]
-        cmp     al,25
-        jbe     vap_none
-        mov     eax,1112h                       ; BL = 0: font block 0
-        cmp     byte ptr [vbe_txtrows],40
-        jae     vap_font
-        mov     eax,1111h
-vap_font:
-        call    vbe_frame
-        mov     al,10h
-        call    dword ptr ds:[IOS_REALINT]
+        mov     ah,byte ptr [vbe_txtrows]
+        call    vbe_textset
 vap_none:
         call    vbe_empty
         xor     eax,eax
@@ -656,6 +646,101 @@ vbe_savetext:
         inc     al
         mov     byte ptr [vbe_txtrows],al
         pop     eax
+        ret
+
+;---------------------------------------------------------------------
+; vbe_textset - AL = a BIOS mode, AH = the rows the screen had in it.
+;               Set the mode, and for a text mode of more than 25 rows
+;               the font that gave them: the 8x8 for 40 or more (43 or
+;               50), the 8x14 for fewer (28).  Everything preserved.
+;
+; For VBF_RESTORE and a native program's exit (vap_text), and for a
+; DOS box the kernel is ending (vdm_scrtext).  AL may be a graphics
+; mode for vap_text - the screen the first VBF_SET found - and then
+; there is no font to load.
+;---------------------------------------------------------------------
+vbe_textset:
+        pushad
+        mov     bl,ah
+        movzx   eax,al                          ; AH = 00h: set the mode
+        push    eax
+        call    vbe_frame
+        mov     al,10h
+        call    dword ptr ds:[IOS_REALINT]
+        pop     eax
+        cmp     al,3
+        jbe     vts_rows
+        cmp     al,7
+        jne     vts_out                         ; a graphics mode
+vts_rows:
+        cmp     bl,25
+        jbe     vts_out
+        mov     eax,1112h                       ; BL = 0: font block 0
+        cmp     bl,40
+        jae     vts_font
+        mov     eax,1111h
+vts_font:
+        call    vbe_frame
+        mov     al,10h
+        call    dword ptr ds:[IOS_REALINT]
+vts_out:
+        popad
+        ret
+
+;---------------------------------------------------------------------
+; vbe_isgfx - CF if the screen is showing a graphics mode.  Everything
+;             preserved.
+;
+; The BIOS's mode byte says so, or a VGA does.  The byte is not the
+; whole answer: a program can set the VGA's registers itself and never
+; tell the BIOS, and a VBE BIOS may not write the byte for a mode of
+; its own.  So on a VGA - INT 10h AX=1A00h names one as the active
+; display - the Graphics Controller is asked as well: bit 0 of its
+; Miscellaneous register is set in every graphics mode and clear in
+; every text mode.  An EGA's cannot be read, and a CGA or a mono card
+; has nothing at the port, so there the byte is the only answer.  The
+; index the program left in 3CEh is put back.
+;---------------------------------------------------------------------
+vbe_isgfx:
+        pushad
+        mov     al,byte ptr ds:[BDA_VMODE]
+        and     al,7Fh
+        cmp     al,3
+        jbe     vig_vga
+        cmp     al,7
+        jne     vig_gfx
+vig_vga:
+        mov     eax,1A00h
+        call    vbe_frame
+        mov     al,10h
+        call    dword ptr ds:[IOS_REALINT]
+        cmp     byte ptr ds:[RMR_EAX],1Ah
+        jne     vig_text                        ; not a VGA BIOS
+        mov     al,byte ptr ds:[RMR_EBX]        ; the active display: 7 and
+        cmp     al,7                            ; 8 are a VGA with a mono
+        jb      vig_text                        ; and a color monitor
+        cmp     al,8
+        ja      vig_text
+        mov     edx,VGA_GCIDX
+        in      al,dx
+        mov     bl,al                           ; the program's index
+        mov     al,GC_MISC
+        out     dx,al
+        mov     edx,VGA_GCDATA
+        in      al,dx
+        mov     ah,al
+        mov     edx,VGA_GCIDX
+        mov     al,bl
+        out     dx,al
+        test    ah,1
+        jz      vig_text
+vig_gfx:
+        popad
+        stc
+        ret
+vig_text:
+        popad
+        clc
         ret
 
 ;---------------------------------------------------------------------

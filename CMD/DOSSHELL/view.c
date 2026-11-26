@@ -15,19 +15,21 @@
 
 #define CACHE_SIZE      (16u * 1024u)
 
-static u32  handle;
-static u32  size;
-static u8  *cache;
-static u32  cache_pos, cache_len;
-static u32 *line_at;            /* where each line of the text view starts */
-static u32  nlines, line_cap;
-static int  hex;
-static u32  top;                /* the first line showing */
+static uint32_t     handle;
+static uint32_t     size;
+static uint8_t     *cache;
+static uint32_t     cache_pos;
+static unsigned int cache_len;
+static uint32_t    *line_at;       /* where each line of the text view starts */
+static unsigned int nlines, line_cap;
+static int          hex;
+static unsigned int top;           /* the first line showing */
 static const char *shown_path;
 
-static int byte_at( u32 pos )
+static int byte_at( uint32_t pos )
 {
-    u32 start, done;
+    uint32_t start;
+    unsigned int done;
 
     if ( pos >= size ) {
         return -1;
@@ -47,17 +49,17 @@ static int byte_at( u32 pos )
     return cache[pos - cache_pos];
 }
 
-static int line_note( u32 pos )
+static int line_note( uint32_t pos )
 {
-    u32 *bigger;
+    uint32_t *bigger;
 
     if ( nlines == line_cap ) {
-        bigger = (u32 *)try_alloc( (line_cap + 4096) * sizeof( u32 ) );
+        bigger = (uint32_t *)try_alloc( (line_cap + 4096) * sizeof( uint32_t ) );
         if ( bigger == NULL ) {
             return 0;
         }
         if ( nlines ) {
-            mem_cpy( bigger, line_at, nlines * sizeof( u32 ) );
+            mem_cpy( bigger, line_at, nlines * sizeof( uint32_t ) );
         }
         xfree( line_at );
         line_at = bigger;
@@ -70,7 +72,7 @@ static int line_note( u32 pos )
 /* where the lines start, for a screen "width" columns wide */
 static void index_lines( int width )
 {
-    u32 pos;
+    uint32_t pos;
     int col = 0, ch;
 
     nlines = 0;
@@ -105,14 +107,14 @@ static void index_lines( int width )
     }
 }
 
-static u32 total_lines( void )
+static unsigned int total_lines( void )
 {
     return hex ? (size + 15) / 16 : nlines;
 }
 
-static void draw_text_line( int row, u32 line, int width )
+static void draw_text_line( int row, unsigned int line, int width )
 {
-    u32 pos = line_at[line], end = line + 1 < nlines ? line_at[line + 1] : size;
+    uint32_t pos = line_at[line], end = line + 1 < nlines ? line_at[line + 1] : size;
     int col = 0, ch;
 
     for ( ; pos < end && col < width; pos++ ) {
@@ -129,10 +131,10 @@ static void draw_text_line( int row, u32 line, int width )
     }
 }
 
-static void draw_hex_line( int row, u32 line )
+static void draw_hex_line( int row, unsigned int line )
 {
     static const char digits[] = "0123456789ABCDEF";
-    u32 pos = line * 16;
+    uint32_t pos = line * 16;
     int index, ch, col;
     char addr[9];
 
@@ -157,7 +159,7 @@ static void draw( void )
 {
     int rows = scr_rows - 3, row, width = scr_cols - 2;
     char title[PATH_MAX + 32];
-    u32 total = total_lines();
+    unsigned int total = total_lines();
 
     str_cpy( title, "View File Contents - " );
     str_catn( title, shown_path, sizeof( title ) );
@@ -170,9 +172,9 @@ static void draw( void )
     }
     for ( row = 0; row < rows && top + row < total; row++ ) {
         if ( hex ) {
-            draw_hex_line( 2 + row, top + (u32)row );
+            draw_hex_line( 2 + row, top + (unsigned int)row );
         } else {
-            draw_text_line( 2 + row, top + (u32)row, width );
+            draw_text_line( 2 + row, top + (unsigned int)row, width );
         }
     }
     if ( size == 0 ) {
@@ -195,7 +197,7 @@ static void scroll_to( long line )
     if ( line < 0 ) {
         line = 0;
     }
-    top = (u32)line;
+    top = (unsigned int)line;
 }
 
 void view_file( const char *path )
@@ -211,7 +213,7 @@ void view_file( const char *path )
         return;
     }
     if ( cache == NULL ) {
-        cache = (u8 *)try_alloc( CACHE_SIZE );
+        cache = (uint8_t *)try_alloc( CACHE_SIZE );
     }
     if ( cache == NULL ) {
         sys_close( handle );
@@ -254,13 +256,14 @@ void view_file( const char *path )
         case K_F9:
             /* the same place in the file, in the other view */
             if ( hex ) {
-                u32 pos = top * 16, line;
+                uint32_t pos = top * 16;
+                unsigned int line;
                 for ( line = 0; line + 1 < nlines && line_at[line + 1] <= pos; line++ ) {
                 }
                 hex = 0;
                 scroll_to( (long)line );
             } else {
-                u32 pos = nlines ? line_at[top < nlines ? top : nlines - 1] : 0;
+                uint32_t pos = nlines ? line_at[top < nlines ? top : nlines - 1] : 0;
                 hex = 1;
                 scroll_to( (long)(pos / 16) );
             }

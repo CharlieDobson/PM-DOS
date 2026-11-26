@@ -132,27 +132,27 @@
 #define TXBUF           8               /* frames in flight */
 #define BUFSZ           1536
 
-typedef struct { u32 addr_lo, addr_hi, word0, word1; } VDESC;
+typedef struct { uint32_t addr_lo, addr_hi, word0, word1; } VDESC;
 
-static u32  pt, vd;                     /* the BARs, mapped */
-static u8  *block;                      /* the rings, the queues, DriverShared */
+static uint32_t pt, vd;                 /* the BARs, mapped */
+static uint8_t *block;                  /* the rings, the queues, DriverShared */
 static volatile VDESC *tx_ring, *tx_comp, *rx_ring, *rx_comp;
-static volatile u8 *qdesc;
-static volatile u8 *shared;
-static u8  *rxbuf[NDESC];
-static u8  *txbuf[TXBUF];
-static u32  tx_prod, tx_cons;           /* counted, not wrapped */
-static u32  rx_prod, rx_cons;
-static u8   restart;                    /* a queue error: set up again */
+static volatile uint8_t *qdesc;
+static volatile uint8_t *shared;
+static uint8_t *rxbuf[NDESC];
+static uint8_t *txbuf[TXBUF];
+static uint32_t tx_prod, tx_cons;       /* counted, not wrapped */
+static uint32_t rx_prod, rx_cons;
+static unsigned char restart;           /* a queue error: set up again */
 
 static const PCI_ID vmx_ids[] = {
     { 0x15AD, 0x07B0 },                 /* VMware vmxnet3 */
     { 0, 0 }
 };
 
-static void w32( volatile u8 *at, u32 value ) { *(volatile u32 *)at = value; }
+static void w32( volatile uint8_t *at, uint32_t value ) { *(volatile uint32_t *)at = value; }
 
-static u32 command( u32 cmd )
+static uint32_t command( uint32_t cmd )
 {
     MMIO32( vd, VD_CMD ) = cmd;
     return MMIO32( vd, VD_CMD );
@@ -160,22 +160,22 @@ static u32 command( u32 cmd )
 
 /* the interrupt cause: nonzero if the line was the card's, which the
    read drops */
-static u32 icr_take( void ) { return MMIO32( vd, VD_ICR ); }
+static uint32_t icr_take( void ) { return MMIO32( vd, VD_ICR ); }
 
 /* the generation a ring's Nth entry carries: 1 the first time round */
-static u32 gen_of( u32 count, u32 bit ) { return ( count & NDESC ) ? 0 : bit; }
+static uint32_t gen_of( uint32_t count, uint32_t bit ) { return ( count & NDESC ) ? 0 : bit; }
 
 int card_find( void )
 {
     const PCI_ID *which;
     int isio;
-    u32 base, low, high, at;
+    uint32_t base, low, high, at;
     int i;
 
     net_strcpy( net_name, "VMware vmxnet3" );
     if ( !net_pci_find( vmx_ids, &which ) ) return 1;
     net_pci_enable( net_pciaddr );
-    net_irq = (u8)net_pci_irqline( net_pciaddr );
+    net_irq = (uint8_t)net_pci_irqline( net_pciaddr );
     net_bus = NICB_PCI;
     net_flags = NICF_WORD;              /* as VIRTIO.SYS says it: no ISA width applies */
     net_port = 0;
@@ -202,18 +202,18 @@ int card_find( void )
 
     low = command( CMD_GET_MACL );
     high = command( CMD_GET_MACH );
-    for ( i = 0; i < 4; i++ ) net_mac[i] = (u8)( low >> ( i * 8 ) );
-    net_mac[4] = (u8)high;
-    net_mac[5] = (u8)( high >> 8 );
+    for ( i = 0; i < 4; i++ ) net_mac[i] = (uint8_t)( low >> ( i * 8 ) );
+    net_mac[4] = (uint8_t)high;
+    net_mac[5] = (uint8_t)( high >> 8 );
     if ( !net_mac_ok( net_mac ) ) return 1;
 
     if ( block == 0 ) {
         /* four rings of 512 bytes on 512-byte boundaries, the queue
            descriptors (on 128) and DriverShared, then the buffers */
-        at = (u32)net_alloc( 4 * 512 + QD_LEN + DS_LEN + 512 + ( NDESC + TXBUF ) * BUFSZ );
+        at = (uint32_t)net_alloc( 4 * 512 + QD_LEN + DS_LEN + 512 + ( NDESC + TXBUF ) * BUFSZ );
         if ( at == 0 ) return 1;
         at = ( at + 511 ) & ~511L;
-        block = (u8 *)at;
+        block = (uint8_t *)at;
         tx_ring = (volatile VDESC *)( block );
         tx_comp = (volatile VDESC *)( block + 512 );
         rx_ring = (volatile VDESC *)( block + 1024 );
@@ -221,8 +221,8 @@ int card_find( void )
         qdesc = block + 2048;
         shared = block + 2048 + QD_LEN;
         at += 2048 + QD_LEN + DS_LEN;
-        for ( i = 0; i < NDESC; i++ ) { rxbuf[i] = (u8 *)at; at += BUFSZ; }
-        for ( i = 0; i < TXBUF; i++ ) { txbuf[i] = (u8 *)at; at += BUFSZ; }
+        for ( i = 0; i < NDESC; i++ ) { rxbuf[i] = (uint8_t *)at; at += BUFSZ; }
+        for ( i = 0; i < TXBUF; i++ ) { txbuf[i] = (uint8_t *)at; at += BUFSZ; }
     }
     return 0;
 }
@@ -232,12 +232,13 @@ int card_find( void )
 static void rx_fill( void )
 {
     volatile VDESC *desc;
-    u32 index, start = rx_prod;
+    unsigned int index;
+    uint32_t start = rx_prod;
 
     while ( rx_prod - rx_cons < NDESC ) {
         index = rx_prod % NDESC;
         desc = &rx_ring[index];
-        desc->addr_lo = (u32)rxbuf[index];
+        desc->addr_lo = (uint32_t)rxbuf[index];
         desc->addr_hi = 0;
         desc->word1 = 0;
         desc->word0 = gen_of( rx_prod, RXF_GEN ) | BUFSZ;   /* a head buffer */
@@ -248,7 +249,7 @@ static void rx_fill( void )
 
 int card_setup( void )
 {
-    u32 status;
+    uint32_t status;
 
     MMIO32( pt, PT_IMR ) = 1;                   /* masked until the end */
     command( CMD_QUIESCE );
@@ -259,13 +260,13 @@ int card_setup( void )
     tx_prod = tx_cons = rx_prod = rx_cons = 0;
     restart = 0;
 
-    w32( qdesc + QD_TX + TQ_RING_PA, (u32)tx_ring );
-    w32( qdesc + QD_TX + TQ_COMP_PA, (u32)tx_comp );
+    w32( qdesc + QD_TX + TQ_RING_PA, (uint32_t)tx_ring );
+    w32( qdesc + QD_TX + TQ_COMP_PA, (uint32_t)tx_comp );
     w32( qdesc + QD_TX + TQ_RING_LEN, NDESC );
     w32( qdesc + QD_TX + TQ_COMP_LEN, NDESC );
     qdesc[QD_TX + TQ_INTR] = 0;
-    w32( qdesc + QD_RX + RQ_RING0_PA, (u32)rx_ring );
-    w32( qdesc + QD_RX + RQ_COMP_PA, (u32)rx_comp );
+    w32( qdesc + QD_RX + RQ_RING0_PA, (uint32_t)rx_ring );
+    w32( qdesc + QD_RX + RQ_COMP_PA, (uint32_t)rx_comp );
     w32( qdesc + QD_RX + RQ_RING0_LEN, NDESC );
     w32( qdesc + QD_RX + RQ_COMP_LEN, NDESC );
     qdesc[QD_RX + RQ_INTR] = 0;
@@ -275,10 +276,10 @@ int card_setup( void )
     w32( shared + DS_GUEST, 1 );                /* 32 bits */
     w32( shared + DS_REVSPT, 1 );
     w32( shared + DS_UPTSPT, 1 );
-    w32( shared + DS_QDESC_PA, (u32)qdesc );
+    w32( shared + DS_QDESC_PA, (uint32_t)qdesc );
     w32( shared + DS_QDESC_LEN, QD_LEN );
     w32( shared + DS_MTU, 1500 );
-    *(volatile u16 *)( shared + DS_MAXRXSG ) = 1;
+    *(volatile uint16_t *)( shared + DS_MAXRXSG ) = 1;
     shared[DS_NTXQ] = 1;
     shared[DS_NRXQ] = 1;
     shared[DS_AUTOMASK] = 0;
@@ -288,7 +289,7 @@ int card_setup( void )
     w32( shared + DS_RXMODE, RXM_UCAST | RXM_BCAST | RXM_ALLMULTI );
     shared[DS_VLANTAB] = 1;                     /* VLAN 0: untagged frames */
 
-    MMIO32( vd, VD_DSAL ) = (u32)shared;
+    MMIO32( vd, VD_DSAL ) = (uint32_t)shared;
     MMIO32( vd, VD_DSAH ) = 0;
     status = command( CMD_ACTIVATE );
     if ( status != 0 ) {
@@ -323,11 +324,11 @@ static void tx_reclaim( void )
     }
 }
 
-int card_send( const u8 *frame, u32 len )
+int card_send( const uint8_t *frame, unsigned int len )
 {
     volatile VDESC *desc;
-    u8 *buf;
-    u32 n, index;
+    uint8_t *buf;
+    unsigned int n, index;
 
     tx_reclaim();
     for ( n = 0; n < 400000L && tx_prod - tx_cons >= TXBUF; n++ ) tx_reclaim();
@@ -342,7 +343,7 @@ int card_send( const u8 *frame, u32 len )
     }
     index = tx_prod % NDESC;
     desc = &tx_ring[index];
-    desc->addr_lo = (u32)buf;
+    desc->addr_lo = (uint32_t)buf;
     desc->addr_hi = 0;
     desc->word1 = TXF_EOP | TXF_CQ;
     desc->word0 = gen_of( tx_prod, TXF_GEN ) | len;     /* the device may take it now */
@@ -355,9 +356,9 @@ int card_send( const u8 *frame, u32 len )
 static int rx_drain( void )
 {
     volatile VDESC *comp;
-    u32 index, len;
+    unsigned int index, len;
     int got = 0;
-    u8 *slot;
+    uint8_t *slot;
 
     for ( ;; ) {
         comp = &rx_comp[rx_cons % NDESC];
@@ -382,11 +383,11 @@ static int rx_drain( void )
 
 int card_service( void )
 {
-    u32 icr, events;
+    uint32_t icr, events;
     int got;
 
     icr = icr_take();                          /* reading it drops the line */
-    events = *(volatile u32 *)( shared + DS_ECR );
+    events = *(volatile uint32_t *)( shared + DS_ECR );
     if ( events ) {
         MMIO32( vd, VD_ECR ) = events;
         if ( events & ( ECR_RQERR | ECR_TQERR ) ) {

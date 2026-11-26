@@ -37,10 +37,10 @@ static const FBTYPE open_types[] = {
 
 #define NOPEN_TYPES     (sizeof( open_types ) / sizeof( open_types[0] ))
 
-u8 *file_read( const char *path, u32 *len, int quiet )
+uint8_t *file_read( const char *path, uint32_t *len, int quiet )
 {
-    u8 *data = NULL;
-    u32 handle, size = 0, done = 0;
+    uint8_t *data = NULL;
+    uint32_t handle, size = 0, done = 0;
     int rc;
 
     *len = 0;
@@ -51,7 +51,7 @@ u8 *file_read( const char *path, u32 *len, int quiet )
             rc = ERR_NOMEM;
         }
         if ( rc == 0 ) {
-            data = (u8 *)try_alloc( size + 1 );
+            data = (uint8_t *)try_alloc( size + 1 );
             if ( data == NULL ) {
                 rc = ERR_NOMEM;
             } else {
@@ -99,7 +99,7 @@ static void load_failed( const char *path, int id, int rc )
 }
 
 /* what a file had that the document could not keep, said once */
-static void say_lost( u32 lost )
+static void say_lost( uint32_t lost )
 {
     char text[480];
 
@@ -185,7 +185,7 @@ static int open_pdf( const char *path )
 }
 
 /* a file's bytes as a document: NULL, and why said, if they are not one */
-static WDOC *load_doc( const char *path, const u8 *data, u32 len, const char *password )
+static WDOC *load_doc( const char *path, const uint8_t *data, uint32_t len, const char *password )
 {
     WDOC *doc;
     int id, rc;
@@ -224,9 +224,9 @@ int file_open( const char *path, int as_text )
 {
     WDOC *doc;
     EDITOR *ed;
-    u8 *data;
+    uint8_t *data;
     char full[PATH_LEN];
-    u32 len;
+    uint32_t len;
     int index;
 
     if ( sys_truename( path, full, 2 ) != 0 ) {
@@ -521,9 +521,9 @@ int file_close_ask( int index )
 void file_insert( void )
 {
     WDOC *other;
-    u8 *data;
+    uint8_t *data;
     char path[PATH_LEN];
-    u32 len;
+    uint32_t len;
     int type = 0;
 
     path[0] = 0;
@@ -549,10 +549,10 @@ void file_picture( void )
         { "Pictures (*.BMP;*.PNG;*.JPG)", "*.BMP;*.PNG;*.JPG;*.JPEG;*.GIF" },
         { "All files (*.*)", "*.*" }
     };
-    u8 *data;
+    uint8_t *data;
     char path[PATH_LEN];
-    s32 width, height;
-    u32 len;
+    int width, height;
+    uint32_t len;
     int type = 0, kind;
 
     path[0] = 0;
@@ -586,7 +586,7 @@ static void print_seg( void *ctx, const LSEG *seg )
 {
     PRINTCTX *pc = (PRINTCTX *)ctx;
     char near_buf[8];
-    u32 index;
+    unsigned int index;
     int col = (int)(seg->x / GRID_W), code;
 
     if ( seg->kind != SEG_TEXT && seg->kind != SEG_MADE ) {
@@ -600,7 +600,7 @@ static void print_seg( void *ctx, const LSEG *seg )
         if ( seg->upper && code >= 'a' && code <= 'z' ) {
             code -= 0x20;
         }
-        cp_put( country.codepage ? country.codepage : CP_437, (u32)code, near_buf );
+        cp_put( country.codepage ? country.codepage : CP_437, (uint32_t)code, near_buf );
         pc->row[col + (int)index] = near_buf[0];
     }
 }
@@ -619,7 +619,8 @@ void file_print( void )
     LAY *lay;
     LINFO info;
     char row[256];
-    u32 handle, done, pi, li, lines, page = 0, pages, indent;
+    uint32_t handle, done;
+    unsigned int pi, li, lines, page = 0, pages, indent;
     int rc, last, left;
 
     if ( !input_box( "Print", "&Print to (PRN, LPT1, or a file's name):", device, sizeof( device ), 24 ) ||
@@ -648,7 +649,7 @@ void file_print( void )
     busy_show( "Printing", device );
     pages = lay_pages( lay );
     left = (int)(ed->doc->page.left / GRID_W);
-    indent = (u32)(left > 20 ? 20 : left);
+    indent = (unsigned int)(left > 20 ? 20 : left);
     pc.row = row + indent;
     pc.cols = (int)(sizeof( row ) - indent - 3);
     for ( pi = 0; pi < ed->doc->body.count && rc == 0; pi++ ) {
@@ -668,7 +669,7 @@ void file_print( void )
             row[last] = '\r';
             row[last + 1] = '\n';
             if ( rc == 0 ) {
-                rc = sys_write( handle, row, (u32)last + 2, &done );
+                rc = sys_write( handle, row, (uint32_t)last + 2, &done );
             }
             /* a line of double spacing is a line and an empty one */
             for ( last = GRID_H; last < info.height && rc == 0; last += GRID_H ) {

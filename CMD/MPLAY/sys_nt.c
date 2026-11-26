@@ -38,22 +38,22 @@ void sys_exit( int code )
     exit( code );
 }
 
-void *sys_mem_alloc( u32 size )
+void *sys_mem_alloc( unsigned int size )
 {
     return malloc( size );
 }
 
-u32 sys_mem_largest( void )
+unsigned int sys_mem_largest( void )
 {
     return 64UL * 1024 * 1024;
 }
 
-void sys_stdout( const char *buf, u32 len )
+void sys_stdout( const char *buf, unsigned int len )
 {
     fwrite( buf, 1, len, stdout );
 }
 
-static int slot_open( const char *path, const char *mode, u32 *handle )
+static int slot_open( const char *path, const char *mode, uint32_t *handle )
 {
     int slot;
 
@@ -63,41 +63,41 @@ static int slot_open( const char *path, const char *mode, u32 *handle )
             if ( files[slot] == NULL ) {
                 return ERR_NOFILE;
             }
-            *handle = (u32)slot;
+            *handle = (uint32_t)slot;
             return 0;
         }
     }
     return ERR_NOHANDLES;
 }
 
-int sys_open_read( const char *path, u32 *handle )
+int sys_open_read( const char *path, uint32_t *handle )
 {
     return slot_open( path, "rb", handle );
 }
 
-int sys_create( const char *path, u32 *handle )
+int sys_create( const char *path, uint32_t *handle )
 {
     return slot_open( path, "wb+", handle );
 }
 
-int sys_read( u32 handle, void *buf, u32 len, u32 *done )
+int sys_read( uint32_t handle, void *buf, uint32_t len, uint32_t *done )
 {
-    *done = (u32)fread( buf, 1, len, files[handle] );
+    *done = (uint32_t)fread( buf, 1, len, files[handle] );
     return 0;
 }
 
-int sys_write( u32 handle, const void *buf, u32 len, u32 *done )
+int sys_write( uint32_t handle, const void *buf, uint32_t len, uint32_t *done )
 {
-    *done = (u32)fwrite( buf, 1, len, files[handle] );
+    *done = (uint32_t)fwrite( buf, 1, len, files[handle] );
     return *done == len ? 0 : ERR_DISKFULL;
 }
 
-int sys_seek( u32 handle, u32 pos )
+int sys_seek( uint32_t handle, uint32_t pos )
 {
     return fseek( files[handle], (long)pos, SEEK_SET ) ? ERR_ACCESS : 0;
 }
 
-int sys_close( u32 handle )
+int sys_close( uint32_t handle )
 {
     int rc = fclose( files[handle] );
 
@@ -105,10 +105,10 @@ int sys_close( u32 handle )
     return rc ? ERR_ACCESS : 0;
 }
 
-int sys_file_size( u32 handle, u32 *size )
+int sys_file_size( uint32_t handle, uint32_t *size )
 {
     fseek( files[handle], 0, SEEK_END );
-    *size = (u32)ftell( files[handle] );
+    *size = (uint32_t)ftell( files[handle] );
     fseek( files[handle], 0, SEEK_SET );
     return 0;
 }
@@ -128,12 +128,12 @@ int sys_rename( const char *from, const char *to )
 static void find_rec( const struct _finddata_t *found, FINDREC *rec )
 {
     memset( rec, 0, sizeof( *rec ) );
-    rec->attr = (u8)found->attrib;
-    rec->size = (u32)found->size;
+    rec->attr = (uint8_t)found->attrib;
+    rec->size = (uint32_t)found->size;
     strncpy( rec->name, found->name, PATH_LEN - 1 );
 }
 
-int sys_find_first( const char *pattern, u16 attrs, FINDREC *rec, u32 *handle )
+int sys_find_first( const char *pattern, uint16_t attrs, FINDREC *rec, uint32_t *handle )
 {
     struct _finddata_t found;
     long find = _findfirst( pattern, &found );
@@ -142,12 +142,12 @@ int sys_find_first( const char *pattern, u16 attrs, FINDREC *rec, u32 *handle )
     if ( find == -1 ) {
         return ERR_NOFILE;
     }
-    *handle = (u32)find;
+    *handle = (uint32_t)find;
     find_rec( &found, rec );
     return 0;
 }
 
-int sys_find_next( u32 handle, FINDREC *rec )
+int sys_find_next( uint32_t handle, FINDREC *rec )
 {
     struct _finddata_t found;
 
@@ -158,7 +158,7 @@ int sys_find_next( u32 handle, FINDREC *rec )
     return 0;
 }
 
-void sys_find_close( u32 handle )
+void sys_find_close( uint32_t handle )
 {
     _findclose( (long)handle );
 }
@@ -196,7 +196,7 @@ void sys_now( DATETIME *now )
     now->second = 0;
 }
 
-int sys_bus( u32 fn, u32 *regs )
+int sys_bus( uint32_t fn, uint32_t *regs )
 {
     (void)fn;
     (void)regs;
@@ -204,13 +204,13 @@ int sys_bus( u32 fn, u32 *regs )
 }
 
 /* no 32-bit drivers on Windows */
-int sys_driver_find( u32 flag )
+int sys_driver_find( uint32_t flag )
 {
     (void)flag;
     return -1;
 }
 
-int sys_driver_call( int row, u32 fn, void *buf, u32 len, u32 *answer )
+int sys_driver_call( int row, uint32_t fn, void *buf, uint32_t len, uint32_t *answer )
 {
     (void)row;
     (void)fn;

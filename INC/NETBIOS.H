@@ -18,7 +18,7 @@
  * caller watches NB_STATE.  NB_RECV may take a message in parts:
  * NB_STATE's rxready is what is left of the message at the head.
  *
- * Needs INC\NDRV.H before it, for u8/u16/u32.
+ * Needs INC\NDRV.H before it, for uint8_t/uint16_t/uint32_t.
  */
 #ifndef NETBIOS_H
 #define NETBIOS_H
@@ -33,7 +33,7 @@
 #define NB_RECV      5        /* buf -> NB_IO + room; answer the bytes given
                                  (the next part of the head message), 0 none */
 #define NB_STATE     6        /* buf -> NB_STAT; answer the state (NBX_*) */
-#define NB_HANGUP    7        /* buf -> a u32 handle */
+#define NB_HANGUP    7        /* buf -> a uint32_t handle */
 #define NB_SENDP     8        /* buf -> NB_IO + a part; answer its length.  The
                                  part is kept, and the NB_SEND that follows
                                  adds the last of the message and sends it
@@ -63,44 +63,44 @@
 #define NBF_FAIL     2
 
 typedef struct {
-    char name[16];            /* our name, ASCIIZ */
-    u8   mac[6];
-    u8   up;                  /* 1: the name is ours on the network */
-    u8   sessions;            /* sessions open now */
-    char card[32];            /* the card driver's name */
+    char    name[16];         /* our name, ASCIIZ */
+    uint8_t mac[6];
+    uint8_t up;               /* 1: the name is ours on the network */
+    uint8_t sessions;         /* sessions open now */
+    char    card[32];         /* the card driver's name */
 } NB_IF;
 #define NBIF_LEN     56
 
 typedef struct {
-    char name[16];            /* in: ASCIIZ */
-    u8   suffix;              /* in: the 16th byte */
-    u8   spare[3];
-    u32  state;               /* out: NBF_* */
-    u8   mac[6];              /* out: the card that answered */
-    u16  spare2;
+    char     name[16];        /* in: ASCIIZ */
+    uint8_t  suffix;          /* in: the 16th byte */
+    uint8_t  spare[3];
+    uint32_t state;           /* out: NBF_* */
+    uint8_t  mac[6];          /* out: the card that answered */
+    uint16_t spare2;
 } NB_FINDREQ;
 #define NBFIND_LEN   32
 
 typedef struct {
-    char name[16];            /* in: who to call (NB_CALL), ASCIIZ */
-    u8   suffix;              /* in: the 16th byte; NB_LISTEN: which of our
+    char    name[16];         /* in: who to call (NB_CALL), ASCIIZ */
+    uint8_t suffix;           /* in: the 16th byte; NB_LISTEN: which of our
                                  names is listened on */
-    u8   spare[3];
+    uint8_t spare[3];
 } NB_NAMEREQ;
 #define NBNAME_LEN   20
 
 typedef struct {
-    u32 handle;
-    u32 len;                  /* bytes of data after this header */
+    uint32_t handle;
+    uint32_t len;             /* bytes of data after this header */
 } NB_IO;
 #define NBIO_HDR     8
 
 typedef struct {
-    u32 handle;               /* in */
-    u32 state;                /* out: NBX_* */
-    u32 rxready;              /* out: bytes left of the message at the head */
-    u32 txbusy;               /* out: 1 while a message is still going */
-    u32 err;                  /* out: NBE_* */
+    uint32_t handle;          /* in */
+    uint32_t state;           /* out: NBX_* */
+    uint32_t rxready;         /* out: bytes left of the message at the head */
+    uint32_t txbusy;          /* out: 1 while a message is still going */
+    uint32_t err;             /* out: NBE_* */
 } NB_STAT;
 #define NBSTAT_LEN   20
 

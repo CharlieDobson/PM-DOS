@@ -17,13 +17,13 @@
  */
 #include "debug.h"
 
-static const char flag_set[]   = "OVDNEINGZRACPECY";
-static const char flag_clear[] = "NVUPDIPLNZNAPONC";
-static const u32  flag_bits[]  = { 0x800, 0x400, 0x200, 0x80, 0x40, 0x10, 0x04, 0x01 };
+static const char     flag_set[]   = "OVDNEINGZRACPECY";
+static const char     flag_clear[] = "NVUPDIPLNZNAPONC";
+static const uint32_t flag_bits[]  = { 0x800, 0x400, 0x200, 0x80, 0x40, 0x10, 0x04, 0x01 };
 
 typedef struct {
     const char *name;
-    int  slot;                  /* index in the u32 part of DRX, or SEG_n */
+    int  slot;                  /* index in the uint32_t part of DRX, or SEG_n */
     int  width;                 /* 16 or 32 */
 } REGNAME;
 
@@ -54,7 +54,7 @@ static const REGNAME names[] = {
     { NULL, 0, 0 }
 };
 
-static u32 *gpr( int slot )
+static uint32_t *gpr( int slot )
 {
     switch ( slot ) {
     case R_EAX: return &cpu.eax;
@@ -69,7 +69,7 @@ static u32 *gpr( int slot )
     return &cpu.eip;
 }
 
-static u16 *sreg( int slot )
+static uint16_t *sreg( int slot )
 {
     switch ( slot ) {
     case S_CS: return &cpu.cs;
@@ -105,7 +105,7 @@ static void out_flags( void )
     }
 }
 
-static void out_reg( const char *name, u32 val, int digits )
+static void out_reg( const char *name, uint32_t val, int digits )
 {
     out_str( name );
     out_ch( '=' );
@@ -165,7 +165,7 @@ void show_regs( void )
 }
 
 /* a new value after ":" - nothing typed leaves it as it was */
-static int read_value( u32 *val, int digits )
+static int read_value( uint32_t *val, int digits )
 {
     static char buf[80];
     const char *save_line = line;
@@ -190,7 +190,7 @@ static int read_value( u32 *val, int digits )
 static void reg_flags( void )
 {
     static char buf[80];
-    u32 set = 0, clear = 0, bit;
+    uint32_t set = 0, clear = 0, bit;
     int i, found;
 
     out_flags();
@@ -232,8 +232,8 @@ void cmd_register( void )
     char name[4];
     int len = 0;
     const REGNAME *reg;
-    u32 val, *full;
-    u16 *seg;
+    uint32_t val, *full;
+    uint16_t *seg;
 
     skip_blanks();
     while ( len < 3 && ( ( *lp >= 'A' && *lp <= 'Z' ) || ( *lp >= 'a' && *lp <= 'z' ) ) ) {
@@ -271,7 +271,7 @@ void cmd_register( void )
         out_hex( *seg, 4 );
         out_nl();
         if ( read_value( &val, 4 ) ) {
-            *seg = (u16)val;
+            *seg = (uint16_t)val;
         }
         return;
     }

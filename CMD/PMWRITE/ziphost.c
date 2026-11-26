@@ -35,7 +35,7 @@
 #include "zip.h"
 #include "xml.h"
 
-extern u32 pw_peak_heap;        /* F_DOCX.C and F_ODT.C, built with PW_PEAK */
+extern unsigned int pw_peak_heap; /* F_DOCX.C and F_ODT.C, built with PW_PEAK */
 
 int mem_reclaim( void )
 {
@@ -58,10 +58,10 @@ static void check( int ok, const char *what )
     }
 }
 
-static u8 *read_file( const char *path, u32 *len )
+static uint8_t *read_file( const char *path, uint32_t *len )
 {
     FILE *file = fopen( path, "rb" );
-    u8 *data;
+    uint8_t *data;
     long size;
 
     if ( file == NULL ) {
@@ -71,7 +71,7 @@ static u8 *read_file( const char *path, u32 *len )
     fseek( file, 0, SEEK_END );
     size = ftell( file );
     fseek( file, 0, SEEK_SET );
-    data = (u8 *)malloc( (size_t)size + 1 );
+    data = (uint8_t *)malloc( (size_t)size + 1 );
     if ( data == NULL || fread( data, 1, (size_t)size, file ) != (size_t)size ) {
         fprintf( stderr, "ZIPHOST: cannot read %s\n", path );
         fclose( file );
@@ -79,11 +79,11 @@ static u8 *read_file( const char *path, u32 *len )
         return NULL;
     }
     fclose( file );
-    *len = (u32)size;
+    *len = (uint32_t)size;
     return data;
 }
 
-static int write_file( const char *path, const u8 *data, u32 len )
+static int write_file( const char *path, const uint8_t *data, uint32_t len )
 {
     FILE *file = fopen( path, "wb" );
 
@@ -100,29 +100,29 @@ static int cmd_crc( void )
 {
     static const char nine[] = "123456789";
     static const char fox[] = "The quick brown fox jumps over the lazy dog";
-    u32 sum;
+    uint32_t sum;
 
-    check( crc32_update( 0, (const u8 *)"", 0 ) == 0, "CRC-32 of nothing is 0" );
-    check( crc32_update( 0, (const u8 *)nine, 9 ) == 0xCBF43926UL, "CRC-32 of 123456789 is CBF43926" );
-    check( crc32_update( 0, (const u8 *)fox, 43 ) == 0x414FA339UL, "CRC-32 of the fox is 414FA339" );
-    sum = crc32_update( 0, (const u8 *)fox, 10 );
-    sum = crc32_update( sum, (const u8 *)fox + 10, 33 );
+    check( crc32_update( 0, (const uint8_t *)"", 0 ) == 0, "CRC-32 of nothing is 0" );
+    check( crc32_update( 0, (const uint8_t *)nine, 9 ) == 0xCBF43926UL, "CRC-32 of 123456789 is CBF43926" );
+    check( crc32_update( 0, (const uint8_t *)fox, 43 ) == 0x414FA339UL, "CRC-32 of the fox is 414FA339" );
+    sum = crc32_update( 0, (const uint8_t *)fox, 10 );
+    sum = crc32_update( sum, (const uint8_t *)fox + 10, 33 );
     check( sum == 0x414FA339UL, "CRC-32 in two pieces is the same" );
-    check( adler32_update( 1, (const u8 *)"", 0 ) == 1, "Adler-32 of nothing is 1" );
-    check( adler32_update( 1, (const u8 *)"Wikipedia", 9 ) == 0x11E60398UL, "Adler-32 of Wikipedia is 11E60398" );
-    check( adler32_update( 1, (const u8 *)nine, 9 ) == 0x091E01DEUL, "Adler-32 of 123456789 is 091E01DE" );
-    sum = adler32_update( 1, (const u8 *)fox, 20 );
-    sum = adler32_update( sum, (const u8 *)fox + 20, 23 );
+    check( adler32_update( 1, (const uint8_t *)"", 0 ) == 1, "Adler-32 of nothing is 1" );
+    check( adler32_update( 1, (const uint8_t *)"Wikipedia", 9 ) == 0x11E60398UL, "Adler-32 of Wikipedia is 11E60398" );
+    check( adler32_update( 1, (const uint8_t *)nine, 9 ) == 0x091E01DEUL, "Adler-32 of 123456789 is 091E01DE" );
+    sum = adler32_update( 1, (const uint8_t *)fox, 20 );
+    sum = adler32_update( sum, (const uint8_t *)fox + 20, 23 );
     check( sum == 0x5BDC0FDAUL, "Adler-32 of the fox, in two pieces, is 5BDC0FDA" );
     return failures != 0;
 }
 
 /* there and back, every way the calls allow */
-static void round_trip( const u8 *data, u32 len, const char *what )
+static void round_trip( const uint8_t *data, uint32_t len, const char *what )
 {
     char line[160];
-    u8 *packed, *back, *fixed;
-    u32 packed_len, back_len, piece_len, first;
+    uint8_t *packed, *back, *fixed;
+    uint32_t packed_len, back_len, piece_len, first;
     clock_t start;
     long pack_ms, unpack_ms;
     int ok;
@@ -141,7 +141,7 @@ static void round_trip( const u8 *data, u32 len, const char *what )
     xfree( back );
 
     /* into a block of exactly the right size, and one a byte short */
-    fixed = (u8 *)malloc( len + 1 );
+    fixed = (uint8_t *)malloc( len + 1 );
     ok = packed != NULL && inflate_mem( packed, packed_len, fixed, len, &back_len ) &&
          back_len == len && memcmp( fixed, data, len ) == 0;
     if ( len > 0 ) {
@@ -172,7 +172,7 @@ static void round_trip( const u8 *data, u32 len, const char *what )
     back = deflate_piece( data + first, len - first, &piece_len, 1 );
     ok = packed != NULL && back != NULL;
     if ( ok ) {
-        u8 *both = (u8 *)malloc( packed_len + piece_len + 1 );
+        uint8_t *both = (uint8_t *)malloc( packed_len + piece_len + 1 );
 
         memcpy( both, packed, packed_len );
         memcpy( both + packed_len, back, piece_len );
@@ -190,22 +190,23 @@ static void round_trip( const u8 *data, u32 len, const char *what )
 static int cmd_flate( void )
 {
     static const char words[] = "the quick brown fox jumps over the lazy dog and runs away ";
-    u8 *big;
-    u32 size = 5UL * 1024 * 1024, index, seed = 12345;
+    uint8_t *big;
+    uint32_t size = 5UL * 1024 * 1024, seed = 12345;
+    unsigned int index;
 
-    round_trip( (const u8 *)"", 0, "nothing" );
-    round_trip( (const u8 *)"A", 1, "one byte" );
-    round_trip( (const u8 *)words, sizeof( words ) - 1, "a sentence" );
+    round_trip( (const uint8_t *)"", 0, "nothing" );
+    round_trip( (const uint8_t *)"A", 1, "one byte" );
+    round_trip( (const uint8_t *)words, sizeof( words ) - 1, "a sentence" );
 
-    big = (u8 *)malloc( size );
+    big = (uint8_t *)malloc( size );
     for ( index = 0; index < 200000; index++ ) {
         seed = seed * 1103515245UL + 12345;
-        big[index] = (u8)words[(index + (seed >> 28)) % (sizeof( words ) - 1)];
+        big[index] = (uint8_t)words[(index + (seed >> 28)) % (sizeof( words ) - 1)];
     }
     round_trip( big, 200000, "200K of text" );
     for ( index = 0; index < 300000; index++ ) {
         seed = seed * 1103515245UL + 12345;
-        big[index] = (u8)(seed >> 16);
+        big[index] = (uint8_t)(seed >> 16);
     }
     round_trip( big, 300000, "300K of noise" );
     memset( big, 0, 100000 );
@@ -214,11 +215,11 @@ static int cmd_flate( void )
     for ( index = 0; index < size; index++ ) {
         seed = seed * 1103515245UL + 12345;
         if ( (index >> 16) % 4 == 0 ) {
-            big[index] = (u8)(seed >> 16);
+            big[index] = (uint8_t)(seed >> 16);
         } else if ( (index >> 16) % 4 == 1 ) {
-            big[index] = (u8)words[(index + (seed >> 29)) % (sizeof( words ) - 1)];
+            big[index] = (uint8_t)words[(index + (seed >> 29)) % (sizeof( words ) - 1)];
         } else if ( (index >> 16) % 4 == 2 ) {
-            big[index] = (u8)(index >> 12);
+            big[index] = (uint8_t)(index >> 12);
         } else {
             big[index] = big[index - 40000];
         }
@@ -231,8 +232,9 @@ static int cmd_flate( void )
 static int cmd_list( const char *path )
 {
     ZIP *zip;
-    u8 *data, *member;
-    u32 len, index, got, total = 0;
+    uint8_t *data, *member;
+    uint32_t len, got, total = 0;
+    unsigned int index;
     int why, bad = 0;
 
     data = read_file( path, &len );
@@ -267,8 +269,8 @@ static int cmd_list( const char *path )
 static int cmd_get( const char *path, const char *name, const char *out_path )
 {
     ZIP *zip;
-    u8 *data, *member;
-    u32 len, got;
+    uint8_t *data, *member;
+    uint32_t len, got;
     int index, rc = 1;
 
     data = read_file( path, &len );
@@ -281,7 +283,7 @@ static int cmd_get( const char *path, const char *name, const char *out_path )
         index = zip_ifind( zip, name );
     }
     if ( index >= 0 ) {
-        member = zip_read( zip, (u32)index, &got );
+        member = zip_read( zip, (unsigned int)index, &got );
         if ( member != NULL ) {
             rc = write_file( out_path, member, got ) ? 0 : 2;
             xfree( member );
@@ -299,9 +301,9 @@ static int cmd_make( int count, char **paths )
 {
     OUT *out = out_file( paths[0] );
     ZIPW *zipw;
-    u8 *data;
+    uint8_t *data;
     const char *name;
-    u32 len, done, part;
+    uint32_t len, done, part;
     int index, ok = 1;
 
     if ( out == NULL ) {
@@ -340,10 +342,10 @@ static int cmd_make( int count, char **paths )
 }
 
 /* one document read to its end: 1 if it ended well */
-static int xml_walk( const char *name, const u8 *data, u32 len )
+static int xml_walk( const char *name, const uint8_t *data, uint32_t len )
 {
     XML *xml = xml_open( data, len );
-    u32 starts = 0, ends = 0, texts = 0, attrs = 0, known = 0, text_bytes = 0;
+    unsigned int starts = 0, ends = 0, texts = 0, attrs = 0, known = 0, text_bytes = 0;
     int token, deepest = 0;
 
     xml_ns( xml, "http://schemas.openxmlformats.org/wordprocessingml/2006/main", 1 );
@@ -383,9 +385,10 @@ static int xml_walk( const char *name, const u8 *data, u32 len )
 static int cmd_xml( const char *path )
 {
     ZIP *zip;
-    u8 *data, *member;
+    uint8_t *data, *member;
     const char *name, *dot;
-    u32 len, index, got;
+    uint32_t len, got;
+    unsigned int index;
     int bad = 0;
 
     data = read_file( path, &len );
@@ -423,8 +426,8 @@ static int cmd_xml( const char *path )
 
 static int cmd_zlib( const char *path, const char *out_path, int back )
 {
-    u8 *data, *made;
-    u32 len, made_len;
+    uint8_t *data, *made;
+    uint32_t len, made_len;
 
     data = read_file( path, &len );
     if ( data == NULL ) {
@@ -447,8 +450,9 @@ static int cmd_load( const char *path, const char *out_path, const char *tag )
 {
     WDOC *doc;
     OUT *out;
-    u8 *data;
-    u32 len, before = heap_in_use(), chars = 0, index;
+    uint8_t *data;
+    uint32_t len;
+    unsigned int before = heap_in_use(), chars = 0, index;
     clock_t start;
     long load_ms, save_ms;
     int id, rc;
@@ -499,8 +503,9 @@ static int cmd_load( const char *path, const char *out_path, const char *tag )
 }
 static void put_text( FILE *file, const WDOC *doc, const WPARA *para )
 {
-    u8 utf[4];
-    u32 pos = 0, code;
+    uint8_t utf[4];
+    unsigned int pos = 0;
+    uint32_t code;
 
     (void)doc;
     while ( pos < para->len ) {
@@ -514,7 +519,7 @@ static void put_text( FILE *file, const WDOC *doc, const WPARA *para )
 
 static void put_story( FILE *file, const WDOC *doc, const STORY *story, const char *name )
 {
-    u32 index;
+    unsigned int index;
 
     fprintf( file, "%s ", name );
     for ( index = 0; index < story->count; index++ ) {
@@ -529,8 +534,9 @@ static int cmd_text( const char *path, const char *out_path )
 {
     WDOC *doc;
     FILE *file;
-    u8 *data;
-    u32 len, index, rows = 0, foot = 0, end = 0, images = 0;
+    uint8_t *data;
+    uint32_t len;
+    unsigned int index, rows = 0, foot = 0, end = 0, images = 0;
     int id, rc;
 
     data = read_file( path, &len );

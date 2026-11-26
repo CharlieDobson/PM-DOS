@@ -13,8 +13,8 @@
 #include "types.h"
 
 /* start with 0 */
-u32   crc32_update( u32 crc, const u8 *data, u32 len );
+uint32_t crc32_update( uint32_t crc, const uint8_t *data, uint32_t len );
 /* start with 1 */
-u32   adler32_update( u32 adler, const u8 *data, u32 len );
+uint32_t adler32_update( uint32_t adler, const uint8_t *data, uint32_t len );
 
 #endif

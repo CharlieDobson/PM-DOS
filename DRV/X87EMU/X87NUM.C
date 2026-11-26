@@ -39,14 +39,14 @@ void w_one( wide *w )
 }
 
 /* A table constant: four significand words, least first, and e */
-void w_set( wide *w, const u32 *k )
+void w_set( wide *w, const uint32_t *k )
 {
     w_zero( w );
     w->m[0] = k[0];
     w->m[1] = k[1];
     w->m[2] = k[2];
     w->m[3] = k[3];
-    w->e = (s32)k[4];
+    w->e = (int32_t)k[4];
     w->kind = K_FIN;
 }
 
@@ -55,7 +55,7 @@ int w_mzero( const wide *w )
     return ( w->m[0] | w->m[1] | w->m[2] | w->m[3] ) == 0;
 }
 
-static int clz32( u32 v )
+static int clz32( uint32_t v )
 {
     int count = 0;
 
@@ -82,7 +82,7 @@ static int clz32( u32 v )
 }
 
 /* m <<= count, 0 <= count < 128 */
-static void m_shl( u32 *m, int count )
+static void m_shl( uint32_t *m, int count )
 {
     int words = count >> 5;
     int bits = count & 31;
@@ -102,9 +102,9 @@ static void m_shl( u32 *m, int count )
 }
 
 /* m <<= 1, and the bit that falls off the top */
-static u32 m_shl1( u32 *m )
+static uint32_t m_shl1( uint32_t *m )
 {
-    u32 out = m[3] >> 31;
+    uint32_t out = m[3] >> 31;
 
     m[3] = ( m[3] << 1 ) | ( m[2] >> 31 );
     m[2] = ( m[2] << 1 ) | ( m[1] >> 31 );
@@ -113,7 +113,7 @@ static u32 m_shl1( u32 *m )
     return out;
 }
 
-static int m_cmp( const u32 *a, const u32 *b )
+static int m_cmp( const uint32_t *a, const uint32_t *b )
 {
     int i;
 
@@ -126,10 +126,10 @@ static int m_cmp( const u32 *a, const u32 *b )
 }
 
 /* a += b, and the carry out */
-static u32 m_add( u32 *a, const u32 *b )
+static uint32_t m_add( uint32_t *a, const uint32_t *b )
 {
-    u32 carry = 0;
-    u32 sum, next;
+    uint32_t carry = 0;
+    uint32_t sum, next;
     int i;
 
     for ( i = 0; i < 4; i++ ) {
@@ -144,10 +144,10 @@ static u32 m_add( u32 *a, const u32 *b )
 }
 
 /* a -= b, and the borrow out */
-static u32 m_sub( u32 *a, const u32 *b )
+static uint32_t m_sub( uint32_t *a, const uint32_t *b )
 {
-    u32 borrow = 0;
-    u32 diff, next;
+    uint32_t borrow = 0;
+    uint32_t diff, next;
     int i;
 
     for ( i = 0; i < 4; i++ ) {
@@ -160,15 +160,15 @@ static u32 m_sub( u32 *a, const u32 *b )
     return borrow;
 }
 
-static u32 m_bit( const u32 *m, int n )
+static uint32_t m_bit( const uint32_t *m, int n )
 {
     return ( m[n >> 5] >> ( n & 31 ) ) & 1;
 }
 
 /* Any bit below bit n set?  n is 0 to 128. */
-static u32 m_below( const u32 *m, int n )
+static uint32_t m_below( const uint32_t *m, int n )
 {
-    u32 any = 0;
+    uint32_t any = 0;
     int i;
 
     for ( i = 0; i < ( n >> 5 ); i++ ) {
@@ -181,7 +181,7 @@ static u32 m_below( const u32 *m, int n )
 }
 
 /* Clear every bit below bit n, 0 to 128 */
-static void m_clear( u32 *m, int n )
+static void m_clear( uint32_t *m, int n )
 {
     int i;
 
@@ -221,9 +221,9 @@ void w_norm( wide *w )
 
 /* Shift right, keeping the value: what falls off sets bit 0, the sticky
    bit, so that rounding still knows something was there. */
-void w_shr( wide *w, s32 count )
+void w_shr( wide *w, int32_t count )
 {
-    u32 lost = 0;
+    uint32_t lost = 0;
     int words, bits, i;
 
     if ( count <= 0 ) {
@@ -324,10 +324,10 @@ void w_sub( wide *res, const wide *a, const wide *b )
 /* a * b.  The 256-bit product's top 128 bits, and the rest as sticky. */
 void w_mul( wide *res, const wide *a, const wide *b )
 {
-    u32 prod[8];
-    u32 lo, hi, carry;
+    uint32_t prod[8];
+    uint32_t lo, hi, carry;
     int i, j;
-    u8 sign = (u8)( a->sign ^ b->sign );
+    unsigned char sign = (unsigned char)( a->sign ^ b->sign );
 
     if ( a->kind == K_ZERO || b->kind == K_ZERO ) {
         w_zero( res );
@@ -382,10 +382,10 @@ void w_mul( wide *res, const wide *a, const wide *b )
    sticky bit below them */
 void w_div( wide *res, const wide *a, const wide *b, int bits )
 {
-    u32 numer[4], quot[4];
-    u32 extra = 0;
+    uint32_t numer[4], quot[4];
+    uint32_t extra = 0;
     int i;
-    u8 sign = (u8)( a->sign ^ b->sign );
+    unsigned char sign = (unsigned char)( a->sign ^ b->sign );
 
     if ( a->kind == K_ZERO ) {
         w_zero( res );
@@ -423,7 +423,7 @@ void w_div( wide *res, const wide *a, const wide *b, int bits )
 /* The bits of the radicand, from the top.  With an odd exponent the
    significand is used as it stands; with an even one, halved, so that
    the root's exponent is the exponent halved. */
-static u32 sq_bit( const wide *a, int odd, int pos )
+static uint32_t sq_bit( const wide *a, int odd, int pos )
 {
     if ( !odd ) {
         if ( pos == 0 ) {
@@ -438,9 +438,9 @@ static u32 sq_bit( const wide *a, int odd, int pos )
    way it is done by hand: two bits of the radicand at a time. */
 void w_sqrt( wide *res, const wide *a, int bits )
 {
-    u32 rem[5], trial[5], root[4];
-    u32 carry;
-    s32 rexp;
+    uint32_t rem[5], trial[5], root[4];
+    uint32_t carry;
+    int32_t rexp;
     int odd = a->e & 1;
     int i, j;
 
@@ -476,7 +476,7 @@ void w_sqrt( wide *res, const wide *a, int bits )
         if ( j < 0 || rem[j] > trial[j] ) {
             carry = 0;
             for ( j = 0; j < 5; j++ ) {
-                u32 next = rem[j] < trial[j] || ( rem[j] - trial[j] ) < carry;
+                uint32_t next = rem[j] < trial[j] || ( rem[j] - trial[j] ) < carry;
 
                 rem[j] = rem[j] - trial[j] - carry;
                 carry = next;
@@ -511,12 +511,12 @@ void w_sqrt( wide *res, const wide *a, int bits )
    significands, as though y had been scaled to x's exponent less n, and
    r = what is left, which is exact.  -> q's low 32 bits; r has x's
    sign. */
-u32 w_prem( wide *r, const wide *x, const wide *y, int n )
+uint32_t w_prem( wide *r, const wide *x, const wide *y, int n )
 {
-    u32 numer[4];
-    u32 extra = 0, quot = 0;
-    s32 ex = x->e;
-    u8 sign = x->sign;
+    uint32_t numer[4];
+    uint32_t extra = 0, quot = 0;
+    int32_t ex = x->e;
+    unsigned char sign = x->sign;
     int i;
 
     for ( i = 0; i < 4; i++ ) {
@@ -543,16 +543,16 @@ u32 w_prem( wide *r, const wide *x, const wide *y, int n )
 }
 
 /* Bit n of the significand, 0 the lowest */
-u32 w_bit( const wide *w, int n )
+uint32_t w_bit( const wide *w, int n )
 {
     return n >= 0 && n < 128 ? m_bit( w->m, n ) : 0;
 }
 
 /* w / divisor, divisor small and not zero; nothing is kept of the
    remainder, so this is for the series, not for results */
-void w_divs( wide *w, u32 divisor )
+void w_divs( wide *w, uint32_t divisor )
 {
-    u32 rem = 0;
+    uint32_t rem = 0;
     int i;
 
     if ( w->kind != K_FIN ) {
@@ -565,10 +565,10 @@ void w_divs( wide *w, u32 divisor )
 }
 
 /* w * factor, factor not zero */
-void w_muls( wide *w, u32 factor )
+void w_muls( wide *w, uint32_t factor )
 {
-    u32 prod[5];
-    u32 lo, hi, carry = 0;
+    uint32_t prod[5];
+    uint32_t lo, hi, carry = 0;
     int i, shift;
 
     if ( w->kind != K_FIN ) {
@@ -598,7 +598,7 @@ void w_muls( wide *w, u32 factor )
 }
 
 /* w = value */
-void w_int( wide *w, u32 value )
+void w_int( wide *w, uint32_t value )
 {
     w_zero( w );
     w->m[3] = value;
@@ -609,9 +609,9 @@ void w_int( wide *w, u32 value )
 /* Keep the top `keep` bits of the significand (any number up to 128;
    none, or fewer than none, when the value is below the unit) and round
    what is dropped by rc.  -> R_INEXACT, R_UP. */
-u32 w_round( wide *w, int keep, int rc )
+uint32_t w_round( wide *w, int keep, int rc )
 {
-    u32 half, sticky, lsb, up = 0;
+    uint32_t half, sticky, lsb, up = 0;
     int drop;
     int i;
 
@@ -649,7 +649,7 @@ u32 w_round( wide *w, int keep, int rc )
             w->m[3] = 0x80000000;
             w->e++;
         } else {
-            u32 add = 1u << ( drop & 31 );
+            uint32_t add = 1u << ( drop & 31 );
 
             for ( i = drop >> 5; i < 4; i++ ) {
                 w->m[i] += add;
@@ -671,7 +671,7 @@ u32 w_round( wide *w, int keep, int rc )
 }
 
 /* Round to a whole number by rc */
-u32 w_rint( wide *w, int rc )
+uint32_t w_rint( wide *w, int rc )
 {
     if ( w->kind != K_FIN || w->e >= 127 ) {
         return 0;
@@ -684,10 +684,10 @@ u32 w_rint( wide *w, int rc )
    and F_TINY, for the masked responses; w is the delivered result.
    Underflow is tininess after rounding and a loss of accuracy, as the
    387 has it. */
-u32 w_fit( wide *w, int prec, s32 emin, s32 emax, int rc )
+uint32_t w_fit( wide *w, int prec, int32_t emin, int32_t emax, int rc )
 {
     wide probe;
-    u32 res, flags = 0;
+    uint32_t res, flags = 0;
     int i;
 
     if ( w->kind != K_FIN ) {
@@ -742,10 +742,10 @@ u32 w_fit( wide *w, int prec, s32 emin, s32 emax, int rc )
 /* 80 bits: a register, or a ten-byte operand */
 void x_unpack( wide *w, const xreg *x )
 {
-    u32 bexp = x->se & 0x7FFF;
+    uint32_t bexp = x->se & 0x7FFF;
 
     w_zero( w );
-    w->sign = (u8)( x->se >> 15 );
+    w->sign = (unsigned char)( x->se >> 15 );
     w->m[3] = x->hi;
     w->m[2] = x->lo;
     if ( bexp == 0x7FFF ) {
@@ -773,7 +773,7 @@ void x_unpack( wide *w, const xreg *x )
         return;
     }
     w->kind = K_FIN;
-    w->e = (s32)bexp - EXT_BIAS;
+    w->e = (int32_t)bexp - EXT_BIAS;
 }
 
 /* A result w_fit has fitted to EXT_EMIN..EXT_EMAX, or a special */
@@ -781,7 +781,7 @@ void x_pack( xreg *x, const wide *w )
 {
     wide t;
 
-    x->se = (u16)( w->sign << 15 );
+    x->se = (uint16_t)( w->sign << 15 );
     x->pad = 0;
     switch ( w->kind ) {
     case K_ZERO:
@@ -802,7 +802,7 @@ void x_pack( xreg *x, const wide *w )
         return;
     }
     if ( w->e >= EXT_EMIN ) {
-        x->se |= (u16)( w->e + EXT_BIAS );
+        x->se |= (uint16_t)( w->e + EXT_BIAS );
         x->hi = w->m[3];
         x->lo = w->m[2];
         return;
@@ -814,13 +814,13 @@ void x_pack( xreg *x, const wide *w )
 }
 
 /* 64 bits */
-void d_unpack( wide *w, u32 lo, u32 hi )
+void d_unpack( wide *w, uint32_t lo, uint32_t hi )
 {
-    u32 bexp = ( hi >> 20 ) & 0x7FF;
-    u32 frac = hi & 0xFFFFF;
+    uint32_t bexp = ( hi >> 20 ) & 0x7FF;
+    uint32_t frac = hi & 0xFFFFF;
 
     w_zero( w );
-    w->sign = (u8)( hi >> 31 );
+    w->sign = (unsigned char)( hi >> 31 );
     w->m[3] = ( frac << 11 ) | ( lo >> 21 );
     w->m[2] = lo << 11;
     if ( bexp == 0x7FF ) {
@@ -843,13 +843,13 @@ void d_unpack( wide *w, u32 lo, u32 hi )
     }
     w->m[3] |= 0x80000000;
     w->kind = K_FIN;
-    w->e = (s32)bexp - DBL_BIAS;
+    w->e = (int32_t)bexp - DBL_BIAS;
 }
 
-void d_pack( const wide *w, u32 *lo, u32 *hi )
+void d_pack( const wide *w, uint32_t *lo, uint32_t *hi )
 {
     wide t = *w;
-    u32 top = (u32)w->sign << 31;
+    uint32_t top = (uint32_t)w->sign << 31;
 
     switch ( w->kind ) {
     case K_ZERO:
@@ -868,7 +868,7 @@ void d_pack( const wide *w, u32 *lo, u32 *hi )
         return;
     }
     if ( w->e >= DBL_EMIN ) {
-        top |= (u32)( w->e + DBL_BIAS ) << 20;
+        top |= (uint32_t)( w->e + DBL_BIAS ) << 20;
     } else {
         w_shr( &t, DBL_EMIN - w->e );
     }
@@ -877,13 +877,13 @@ void d_pack( const wide *w, u32 *lo, u32 *hi )
 }
 
 /* 32 bits */
-void f_unpack( wide *w, u32 bits )
+void f_unpack( wide *w, uint32_t bits )
 {
-    u32 bexp = ( bits >> 23 ) & 0xFF;
-    u32 frac = bits & 0x7FFFFF;
+    uint32_t bexp = ( bits >> 23 ) & 0xFF;
+    uint32_t frac = bits & 0x7FFFFF;
 
     w_zero( w );
-    w->sign = (u8)( bits >> 31 );
+    w->sign = (unsigned char)( bits >> 31 );
     w->m[3] = frac << 8;
     if ( bexp == 0xFF ) {
         w->m[3] |= 0x80000000;
@@ -905,13 +905,13 @@ void f_unpack( wide *w, u32 bits )
     }
     w->m[3] |= 0x80000000;
     w->kind = K_FIN;
-    w->e = (s32)bexp - FLT_BIAS;
+    w->e = (int32_t)bexp - FLT_BIAS;
 }
 
-u32 f_pack( const wide *w )
+uint32_t f_pack( const wide *w )
 {
     wide t = *w;
-    u32 top = (u32)w->sign << 31;
+    uint32_t top = (uint32_t)w->sign << 31;
 
     switch ( w->kind ) {
     case K_ZERO:
@@ -924,7 +924,7 @@ u32 f_pack( const wide *w )
         return top | 0x7F800000 | ( ( w->m[3] >> 8 ) & 0x7FFFFF );
     }
     if ( w->e >= FLT_EMIN ) {
-        top |= (u32)( w->e + FLT_BIAS ) << 23;
+        top |= (uint32_t)( w->e + FLT_BIAS ) << 23;
     } else {
         w_shr( &t, FLT_EMIN - w->e );
     }
@@ -932,7 +932,7 @@ u32 f_pack( const wide *w )
 }
 
 /* A signed 64-bit integer, as two words */
-void i_unpack( wide *w, u32 lo, u32 hi )
+void i_unpack( wide *w, uint32_t lo, uint32_t hi )
 {
     w_zero( w );
     if ( hi & 0x80000000 ) {
@@ -948,7 +948,7 @@ void i_unpack( wide *w, u32 lo, u32 hi )
 
 /* A whole number (w_rint has been) as a signed 64-bit integer.  0 if it
    does not fit. */
-int i_pack( const wide *w, u32 *lo, u32 *hi )
+int i_pack( const wide *w, uint32_t *lo, uint32_t *hi )
 {
     wide t = *w;
 

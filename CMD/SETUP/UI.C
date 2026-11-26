@@ -83,13 +83,13 @@ static void dlg_wrap( DLG *dlg, const char *first, const char *text )
         if ( line == NULL ) {
             return;
         }
-        mem_set( line, ' ', (u16)width );
+        mem_set( line, ' ', (uint16_t)width );
         line[width] = 0;
         if ( first ) {
-            mem_cpy( line, first, (u16)lead );
+            mem_cpy( line, first, (uint16_t)lead );
             first = NULL;               /* blanks from now on */
         }
-        mem_cpy( line + lead, text, (u16)end );
+        mem_cpy( line + lead, text, (uint16_t)end );
         dlg->line[dlg->n++] = line;
         text += end;
         if ( *text == ' ' || *text == '\n' ) {
@@ -147,7 +147,7 @@ void dlg_draw( DLG *dlg, int attr )
    when it is not one of the keys and "f3" is set. */
 int dlg_run( DLG *dlg, int attr, const char *status, const int *keys, int f3 )
 {
-    static u16 under[SCR_ROWS * SCR_COLS];
+    static uint16_t under[SCR_ROWS * SCR_COLS];
     static char keep[100];
     int key;
 
@@ -251,7 +251,7 @@ int scr_page( int row, int attr, const char *text )
 void ui_help( const char *heading, const char *text )
 {
     static int open;
-    static u16 under[SCR_ROWS * SCR_COLS];
+    static uint16_t under[SCR_ROWS * SCR_COLS];
     static char keep[100];
     int key, i;
 

@@ -206,7 +206,7 @@ static void restart_box( void )
     restart();
 }
 
-static void format_progress( u32 done, u32 total )
+static void format_progress( uint32_t done, uint32_t total )
 {
     static int last = -1;
     char line1[40], line2[40];
@@ -248,7 +248,7 @@ static void format_drive( void )
 }
 
 /* "1,234 KB", or "1,234 MB" from ten megabytes up */
-static void size_text( char *buf, int max, u32 kb )
+static void size_text( char *buf, int max, uint32_t kb )
 {
     if ( kb >= 10240ul ) {
         sfmt( buf, max, "%,lu MB", kb / 1024 );
@@ -258,15 +258,15 @@ static void size_text( char *buf, int max, u32 kb )
 }
 
 /* "0.70" -> major*256+minor, the form of tgt.pmver */
-static u16 version_number( const char *text )
+static uint16_t version_number( const char *text )
 {
     const char *end;
-    u32 major = parse_u32( text, &end ), minor = 0;
+    uint32_t major = parse_u32( text, &end ), minor = 0;
 
     if ( *end == '.' ) {
         minor = parse_u32( end + 1, (const char **)0 );
     }
-    return (u16)((major << 8) | (minor & 0xFF));
+    return (uint16_t)((major << 8) | (minor & 0xFF));
 }
 
 /* Get drive C: ready, or decide it is.  Comes back when the settings
@@ -351,7 +351,7 @@ static void prepare_disk( void )
     }
     case TG_PMDOS: {
         /* an older PM-DOS is upgraded, the same one reinstalled */
-        u16 mine = version_number( inf.version );
+        uint16_t mine = version_number( inf.version );
         int up = tgt.pmver < mine;
         char was[8];
 
@@ -447,7 +447,7 @@ static int numbers( const char *text, int *val, int count )
 static int parse_date( const char *text )
 {
     int v[3], y, m, d, order = opt.country ? opt.country->date_order : 0;
-    static const u8 days[] = { 31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
+    static const uint8_t days[] = { 31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
 
     if ( numbers( text, v, 3 ) != 3 ) {
         return 1;
@@ -572,7 +572,7 @@ static void date_time_page( void )
     }
 }
 
-static int shares_page( const u16 *one, int n1, const u16 *two, int n2 )
+static int shares_page( const uint16_t *one, int n1, const uint16_t *two, int n2 )
 {
     int i, j;
 
@@ -593,7 +593,7 @@ static void nls_page( int keyboards )
     LIST list;
     int count = keyboards ? inf.nkeyboards : inf.ncountries, i, pick;
 
-    names = (const char **)xalloc( sizeof( char * ) * (u32)count );
+    names = (const char **)xalloc( sizeof( char * ) * (uint32_t)count );
     mem_set( &list, 0, sizeof( list ) );
     for ( i = 0; i < count; i++ ) {
         names[i] = keyboards ? inf.keyboard[i].name : inf.country[i].name;
@@ -755,7 +755,7 @@ int  nmade_dirs;
 static int make_dir( const char *final_path )
 {
     char path[PATHLEN];
-    u16 attr;
+    uint16_t attr;
     int i;
 
     str_cpyn( path, final_path, sizeof( path ) );
@@ -905,10 +905,10 @@ static int commit( void )
 static void space_check( void )
 {
     char have[24], need_text[24];
-    u32 need = copy_total( 0 ), cluster = 4096;
+    uint32_t need = copy_total( 0 ), cluster = 4096;
 
     /* each file takes up to a cluster more than its bytes */
-    need += (u32)inf.nfiles * cluster;
+    need += (uint32_t)inf.nfiles * cluster;
     if ( tgt.state == TG_PMDOS ) {
         return;                         /* the old files make room */
     }
@@ -945,7 +945,7 @@ static void switches( int *floppy )
         }
         word[len] = 0;
         if ( word[0] == '/' && len == 2 ) {
-            switch ( ch_upper( (u8)word[1] ) ) {
+            switch ( ch_upper( (uint8_t)word[1] ) ) {
             case 'F':
                 *floppy = 1;
                 continue;
@@ -1005,6 +1005,7 @@ void setup_main( void )
     if ( disk_load_code() ) {
         say_and_go( tx_badinf );
     }
+    billboard_load();
     str_cpyn( opt.dosdir, inf.dosdir, sizeof( opt.dosdir ) );
     opt.country = inf_country( "001" );
     {

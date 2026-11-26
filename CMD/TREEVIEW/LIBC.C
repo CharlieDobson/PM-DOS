@@ -33,11 +33,11 @@
 
 void *memcpy( void *dst, const void *src, size_t len )
 {
-    u8 *to = (u8 *)dst;
-    const u8 *from = (const u8 *)src;
+    uint8_t *to = (uint8_t *)dst;
+    const uint8_t *from = (const uint8_t *)src;
 
     while ( len >= 4 ) {
-        *(u32 *)to = *(const u32 *)from;
+        *(uint32_t *)to = *(const uint32_t *)from;
         to += 4;
         from += 4;
         len -= 4;
@@ -50,8 +50,8 @@ void *memcpy( void *dst, const void *src, size_t len )
 
 void *memmove( void *dst, const void *src, size_t len )
 {
-    u8 *to = (u8 *)dst;
-    const u8 *from = (const u8 *)src;
+    uint8_t *to = (uint8_t *)dst;
+    const uint8_t *from = (const uint8_t *)src;
 
     if ( to <= from || to >= from + len ) {
         return memcpy( dst, src, len );
@@ -66,27 +66,27 @@ void *memmove( void *dst, const void *src, size_t len )
 
 void *memset( void *dst, int val, size_t len )
 {
-    u8 *to = (u8 *)dst;
-    u32 four = (u8)val * 0x01010101UL;
+    uint8_t *to = (uint8_t *)dst;
+    uint32_t four = (uint8_t)val * 0x01010101UL;
 
-    while ( len && ((u32)to & 3) ) {
-        *to++ = (u8)val;
+    while ( len && ((uint32_t)to & 3) ) {
+        *to++ = (uint8_t)val;
         len--;
     }
     while ( len >= 4 ) {
-        *(u32 *)to = four;
+        *(uint32_t *)to = four;
         to += 4;
         len -= 4;
     }
     while ( len-- ) {
-        *to++ = (u8)val;
+        *to++ = (uint8_t)val;
     }
     return dst;
 }
 
 int memcmp( const void *lhs, const void *rhs, size_t len )
 {
-    const u8 *one = (const u8 *)lhs, *two = (const u8 *)rhs;
+    const uint8_t *one = (const uint8_t *)lhs, *two = (const uint8_t *)rhs;
 
     for ( ; len; len--, one++, two++ ) {
         if ( *one != *two ) {
@@ -98,10 +98,10 @@ int memcmp( const void *lhs, const void *rhs, size_t len )
 
 void *memchr( const void *buf, int ch, size_t len )
 {
-    const u8 *at = (const u8 *)buf;
+    const uint8_t *at = (const uint8_t *)buf;
 
     for ( ; len; len--, at++ ) {
-        if ( *at == (u8)ch ) {
+        if ( *at == (uint8_t)ch ) {
             return (void *)at;
         }
     }
@@ -164,14 +164,14 @@ int strcmp( const char *lhs, const char *rhs )
         lhs++;
         rhs++;
     }
-    return (int)(u8)*lhs - (int)(u8)*rhs;
+    return (int)(unsigned char)*lhs - (int)(unsigned char)*rhs;
 }
 
 int strncmp( const char *lhs, const char *rhs, size_t max )
 {
     for ( ; max; max--, lhs++, rhs++ ) {
         if ( *lhs != *rhs || *lhs == 0 ) {
-            return (int)(u8)*lhs - (int)(u8)*rhs;
+            return (int)(unsigned char)*lhs - (int)(unsigned char)*rhs;
         }
     }
     return 0;
@@ -182,8 +182,8 @@ int stricmp( const char *lhs, const char *rhs )
     int one, two;
 
     do {
-        one = toupper( (u8)*lhs++ );
-        two = toupper( (u8)*rhs++ );
+        one = toupper( (unsigned char)*lhs++ );
+        two = toupper( (unsigned char)*rhs++ );
     } while ( one && one == two );
     return one - two;
 }
@@ -193,8 +193,8 @@ int strnicmp( const char *lhs, const char *rhs, size_t max )
     int one, two;
 
     for ( ; max; max-- ) {
-        one = toupper( (u8)*lhs++ );
-        two = toupper( (u8)*rhs++ );
+        one = toupper( (unsigned char)*lhs++ );
+        two = toupper( (unsigned char)*rhs++ );
         if ( one != two || one == 0 ) {
             return one - two;
         }
@@ -256,7 +256,7 @@ char *strupr( char *text )
     char *at;
 
     for ( at = text; *at; at++ ) {
-        *at = (char)toupper( (u8)*at );
+        *at = (char)toupper( (unsigned char)*at );
     }
     return text;
 }
@@ -266,7 +266,7 @@ char *strlwr( char *text )
     char *at;
 
     for ( at = text; *at; at++ ) {
-        *at = (char)tolower( (u8)*at );
+        *at = (char)tolower( (unsigned char)*at );
     }
     return text;
 }
@@ -302,7 +302,7 @@ unsigned long strtoul( const char *text, char **end, int base )
     unsigned long val = 0;
     int digit, neg = 0, any = 0;
 
-    while ( isspace( (u8)*at ) ) {
+    while ( isspace( (unsigned char)*at ) ) {
         at++;
     }
     if ( *at == '+' || *at == '-' ) {
@@ -315,10 +315,10 @@ unsigned long strtoul( const char *text, char **end, int base )
         base = *at == '0' ? 8 : 10;
     }
     for ( ;; at++ ) {
-        if ( isdigit( (u8)*at ) ) {
+        if ( isdigit( (unsigned char)*at ) ) {
             digit = *at - '0';
-        } else if ( isalpha( (u8)*at ) ) {
-            digit = toupper( (u8)*at ) - 'A' + 10;
+        } else if ( isalpha( (unsigned char)*at ) ) {
+            digit = toupper( (unsigned char)*at ) - 'A' + 10;
         } else {
             break;
         }
@@ -349,31 +349,31 @@ long labs( long value )         { return value < 0 ? -value : value; }
 /* ------------------------------------------------------------------ */
 
 typedef union {
-    u64 whole;
-    struct { u32 lo, hi; } part;
+    uint64_t whole;
+    struct { uint32_t lo, hi; } part;
 } U64PARTS;
 
-static u64 mul_asm( u32 lhs, u32 rhs );
+static uint64_t mul_asm( uint32_t lhs, uint32_t rhs );
 #pragma aux mul_asm = \
     "mul edx" \
     parm [eax] [edx] value [edx eax] modify exact [eax edx];
 
 /* EDX:EAX / ECX, EDX below ECX: the quotient into *quot, the remainder back */
-static u32 div_asm( u32 hi, u32 lo, u32 divisor, u32 *quot );
+static uint32_t div_asm( uint32_t hi, uint32_t lo, uint32_t divisor, uint32_t *quot );
 #pragma aux div_asm = \
     "div ecx" \
     "mov [ebx],eax" \
     parm [edx] [eax] [ecx] [ebx] value [edx] modify exact [eax edx];
 
-u64 xa_mul32( u32 lhs, u32 rhs )
+uint64_t xa_mul32( uint32_t lhs, uint32_t rhs )
 {
     return mul_asm( lhs, rhs );
 }
 
-u32 xa_div64( u64 *num, u32 divisor )
+uint32_t xa_div64( uint64_t *num, uint32_t divisor )
 {
     U64PARTS val;
-    u32 qhi, qlo, rem;
+    uint32_t qhi, qlo, rem;
 
     val.whole = *num;
     qhi = val.part.hi / divisor;
@@ -384,7 +384,7 @@ u32 xa_div64( u64 *num, u32 divisor )
     return rem;
 }
 
-u32 xa_lo32( u64 val )
+uint32_t xa_lo32( uint64_t val )
 {
     U64PARTS parts;
 
@@ -392,7 +392,7 @@ u32 xa_lo32( u64 val )
     return parts.part.lo;
 }
 
-u32 xa_hi32( u64 val )
+uint32_t xa_hi32( uint64_t val )
 {
     U64PARTS parts;
 
@@ -400,7 +400,7 @@ u32 xa_hi32( u64 val )
     return parts.part.hi;
 }
 
-u64 xa_make64( u32 hi, u32 lo )
+uint64_t xa_make64( uint32_t hi, uint32_t lo )
 {
     U64PARTS parts;
 
@@ -421,18 +421,18 @@ u64 xa_make64( u32 hi, u32 lo )
 void *malloc( size_t size )
 {
     REGS regs;
-    u8 *block;
+    uint8_t *block;
 
     if ( size > 0xFFFFFFFFUL - HEAD - 16 ) {
         return NULL;
     }
     xa_clear( &regs );
-    regs.ebx = (u32)size + HEAD;
+    regs.ebx = (uint32_t)size + HEAD;
     if ( xa_dos( &regs, 0x4800 ) ) {
         return NULL;
     }
-    block = (u8 *)regs.eax;
-    *(u32 *)block = (u32)size;
+    block = (uint8_t *)regs.eax;
+    *(uint32_t *)block = (uint32_t)size;
     return block + HEAD;
 }
 
@@ -444,7 +444,7 @@ void free( void *ptr )
         return;
     }
     xa_clear( &regs );
-    regs.edx = (u32)ptr - HEAD;
+    regs.edx = (uint32_t)ptr - HEAD;
     xa_dos( &regs, 0x4900 );
 }
 
@@ -470,7 +470,7 @@ void *calloc( size_t count, size_t size )
 void *realloc( void *ptr, size_t size )
 {
     REGS regs;
-    u32 old;
+    uint32_t old;
     void *fresh;
 
     if ( ptr == NULL ) {
@@ -479,12 +479,12 @@ void *realloc( void *ptr, size_t size )
     if ( size > 0xFFFFFFFFUL - HEAD - 16 ) {
         return NULL;
     }
-    old = *(u32 *)((u8 *)ptr - HEAD);
+    old = *(uint32_t *)((uint8_t *)ptr - HEAD);
     xa_clear( &regs );
-    regs.edx = (u32)ptr - HEAD;
-    regs.ebx = (u32)size + HEAD;
+    regs.edx = (uint32_t)ptr - HEAD;
+    regs.ebx = (uint32_t)size + HEAD;
     if ( xa_dos( &regs, 0x4A00 ) == 0 ) {
-        *(u32 *)((u8 *)ptr - HEAD) = (u32)size;
+        *(uint32_t *)((uint8_t *)ptr - HEAD) = (uint32_t)size;
         return ptr;
     }
     fresh = malloc( size );
@@ -500,9 +500,9 @@ void *realloc( void *ptr, size_t size )
 /* qsort                                                               */
 /* ------------------------------------------------------------------ */
 
-static void swap_bytes( u8 *one, u8 *two, size_t size )
+static void swap_bytes( uint8_t *one, uint8_t *two, size_t size )
 {
-    u8 keep;
+    uint8_t keep;
 
     while ( size-- ) {
         keep = *one;
@@ -517,10 +517,10 @@ static void swap_bytes( u8 *one, u8 *two, size_t size )
 void qsort( void *base, size_t count, size_t size,
             int (*compare)( const void *, const void * ) )
 {
-    u8 *lo, *hi, *mid, *left, *right, *at, *back;
+    uint8_t *lo, *hi, *mid, *left, *right, *at, *back;
     size_t lcount, rcount;
 
-    lo = (u8 *)base;
+    lo = (uint8_t *)base;
     while ( count > 7 ) {
         hi = lo + (count - 1) * size;
         mid = lo + (count / 2) * size;
@@ -600,14 +600,14 @@ static void sink_rep( SINK *sink, int ch, int times )
 }
 
 /* digits of "val" in "base", most significant first, into "out" */
-static int to_digits( u64 val, int base, int upper, char *out )
+static int to_digits( uint64_t val, int base, int upper, char *out )
 {
     char rev[24];
     int len = 0, at;
     const char *set = upper ? "0123456789ABCDEF" : "0123456789abcdef";
 
     do {
-        rev[len++] = set[xa_div64( &val, (u32)base )];
+        rev[len++] = set[xa_div64( &val, (uint32_t)base )];
     } while ( val != 0 );
     for ( at = 0; at < len; at++ ) {
         out[at] = rev[len - 1 - at];
@@ -620,12 +620,12 @@ static int xa_vformat( SINK *sink, const char *fmt, va_list args )
     int left, plus, space, zero, alt, width, prec, longs, len, pad, base;
     char digits[24], sign;
     const char *str;
-    u64 val;
-    s32 sval;
+    uint64_t val;
+    int32_t sval;
 
     for ( ; *fmt; fmt++ ) {
         if ( *fmt != '%' ) {
-            sink_ch( sink, (u8)*fmt );
+            sink_ch( sink, (unsigned char)*fmt );
             continue;
         }
         left = plus = space = zero = alt = 0;
@@ -654,7 +654,7 @@ static int xa_vformat( SINK *sink, const char *fmt, va_list args )
             }
             fmt++;
         } else {
-            while ( isdigit( (u8)*fmt ) ) {
+            while ( isdigit( (unsigned char)*fmt ) ) {
                 width = width * 10 + (*fmt++ - '0');
             }
         }
@@ -666,7 +666,7 @@ static int xa_vformat( SINK *sink, const char *fmt, va_list args )
                 prec = va_arg( args, int );
                 fmt++;
             } else {
-                while ( isdigit( (u8)*fmt ) ) {
+                while ( isdigit( (unsigned char)*fmt ) ) {
                     prec = prec * 10 + (*fmt++ - '0');
                 }
             }
@@ -711,18 +711,18 @@ static int xa_vformat( SINK *sink, const char *fmt, va_list args )
         case 'd':
         case 'i':
             if ( longs >= 2 ) {
-                val = va_arg( args, u64 );
-                if ( (s32)xa_hi32( val ) < 0 ) {
+                val = va_arg( args, uint64_t );
+                if ( (int32_t)xa_hi32( val ) < 0 ) {
                     val = 0 - val;
                     sign = '-';
                 }
             } else {
-                sval = va_arg( args, s32 );
+                sval = va_arg( args, int32_t );
                 if ( sval < 0 ) {
                     sign = '-';
-                    val = (u32)0 - (u32)sval;
+                    val = (uint32_t)0 - (uint32_t)sval;
                 } else {
-                    val = (u32)sval;
+                    val = (uint32_t)sval;
                 }
             }
             if ( sign == 0 ) {
@@ -743,7 +743,7 @@ static int xa_vformat( SINK *sink, const char *fmt, va_list args )
         case 'X':
             base = 16;
         unsigned_number:
-            val = longs >= 2 ? va_arg( args, u64 ) : (u64)va_arg( args, u32 );
+            val = longs >= 2 ? va_arg( args, uint64_t ) : (uint64_t)va_arg( args, uint32_t );
         number:
             if ( prec == 0 && val == 0 ) {
                 len = 0;
@@ -787,7 +787,7 @@ static int xa_vformat( SINK *sink, const char *fmt, va_list args )
         default:
             /* not a conversion this library has: shown as it was */
             sink_ch( sink, '%' );
-            sink_ch( sink, (u8)*fmt );
+            sink_ch( sink, (unsigned char)*fmt );
             continue;
         }
         pad = width - len;
@@ -795,7 +795,7 @@ static int xa_vformat( SINK *sink, const char *fmt, va_list args )
             sink_rep( sink, ' ', pad );
         }
         while ( len-- > 0 ) {
-            sink_ch( sink, (u8)*str++ );
+            sink_ch( sink, (unsigned char)*str++ );
         }
         if ( left ) {
             sink_rep( sink, ' ', pad );

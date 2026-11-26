@@ -35,26 +35,26 @@
 #define CS_DROPPED  3       /* left out at scan time (a duplicate name)     */
 
 typedef struct {
-    char   *rel;            /* path from the base folder, '\' separated     */
-    UInt16  base;           /* index into job->bases                        */
-    Byte    isDir;
-    Byte    kind;           /* CK_*                                         */
-    Byte    text;           /* looks like text (zip's internal attribute)   */
-    Byte    state;          /* CS_*                                         */
-    Byte    method;         /* zip: 0 stored, 8 deflated                    */
-    Byte    folder;         /* 7z: which coded folder                       */
-    Byte    delta;          /* CK_DELTA: the frame size, 1..255             */
-    UInt32  attr;           /* DOS attribute bits                           */
-    UInt32  size;           /* as found by the scan                         */
-    UInt16  dosDate;        /* last write, local, packed                    */
-    UInt16  dosTime;
-    UInt32  mtLo, mtHi;     /* last write, UTC FILETIME                     */
+    char    *rel;           /* path from the base folder, '\' separated     */
+    uint16_t base;          /* index into job->bases                        */
+    uint8_t  isDir;
+    uint8_t  kind;          /* CK_*                                         */
+    uint8_t  text;          /* looks like text (zip's internal attribute)   */
+    uint8_t  state;         /* CS_*                                         */
+    uint8_t  method;        /* zip: 0 stored, 8 deflated                    */
+    uint8_t  folder;        /* 7z: which coded folder                       */
+    uint8_t  delta;         /* CK_DELTA: the frame size, 1..255             */
+    uint32_t attr;          /* DOS attribute bits                           */
+    uint32_t size;          /* as found by the scan                         */
+    uint16_t dosDate;       /* last write, local, packed                    */
+    uint16_t dosTime;
+    uint32_t mtLo, mtHi;    /* last write, UTC FILETIME                     */
 
     /* Filled in as the entry is written. */
-    UInt32  crc;
-    UInt32  realSize;       /* bytes actually read                          */
-    UInt32  packed;         /* zip: bytes of compressed data                */
-    UInt32  offset;         /* zip: where its local header starts           */
+    uint32_t crc;
+    uint32_t realSize;      /* bytes actually read                          */
+    uint32_t packed;        /* zip: bytes of compressed data                */
+    uint32_t offset;        /* zip: where its local header starts           */
 } CompEntry;
 
 struct ArcCompJob {
@@ -73,28 +73,28 @@ struct ArcCompJob {
     int        nExcl;
 
     CompEntry *ents;
-    UInt32     nEnts;
-    UInt32     capEnts;
+    uint32_t   nEnts;
+    uint32_t   capEnts;
     int        scanned;
 
-    UInt32    *order;       /* the order the writer goes through ents in    */
-    UInt32     nOrder;
+    uint32_t  *order;       /* the order the writer goes through ents in    */
+    uint32_t   nOrder;
 
     char       outFull[SZ_MAX_NAME];   /* the archive's own full path       */
-    UInt32     totalBytes;             /* of everything to be read          */
+    uint32_t   totalBytes;             /* of everything to be read          */
 
     /* Results. */
     int        nFiles;
-    UInt32     inBytes;
-    UInt32     outBytes;
+    uint32_t   inBytes;
+    uint32_t   outBytes;
     int        nDup, nUnread, nLong, nBig, nMissing;
     char       problem[SZ_MAX_NAME];
-    UInt32     dictSize;
+    uint32_t   dictSize;
 
     /* Progress, while a run is going. */
     ArcCompProgress prog;
     void      *user;
-    UInt32     doneBytes;
+    uint32_t   doneBytes;
     int        cancelled;
 };
 
@@ -120,7 +120,7 @@ void   CompSetProblem( ArcCompJob *j, const char *name );
 /* Decide CK_* (and the text flag) from the first bytes of a file, whose
  * whole length is 'fileSize'.  For CK_DELTA, *delta receives the frame size
  * (1..255); either pointer may be NULL. */
-int    CompSniff( const Byte *buf, UInt32 len, UInt32 fileSize,
+int    CompSniff( const uint8_t *buf, uint32_t len, uint32_t fileSize,
                   int *isText, unsigned *delta );
 
 /* Writers.  Each writes the whole archive to 'f', which is open for binary
@@ -142,24 +142,24 @@ int    SzWriteArchive( ArcCompJob *j, FILE *f );
  * SzwDictFor  the LZMA dictionary for 'bytes' of input, within what this
  *         machine can spare for the encoder. */
 typedef struct {
-    Byte  *p;
-    UInt32 len, cap;
-    int    failed;
+    uint8_t *p;
+    uint32_t len, cap;
+    int      failed;
 } HBuf;
 
-void   HPut( HBuf *h, const void *data, UInt32 n );
-void   HByte( HBuf *h, Byte b );
-void   HUInt32( HBuf *h, UInt32 v );
-void   HNum( HBuf *h, UInt32 v );
-void   HBits( HBuf *h, const Byte *bits, UInt32 n );
+void   HPut( HBuf *h, const void *data, uint32_t n );
+void   HByte( HBuf *h, uint8_t b );
+void   HUInt32( HBuf *h, uint32_t v );
+void   HNum( HBuf *h, uint32_t v );
+void   HBits( HBuf *h, const uint8_t *bits, uint32_t n );
 
 typedef struct {
-    UInt32 base;
-    UInt32 mask;
+    uint32_t base;
+    uint32_t mask;
 } BcjEnc;
 
-UInt32 BcjEncChunk( BcjEnc *b, Byte *data, UInt32 size );
-UInt32 SzwDictFor( UInt32 bytes );
+uint32_t BcjEncChunk( BcjEnc *b, uint8_t *data, uint32_t size );
+uint32_t SzwDictFor( uint32_t bytes );
 
 /* Read buffer size for file data. */
 #define COMP_IOBUF  32768U

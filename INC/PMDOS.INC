@@ -794,10 +794,21 @@ KSTACK_TOP      EQU     IO_LIMIT + 4000h        ; kernel ESP after PM switch
 ; into a state where the kernel's own view of memory and the guest's
 ; disagree, and clearing the real line would unmap PMDOS.SYS from
 ; underneath itself.  See vio_in / vio_out in VM86.INC.
+;
+; THE 32 BYTES BELOW THE BITMAP ARE THE INTERRUPT REDIRECTION BITMAP,
+; which is where a processor with VME looks to decide whether a box's
+; INT n goes straight to the box's own vector table (bit clear) or
+; faults to the monitor (bit set).  The processor finds it by counting
+; back from TSS_IOMAP's offset, so it cannot share those bytes with the
+; TSS's own fields - and at offset 104 it did: 72-103 are the segment
+; registers, the LDT and TSS_IOMAP itself.  So the I/O bitmap starts 32
+; bytes later, at 136, and v86_run copies the caller's trap bitmap into
+; TSS_REDIR.  A processor without VME never reads those 32 bytes.
 ;---------------------------------------------------------------------
 TSS_BASE        EQU     IO_LIMIT + 4000h
-TSS_IOBASE      EQU     104                     ; bitmap starts right after
-TSS_TOTAL       EQU     8300                    ; 104 + 8192 + FFh, rounded
+TSS_REDIR       EQU     104                     ; the redirection bitmap...
+TSS_IOBASE      EQU     TSS_REDIR + 32          ; ...and the I/O bitmap above it
+TSS_TOTAL       EQU     8332                    ; 136 + 8192 + FFh, rounded
 TSS_LIMIT       EQU     TSS_TOTAL - 1
 TSS_ESP0        EQU     04h
 TSS_SS0         EQU     08h
@@ -806,7 +817,7 @@ TSS_IOMAP       EQU     66h                     ; word: offset of the bitmap
 ;---------------------------------------------------------------------
 ; DPMI.  A protected-mode client runs at ring 3 out of an LDT of its
 ; own, and both of the things it needs live in the gap between the end
-; of the TSS (TSS_BASE + 206Ch) and the arena 64K past IO_LIMIT.
+; of the TSS (TSS_BASE + 208Ch) and the arena 64K past IO_LIMIT.
 ;
 ; THE RING-0 STACK IS NOT OPTIONAL AND IT IS NOT THE KERNEL'S.  Any
 ; interrupt taken while ring-3 code is running switches stacks through
@@ -1857,6 +1868,8 @@ EFL_OF          EQU     00000800h
 EFL_IOPL        EQU     00003000h
 EFL_NT          EQU     00004000h
 EFL_VM          EQU     00020000h
+EFL_VIF         EQU     00080000h               ; a box's interrupt flag, under
+EFL_VIP         EQU     00100000h               ; VME, and "one is owed to it"
 
 ; The flags a V86 guest may own: CF PF AF ZF SF DF OF.  IF is
 ; virtualised, IOPL and VM are the monitor's, and TF is deliberately
@@ -2399,6 +2412,12 @@ GVB_NONE        EQU     0
 GVB_BOX         EQU     1
 GVB_OWED        EQU     2
 
+; UNDELETE= FOR THE DRIVER THAT DOES ITS WORK UNDER WINDOWS.  The kernel
+; is parked while Windows runs, so UNDELETE.386 (CMD\UNDELETE\UNDEL386.ASM)
+; reads the setting here, in the low page that survives the park.  1 =
+; ON.  An older kernel leaves this byte 0, which the driver takes as OFF.
+GV_UNDEL        EQU     GV_BASE + 0E9h          ; db - undel_on
+
 ; STARTED FROM A CD-ROM WITH NO EMULATION (BOOT\BOOTCD.ASM).  The CD
 ; loader reads both system files itself, because the loader PMIO
 ; carries for PMDOS.SYS walks a FAT, and writes these into PMIO's
@@ -2567,7 +2586,7 @@ ATDF_ATAPI      EQU     20h                     ; a PACKET device - a CD-ROM,
                                                 ; not a disk.  Deliberately
                                                 ; NOT also ATDF_PRESENT: that
                                                 ; flag is what ata_slot counts
-                                                ; to hand out 80h, 81h, and a
+                                                ; to hand out 80h, 81h..., and a
                                                 ; CD-ROM taking a number would
                                                 ; renumber the disks behind it
 
@@ -2895,12 +2914,41 @@ IOS_BRGBLK      EQU     IOSVC + 114h            ; EDI -> a block_req (BR_*) in t
 IOS_AHCI        EQU     IOSVC + 118h            ; AL = an AHF_* function: SATA
                                                 ; disks on an AHCI adapter
                                                 ; (IO\AHCI.INC)
+IOS_EXCREP      EQU     IOSVC + 11Ch            ; AL = EXR_ASK: CF clear if a
+                                                ; ring-0 fault's report is kept
+                                                ; and the BIOS may be called;
+                                                ; EXR_SAY: print it again.  For
+                                                ; dos_fault (IO\EXCEPT.INC)
+EXR_ASK         EQU     0
+EXR_SAY         EQU     1
+IOS_VME         EQU     IOSVC + 120h            ; AL = VMF_ASK: AL = a VMES_*
+                                                ; for how a box's CLI, STI, INT
+                                                ; and the rest are answered;
+                                                ; VMF_OFF: by the monitor from
+                                                ; now on (VME=OFF, CONFIG.INC).
+                                                ; See v86_vmeinit (VM86.INC)
+VMF_ASK         EQU     0
+VMF_OFF         EQU     1
+VMES_NONE       EQU     0                       ; no VME on this processor (or
+                                                ; a build that watches traps)
+VMES_ON         EQU     1                       ; the processor answers them
+VMES_OFF        EQU     2                       ; VME=OFF
+VMES_NOINT      EQU     3                       ; ...all but INT n, which the
+                                                ; monitor still answers: this
+                                                ; processor's INT pushes the
+                                                ; real IF, not the box's
+VMES_FAIL       EQU     10h                     ; ...+ n: it has VME, and the
+                                                ; check at boot found it wrong
+IOS_DRVMEDIUM   EQU     IOSVC + 124h            ; AL = a BIOS drive -> AL =
+                                                ; DSKF_SOLID, DSKF_SPINS or 0:
+                                                ; what the disk says it is
+                                                ; (blk_medium, IO\BLOCK.INC)
 
 ;---------------------------------------------------------------------
 ; AHCI.  The adapter is found and its ports looked at during boot, and
 ; nothing on it is changed until PMDOS asks (AHF_START, after CONFIG.SYS
 ; - AHCI=OFF and a safe-mode start never do).  Then each SATA disk the
-; BIOS knows as 80h or 81h, and the IDE driver does not, is taken over
+; BIOS knows as 80h to 87h, and the IDE driver does not, is taken over
 ; under that number, found by its sector 0, and each CD-ROM drive is
 ; taken as a CD-ROM unit (CUK_AHCI) - unless the BIOS is reading a
 ; disk image from a CD, which it does through one of those ports.
@@ -2931,7 +2979,7 @@ AHR_STATE       EQU     0       ; db - AHS_*
 AHR_NREC        EQU     1       ; db - port records filled
 AHR_UNITS       EQU     2       ; db - disks in use
 AHR_BIOSOK      EQU     3       ; db - bit 0: the BIOS read 80h's sector
-                                ;      0, bit 1: 81h's
+                                ;      0, bit 1: 81h's, on to bit 7: 87h's
 AHR_PCI         EQU     4       ; dd - bus, device, function, as PCI.INC
 AHR_ID          EQU     8       ; dd - device:vendor
 AHR_ABAR        EQU     12      ; dd - where its registers are
@@ -2942,7 +2990,10 @@ AHR_VS          EQU     28
 AHR_CAP2        EQU     32
 AHR_BOHC        EQU     36
 AHR_BTOT0       EQU     40      ; dd - sectors by INT 13h/48h, 80h and
-AHR_BTOT1       EQU     44      ;      81h, 0 if it did not say
+AHR_BTOT1       EQU     44      ;      81h, 0 if it did not say.  82h to
+                                ;      87h's are the kernel's alone: the
+                                ;      report kept its length, so an older
+                                ;      AHCITEST's buffer still holds it
 AHR_PORTS       EQU     48      ; the ports, AHP_LEN each
 AHR_MAXPORT     EQU     8
 
@@ -2959,8 +3010,9 @@ AHP_BCLB        EQU     24      ; dd - the BIOS's command list and PxCMD,
 AHP_BCMD        EQU     28      ;      as last found
 AHP_TOTAL       EQU     32      ; dd - sectors, from IDENTIFY
 AHP_MATCH       EQU     36      ; db - bit 0: its sector 0 is 80h's,
-                                ;      bit 1: 81h's
+                                ;      bit 1: 81h's, on to bit 7: 87h's
 AHP_ERRS        EQU     37      ; db - commands that failed
+AHP_MEDIUM      EQU     38      ; db - DSKF_SOLID, DSKF_SPINS or 0 (ata_medium)
 AHP_MODEL       EQU     40      ; ATA_MODEL_LEN bytes, space padded
 AHP_LEN         EQU     80
 AHR_LEN         EQU     AHR_PORTS + AHR_MAXPORT * AHP_LEN
@@ -3010,7 +3062,7 @@ USF_UNIT        EQU     2       ; DL = a disk unit, 0 to USB_MAXUNITS-1,
                                 ;    = its attach generation, EBX = sectors
                                 ;    (0 until it has been asked), CL =
                                 ;    device slot, CH = the BIOS drive the
-                                ;    unit took the place of (80h/81h), or
+                                ;    unit took the place of (80h-87h), or
                                 ;    0.  A unit with one answers AL = 0:
                                 ;    the disk has the BIOS drive's letters
                                 ;    and the USB letter stays empty.  CF if
@@ -3048,8 +3100,14 @@ USBUF_NOTDISK   EQU     08h     ; ...and is not a 512-byte-sector disk (a
 USB_MAXHC       EQU     4       ; controllers driven
 USB_MAXDEV      EQU     8       ; devices on all of them together
 USB_MAXUNITS    EQU     4       ; disk units: BIOS-style drives USB_DRV0 up
-USB_DRV0        EQU     82h     ; the block layer's number for unit 0; the
-                                ; two IDE slots are 80h and 81h
+MAX_PHYS        EQU     8       ; hard disks the block layer has numbers
+                                ; for: BIOS 80h to 87h, as many as MS-DOS's
+                                ; FDISK showed.  The BIOS's own count (40:75)
+                                ; decides how many of them it is asked about
+USB_DRV0        EQU     80h + MAX_PHYS  ; the block layer's number for unit
+                                ; 0, 88h: past every hard disk, because a
+                                ; BIOS calls its third disk 82h whatever this
+                                ; kernel would like it to be called
 USB_MEMNEED     EQU     0A000h  ; 40K: a 4K frame list a UHCI controller,
                                 ; the descriptor pool and the buffers.  4K
                                 ; aligned, and PMDOS allocates the slack
@@ -3135,6 +3193,13 @@ KLS_MODE        EQU     2       ; DL = 0 the US keyboard, 1 the layout
 KLS_INJECT      EQU     3       ; DL = a scan code, as if the keyboard had
                                 ;    sent it: what 21h/F1h AL=23h is, for the
                                 ;    tests (TOOLS\KBLTEST.ASM)
+KLS_RAW         EQU     4       ; DL = 1: every byte the keyboard sends from
+                                ;    now on is kept for a native program, in
+                                ;    the order it came, and makes no key in
+                                ;    the ring; DL = 0: as before.  Either way
+                                ;    what was kept is thrown away
+KLS_RAWREAD     EQU     5       ; EDI -> room, ECX = its bytes -> ECX = the
+                                ;    kept bytes moved there, oldest first
 
 ACPF_FIND       EQU     0       ; -> CF clear if ACPI can switch this machine
                                 ;    off.  CF and AL = ACPE_NONE if there are
@@ -3801,6 +3866,14 @@ ERR_BADFUNC     EQU     16h                     ; unknown command
 ERR_CURDIR      EQU     10h                     ; the current directory (3Ah)
 ERR_NOTSAME     EQU     11h                     ; not same device (56h)
 ERR_EXISTS      EQU     80                      ; file already exists
+ERR_NOTSUP      EQU     50                      ; request not supported - DOS's
+                                                ; "network request not supported",
+                                                ; and F1h AL=0Fh's answer for a
+                                                ; file on a volume with no
+                                                ; clusters to map and no
+                                                ; redirector to read through:
+                                                ; a CD, exFAT, an image, a
+                                                ; driver's unit
 ERR_DISKFULL    EQU     70h                     ; (PM-DOS: no free clusters)
 ERR_SHARING     EQU     20h                     ; sharing violation (SHARE)
 ERR_LOCKVIOL    EQU     21h                     ; lock violation
@@ -4383,7 +4456,8 @@ DRVF_USB        EQU     80h                     ; a USB disk's letter.  DRV_BIOS
 ; somewhere that is not a disk controller.
 ;
 ;   00h..01h   floppies
-;   80h..81h   hard disks                   MAX_PHYS
+;   80h..87h   hard disks                   MAX_PHYS
+;   88h..8Bh   USB disk units               USB_DRV0, USB_MAXUNITS
 ;   C0h..C7h   mounted image files          IMG_UNIT_BASE  (IMAGE.INC)
 ;   E0h..EFh   loaded block driver units    DL_UNIT_BASE   (DEVLOAD.INC)
 ;   F0h..F7h   ATAPI units                  CC_CDBASE      (CACHE.INC)
@@ -4412,6 +4486,24 @@ IMF_USED        EQU     01h             ; the slot names something
 IMF_RO          EQU     02h             ; /R, or an optical filesystem
 IMF_ISO         EQU     04h             ; 2048-byte blocks inside, read by
                                         ; ISO9660.INC rather than by FAT.INC
+IMF_MEM         EQU     08h             ; held in memory (F1h AL=2Bh), not
+                                        ; mapped onto the file's clusters
+IMF_CHANGED     EQU     10h             ; reported only: a memory image has
+                                        ; been written since it was loaded
+IMF_NET         EQU     20h             ; a file on a network drive, read and
+                                        ; written where it is, through the
+                                        ; redirector
+
+; A MEMORY IMAGE IS A DISKETTE.  F1h AL=2Bh copies a whole image into a
+; block of the kernel's, for a file whose clusters cannot be mapped and
+; that is not on a network drive - one on a CD or an exFAT volume, or one
+; MOUNT had to unpack - and a 2.88M diskette is the most it takes
+; (Charlie, 2026-11-25).
+IMG_MEM_MAX     EQU     2949120         ; 5,760 sectors
+
+; F1h AL=2Bh's functions, in bits 16-23 of EAX
+IMEM_LOAD       EQU     0               ; ESI/ECX the bytes, EDX the file
+IMEM_COPY       EQU     1               ; the image back out, to EDI
 
 ;---------------------------------------------------------------------
 ; One PHYSICAL DISK, which is the other half of the sentence above: a
@@ -4445,6 +4537,16 @@ DSKF_REMOVABLE  EQU     02h                     ; a USB disk: it can be pulled
                                                 ; written on it is read again
                                                 ; the next time a letter on it
                                                 ; is used - no restart
+DSKF_SOLID      EQU     04h                     ; the disk says it is solid
+                                                ; state (ata_medium)
+DSKF_SPINS      EQU     08h                     ; the disk gives a rotation
+                                                ; rate.  Neither bit means it
+                                                ; did not say: any disk from
+                                                ; before ATA-7, and any disk
+                                                ; only the BIOS drives
+DSKF_MEMORY     EQU     10h                     ; not a disk: a RAM disk's unit.
+                                                ; The call fails for one, and
+                                                ; this is the only bit set
 
 ;---------------------------------------------------------------------
 ; THE DISK CACHE, as 21h/F1h AL=16h shows it to a program.  Bits 16-23

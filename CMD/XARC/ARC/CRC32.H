@@ -10,11 +10,11 @@
 
 /* Running CRC.  Start with Crc32Init(), feed buffers, finish with
  * Crc32Done() which XORs with 0xFFFFFFFF. */
-UInt32 Crc32Init( void );
-UInt32 Crc32Update( UInt32 crc, const void *data, UInt32 len );
-UInt32 Crc32Done( UInt32 crc );
+uint32_t Crc32Init( void );
+uint32_t Crc32Update( uint32_t crc, const void *data, uint32_t len );
+uint32_t Crc32Done( uint32_t crc );
 
 /* One-shot helper: CRC of a single buffer. */
-UInt32 Crc32Calc( const void *data, UInt32 len );
+uint32_t Crc32Calc( const void *data, uint32_t len );
 
 #endif /* CRC32_H */

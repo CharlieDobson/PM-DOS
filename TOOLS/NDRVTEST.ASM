@@ -17,6 +17,15 @@
 ; it.  The program run on the far side is \TESTS\HELLO.COM, or the
 ; command tail.
 ;
+; NDRVTEST /F is something else: mode 13h through VBF_SET, and then
+; NDTEST.SYS asked for NDC_FAULT, a general protection fault in ring 0.
+; The kernel reports it and ends this program (errorlevel 255).  What
+; to look at is the screen: the report, on the text screen this
+; program found, with "Program terminated" under it - PMIO printed it
+; under the picture first, and the recovery prints it again once the
+; screen is back (dos_fault, IOS_EXCREP).  Not in RUNTESTS, as CRASH
+; is not: it ends with a kernel fault.
+;
 ; Linked with:  wlink form raw bin option offset=0x2000
 ;=====================================================================
         .386
@@ -34,6 +43,13 @@ nt_entry:
         mov     edx,OFFSET msg_hi
         call    puts
         call    nt_arg
+        mov     ax,word ptr [argbuf]
+        and     ah,0DFh
+        cmp     ax,'F/'                 ; "/F" or "/f", and nothing more
+        jne     nt_count
+        cmp     byte ptr [argbuf+2],0
+        je      nt_fault
+nt_count:
 
 ;--- how many ----------------------------------------------------------
         mov     edx,OFFSET msg_count
@@ -368,6 +384,62 @@ nt_done:
         int     21h
 
 ;=====================================================================
+; nt_fault - NDRVTEST /F: mode 13h, then NDTEST.SYS asked for a fault
+;            in ring 0.  Comes back only if there was none.
+;---------------------------------------------------------------------
+nt_fault:
+        mov     edx,OFFSET msg_fhi
+        call    puts
+
+        ; NDTEST's row, by name: CONFIG.SYS may load other drivers first
+        xor     ebx,ebx
+nf_row:
+        mov     eax,(NDF_INFO SHL 16) OR 0F125h
+        mov     edx,ebx
+        mov     edi,OFFSET row
+        int     21h
+        jc      nf_nodrv                ; past the last row
+        mov     esi,OFFSET row + ND_NAME
+        mov     edi,OFFSET name_ndtest
+        mov     ecx,8
+        repe    cmpsb
+        je      nf_have
+        inc     ebx
+        cmp     ebx,ND_MAX
+        jb      nf_row
+nf_nodrv:
+        mov     edx,OFFSET msg_fnodrv
+        call    puts
+        call    fail
+        jmp     nt_sum
+nf_have:
+        mov     [frow],ebx
+
+        mov     eax,(VBF_SET SHL 16) OR 0F11Fh
+        mov     ebx,13h
+        int     21h
+        jc      nf_nomode
+        mov     eax,(NDF_CALL SHL 16) OR 0F125h
+        mov     ebx,NDC_FAULT
+        mov     edx,[frow]
+        xor     ecx,ecx                 ; no buffer
+        xor     edi,edi
+        int     21h
+
+        ; Still here: no fault.  The screen back, and say so.
+        mov     eax,(VBF_RESTORE SHL 16) OR 0F11Fh
+        int     21h
+        mov     edx,OFFSET msg_fstill
+        call    puts
+        call    fail
+        jmp     nt_sum
+nf_nomode:
+        mov     edx,OFFSET msg_fnomode
+        call    puts
+        call    fail
+        jmp     nt_sum
+
+;=====================================================================
 ; nt_ask - NDTEST's report into rep.  CF if the call failed; EAX = what
 ;          it answered.
 ;---------------------------------------------------------------------
@@ -555,6 +627,10 @@ msg_failed  db  '  checks failed here: $'
 msg_allok   db  'all checks passed.',13,10,'$'
 msg_notok   db  'SOME CHECKS FAILED.',13,10,'$'
 msg_done    db  'NDRVTEST done',13,10,'$'
+msg_fhi     db  'NDRVTEST /F: mode 13h, then a general protection fault in ring 0, in NDTEST.SYS',13,10,'$'
+msg_fnodrv  db  '  NDTEST.SYS among the drivers loaded .................. $'
+msg_fnomode db  '  VBF_SET: mode 13h .................................... $'
+msg_fstill  db  '  NDC_FAULT: the kernel ended this program ............. $'
 msg_ok      db  ' ok',13,10,'$'
 msg_fail    db  ' FAIL',13,10,'$'
 msg_crlf    db  13,10,'$'
@@ -564,6 +640,7 @@ progptr     dd  OFFSET progname
 progname    db  '\TESTS\HELLO.COM',0
 argbuf      db  80 dup(0)
 exitcode    dd  0
+frow        dd  0                       ; /F: NDTEST.SYS's row
 failures    dd  0
 count       dd  0
 ticks1      dd  0

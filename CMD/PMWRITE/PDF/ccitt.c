@@ -62,7 +62,7 @@ static const char *const long_codes[13] = {
 #define LOOK        13
 
 /* from the heap: static, they would be 32K of zeroes in the program's file */
-static u16 *white_tab, *black_tab;
+static uint16_t *white_tab, *black_tab;
 static int tabs_made;
 
 /* what the next row's first bits say, in two dimensions */
@@ -78,26 +78,27 @@ static int tabs_made;
 #define TD_END      9
 
 typedef struct {
-    int  kay, columns, rows, black_is_1, byte_align, end_of_line, end_of_block;
-    u32  bits;
-    int  nbits, src_ended;
-    int  row, next_2d, ended, started;
-    s32 *ref, *cur;                 /* where the colour changes */
-    u8  *out;
-    u32  rowbytes;
+    int          kay, columns, rows, black_is_1, byte_align, end_of_line, end_of_block;
+    uint32_t     bits;
+    int          nbits, src_ended;
+    int          row, next_2d, ended, started;
+    int         *ref, *cur;             /* where the colour changes */
+    uint8_t     *out;
+    unsigned int rowbytes;
 } FAX;
 
-static void tab_add( u16 *tab, const char *code, int run )
+static void tab_add( uint16_t *tab, const char *code, int run )
 {
-    u32 val = 0, index, span;
+    uint32_t val = 0;
+    unsigned int index, span;
     int len = 0;
 
     for ( ; code[len]; len++ ) {
-        val = (val << 1) | (u32)(code[len] - '0');
+        val = (val << 1) | (uint32_t)(code[len] - '0');
     }
     span = 1UL << (LOOK - len);
     for ( index = 0; index < span; index++ ) {
-        tab[(val << (LOOK - len)) + index] = (u16)((len << 12) | run);
+        tab[(val << (LOOK - len)) + index] = (uint16_t)((len << 12) | run);
     }
 }
 
@@ -105,9 +106,9 @@ static void tabs_make( void )
 {
     int index;
 
-    white_tab = (u16 *)xalloc( 2 * (1UL << LOOK) * sizeof( u16 ) );
+    white_tab = (uint16_t *)xalloc( 2 * (1UL << LOOK) * sizeof( uint16_t ) );
     black_tab = white_tab + (1 << LOOK);
-    mem_set( white_tab, 0, 2 * (1UL << LOOK) * sizeof( u16 ) );
+    mem_set( white_tab, 0, 2 * (1UL << LOOK) * sizeof( uint16_t ) );
     for ( index = 0; index < 64 + 27; index++ ) {
         tab_add( white_tab, white_codes[index], index < 64 ? index : (index - 63) * 64 );
         tab_add( black_tab, black_codes[index], index < 64 ? index : (index - 63) * 64 );
@@ -134,7 +135,7 @@ void ccitt_done( void )
 /* bits                                                                */
 /* ------------------------------------------------------------------ */
 
-static u32 look( FAX *fax, IN *src, int count )
+static uint32_t look( FAX *fax, IN *src, int count )
 {
     int ch;
 
@@ -144,7 +145,7 @@ static u32 look( FAX *fax, IN *src, int count )
             ch = 0;
             fax->src_ended++;
         }
-        fax->bits = (fax->bits << 8) | (u32)ch;
+        fax->bits = (fax->bits << 8) | (uint32_t)ch;
         fax->nbits += 8;
     }
     return (fax->bits >> (fax->nbits - count)) & ((1UL << count) - 1);
@@ -162,7 +163,7 @@ static void eat( FAX *fax, int count )
    one that ends it.  -1 if the bits are no code at all. */
 static int run_length( FAX *fax, IN *src, int black )
 {
-    const u16 *tab = black ? black_tab : white_tab;
+    const uint16_t *tab = black ? black_tab : white_tab;
     int total = 0, entry, run;
 
     for ( ;; ) {
@@ -184,7 +185,7 @@ static int run_length( FAX *fax, IN *src, int black )
 
 static int two_dim( FAX *fax, IN *src )
 {
-    u32 code = look( fax, src, 7 );
+    uint32_t code = look( fax, src, 7 );
 
     if ( code & 0x40 ) {
         eat( fax, 1 );
@@ -227,12 +228,12 @@ static int two_dim( FAX *fax, IN *src )
 /* ------------------------------------------------------------------ */
 
 typedef struct {
-    s32 *cur;
-    int  at;                        /* the change being written */
-    int  columns;
+    int     *cur;
+    int      at;                    /* the change being written */
+    int      columns;
 } ROWOUT;
 
-static void add_pixels( ROWOUT *ro, s32 upto, int black )
+static void add_pixels( ROWOUT *ro, int upto, int black )
 {
     if ( upto > ro->cur[ro->at] ) {
         if ( upto > ro->columns ) {
@@ -245,7 +246,7 @@ static void add_pixels( ROWOUT *ro, s32 upto, int black )
     }
 }
 
-static void add_pixels_back( ROWOUT *ro, s32 upto, int black )
+static void add_pixels_back( ROWOUT *ro, int upto, int black )
 {
     if ( upto > ro->cur[ro->at] ) {
         add_pixels( ro, upto, black );
@@ -263,8 +264,8 @@ static void add_pixels_back( ROWOUT *ro, s32 upto, int black )
 static void decode_row( FAX *fax, IN *src )
 {
     ROWOUT ro;
-    s32 *ref = fax->ref, *cur = fax->cur;
-    s32 run1, run2;
+    int *ref = fax->ref, *cur = fax->cur;
+    int run1, run2;
     int black = 0, under = 0, code, shift, index;
 
     ro.cur = cur;
@@ -356,12 +357,12 @@ static void decode_row( FAX *fax, IN *src )
     for ( index = 0; cur[index] < fax->columns; index += 2 ) {
         for ( run1 = cur[index]; run1 < cur[index + 1] && run1 < fax->columns; run1++ ) {
             if ( (run1 & 7) == 0 && run1 + 8 <= cur[index + 1] ) {
-                fax->out[run1 >> 3] = (u8)(fax->black_is_1 ? 0xFF : 0x00);
+                fax->out[run1 >> 3] = (uint8_t)(fax->black_is_1 ? 0xFF : 0x00);
                 run1 += 7;
             } else if ( fax->black_is_1 ) {
-                fax->out[run1 >> 3] |= (u8)(0x80 >> (run1 & 7));
+                fax->out[run1 >> 3] |= (uint8_t)(0x80 >> (run1 & 7));
             } else {
-                fax->out[run1 >> 3] &= (u8)~(0x80 >> (run1 & 7));
+                fax->out[run1 >> 3] &= (uint8_t)~(0x80 >> (run1 & 7));
             }
         }
     }
@@ -373,7 +374,7 @@ static int fax_fill( IN *in )
 {
     FAX *fax = IN_STATE( in, FAX );
     IN *src = in->src;
-    u32 code;
+    uint32_t code;
     int got_eol = 0;
 
     if ( fax->ended || (fax->rows > 0 && fax->row >= fax->rows) ) {
@@ -452,7 +453,7 @@ IN *flt_ccitt( IN *src, DICT *parms )
 {
     IN *in = in_new( sizeof( FAX ), fax_fill, src );
     FAX *fax = IN_STATE( in, FAX );
-    s32 *lines;
+    int *lines;
 
     if ( !tabs_made ) {
         tabs_make();
@@ -469,12 +470,12 @@ IN *flt_ccitt( IN *src, DICT *parms )
         in_close( in );
         return NULL;
     }
-    fax->rowbytes = ((u32)fax->columns + 7) / 8;
-    lines = (s32 *)pool_big( doc.page_pool, ((u32)fax->columns + 4) * 2 * sizeof( s32 ) );
+    fax->rowbytes = ((unsigned int)fax->columns + 7) / 8;
+    lines = (int *)pool_big( doc.page_pool, ((unsigned int)fax->columns + 4) * 2 * sizeof( int ) );
     fax->ref = lines;
     fax->cur = lines + fax->columns + 4;
     fax->ref[0] = fax->ref[1] = fax->ref[2] = fax->columns;     /* above the first row: white */
-    fax->out = (u8 *)pool_big( doc.page_pool, fax->rowbytes + 4 );
+    fax->out = (uint8_t *)pool_big( doc.page_pool, fax->rowbytes + 4 );
     fax->next_2d = fax->kay < 0;
     return in;
 }

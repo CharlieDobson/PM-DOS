@@ -17,19 +17,20 @@
 #include "debug.h"
 
 /* the tail MAIN.C built for a native load */
-const u8 *native_tail( void );
+const uint8_t *native_tail( void );
 
-static u16 load_seg( void )
+static uint16_t load_seg( void )
 {
     return work_seg;
 }
 
 /* read a whole file into BUF (at most MAX); the count, or -1 on an
    error already reported */
-static long read_whole( const char *name, u8 *buf, u32 max )
+static long read_whole( const char *name, uint8_t *buf, uint32_t max )
 {
     int handle, err;
-    u32 size, got, done = 0;
+    uint32_t size, done = 0;
+    unsigned int got;
 
     handle = sys_open( name, &err );
     if ( handle < 0 ) {
@@ -56,19 +57,20 @@ static long read_whole( const char *name, u8 *buf, u32 max )
    file's start (LEN bytes, at least the header's fields); the module is
    read from the file itself, so a program bigger than filebuf loads
    whole.  0, or 1 after an error already said. */
-static int load_exe( const u8 *head, u32 len )
+static int load_exe( const uint8_t *head, uint32_t len )
 {
-    u32 hdr = (u32)*(const u16 *)( head + 8 ) * 16;
-    u32 pages = *(const u16 *)( head + 4 );
-    u32 last = *(const u16 *)( head + 2 ) & 0x1FF;
-    u16 relocs = *(const u16 *)( head + 6 );
-    u16 reltab = *(const u16 *)( head + 24 );
-    u16 start_cs = *(const u16 *)( head + 22 );
-    u16 start_ip = *(const u16 *)( head + 20 );
-    u16 start_ss = *(const u16 *)( head + 14 );
-    u16 start_sp = *(const u16 *)( head + 16 );
-    u16 base = (u16)( load_seg() + 0x10 );      /* past the PSP */
-    u32 size, end, image, done, got, i;
+    uint32_t hdr = (uint32_t)*(const uint16_t *)( head + 8 ) * 16;
+    uint32_t pages = *(const uint16_t *)( head + 4 );
+    uint32_t last = *(const uint16_t *)( head + 2 ) & 0x1FF;
+    uint16_t relocs = *(const uint16_t *)( head + 6 );
+    uint16_t reltab = *(const uint16_t *)( head + 24 );
+    uint16_t start_cs = *(const uint16_t *)( head + 22 );
+    uint16_t start_ip = *(const uint16_t *)( head + 20 );
+    uint16_t start_ss = *(const uint16_t *)( head + 14 );
+    uint16_t start_sp = *(const uint16_t *)( head + 16 );
+    uint16_t base = (uint16_t)( load_seg() + 0x10 ); /* past the PSP */
+    uint32_t size, end, image, done;
+    unsigned int got, i;
     int handle, err;
 
     handle = sys_open( file_name, &err );
@@ -99,26 +101,26 @@ static int load_exe( const u8 *head, u32 len )
     sys_close( handle );
 
     /* only the entries inside what was read: a table past it is cut off */
-    for ( i = 0; i < relocs && (u32)reltab + i * 4 + 4 <= len; i++ ) {
-        u16 roff = *(const u16 *)( head + reltab + i * 4 );
-        u16 rseg = *(const u16 *)( head + reltab + i * 4 + 2 );
-        ADDR r;
-        u8  wd[2];
-        u16 v;
-        r.seg = (u16)( base + rseg );
+    for ( i = 0; i < relocs && (uint32_t)reltab + i * 4 + 4 <= len; i++ ) {
+        uint16_t roff = *(const uint16_t *)( head + reltab + i * 4 );
+        uint16_t rseg = *(const uint16_t *)( head + reltab + i * 4 + 2 );
+        ADDR     r;
+        uint8_t  wd[2];
+        uint16_t v;
+        r.seg = (uint16_t)( base + rseg );
         r.off = roff;
         mem_read( r, wd, 2 );
-        v = (u16)( wd[0] | ( wd[1] << 8 ) );
-        v = (u16)( v + base );
-        wd[0] = (u8)v;
-        wd[1] = (u8)( v >> 8 );
+        v = (uint16_t)( wd[0] | ( wd[1] << 8 ) );
+        v = (uint16_t)( v + base );
+        wd[0] = (uint8_t)v;
+        wd[1] = (uint8_t)( v >> 8 );
         mem_write( r, wd, 2 );
     }
-    cpu.cs = (u16)( base + start_cs );
+    cpu.cs = (uint16_t)( base + start_cs );
     cpu.eip = start_ip;
-    cpu.ss = (u16)( base + start_ss );
+    cpu.ss = (uint16_t)( base + start_ss );
     cpu.esp = start_sp;
-    cpu.ds = cpu.es = (u16)load_seg();
+    cpu.ds = cpu.es = (uint16_t)load_seg();
     cpu.eax = 0;
     /* BX:CX is the file's length less 512, as 6.22 has it whatever the
        header's own length is; DX, BP, SI and DI stay as they were */
@@ -130,13 +132,13 @@ static int load_exe( const u8 *head, u32 len )
 
 /* The D32 signature 'CD' in a bare image, or behind an MZ stub that
    points at one.  1 if this file is a native program. */
-static int is_d32( const u8 *file, u32 len )
+static int is_d32( const uint8_t *file, uint32_t len )
 {
-    u32 off = 0;
+    uint32_t off = 0;
 
     if ( len >= 2 && file[0] == 'M' && file[1] == 'Z' ) {
-        if ( len >= 0x40 && *(const u16 *)( file + 0x18 ) >= 0x40 ) {
-            off = *(const u32 *)( file + 0x3C );
+        if ( len >= 0x40 && *(const uint16_t *)( file + 0x18 ) >= 0x40 ) {
+            off = *(const uint32_t *)( file + 0x3C );
         }
     }
     return off < len && len - off >= 2 && file[off] == 'C' && file[off + 1] == 'D';
@@ -144,13 +146,13 @@ static int is_d32( const u8 *file, u32 len )
 
 /* an MZ header with the fields EXEC reads; anything else named .EXE is
    loaded as a .COM, as EXEC would */
-static int is_mz( const u8 *file, u32 len )
+static int is_mz( const uint8_t *file, uint32_t len )
 {
     return len >= 0x1C && ( ( file[0] == 'M' && file[1] == 'Z' ) || ( file[0] == 'Z' && file[1] == 'M' ) );
 }
 
 #define FILEBUF_MAX 0x20000             /* enough to relocate an .EXE */
-static u8 *filebuf;
+static uint8_t *filebuf;
 
 /* The N file into memory.  WHERE is L's address, or NULL: a .COM or
    data file goes there, as 6.22's did; an .EXE and a native program go
@@ -161,7 +163,7 @@ void load_file( const ADDR *where )
     DRX  regs;
 
     if ( filebuf == NULL ) {
-        filebuf = (u8 *)try_alloc( FILEBUF_MAX );
+        filebuf = (uint8_t *)try_alloc( FILEBUF_MAX );
         if ( filebuf == NULL ) {
             out_err( msg_nomem );
             return;
@@ -179,7 +181,7 @@ void load_file( const ADDR *where )
         if ( got < 0 ) {
             return;
         }
-        if ( is_d32( filebuf, (u32)got ) ) {
+        if ( is_d32( filebuf, (uint32_t)got ) ) {
             int rc;
 
             /* the kernel holds one program at a time: the one held now
@@ -221,8 +223,8 @@ void load_file( const ADDR *where )
         where = NULL;
     }
     /* filebuf holds the file's start, from the look for a D32 program */
-    if ( file_kind == KIND_EXE && is_mz( filebuf, (u32)got ) ) {
-        if ( load_exe( filebuf, (u32)got ) == 0 ) {
+    if ( file_kind == KIND_EXE && is_mz( filebuf, (uint32_t)got ) ) {
+        if ( load_exe( filebuf, (uint32_t)got ) == 0 ) {
             positions_at_ip();
         }
         return;
@@ -232,16 +234,16 @@ void load_file( const ADDR *where )
            the registers EXEC starts a .COM with.  A data file at CS:100
            or L's address, with only BX:CX changed. */
         int is_com = file_kind == KIND_COM || file_kind == KIND_EXE;
-        u32 start = (u32)( is_com ? load_seg() : cpu.cs ) * 16 + 0x100;
-        u32 at;
+        uint32_t start = (uint32_t)( is_com ? load_seg() : cpu.cs ) * 16 + 0x100;
+        uint32_t at;
 
         if ( where && !is_com ) {
-            start = (u32)where->seg * 16 + where->off;
+            start = (uint32_t)where->seg * 16 + where->off;
         }
-        if ( start < (u32)work_seg * 16 || start >= (u32)work_seg * 16 + work_len ) {
+        if ( start < (uint32_t)work_seg * 16 || start >= (uint32_t)work_seg * 16 + work_len ) {
             coded_error( "df" );        /* outside the work area: read only */
         }
-        at = start - (u32)work_seg * 16;
+        at = start - (uint32_t)work_seg * 16;
         got = read_whole( file_name, work_buf + at, work_len - at );
         if ( got < 0 ) {
             return;
@@ -253,8 +255,8 @@ void load_file( const ADDR *where )
             cpu.eax = 0;
             positions_at_ip();
         }
-        cpu.ecx = (u32)got & 0xFFFF;
-        cpu.ebx = ( (u32)got >> 16 ) & 0xFFFF;
+        cpu.ecx = (uint32_t)got & 0xFFFF;
+        cpu.ebx = ( (uint32_t)got >> 16 ) & 0xFFFF;
     }
 }
 
@@ -262,15 +264,15 @@ void load_file( const ADDR *where )
    L and W take 512 bytes of each, and W reads the sector first so the
    rest of it is written back as it was */
 #define SECTOR_MAX 4096
-static u8 sector_buf[SECTOR_MAX];
+static uint8_t sector_buf[SECTOR_MAX];
 
 /* L [address [drive sector count]] */
 void cmd_load( void )
 {
-    ADDR addr;
-    u32  drive, sector, count;
-    u8   *buf = sector_buf;
-    u32  i;
+    ADDR     addr;
+    uint32_t drive, sector, count;
+    uint8_t *buf = sector_buf;
+    uint32_t i;
 
     if ( at_end() ) {
         load_file( NULL );
@@ -296,7 +298,7 @@ void cmd_load( void )
     count = get_hex( 4 );
     need_end();
     for ( i = 0; i < count; i++ ) {
-        u32 j;
+        uint32_t j;
 
         if ( sys_abs_read( (int)drive, sector + i, 1, buf ) ) {
             out_str( msg_rderr );
@@ -320,11 +322,11 @@ void cmd_load( void )
 /* W [address [drive sector count]] */
 void cmd_write( void )
 {
-    ADDR addr;
-    u32  drive, sector, count;
-    u32  len, done;
-    u8   buf[512];
-    int  handle, err;
+    ADDR     addr;
+    uint32_t drive, sector, count;
+    uint32_t len, done;
+    uint8_t  buf[512];
+    int      handle, err;
 
     if ( !at_end() ) {
         addr.seg = cpu.cs;
@@ -335,7 +337,7 @@ void cmd_write( void )
             count = get_hex( 4 );
             need_end();
             for ( ; count; count--, sector++ ) {
-                u32 j;
+                uint32_t j;
                 /* the sector's own bytes past the first 512 stay */
                 if ( sys_abs_read( (int)drive, sector, 1, sector_buf ) ) {
                     out_str( msg_wrerr );
@@ -345,7 +347,7 @@ void cmd_write( void )
                 }
                 for ( j = 0; j < 512; j++ ) {
                     ADDR at = addr;
-                    u8 one[1], ok[1];
+                    uint8_t one[1], ok[1];
                     at.off = addr.off + j;
                     mem_get( at, one, 1, ok );
                     sector_buf[j] = one[0];
@@ -388,8 +390,8 @@ void cmd_write( void )
     out_nl();
     done = 0;
     while ( done < len ) {
-        u32 n = len - done;
-        u32 wrote;
+        unsigned int n = len - done;
+        unsigned int wrote;
         ADDR at = addr;
         if ( n > sizeof( buf ) ) {
             n = sizeof( buf );
@@ -397,11 +399,11 @@ void cmd_write( void )
         if ( mem_is_low( addr ) ) {
             /* on through memory past 64K, as 6.22 stepped its segment;
                past the megabyte there is nothing to read */
-            u32 lin = (u32)addr.seg * 16 + addr.off + done;
+            uint32_t lin = (uint32_t)addr.seg * 16 + addr.off + done;
             if ( lin >= 0x100000UL ) {
                 mem_set( buf, 0, n );
             } else {
-                at.seg = (u16)( lin >> 4 );
+                at.seg = (uint16_t)( lin >> 4 );
                 at.off = lin & 0x0F;
                 mem_read( at, buf, n );
             }

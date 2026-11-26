@@ -12,29 +12,29 @@
 /* small helpers                                                     */
 /* ---------------------------------------------------------------- */
 
-void sl_memcpy( void *to, const void *from, u32 len )
+void sl_memcpy( void *to, const void *from, unsigned int len )
 {
-    u8 *dst = (u8 *)to;
-    const u8 *src = (const u8 *)from;
+    uint8_t *dst = (uint8_t *)to;
+    const uint8_t *src = (const uint8_t *)from;
     while ( len-- ) *dst++ = *src++;
 }
 
-void sl_memzero( void *to, u32 len )
+void sl_memzero( void *to, unsigned int len )
 {
-    u8 *dst = (u8 *)to;
+    uint8_t *dst = (uint8_t *)to;
     while ( len-- ) *dst++ = 0;
 }
 
-u32 sl_strlen( const char *s )
+unsigned int sl_strlen( const char *s )
 {
-    u32 n = 0;
+    unsigned int n = 0;
     while ( s[n] ) n++;
     return n;
 }
 
-void sl_strcpy( char *to, const char *from, u32 max )
+void sl_strcpy( char *to, const char *from, unsigned int max )
 {
-    u32 i;
+    unsigned int i;
     for ( i = 0; i + 1 < max && from[i]; i++ ) to[i] = from[i];
     to[i] = 0;
 }
@@ -42,7 +42,7 @@ void sl_strcpy( char *to, const char *from, u32 max )
 int sl_strcmp( const char *a, const char *b )
 {
     while ( *a && *a == *b ) { a++; b++; }
-    return (int)( (u8)*a ) - (int)( (u8)*b );
+    return (int)( (unsigned char)*a ) - (int)( (unsigned char)*b );
 }
 
 static char lower( char ch )
@@ -53,12 +53,12 @@ static char lower( char ch )
 int sl_strcasecmp( const char *a, const char *b )
 {
     while ( *a && lower( *a ) == lower( *b ) ) { a++; b++; }
-    return (int)( (u8)lower( *a ) ) - (int)( (u8)lower( *b ) );
+    return (int)( (unsigned char)lower( *a ) ) - (int)( (unsigned char)lower( *b ) );
 }
 
-u32 sl_atou( const char *s )
+unsigned int sl_atou( const char *s )
 {
-    u32 value = 0;
+    unsigned int value = 0;
     while ( *s == ' ' ) s++;
     while ( *s >= '0' && *s <= '9' ) value = value * 10 + ( *s++ - '0' );
     return value;
@@ -73,10 +73,10 @@ static void clear( REGS *regs )
 /* the clock                                                         */
 /* ---------------------------------------------------------------- */
 
-u32 sl_now( void )
+uint32_t sl_now( void )
 {
-    REGS regs;
-    u32  hour, minute, second, cs;
+    REGS         regs;
+    unsigned int hour, minute, second, cs;
 
     clear( &regs );
     regs.eax = 0x2C00;
@@ -88,14 +88,14 @@ u32 sl_now( void )
     return ( ( hour * 60 + minute ) * 60 + second ) * 100 + cs;
 }
 
-u32 sl_since( u32 start )
+uint32_t sl_since( uint32_t start )
 {
-    u32 now = sl_now();
+    uint32_t now = sl_now();
     if ( now < start ) now += 24UL * 60 * 60 * 100;     /* past midnight */
     return now - start;
 }
 
-static void two( char *to, u32 value )
+static void two( char *to, unsigned int value )
 {
     to[0] = (char)( '0' + ( value / 10 ) % 10 );
     to[1] = (char)( '0' + value % 10 );
@@ -103,8 +103,8 @@ static void two( char *to, u32 value )
 
 void sl_now14( char *out )
 {
-    REGS regs;
-    u32  year, month, day, hour, minute, second;
+    REGS         regs;
+    unsigned int year, month, day, hour, minute, second;
 
     clear( &regs );
     regs.eax = 0x2A00;                  /* get date: CX year, DH month, DL day */
@@ -137,8 +137,8 @@ void sl_now14( char *out )
 /* ---------------------------------------------------------------- */
 
 #define OUT_BUF 2048
-static u8  out_buf[OUT_BUF];
-static u32 out_len;
+static uint8_t      out_buf[OUT_BUF];
+static unsigned int out_len;
 
 void sl_flush( void )
 {
@@ -148,7 +148,7 @@ void sl_flush( void )
         regs.eax = 0x4000;
         regs.ebx = 1;
         regs.ecx = out_len;
-        regs.edx = (u32)out_buf;
+        regs.edx = (uint32_t)out_buf;
         int21( &regs );
         out_len = 0;
     }
@@ -157,7 +157,7 @@ void sl_flush( void )
 void sl_putc( char ch )
 {
     if ( out_len == OUT_BUF ) sl_flush();
-    out_buf[out_len++] = (u8)ch;
+    out_buf[out_len++] = (uint8_t)ch;
     if ( ch == '\n' ) sl_flush();
 }
 
@@ -166,7 +166,7 @@ void sl_puts( const char *text )
     while ( *text ) sl_putc( *text++ );
 }
 
-void sl_putu( u32 value )
+void sl_putu( unsigned int value )
 {
     char digits[12];
     int  n = 0;
@@ -174,7 +174,7 @@ void sl_putu( u32 value )
     while ( n ) sl_putc( digits[--n] );
 }
 
-void sl_putip( u32 ip )
+void sl_putip( uint32_t ip )
 {
     sl_putu( IP_A( ip ) ); sl_putc( '.' );
     sl_putu( IP_B( ip ) ); sl_putc( '.' );
@@ -193,8 +193,8 @@ int sl_kbhit( void )
 
 int sl_getkey( void )
 {
-    REGS regs;
-    u32  ch;
+    REGS         regs;
+    unsigned int ch;
 
     clear( &regs );
     regs.eax = 0x0800;                  /* read, no echo */
@@ -219,17 +219,17 @@ static int   arg_count = -1;
 
 int sl_args( char ***argv )
 {
-    REGS regs;
-    u8  *psp;
-    u32  len, i;
-    char *in, *out;
-    int   quoted;
+    REGS         regs;
+    uint8_t     *psp;
+    unsigned int len, i;
+    char        *in, *out;
+    int          quoted;
 
     if ( arg_count < 0 ) {
         clear( &regs );
         regs.eax = 0x6200;
         int21( &regs );
-        psp = (u8 *)regs.ebx;
+        psp = (uint8_t *)regs.ebx;
         len = psp[0x80];
         if ( len > 127 ) len = 127;
         for ( i = 0; i < len; i++ ) arg_tail[i] = (char)psp[0x81 + i];
@@ -262,14 +262,14 @@ int sl_args( char ***argv )
 
 const char *sl_getenv( const char *name )
 {
-    REGS        regs;
-    const char *env;
-    u32         namelen = sl_strlen( name ), i;
+    REGS         regs;
+    const char  *env;
+    unsigned int namelen = sl_strlen( name ), i;
 
     clear( &regs );
     regs.eax = 0x6200;                  /* get PSP (flat pointer in EBX) */
     int21( &regs );
-    env = *(const char **)( (u8 *)regs.ebx + 0x2C );    /* the env block, flat */
+    env = *(const char **)( (uint8_t *)regs.ebx + 0x2C ); /* the env block, flat */
     if ( env == NULL ) return NULL;
 
     while ( *env ) {
@@ -290,14 +290,14 @@ const char *sl_getenv( const char *name )
 /* the socket call (21h/F1h AL=26h)                                  */
 /* ---------------------------------------------------------------- */
 
-static u32 sk( u32 fn, void *buf, u32 len, int *err )
+static uint32_t sk( uint32_t fn, void *buf, uint32_t len, int *err )
 {
     REGS regs;
 
     clear( &regs );
     regs.eax = ( fn << 16 ) | 0xF126;
     regs.ecx = len;
-    regs.edi = (u32)buf;
+    regs.edi = (uint32_t)buf;
     int21( &regs );
     if ( CF( regs ) ) { if ( err ) *err = (int)( regs.eax & 0xFFFF ); return 0; }
     if ( err ) *err = 0;
@@ -316,10 +316,10 @@ int sl_ifstat( SOCK_IF *info )
     return err == 0;
 }
 
-int sl_up( u32 ms )
+int sl_up( unsigned int ms )
 {
     SOCK_IF info;
-    u32 start = sl_now();
+    uint32_t start = sl_now();
     int err;
 
     for ( ;; ) {
@@ -331,15 +331,16 @@ int sl_up( u32 ms )
     }
 }
 
-u32 sl_resolve( const char *name, u32 ms )
+uint32_t sl_resolve( const char *name, unsigned int ms )
 {
     SOCK_RES req;
-    u32 start = sl_now(), state;
+    uint32_t start = sl_now();
+    unsigned int state;
     int err;
 
     /* a dotted quad resolves to itself */
     {
-        u32 parts[4], np = 0, value = 0, digits = 0;
+        unsigned int parts[4], np = 0, value = 0, digits = 0;
         const char *p = name;
         int dotted = 1;
         for ( ;; p++ ) {
@@ -366,10 +367,11 @@ u32 sl_resolve( const char *name, u32 ms )
     }
 }
 
-int sl_ping( u32 ip, u16 seq, u32 *rttms, u32 ms )
+int sl_ping( uint32_t ip, uint16_t seq, uint32_t *rttms, unsigned int ms )
 {
     SOCK_PINGREQ req;
-    u32 start = sl_now(), state;
+    uint32_t start = sl_now();
+    unsigned int state;
     int err;
 
     sl_memzero( &req, sizeof( req ) );
@@ -387,10 +389,10 @@ int sl_ping( u32 ip, u16 seq, u32 *rttms, u32 ms )
 /* TCP                                                               */
 /* ---------------------------------------------------------------- */
 
-int sl_open( u32 type )
+int sl_open( uint32_t type )
 {
     SOCK_OPENREQ req;
-    u32 handle;
+    unsigned int handle;
     int err;
 
     req.type = type;
@@ -414,11 +416,12 @@ int sl_state( int handle, SOCK_STAT *st )
     return (int)sk( SOCK_STATE, st, SOCKSTAT_LEN, &err );
 }
 
-int sl_connect( int handle, u32 ip, u16 port, u32 ms )
+int sl_connect( int handle, uint32_t ip, uint16_t port, unsigned int ms )
 {
     SOCK_CONNREQ req;
     SOCK_STAT st;
-    u32 start = sl_now(), state;
+    uint32_t start = sl_now();
+    unsigned int state;
     int err;
 
     sl_memzero( &req, sizeof( req ) );
@@ -429,7 +432,7 @@ int sl_connect( int handle, u32 ip, u16 port, u32 ms )
     if ( err ) return 0;
 
     for ( ;; ) {
-        state = (u32)sl_state( handle, &st );
+        state = (unsigned int)sl_state( handle, &st );
         /* SS_CLOSING too: a server that accepts and ends at once was
            connected to, and the first read says it has ended */
         if ( state == SS_ESTABLISHED || state == SS_CLOSING ) return 1;
@@ -438,23 +441,24 @@ int sl_connect( int handle, u32 ip, u16 port, u32 ms )
     }
 }
 
-static u32 io_buf_room;
-static u8 *io_buf;                      /* lazily grown send/recv staging */
+static unsigned int io_buf_room;
+static uint8_t *io_buf;                 /* lazily grown send/recv staging */
 
-int sl_send( int handle, const void *data, u32 len, u32 ms )
+int sl_send( int handle, const void *data, unsigned int len, unsigned int ms )
 {
-    const u8 *p = (const u8 *)data;
-    u32 start = sl_now(), done = 0, state;
+    const uint8_t *p = (const uint8_t *)data;
+    uint32_t start = sl_now();
+    unsigned int done = 0, state;
     int err;
     SOCK_STAT st;
 
     /* the SOCK_IO header plus a chunk of data in one buffer */
-    static u8 sbuf[2048];
+    static uint8_t sbuf[2048];
     SOCK_IO *msg = (SOCK_IO *)sbuf;
 
     while ( done < len ) {
-        u32 chunk = len - done;
-        u32 taken;
+        unsigned int chunk = len - done;
+        unsigned int taken;
         if ( chunk > sizeof( sbuf ) - SOCK_IO_HDR ) chunk = sizeof( sbuf ) - SOCK_IO_HDR;
         sl_memzero( msg, SOCK_IO_HDR );
         msg->handle = handle;
@@ -466,7 +470,7 @@ int sl_send( int handle, const void *data, u32 len, u32 ms )
         if ( taken < chunk ) {
             /* the send buffer is full: let it drain, watch the state */
             if ( sl_since( start ) > ms ) return (int)done;
-            state = (u32)sl_state( handle, &st );
+            state = (unsigned int)sl_state( handle, &st );
             /* the peer having ended (SS_CLOSING) does not stop our side */
             if ( state != SS_ESTABLISHED && state != SS_CLOSING ) return (int)done;
         } else {
@@ -477,11 +481,11 @@ int sl_send( int handle, const void *data, u32 len, u32 ms )
     return (int)done;
 }
 
-int sl_recv( int handle, void *buf, u32 max )
+int sl_recv( int handle, void *buf, unsigned int max )
 {
-    static u8 rbuf[2048];
+    static uint8_t rbuf[2048];
     SOCK_IO *msg = (SOCK_IO *)rbuf;
-    u32 want = max, got;
+    unsigned int want = max, got;
     int err;
 
     if ( want > sizeof( rbuf ) - SOCK_IO_HDR ) want = sizeof( rbuf ) - SOCK_IO_HDR;
@@ -497,14 +501,14 @@ int sl_recv( int handle, void *buf, u32 max )
 int sl_closed( int handle )
 {
     SOCK_STAT st;
-    u32 state = (u32)sl_state( handle, &st );
+    unsigned int state = (unsigned int)sl_state( handle, &st );
     if ( st.rxready ) return 0;
     return state == SS_CLOSED || state == SS_ERROR || state == SS_CLOSING;
 }
 
-int sl_recvwait( int handle, void *buf, u32 max, u32 ms )
+int sl_recvwait( int handle, void *buf, unsigned int max, unsigned int ms )
 {
-    u32 start = sl_now();
+    uint32_t start = sl_now();
     int got;
 
     for ( ;; ) {
@@ -515,11 +519,11 @@ int sl_recvwait( int handle, void *buf, u32 max, u32 ms )
     }
 }
 
-int sl_recvline( int handle, char *buf, int max, u32 ms )
+int sl_recvline( int handle, char *buf, int max, unsigned int ms )
 {
-    int n = 0, got;
-    u8  ch;
-    u32 start = sl_now();
+    int      n = 0, got;
+    uint8_t  ch;
+    uint32_t start = sl_now();
 
     for ( ;; ) {
         got = sl_recv( handle, &ch, 1 );
@@ -540,7 +544,7 @@ int sl_recvline( int handle, char *buf, int max, u32 ms )
 /* TCP server                                                        */
 /* ---------------------------------------------------------------- */
 
-int sl_listen( int handle, u16 port )
+int sl_listen( int handle, uint16_t port )
 {
     SOCK_LISTENREQ req;
     int err;
@@ -551,10 +555,11 @@ int sl_listen( int handle, u16 port )
     return err == 0;
 }
 
-int sl_accept( int handle, u32 *peer_ip, u16 *peer_port, u32 ms )
+int sl_accept( int handle, uint32_t *peer_ip, uint16_t *peer_port, unsigned int ms )
 {
     SOCK_ACCEPTREQ req;
-    u32 start = sl_now(), newh;
+    uint32_t start = sl_now();
+    unsigned int newh;
     int err;
 
     for ( ;; ) {
@@ -575,12 +580,12 @@ int sl_accept( int handle, u32 *peer_ip, u16 *peer_port, u32 ms )
 /* UDP                                                               */
 /* ---------------------------------------------------------------- */
 
-int sl_dgram_send( int handle, u32 ip, u16 port, const void *data, u32 len )
+int sl_dgram_send( int handle, uint32_t ip, uint16_t port, const void *data, unsigned int len )
 {
-    static u8 sbuf[1536];
+    static uint8_t sbuf[1536];
     SOCK_IO *msg = (SOCK_IO *)sbuf;
     int err;
-    u32 got;
+    unsigned int got;
 
     if ( len > sizeof( sbuf ) - SOCK_IO_HDR ) len = sizeof( sbuf ) - SOCK_IO_HDR;
     sl_memzero( msg, SOCK_IO_HDR );
@@ -593,11 +598,12 @@ int sl_dgram_send( int handle, u32 ip, u16 port, const void *data, u32 len )
     return err ? 0 : (int)got;
 }
 
-int sl_dgram_recv( int handle, u32 *from_ip, u16 *from_port, void *buf, u32 max, u32 ms )
+int sl_dgram_recv( int handle, uint32_t *from_ip, uint16_t *from_port, void *buf, unsigned int max, unsigned int ms )
 {
-    static u8 rbuf[1536];
+    static uint8_t rbuf[1536];
     SOCK_IO *msg = (SOCK_IO *)rbuf;
-    u32 start = sl_now(), want = max, got;
+    uint32_t start = sl_now();
+    unsigned int want = max, got;
     int err;
 
     if ( want > sizeof( rbuf ) - SOCK_IO_HDR ) want = sizeof( rbuf ) - SOCK_IO_HDR;

@@ -25,14 +25,14 @@
 #include "rt.h"
 #include "sys.h"
 
-static char host_root[MAX_PATH] = ".";
-static char cmdline_tail[260];
-static u16  screen[60 * 80];
-static int  scr_rows = 25, scr_cols = 80;
-static int  cur_row, cur_col;
-static FILE *keyfile;
-static int  pending_key = -1;
-static char env_block[32768];
+static char     host_root[MAX_PATH] = ".";
+static char     cmdline_tail[260];
+static uint16_t screen[60 * 80];
+static int      scr_rows = 25, scr_cols = 80;
+static int      cur_row, cur_col;
+static FILE    *keyfile;
+static int      pending_key = -1;
+static char     env_block[32768];
 
 void host_set_root( const char *root )
 {
@@ -44,7 +44,7 @@ void host_set_keys( const char *path )
     keyfile = fopen( path, "r" );
 }
 
-u16 *host_screen( int *rows, int *cols )
+uint16_t *host_screen( int *rows, int *cols )
 {
     *rows = scr_rows;
     *cols = scr_cols;
@@ -167,12 +167,12 @@ void sys_exit( int code )
     exit( code );
 }
 
-void *sys_mem_alloc( u32 size )
+void *sys_mem_alloc( unsigned int size )
 {
     return malloc( size );
 }
 
-u32 sys_mem_largest( void )
+unsigned int sys_mem_largest( void )
 {
     return 64UL * 1024 * 1024;
 }
@@ -181,7 +181,7 @@ void sys_break_install( void )
 {
 }
 
-void sys_stdout( const char *buf, u32 len )
+void sys_stdout( const char *buf, unsigned int len )
 {
     fwrite( buf, 1, len, stdout );
 }
@@ -227,19 +227,19 @@ void sys_screen_size( int *rows, int *cols )
     *cols = scr_cols;
 }
 
-void sys_put_cells( u32 first, const u16 *cells, u32 count )
+void sys_put_cells( unsigned int first, const uint16_t *cells, unsigned int count )
 {
-    if ( first + count <= (u32)(scr_rows * scr_cols) ) {
+    if ( first + count <= (unsigned int)(scr_rows * scr_cols) ) {
         memcpy( screen + first, cells, count * 2 );
     }
 }
 
-void sys_get_cells( u32 first, u16 *cells, u32 count )
+void sys_get_cells( unsigned int first, uint16_t *cells, unsigned int count )
 {
-    u32 i;
+    unsigned int i;
 
     for ( i = 0; i < count; i++ ) {
-        cells[i] = first + i < (u32)(scr_rows * scr_cols) ? (screen[first + i] ? screen[first + i] : 0x0720) : 0x0720;
+        cells[i] = first + i < (unsigned int)(scr_rows * scr_cols) ? (screen[first + i] ? screen[first + i] : 0x0720) : 0x0720;
     }
 }
 
@@ -279,9 +279,9 @@ int sys_text_mode( int mode, int lines )
     return 1;
 }
 
-static u8 fake_vram[640 * 480];
+static uint8_t fake_vram[640 * 480];
 
-int sys_video_set( u32 mode, u32 *selector, u32 *bytes, u32 *pitch )
+int sys_video_set( uint32_t mode, uint32_t *selector, uint32_t *bytes, uint32_t *pitch )
 {
     (void)mode;
     *selector = 1;
@@ -294,7 +294,7 @@ void sys_video_restore( void )
 {
 }
 
-int sys_video_palette( int first, int count, const u8 *entries )
+int sys_video_palette( int first, int count, const uint8_t *entries )
 {
     (void)first;
     (void)count;
@@ -302,7 +302,7 @@ int sys_video_palette( int first, int count, const u8 *entries )
     return 1;
 }
 
-int sys_video_palette_get( int first, int count, u8 *entries )
+int sys_video_palette_get( int first, int count, uint8_t *entries )
 {
     (void)first;
     (void)count;
@@ -310,14 +310,14 @@ int sys_video_palette_get( int first, int count, u8 *entries )
     return 0;
 }
 
-int sys_peek( u32 addr, void *buf, u32 len )
+int sys_peek( uint32_t addr, void *buf, unsigned int len )
 {
     (void)addr;
     memset( buf, 0, len );
     return 0;
 }
 
-void __cdecl vid_put( u32 selector, u32 offset, const void *src, u32 len )
+void __cdecl vid_put( uint32_t selector, uint32_t offset, const void *src, unsigned int len )
 {
     (void)selector;
     if ( offset + len <= sizeof( fake_vram ) ) {
@@ -325,7 +325,7 @@ void __cdecl vid_put( u32 selector, u32 offset, const void *src, u32 len )
     }
 }
 
-void __cdecl vid_fill( u32 selector, u32 offset, u32 value, u32 len )
+void __cdecl vid_fill( uint32_t selector, uint32_t offset, uint32_t value, unsigned int len )
 {
     (void)selector;
     if ( offset + len <= sizeof( fake_vram ) ) {
@@ -333,13 +333,13 @@ void __cdecl vid_fill( u32 selector, u32 offset, u32 value, u32 len )
     }
 }
 
-void __cdecl port_out( u32 port, u32 value )
+void __cdecl port_out( uint32_t port, uint32_t value )
 {
     (void)port;
     (void)value;
 }
 
-u32 __cdecl port_in( u32 port )
+uint32_t __cdecl port_in( uint32_t port )
 {
     (void)port;
     return 0xFF;
@@ -366,7 +366,7 @@ static int next_script_key( void )
             continue;
         }
         if ( len == 1 ) {
-            return (u8)line[0];
+            return (uint8_t)line[0];
         }
         if ( strcmp( line, "enter" ) == 0 ) {
             return 0x1C0D;
@@ -430,12 +430,12 @@ int sys_shift( void )
 /* the time                                                            */
 /* ------------------------------------------------------------------ */
 
-u32 sys_hundredths( void )
+uint32_t sys_hundredths( void )
 {
     SYSTEMTIME st;
 
     GetLocalTime( &st );
-    return (((u32)st.wHour * 60 + st.wMinute) * 60 + st.wSecond) * 100 + st.wMilliseconds / 10;
+    return (((uint32_t)st.wHour * 60 + st.wMinute) * 60 + st.wSecond) * 100 + st.wMilliseconds / 10;
 }
 
 void sys_date( int *year, int *month, int *day )
@@ -508,7 +508,7 @@ static int is_device_name( const char *path, char *dev )
     return 0;
 }
 
-static int open_mode( const char *path, int flags, u32 *handle )
+static int open_mode( const char *path, int flags, uint32_t *handle )
 {
     char host[MAX_PATH * 2];
     int fd;
@@ -536,101 +536,101 @@ static int open_mode( const char *path, int flags, u32 *handle )
         }
         return ERR_ACCESS;
     }
-    *handle = (u32)fd;
+    *handle = (uint32_t)fd;
     return 0;
 }
 
-int sys_open( const char *path, int mode, u32 *handle )
+int sys_open( const char *path, int mode, uint32_t *handle )
 {
     return open_mode( path, mode == OPEN_READ ? O_RDONLY : mode == OPEN_WRITE ? O_WRONLY : O_RDWR, handle );
 }
 
-int sys_open_read( const char *path, u32 *handle )
+int sys_open_read( const char *path, uint32_t *handle )
 {
     return open_mode( path, O_RDONLY, handle );
 }
 
-int sys_open_write( const char *path, u32 *handle )
+int sys_open_write( const char *path, uint32_t *handle )
 {
     return open_mode( path, O_WRONLY | O_CREAT, handle );
 }
 
-int sys_create( const char *path, u32 *handle )
+int sys_create( const char *path, uint32_t *handle )
 {
     return open_mode( path, O_RDWR | O_CREAT | O_TRUNC, handle );
 }
 
-int sys_read( u32 handle, void *buf, u32 len, u32 *done )
+int sys_read( uint32_t handle, void *buf, unsigned int len, unsigned int *done )
 {
     int got = read( (int)handle, buf, len );
 
-    *done = got < 0 ? 0 : (u32)got;
+    *done = got < 0 ? 0 : (unsigned int)got;
     return got < 0 ? ERR_ACCESS : 0;
 }
 
-int sys_write( u32 handle, const void *buf, u32 len, u32 *done )
+int sys_write( uint32_t handle, const void *buf, unsigned int len, unsigned int *done )
 {
     int put = write( (int)handle, buf, len );
 
-    *done = put < 0 ? 0 : (u32)put;
-    return put < 0 ? ERR_ACCESS : ((u32)put < len ? ERR_DISKFULL : 0);
+    *done = put < 0 ? 0 : (unsigned int)put;
+    return put < 0 ? ERR_ACCESS : ((unsigned int)put < len ? ERR_DISKFULL : 0);
 }
 
-int sys_close( u32 handle )
+int sys_close( uint32_t handle )
 {
     return close( (int)handle ) < 0 ? ERR_BADHANDLE : 0;
 }
 
-int sys_seek( u32 handle, u32 pos )
+int sys_seek( uint32_t handle, uint32_t pos )
 {
     return lseek( (int)handle, (long)pos, SEEK_SET ) < 0 ? ERR_ACCESS : 0;
 }
 
-int sys_tell( u32 handle, u32 *pos )
+int sys_tell( uint32_t handle, uint32_t *pos )
 {
     long at = lseek( (int)handle, 0, SEEK_CUR );
 
-    *pos = at < 0 ? 0 : (u32)at;
+    *pos = at < 0 ? 0 : (uint32_t)at;
     return 0;
 }
 
-int sys_file_size( u32 handle, u32 *size )
+int sys_file_size( uint32_t handle, uint32_t *size )
 {
     long end = lseek( (int)handle, 0, SEEK_END );
 
-    *size = end < 0 ? 0 : (u32)end;
+    *size = end < 0 ? 0 : (uint32_t)end;
     lseek( (int)handle, 0, SEEK_SET );
     return 0;
 }
 
-int sys_size_keep( u32 handle, u32 *size )
+int sys_size_keep( uint32_t handle, uint32_t *size )
 {
     long at = lseek( (int)handle, 0, SEEK_CUR ), end = lseek( (int)handle, 0, SEEK_END );
 
-    *size = end < 0 ? 0 : (u32)end;
+    *size = end < 0 ? 0 : (uint32_t)end;
     lseek( (int)handle, at, SEEK_SET );
     return 0;
 }
 
-int sys_truncate( u32 handle )
+int sys_truncate( uint32_t handle )
 {
     long at = lseek( (int)handle, 0, SEEK_CUR );
 
     return chsize( (int)handle, at ) < 0 ? ERR_ACCESS : 0;
 }
 
-int sys_rewind( u32 handle )
+int sys_rewind( uint32_t handle )
 {
     return sys_seek( handle, 0 );
 }
 
-int sys_is_device( u32 handle )
+int sys_is_device( uint32_t handle )
 {
     (void)handle;
     return 0;
 }
 
-int sys_get_attr( const char *path, u16 *attr )
+int sys_get_attr( const char *path, uint16_t *attr )
 {
     char host[MAX_PATH * 2];
     DWORD a;
@@ -640,8 +640,8 @@ int sys_get_attr( const char *path, u16 *attr )
     if ( a == INVALID_FILE_ATTRIBUTES ) {
         return win_error();
     }
-    *attr = (u16)(((a & FILE_ATTRIBUTE_DIRECTORY) ? ATTR_DIR : 0) | ((a & FILE_ATTRIBUTE_READONLY) ? ATTR_READONLY : 0)
-                  | ((a & FILE_ATTRIBUTE_HIDDEN) ? ATTR_HIDDEN : 0) | ATTR_ARCHIVE);
+    *attr = (uint16_t)(((a & FILE_ATTRIBUTE_DIRECTORY) ? ATTR_DIR : 0) | ((a & FILE_ATTRIBUTE_READONLY) ? ATTR_READONLY : 0)
+                       | ((a & FILE_ATTRIBUTE_HIDDEN) ? ATTR_HIDDEN : 0) | ATTR_ARCHIVE);
     return 0;
 }
 
@@ -681,13 +681,13 @@ int sys_rmdir( const char *path )
 typedef struct {
     HANDLE find;
     WIN32_FIND_DATAA data;
-    u16 attrs;
+    uint16_t attrs;
 } HOSTFIND;
 
 static void rec_from( WIN32_FIND_DATAA *data, FINDREC *rec )
 {
-    rec->attr = (u8)(((data->dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) ? ATTR_DIR : 0)
-                     | ((data->dwFileAttributes & FILE_ATTRIBUTE_READONLY) ? ATTR_READONLY : 0) | ATTR_ARCHIVE);
+    rec->attr = (uint8_t)(((data->dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) ? ATTR_DIR : 0)
+                          | ((data->dwFileAttributes & FILE_ATTRIBUTE_READONLY) ? ATTR_READONLY : 0) | ATTR_ARCHIVE);
     rec->size = data->nFileSizeLow;
     strncpy( rec->name, data->cFileName, sizeof( rec->name ) - 1 );
     rec->name[sizeof( rec->name ) - 1] = 0;
@@ -703,7 +703,7 @@ static int find_ok( HOSTFIND *f )
     return 1;
 }
 
-int sys_find_first( const char *pattern, u16 attrs, FINDREC *rec, u32 *handle )
+int sys_find_first( const char *pattern, uint16_t attrs, FINDREC *rec, uint32_t *handle )
 {
     char host[MAX_PATH * 2];
     HOSTFIND *f = (HOSTFIND *)malloc( sizeof( HOSTFIND ) );
@@ -723,11 +723,11 @@ int sys_find_first( const char *pattern, u16 attrs, FINDREC *rec, u32 *handle )
         }
     }
     rec_from( &f->data, rec );
-    *handle = (u32)f;
+    *handle = (uint32_t)f;
     return 0;
 }
 
-int sys_find_next( u32 handle, FINDREC *rec )
+int sys_find_next( uint32_t handle, FINDREC *rec )
 {
     HOSTFIND *f = (HOSTFIND *)handle;
 
@@ -740,7 +740,7 @@ int sys_find_next( u32 handle, FINDREC *rec )
     return 0;
 }
 
-void sys_find_close( u32 handle )
+void sys_find_close( uint32_t handle )
 {
     HOSTFIND *f = (HOSTFIND *)handle;
 
@@ -799,7 +799,7 @@ int sys_truename( const char *path, char *out, int form )
     return 0;
 }
 
-int sys_disk_free( int drv, u32 *bytes )
+int sys_disk_free( int drv, uint32_t *bytes )
 {
     (void)drv;
     *bytes = 1000000UL;

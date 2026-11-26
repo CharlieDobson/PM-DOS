@@ -71,7 +71,7 @@ extern const char M_W_PREPARE[];
 extern const char M_W_WRITE[];
 extern const char M_NOMEM[];
 
-void  out_raw( int handle, const char *buf, u32 len );
+void  out_raw( int handle, const char *buf, unsigned int len );
 void  out_text( const char *str );
 void  out_msg( const char *tmpl, const char *a1, const char *a2 );   /* no newline */
 void  out_line( const char *tmpl, const char *a1, const char *a2 );  /* + newline */

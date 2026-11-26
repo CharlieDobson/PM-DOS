@@ -31,45 +31,45 @@
 #define WINAPI __stdcall
 typedef void *HANDLE;
 typedef struct {
-    u16 wYear, wMonth, wDayOfWeek, wDay;
-    u16 wHour, wMinute, wSecond, wMilliseconds;
+    uint16_t wYear, wMonth, wDayOfWeek, wDay;
+    uint16_t wHour, wMinute, wSecond, wMilliseconds;
 } SYSTEMTIME;
 
-HANDLE WINAPI GetStdHandle( u32 std_handle );
-int    WINAPI WriteFile( HANDLE file, const void *buf, u32 len, u32 *written,
-                         void *overlapped );
-int    WINAPI ReadFile( HANDLE file, void *buf, u32 len, u32 *got,
-                        void *overlapped );
-u32    WINAPI GetFileType( HANDLE file );
-char * WINAPI GetCommandLineA( void );
-void   WINAPI ExitProcess( u32 code );
-HANDLE WINAPI CreateFileA( const char *name, u32 acc, u32 share, void *sa,
-                           u32 disp, u32 flags, HANDLE templ );
-int    WINAPI CloseHandle( HANDLE file );
-u32    WINAPI SetFilePointer( HANDLE file, s32 lo, s32 *hi, u32 method );
-void * WINAPI VirtualAlloc( void *addr, u32 size, u32 type, u32 prot );
-void   WINAPI GetLocalTime( SYSTEMTIME *now );
+HANDLE   WINAPI GetStdHandle( uint32_t std_handle );
+int      WINAPI WriteFile( HANDLE file, const void *buf, uint32_t len, uint32_t *written,
+                           void *overlapped );
+int      WINAPI ReadFile( HANDLE file, void *buf, uint32_t len, uint32_t *got,
+                          void *overlapped );
+uint32_t WINAPI GetFileType( HANDLE file );
+char *   WINAPI GetCommandLineA( void );
+void     WINAPI ExitProcess( uint32_t code );
+HANDLE   WINAPI CreateFileA( const char *name, uint32_t acc, uint32_t share, void *sa,
+                             uint32_t disp, uint32_t flags, HANDLE templ );
+int      WINAPI CloseHandle( HANDLE file );
+uint32_t WINAPI SetFilePointer( HANDLE file, int32_t lo, int32_t *hi, uint32_t method );
+void *   WINAPI VirtualAlloc( void *addr, uint32_t size, uint32_t type, uint32_t prot );
+void     WINAPI GetLocalTime( SYSTEMTIME *now );
 
-#define STD_INPUT   ((u32)-10)
-#define STD_OUTPUT  ((u32)-11)
-#define STD_ERROR   ((u32)-12)
+#define STD_INPUT   ((uint32_t)-10)
+#define STD_OUTPUT  ((uint32_t)-11)
+#define STD_ERROR   ((uint32_t)-12)
 #define BAD_HANDLE  ((HANDLE)-1)
 #define FTYPE_CHAR  2
 #define MAX_BAD     64
 
-static char   tail[1024];
-static HANDLE img = BAD_HANDLE;
-static int    img_ro;
-static u32    img_bps = 512;
-static int    img_drive = 2;
-static int    remote_drive = -1, subst_drive = -1;
-static int    not_ready, no_lock;
-static u32    bad[MAX_BAD], wbad[MAX_BAD];
-static int    nbad, nwbad;
-static char   swap_path[260];
+static char     tail[1024];
+static HANDLE   img = BAD_HANDLE;
+static int      img_ro;
+static uint32_t img_bps = 512;
+static int      img_drive = 2;
+static int      remote_drive = -1, subst_drive = -1;
+static int      not_ready, no_lock;
+static uint32_t bad[MAX_BAD], wbad[MAX_BAD];
+static int      nbad, nwbad;
+static char     swap_path[260];
 
 /* MS-DOS code page 437 upper case table, 80h-AFh (B0h-FFh unchanged) */
-static const u8 ucase437[48] = {
+static const uint8_t ucase437[48] = {
     0x80, 0x9A, 'E',  'A',  0x8E, 'A',  0x8F, 0x80,
     'E',  'E',  'E',  'I',  'I',  'I',  0x8E, 0x8F,
     0x90, 0x92, 0x92, 'O',  0x99, 'O',  'U',  'U',
@@ -96,23 +96,23 @@ static int opt_is( const char *tok, const char *name )
 
 static int opt_val( const char *tok, const char *name )
 {
-    u32 len = str_len( name );
+    unsigned int len = str_len( name );
     return str_len( tok ) > len && mem_cmp( tok, name, len ) == 0;
 }
 
-static u32 parse_u32( const char **pp )
+static uint32_t parse_u32( const char **pp )
 {
     const char *cur = *pp;
-    u32 val = 0;
+    uint32_t val = 0;
 
     while ( *cur >= '0' && *cur <= '9' ) {
-        val = val * 10 + (u32)(*cur++ - '0');
+        val = val * 10 + (uint32_t)(*cur++ - '0');
     }
     *pp = cur;
     return val;
 }
 
-static void parse_list( const char *cur, u32 *list, int *count )
+static void parse_list( const char *cur, uint32_t *list, int *count )
 {
     while ( *cur && *count < MAX_BAD ) {
         list[(*count)++] = parse_u32( &cur );
@@ -128,8 +128,8 @@ static void parse_list( const char *cur, u32 *list, int *count )
    sector size from its BPB */
 static int open_image( const char *path )
 {
-    u8 sec[512];
-    u32 got;
+    uint8_t sec[512];
+    uint32_t got;
 
     img = CreateFileA( path, 0xC0000000ul, 3, NULL, 3, 0x80, NULL );
     if ( img == BAD_HANDLE ) {
@@ -252,9 +252,9 @@ const char *sys_cmdline( void )
     return tail;
 }
 
-void sys_write( int handle, const char *buf, u32 len )
+void sys_write( int handle, const char *buf, unsigned int len )
 {
-    u32 written;
+    uint32_t written;
 
     WriteFile( GetStdHandle( handle == H_ERR ? STD_ERROR : STD_OUTPUT ), buf,
                len, &written, NULL );
@@ -272,7 +272,7 @@ int sys_read_line( char *buf, int max )
 {
     int console, len = 0, eof = 0;
     HANDLE handle = in_handle( &console );
-    u32 got;
+    uint32_t got;
     char ch;
 
     change_disk();
@@ -293,7 +293,7 @@ int sys_read_line( char *buf, int max )
     }
     buf[len] = 0;
     if ( !console ) {
-        sys_write( H_OUT, buf, (u32)len );
+        sys_write( H_OUT, buf, (unsigned int)len );
         sys_write( H_OUT, "\r\n", 2 );
     }
     return (eof && len == 0) ? -1 : len;
@@ -305,8 +305,8 @@ int sys_read_key( void )
 {
     int console;
     HANDLE handle = in_handle( &console );
-    u32 got;
-    u8 ch;
+    uint32_t got;
+    uint8_t ch;
 
     change_disk();
     do {
@@ -322,7 +322,7 @@ int sys_read_key( void )
 
 void sys_exit( int code )
 {
-    ExitProcess( (u32)code );
+    ExitProcess( (uint32_t)code );
 }
 
 int sys_get_drive( void )
@@ -347,7 +347,7 @@ int sys_truename_drive( int drv )
     return -1;
 }
 
-int sys_get_bpb( int drv, u8 *sector )
+int sys_get_bpb( int drv, uint8_t *sector )
 {
     (void)drv;
     (void)sector;
@@ -367,7 +367,7 @@ void sys_unlock( int drv, int fat32 )
     (void)fat32;
 }
 
-static int in_list( const u32 *list, int len, u32 lba, u32 count )
+static int in_list( const uint32_t *list, int len, uint32_t lba, uint32_t count )
 {
     int i;
 
@@ -379,21 +379,21 @@ static int in_list( const u32 *list, int len, u32 lba, u32 count )
     return 0;
 }
 
-static int seek( u32 lba )
+static int seek( uint32_t lba )
 {
     U64 off;
-    s32 hi;
-    u32 pos;
+    int32_t hi;
+    uint32_t pos;
 
     off.whole = mul32( lba, img_bps );
-    hi = (s32)off.parts.hi;
-    pos = SetFilePointer( img, (s32)off.parts.lo, &hi, 0 );
+    hi = (int32_t)off.parts.hi;
+    pos = SetFilePointer( img, (int32_t)off.parts.lo, &hi, 0 );
     return (pos == 0xFFFFFFFFul && off.parts.lo != 0xFFFFFFFFul) ? -1 : 0;
 }
 
-int sys_read_sec( int drv, u32 lba, u32 count, u32 bps, void *buf )
+int sys_read_sec( int drv, uint32_t lba, uint32_t count, uint32_t bps, void *buf )
 {
-    u32 got;
+    uint32_t got;
 
     (void)bps;
     if ( drv != img_drive ) {
@@ -413,10 +413,10 @@ int sys_read_sec( int drv, u32 lba, u32 count, u32 bps, void *buf )
     return 0;
 }
 
-int sys_write_sec( int drv, u32 lba, u32 count, u32 bps, const void *buf,
+int sys_write_sec( int drv, uint32_t lba, uint32_t count, uint32_t bps, const void *buf,
                    int kind )
 {
-    u32 put;
+    uint32_t put;
 
     (void)bps;
     (void)kind;
@@ -446,20 +446,20 @@ void sys_reset_drive( int drv )
     (void)drv;
 }
 
-void *sys_mem_alloc( u32 size )
+void *sys_mem_alloc( unsigned int size )
 {
     return VirtualAlloc( NULL, size, 0x3000, 4 );
 }
 
-void sys_get_datetime( u16 *dos_date, u16 *dos_time )
+void sys_get_datetime( uint16_t *dos_date, uint16_t *dos_time )
 {
     SYSTEMTIME now;
 
     GetLocalTime( &now );
-    *dos_date = (u16)(((now.wYear - 1980) << 9) | (now.wMonth << 5) |
-                      now.wDay);
-    *dos_time = (u16)((now.wHour << 11) | (now.wMinute << 5) |
-                      (now.wSecond / 2));
+    *dos_date = (uint16_t)(((now.wYear - 1980) << 9) | (now.wMonth << 5) |
+                           now.wDay);
+    *dos_time = (uint16_t)((now.wHour << 11) | (now.wMinute << 5) |
+                           (now.wSecond / 2));
 }
 
 int sys_upcase( int ch )

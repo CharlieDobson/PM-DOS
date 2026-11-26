@@ -33,9 +33,9 @@ static const char *message;     /* app_message's */
 /* what the toolbar was last painted for: it is painted again when any
    of this changes */
 static struct {
-    u16 flags;
-    u8  align, list;
-    int undo, redo, paste, sel, held, doc;
+    uint16_t flags;
+    uint8_t  align, list;
+    int      undo, redo, paste, sel, held, doc;
 } tool_seen;
 
 void bars_init( void )
@@ -166,8 +166,8 @@ static void tool_draw( void )
         tool_seen.doc = cur_doc;
         tool_seen.flags = chp.flags;
         tool_seen.held = held;
-        tool_seen.align = (u8)(pap != NULL ? pap->align : 0);
-        tool_seen.list = (u8)(pap != NULL ? pap->list : 0);
+        tool_seen.align = (uint8_t)(pap != NULL ? pap->align : 0);
+        tool_seen.list = (uint8_t)(pap != NULL ? pap->list : 0);
         tool_seen.undo = app_can( CMD_UNDO );
         tool_seen.redo = app_can( CMD_REDO );
         tool_seen.paste = app_can( CMD_PASTE );
@@ -236,7 +236,7 @@ static void ribbon_draw( void )
     scr_put( row, RIBBON_FONT - 7, "Font:", pal.ribbon );
     ribbon_field( row, RIBBON_FONT, RIBBON_FONT_W, ed->doc->font[chp.font < ed->doc->nfont ? chp.font : 0].name );
     scr_put( row, RIBBON_SIZE - 5, "Pts:", pal.ribbon );
-    sfmt( size, sizeof( size ), (chp.size & 1) ? "%u.5" : "%u", (u32)chp.size / 2 );
+    sfmt( size, sizeof( size ), (chp.size & 1) ? "%u.5" : "%u", (uint32_t)chp.size / 2 );
     ribbon_field( row, RIBBON_SIZE, RIBBON_SIZE_W, size );
     if ( scr_cols >= RIBBON_BIU + 10 ) {
         scr_put( row, RIBBON_BIU, " B ", (chp.flags & CF_BOLD) ? pal.ribbon_hot : pal.ribbon );
@@ -273,9 +273,9 @@ static int ribbon_mouse( void )
 
 static int rule_x, rule_y, rule_w, rule_h;
 static struct {
-    s32 left, right, first, scroll, width;
+    int left, right, first, scroll, width;
     int zoom, ntabs, doc;
-    u32 para;
+    unsigned int para;
 } rule_seen;
 
 static void rule_paint( int pane, int x0, int y0, int x1, int y1 )
@@ -283,7 +283,7 @@ static void rule_paint( int pane, int x0, int y0, int x1, int y1 )
     EDITOR *ed = ED;
     const PAP *pap;
     char digit[4];
-    s32 width, pos;
+    int width, pos;
     int origin, x, index, count;
 
     (void)pane;
@@ -299,10 +299,10 @@ static void rule_paint( int pane, int x0, int y0, int x1, int y1 )
     gfx_rect( origin, rule_y + 2, view_px( width ), rule_h - 5, pal.px_page );
     count = (int)(width / 180);
     for ( index = 0; index <= count; index++ ) {
-        x = origin + view_px( (s32)index * 180 );
+        x = origin + view_px( (int)index * 180 );
         if ( index % 8 == 0 ) {
             if ( index ) {
-                sfmt( digit, sizeof( digit ), "%u", (u32)(index / 8) );
+                sfmt( digit, sizeof( digit ), "%u", (uint32_t)(index / 8) );
                 gfx_text( x - 4 * (int)str_len( digit ), rule_y, digit, (int)str_len( digit ), pal.px_ink, -1 );
             }
         } else {
@@ -336,7 +336,7 @@ static void ruler_draw( void )
 {
     EDITOR *ed = ED;
     const PAP *pap;
-    s32 width;
+    int width;
     int row = plan.ruler_row, col, index, cols;
     static int defined;
 
@@ -423,7 +423,7 @@ static void status_draw( void )
 {
     EDITOR *ed = ED;
     char text[96];
-    u32 page, pages, line, col;
+    unsigned int page, pages, line, col;
     int row = plan.status_row, right;
 
     scr_fill( row, 0, scr_cols, ' ', pal.status );
@@ -440,11 +440,11 @@ static void status_draw( void )
         scr_put( row, 1, text, pal.status );
         sfmt( text, sizeof( text ), "%s%s  %s  %u%%", ed->story == &ed->doc->header ? "Header  " :
               ed->story == &ed->doc->footer ? "Footer  " : ed->story != &ed->doc->body ? "Note  " : "", ed_modified( ed ) ? "Changed" : "       ",
-              ed->overtype ? "OVR" : "INS", (u32)set.zoom );
+              ed->overtype ? "OVR" : "INS", (uint32_t)set.zoom );
     } else {
-        sfmt( text, sizeof( text ), "Page %u of %u", (u32)PDFV->page + 1, (u32)PDFV->pages );
+        sfmt( text, sizeof( text ), "Page %u of %u", (uint32_t)PDFV->page + 1, (uint32_t)PDFV->pages );
         scr_put( row, 1, text, pal.status );
-        sfmt( text, sizeof( text ), "PDF  %u%%", (u32)(PDFV->pix_zoom ? PDFV->pix_zoom : 100) );
+        sfmt( text, sizeof( text ), "PDF  %u%%", (uint32_t)(PDFV->pix_zoom ? PDFV->pix_zoom : 100) );
     }
     right = scr_cols - 1 - (int)str_len( text );
     if ( right > 40 ) {

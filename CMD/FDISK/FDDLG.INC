@@ -411,8 +411,9 @@ mud_out:
         popad
         ret
 
-;--- mu_disks - the Disk menu: an item for each disk, with its size,
-;--- then the items that are always there
+;--- mu_disks - the Disk menu: an item for each disk tu_dlist offered,
+;--- with its size, then the items that are always there.  Disks 0 to 9
+;--- are picked by their digit; 10 and 11, two USB units, by the arrows
 mu_disks:
         pushad
         mov     edi,OFFSET mi_disk
@@ -420,18 +421,28 @@ mu_disks:
 mdk_one:
         cmp     ebp,[tui_ndisks]
         jae     mdk_rest
+        bt      dword ptr [tui_dmask],ebp
+        jnc     mdk_skip                ; a number with no disk behind it
         imul    esi,ebp,DM_W + 1
         add     esi,OFFSET dm_text
         mov     [edi+MI_LABEL],esi
         lea     eax,[ebp+CMD_DISK0]
         mov     [edi+MI_CMD],eax
+        xor     eax,eax
+        cmp     ebp,10
+        jae     mdk_key
         lea     eax,[ebp+'0']
+mdk_key:
         mov     [edi+MI_KEY],eax
         push    edi
         mov     edi,esi
         mov     ecx,DM_W
         call    lb_into
         mov     edx,OFFSET msg_mdiskn
+        cmp     ebp,10
+        jb      mdk_name
+        inc     edx                     ; one space less for two digits
+mdk_name:
         call    lb_puts
         mov     eax,ebp
         call    lb_num
@@ -462,15 +473,20 @@ mdk_pad:
 mdk_next:
         pop     edi
         add     edi,MI_LEN
+mdk_skip:
         inc     ebp
         jmp     mdk_one
 mdk_rest:
+        mov     eax,edi                 ; the items made, counted
+        sub     eax,OFFSET mi_disk
+        xor     edx,edx
+        mov     ecx,MI_LEN
+        div     ecx
+        add     eax,5
+        mov     dword ptr [mu_tbl + MU_LEN + MU_N],eax
         mov     esi,OFFSET mi_diskfix
         mov     ecx,5 * MI_LEN / 4
         rep     movsd
-        mov     eax,[tui_ndisks]
-        add     eax,5
-        mov     dword ptr [mu_tbl + MU_LEN + MU_N],eax
         popad
         ret
 

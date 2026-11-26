@@ -68,9 +68,9 @@ const char *msg_disk_error( int code )
 /* buffered console output                                             */
 /* ------------------------------------------------------------------ */
 
-static char obuf[1024];
-static u32  olen;
-static int  ohandle = H_OUT;
+static char         obuf[1024];
+static unsigned int olen;
+static int          ohandle = H_OUT;
 
 void out_flush( void )
 {
@@ -80,7 +80,7 @@ void out_flush( void )
     }
 }
 
-static void raw( int handle, const char *src, u32 len )
+static void raw( int handle, const char *src, unsigned int len )
 {
     if ( handle != ohandle ) {
         out_flush();
@@ -134,7 +134,7 @@ void out_msg( int handle, const char *tmpl, const char *a1, const char *a2 )
     out_text( handle, "\n" );
 }
 
-char *fmt_hex4( u32 val, char *buf )
+char *fmt_hex4( uint32_t val, char *buf )
 {
     static const char hex[] = "0123456789ABCDEF";
     int i;

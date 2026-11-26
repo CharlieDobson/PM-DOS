@@ -22,7 +22,7 @@
  */
 #include "qb.h"
 
-extern u8 d32_tail[];           /* DOSINT.ASM: the first byte past the image */
+extern uint8_t d32_tail[];      /* DOSINT.ASM: the first byte past the image */
 
 int opt_mbf;
 int ide_trace;                  /* no editor: TRON changes nothing */
@@ -60,7 +60,7 @@ static void leave( void )
 }
 
 /* the BASIC line number of a statement, for a message: 0 for none */
-static s32 line_of( PROGRAM *prog, u32 stmt )
+static int32_t line_of( PROGRAM *prog, unsigned int stmt )
 {
     if ( !debug_code || prog == NULL || stmt >= prog->nlocs ) {
         return 0;
@@ -69,7 +69,7 @@ static s32 line_of( PROGRAM *prog, u32 stmt )
 }
 
 /* the run stopped (an error, STOP, Ctrl+Break): its line, a key, DOS */
-static void report( int why, int code, s32 lineno )
+static void report( int why, int code, int32_t lineno )
 {
     char num[12];
 
@@ -112,10 +112,11 @@ static void report( int why, int code, s32 lineno )
 /* The program behind another file (CHAIN, RUN "name") -> its block, to
    xfree(); NULL and *rc a DOS error, or -1 when the file has no program
    this runtime can run */
-static u8 *read_program( const char *path, u32 *len, int *rc )
+static uint8_t *read_program( const char *path, unsigned int *len, int *rc )
 {
-    u32 handle, size, done, blen = 0;
-    u8 tail[8], *blob = NULL;
+    uint32_t handle, size, blen = 0;
+    unsigned int done;
+    uint8_t tail[8], *blob = NULL;
 
     *rc = sys_open_read( path, &handle );
     if ( *rc != 0 ) {
@@ -144,7 +145,7 @@ static u8 *read_program( const char *path, u32 *len, int *rc )
         *rc = sys_seek( handle, size - blen );
     }
     if ( *rc == 0 ) {
-        blob = (u8 *)try_alloc( blen );
+        blob = (uint8_t *)try_alloc( blen );
         if ( blob == NULL ) {
             *rc = ERR_NOMEM;
         }
@@ -169,12 +170,14 @@ static u8 *read_program( const char *path, u32 *len, int *rc )
 
 void qbasic_main( void )
 {
-    const u8 *blob = d32_tail;
-    u8 *owned = NULL, *next_blob;
-    u32 blen, next_len = 0, flags, run_at = 0, i;
+    const uint8_t *blob = d32_tail;
+    uint8_t *owned = NULL, *next_blob;
+    unsigned int blen, next_len = 0;
+    uint32_t flags;
+    unsigned int run_at = 0, i;
     PROGRAM *prog;
     int why, rc;
-    s32 lineno;
+    int32_t lineno;
     char next[PATH_MAX];
 
     sys_init();

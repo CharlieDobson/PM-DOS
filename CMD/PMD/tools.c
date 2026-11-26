@@ -37,7 +37,7 @@
 
 static void view_add( const char *name, const char *path )
 {
-    u16 attr;
+    uint16_t attr;
 
     if ( view_count < MAX_VIEWS && sys_get_attr( path, &attr ) == 0 && !(attr & ATTR_DIR)
          && !crit_take() ) {
@@ -52,7 +52,7 @@ static void view_on_path( const char *name )
 {
     const char *path = sys_getenv( "PATH" );
     char trial[PATH_MAX];
-    u32 len, end;
+    unsigned int len, end;
     int before = view_count;
 
     while ( path && *path && view_count == before ) {
@@ -93,8 +93,9 @@ void views_find( void )
 int file_to_text( const char *path, TEXT *text )
 {
     static char line[200];
-    u32 handle, size, done, pos;
-    u8 *data;
+    uint32_t handle, size;
+    unsigned int done, pos;
+    uint8_t *data;
     int rc, len = 0, ch;
 
     rc = sys_open_read( path, &handle );
@@ -109,7 +110,7 @@ int file_to_text( const char *path, TEXT *text )
     if ( size > 0x20000UL ) {
         size = 0x20000UL;               /* the first 128K is plenty to look at */
     }
-    data = (u8 *)try_alloc( size + 1 );
+    data = (uint8_t *)try_alloc( size + 1 );
     if ( data == NULL ) {
         sys_close( handle );
         return ERR_NOMEM;
@@ -188,7 +189,7 @@ static void search_dir( const char *dir, int depth )
     static FINDREC rec;
     char path[PATH_MAX];
     TEXT subs;
-    u32 handle;
+    uint32_t handle;
     int rc, index;
 
     if ( find_found.count >= FIND_MAX || str_len( dir ) + 70 > PATH_MAX ) {
@@ -241,7 +242,7 @@ static void file_info( const char *path )
 {
     static FINDREC rec;
     char line[80];
-    u32 handle = 0;
+    uint32_t handle = 0;
 
     if ( sys_find_first( path, 0x27, &rec, &handle ) ) {
         msg_box2( err_text( ERR_NOFILE ), path, MB_OK );
@@ -324,7 +325,7 @@ void cmd_find_file( void )
     DRVREC rec;
     char root[PATH_MAX];
     int drv, letters = 0;
-    u32 len;
+    unsigned int len;
 
     if ( find_from[0] == 0 ) {
         drv = sys_get_drive();
@@ -433,7 +434,7 @@ void cmd_find_file( void )
 
 static MEMITEM *block_items;
 static int      block_count;
-static u8       block_map[MAP_ROWS][MAP_COLS];
+static uint8_t  block_map[MAP_ROWS][MAP_COLS];
 
 static const char *block_item( DLG *dlg, int index )
 {
@@ -450,9 +451,9 @@ static const char *block_item( DLG *dlg, int index )
 static void block_draw( DLG *dlg, CTL *ctl )
 {
     int sel = dlg->ctl[1].sel, row, cell, kind, top_row, map_row;
-    u32 from = 0, to = 0, addr, seg;
+    uint32_t from = 0, to = 0, addr, seg;
     char label[8];
-    u8 attr;
+    uint8_t attr;
 
     if ( sel < block_count ) {
         from = block_items[sel].seg << 4;
@@ -469,11 +470,11 @@ static void block_draw( DLG *dlg, CTL *ctl )
     }
     for ( row = 0; row < BLOCK_ROWS; row++ ) {
         map_row = top_row - row;
-        seg = (u32)map_row * 0x400;
+        seg = (uint32_t)map_row * 0x400;
         sfmt( label, sizeof( label ), "%04X", seg );
         scr_put( dlg->top + ctl->row + row, dlg->left + ctl->col, label, pal.dlg );
         for ( cell = 0; cell < MAP_COLS; cell++ ) {
-            addr = (seg << 4) + (u32)cell * 1024;
+            addr = (seg << 4) + (uint32_t)cell * 1024;
             kind = map_row >= 40 ? block_map[map_row - 40][cell] : MC_RAM;
             attr = addr + 1024 > from && addr < to ? pal.map_sel : pal.map;
             scr_ch( dlg->top + ctl->row + row, dlg->left + ctl->col + 5 + cell,
@@ -539,8 +540,8 @@ void cmd_blocks( void )
 #define STRINGS_MAX     120
 
 typedef struct {
-    char name[20];
-    u32  seg, len;
+    char     name[20];
+    uint32_t seg, len;
 } AREA;
 
 static AREA areas[AREA_MAX];
@@ -551,7 +552,7 @@ static char browse_key[40];
    begins 55 AA on a 2K line between C800h and EFFFh */
 static void areas_find( void )
 {
-    u32 addr, len;
+    uint32_t addr, len;
 
     area_count = 0;
     str_cpy( areas[area_count].name, "ROM BIOS" );
@@ -562,7 +563,7 @@ static void areas_find( void )
         if ( peek_w( addr ) != 0xAA55 ) {
             continue;
         }
-        len = (u32)peek_b( addr + 2 ) * 512;
+        len = (uint32_t)peek_b( addr + 2 ) * 512;
         if ( len == 0 || addr + len > 0xF0000UL ) {
             continue;
         }
@@ -576,14 +577,14 @@ static void areas_find( void )
 
 /* one string onto the page: "F000:E05B text", and the rest of it under
    the text when it is longer than a line or has line ends in it */
-static void browse_emit( TEXT *text, u32 seg, u32 offset, const u8 *str, u32 len )
+static void browse_emit( TEXT *text, uint32_t seg, uint32_t offset, const uint8_t *str, unsigned int len )
 {
     char line[80];
-    u32 pos, out;
+    unsigned int pos, out;
     int first = 1;
 
     for ( pos = 0; pos < len; ) {
-        out = (u32)sfmt( line, sizeof( line ), first ? "%04X:%04X " : "          ", seg, offset );
+        out = (unsigned int)sfmt( line, sizeof( line ), first ? "%04X:%04X " : "          ", seg, offset );
         for ( ; pos < len && out < 72; pos++ ) {
             if ( str[pos] == '\r' || str[pos] == '\n' ) {
                 while ( pos < len && (str[pos] == '\r' || str[pos] == '\n') ) {
@@ -604,9 +605,9 @@ static void browse_emit( TEXT *text, u32 seg, u32 offset, const u8 *str, u32 len
 /* every string of the area that has one of the keys in it, once each */
 static void browse_area( const AREA *area, const char *const *keys, TEXT *text )
 {
-    static u32 seen[STRINGS_MAX];
-    u8 *rom = rom_load( area->seg << 4, area->len );
-    u32 at, start, length;
+    static unsigned int seen[STRINGS_MAX];
+    uint8_t *rom = rom_load( area->seg << 4, area->len );
+    unsigned int at, start, length;
     int count = 0, key, hit, index;
 
     if ( rom == NULL ) {
@@ -619,9 +620,9 @@ static void browse_area( const AREA *area, const char *const *keys, TEXT *text )
             if ( hit < 0 ) {
                 break;
             }
-            start = rom_string( rom, area->len, at + (u32)hit, &length );
+            start = rom_string( rom, area->len, at + (unsigned int)hit, &length );
             if ( length < 4 ) {
-                start = at + (u32)hit;      /* not text: step past it */
+                start = at + (unsigned int)hit; /* not text: step past it */
                 length = 1;
                 continue;
             }
@@ -770,9 +771,9 @@ static const char *insert_item( DLG *dlg, int index )
 /* what a line sets: up to its '=' - "FILES=", "SET TEMP=" - or, with
    none, its first word.  DEVICE= and its kind set nothing by themselves:
    there may be many, so their key is the whole line. */
-static u32 line_key( const char *line, u32 len )
+static unsigned int line_key( const char *line, unsigned int len )
 {
-    u32 pos;
+    unsigned int pos;
 
     for ( pos = 0; pos < len && line[pos] != '='; pos++ ) {
     }
@@ -789,9 +790,9 @@ static u32 line_key( const char *line, u32 len )
 
 /* the line in "data" that sets what "command" sets: its start and
    length (without its line end), or 0 */
-static int find_line( const char *data, u32 size, const char *command, u32 *start, u32 *length )
+static int find_line( const char *data, unsigned int size, const char *command, unsigned int *start, unsigned int *length )
 {
-    u32 key = line_key( command, str_len( command ) ), pos = 0, begin, end;
+    unsigned int key = line_key( command, str_len( command ) ), pos = 0, begin, end;
 
     while ( pos < size ) {
         begin = pos;
@@ -818,7 +819,8 @@ static int find_line( const char *data, u32 size, const char *command, u32 *star
 static void insert_into( const char *path, const char *command )
 {
     static char shown[70];
-    u32 handle, size = 0, done, start = 0, length = 0;
+    uint32_t handle, size = 0;
+    unsigned int done, start = 0, length = 0;
     char *data = NULL;
     int rc, replace = 0;
 
@@ -1000,9 +1002,9 @@ void cmd_insert( void )
 static int printer_kind, printer_bits, printer_port;
 static const char *const printer_ports[7] = { "LPT1", "LPT2", "LPT3", "COM1", "COM2", "COM3", "COM4" };
 
-static int print_bytes( u32 handle, const char *text, u32 len )
+static int print_bytes( uint32_t handle, const char *text, unsigned int len )
 {
-    u32 done;
+    unsigned int done;
     int rc = sys_write( handle, text, len, &done );
 
     if ( rc == 0 && crit_take() ) {
@@ -1011,14 +1013,14 @@ static int print_bytes( u32 handle, const char *text, u32 len )
     return rc;
 }
 
-static int print_text( u32 handle, const char *text )
+static int print_text( uint32_t handle, const char *text )
 {
     return print_bytes( handle, text, str_len( text ) );
 }
 
 /* the characters from a space to 126 (7 bits) or to 255, thirty-two to
    a line: as they are, or as PostScript strings to be shown */
-static int print_page( u32 handle )
+static int print_page( uint32_t handle )
 {
     char line[160];
     DATETIME now;
@@ -1045,7 +1047,7 @@ static int print_page( u32 handle )
         }
         do {
             if ( printer_kind && (ch == '(' || ch == ')' || ch == '\\' || ch > 126) ) {
-                len += sfmt( line + len, sizeof( line ) - (u32)len, "\\%u%u%u", (ch >> 6) & 7,
+                len += sfmt( line + len, sizeof( line ) - (unsigned int)len, "\\%u%u%u", (ch >> 6) & 7,
                              (ch >> 3) & 7, ch & 7 );
             } else if ( ch != 127 ) {
                 line[len++] = (char)ch;
@@ -1067,7 +1069,7 @@ void cmd_printer( void )
 {
     static CTL ctl[16];
     DLG dlg;
-    u32 handle;
+    uint32_t handle;
     int index, rc;
 
     mem_set( ctl, 0, sizeof( ctl ) );

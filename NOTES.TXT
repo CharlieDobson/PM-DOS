@@ -31722,7 +31722,8 @@ DISK1, SETUPUSB, PMDOSCD.ISO, the floppies, HD32, both HD16s.
 NOT DONE.  A box ended by the kernel still leaves its hooked hardware
 vectors (Wolfenstein's INT 08h) pointing into the freed program, and
 its fault report is written while the screen may be in a graphics
-mode; neither is changed here.  Speed: a box runs at IOPL 0, so every
+mode; neither is changed here.  [The vectors: done 2026-11-16, "A
+PROGRAM'S VECTORS ARE PUT BACK WHEN IT ENDS".]  Speed: a box runs at IOPL 0, so every
 CLI, STI, PUSHF, POPF, INT and IRET is a #GP the monitor emulates
 (v86_fault: the stack check, the decode, then v86_ckkbd's four
 "anything owed?" calls), and the PICs, 60h/64h and the PIT are trapped
@@ -33064,3 +33065,3146 @@ by name (PMDOS.SYS, RMDOS.SYS and CMD.EXE in the root; CMD.EXE,
 COMMAND.COM, MPLAY.EXE and HELP.HLP in DOS) and read back; PMDOS,
 PMDOS2, PMDOS3 and HD32 copied in; backups beside them
 (.bak-20261115-1841).
+
+
+A PROGRAM'S VECTORS ARE PUT BACK WHEN IT ENDS (2026-11-16)
+---------------------------------------------------------------------
+
+Charlie: "A program the kernel ends leaves its hardware interrupts
+pointing at freed memory.  Wolfenstein's INT 08h is the known case."
+The 11-10 entry and the 0.70 list had it as not done.  Two defects,
+the second found on the way.
+
+1. NOTHING PUT A PROGRAM'S VECTORS BACK BUT 22h, 23h AND 24h (DOS\
+   VDM.INC, vdm_ivtkeep, vdm_ivtback, vdm_ivtdead).  Defect: the
+   vector table at 0:0 is the machine's and outlives every box, and a
+   program the kernel ends - a fault, a HLT with interrupts off, a ^C,
+   an Abort - unhooks nothing; vdm_cleanup put back only the three
+   the PSP saves.  Effect: Wolfenstein's INT 08h - and whatever else
+   a game hooks, a keyboard handler or a sound card's line - stayed on
+   handlers in memory the sweep had just freed.  The timer was
+   delivered there by the next program's box and, at the native
+   prompt, by the interrupt excursions (IRQX.INC), and ran whatever
+   was loaded there next.  A DPMI client's real-mode vector on one of
+   its callbacks was left the same way: dpmi_drop lets the callbacks
+   go, and the vector led to a HLT that answers nobody - which in an
+   interrupt handler, with interrupts off, ends the next box.  Fix:
+   when a program starts (vdm_newid), the 256 vectors are copied into
+   its level's 1K - 8K for the eight levels, from the arena at boot,
+   because KBSS had 224 bytes left.  When it ends, before its files
+   are closed, a vector is put back to that copy if it differs from it
+   and now points into a block of the arena, conventional or upper,
+   that is free or that the program's PSP owns - exactly what the
+   sweep frees - or at a DPMI callback slot nobody holds.  The walk
+   goes on at umb_head when the chains are not linked.
+
+   EVERY WAY OUT THAT FREES THE MEMORY, 4Ch INCLUDED.  A program that
+   ends normally while still hooked has made the same hole, and MS-DOS
+   would have fallen into it; a program that unhooked itself has
+   nothing that differs.  Not touched: a TSR (31h never gets there),
+   memory that stays (a block the program gave its parent, a resident
+   driver's), the ROM, the kernel's stubs, and the links inside a
+   chain - a resident program that chained to the one ending still
+   jumps to it, and nothing records that link to mend it.
+
+2. THE DPMI HOST'S TWO STACKS WERE THE FIRST CLIENT'S (DOS\DPMI.INC,
+   dpmi_cbstack, dpmi_excstack).  Defect: both are "made once and
+   kept", but arena_alloc gives a block to cur_own, and the first time
+   is a client's 0303h, or the first exception handed to a client's
+   handler - so that client owned them.  Effect: its exit freed both
+   (vdm_cleanup's arena_freeown) with dpmi_cbbase and dpmi_excbase
+   still pointing at them, and every later client's callbacks and
+   exception handlers built their frames in arena memory that could
+   belong to anything by then.  Found reading 0303h for the test.
+   Fix: taken with cur_own 0, as fps_boot does.  4K each now stays
+   allocated after the first client, as their comments always said.
+
+REVIEW (defect > effect > fix).  dpmi_cbfind halves EAX before it
+looks at the slot's flags, and vdm_ivtdead first ran its range and
+alignment tests after the call, on the halved number - a dead callback
+could have read as live; they come first now.  The copy is indexed by
+vdm_depth - 1, checked against VDM_MAXNEST in both routines (vdm_push
+already refuses a ninth level, and 0 - no box - is FFFFFFFFh there).
+The walk is bounded by lm_chtop, measures every header with lm_blkok,
+only moves forward (the step to umb_head only upward) and stops at a
+broken signature.  No memory at boot leaves vdm_ivtsave 0, and both
+routines then do nothing.  The table is read with the null trap armed,
+which watches writes only; every write goes through ivt_set.  Run
+twice at one level - an Abort in the sweep comes back to vdm_cleanup -
+it finds nothing left to put back.  No buffer of its own, nothing
+freed.
+
+TESTS.  TOOLS\VECBACK.ASM, BIN\TESTS\VECBACK.COM (BUILD.CMD, TESTS.IMG,
+both MKHD lists; RUNTESTS before IRQXTEST /I, as 'VECBACK', 'VECBACK
+/F', 'VECBACK /V', 'VECBACK /G', 'VECBACK /V').  Its children hook
+00h, 08h (passing the tick on), 1Ch (by writing the table) and 61h,
+and end by ^C, by 4Ch, from protected mode as a DPMI client with 61h
+on its callback, by a HLT with interrupts off (/F), and by an XCHG of
+the byte already there at 0:11BDh through a segment of 0 (/G), the
+store Wolfenstein made; the last two end the whole box, so /V, run
+next, compares with VECBACK.DAT.  One more child leaves 62h on a block
+it gave its parent and 63h on the ROM, and both must stay.  Old
+kernel: the ^C, 4Ch, DPMI, /F and /G cases fail, the vectors still in
+the dead child (INT 08h at 0F81:0445) and 61h on callback 05D0:0000;
+the two that must stay, stay.  New kernel: all pass.
+
+RUNTESTS -All, first run: on every row the five VECBACK files new and
+seven moved, each for a reason - RMFIND one more entry in \TESTS and
+RMTEST three clusters less (VECBACK.COM); MEM and BIGMEM 8K less XMS
+(the copies of the table); XMSTEST 12K less with its locked block
+12,320 bytes higher, and XMSREPT and VDSTEST with it (the copies, and
+the DPMI stack an earlier test made, which now stays).  Those 84 files
+recorded from that full run; the second run: 106 of 106 on all seven
+rows.  A copy of the VM's own HD16 - its CONFIG.SYS: EMS=AUTO,
+NULLTRAP=ON, ES1371.SYS, CMD.EXE in C:\DOS - booted in DOSBox-X with
+an AUTOEXEC.BAT running the five VECBACK lines: all ok, 612K free.
+wasm and MASM 6.13 assemble PMDOS.SYS and VECBACK.COM.  PMDOS.SYS
+191,675 -> 192,079 bytes.
+
+NOT DONE.  The links inside a chain (above).  The fault report is
+still written while the screen may be in a graphics mode (done the
+same day: A BOX THE KERNEL ENDS LEAVES A TEXT SCREEN, below).  A
+handler in the HMA or the EMS page frame is not in the arena and is
+not looked for.  Seen while writing the walk, not changed: lm_freeown stops at
+the first 'Z', so with the chains unlinked (58h/03h BX=0) a program's
+upper-memory blocks are not freed when it ends.  Not run on real
+hardware - Wolfenstein on the 5x86 is the test that matters.
+
+DELIVERED by one BUILD.CMD and MKHD.CMD in the tree: in BIN only
+PMDOS.SYS changed, and TESTS\VECBACK.COM is new; IMAGES PMDOS, TESTS,
+HD16, HD32 and MULTI made again (PMDOS2 and PMDOS3 came out the same).
+The VM: its own HD16 patched by name (PMDOS.SYS in the root,
+TESTS\VECBACK.COM) and read back; PMDOS, TESTS and HD32 copied in;
+backups beside them (.bak-20261116-1821).  Not committed.
+
+
+A BOX THE KERNEL ENDS LEAVES A TEXT SCREEN (2026-11-16)
+---------------------------------------------------------------------
+
+Charlie: "The fault report is written while the screen may still be
+in graphics mode, so the user sees a frozen picture instead of the
+message."  The entry above had it as not done, and v0.27 as STILL
+OPEN.
+
+THE KERNEL'S REPORT WENT IN UNDER THE PICTURE (DOS\VDM.INC,
+vdm_scrtext and vdm_txtkeep; DOS\VBE.INC, vbe_isgfx and vbe_textset).
+Defect: the console writes characters into the text page (IO\
+CONSOLE.INC), and when the kernel ended a box - a fault (vdm_fault), a
+handler the guest is stuck on (vdm_fltloop), a HLT with interrupts off
+or any other abend (vdm_abend), a DPMI client's fault (dfa_real), a
+bad raw switch (dwp_bad, dwp_none) - it wrote its reason there with
+the screen still in the program's graphics mode.  Effect: nothing
+showed that page.  The user saw the program's last picture, and the
+shell's prompt after it went unseen as well: a game that had stopped
+and no reason why.  A native program's report has had its screen back
+since VBE.INC (r3_fault calls vbe_exit); a DOS box's never did.  Fix:
+before the report, and again in vdm_abend for the ways out that print
+none, vdm_scrtext asks whether the screen is in a graphics mode and,
+if it is, sets the text mode the program started on - the mode and
+its rows, which vdm_txtkeep takes at every program start in a box
+when the screen is in a text mode (3 and 25 until one is seen) - with
+the font for 43 or 50 lines loaded again.  The console cannot call
+the BIOS, which is why v0.27 left this.  These places can: the box
+loop, and the DPMI fault path, which runs a client's INT 21h down to
+the BIOS already.
+
+  A GRAPHICS MODE is the BIOS's mode byte saying so, or a VGA's
+  Graphics Controller: bit 0 of its Miscellaneous register is set in
+  every graphics mode and clear in every text one.  That catches a
+  program that set the registers itself, and a VBE BIOS that did not
+  write the byte.  A VGA is what INT 10h AX=1A00h names as the active
+  display (7 or 8).  An EGA's register cannot be read and a CGA or a
+  mono card has nothing at the port, so there the byte is the only
+  answer.  The index the program left in 3CEh is put back.
+
+  NOT IN AN EXCURSION: the box is not ending there, and the screen is
+  the native program's at the prompt.  NOT FOR ^C, AN ABORT OR 4Ch:
+  those programs ended themselves or were asked to, and MS-DOS leaves
+  the mode alone too.  The mode set clears the screen, as it does
+  under DOS; the picture was lost when the program died.
+
+  vap_text, a native program's way back to the text mode it found,
+  now calls the same vbe_textset: one mode set and one font choice.
+
+CR2 IS TAKEN FIRST.  vdm_fault and dfa_real read CR2 for the report
+halfway through printing it.  With a BIOS call in front of the report
+now - interrupts on, a mode set's worth of time - each keeps it in a
+variable (vdm_fcr2, dpmi_fcr2) before anything else runs.
+
+REVIEW (defect > effect > fix).  Nothing found that needed a change
+beyond the above.  Checked: no BIOS call from a panic - dfa_real with
+no client goes on to IOS_PANIC as before, without vdm_scrtext.  RMFRAME
+and XFER_BUF are free at every caller: a ring-3 fault or a guest
+coming back to the box loop cannot be in the middle of a thunk, and
+none of 00h, 11h or 1A00h writes through ES:DI.  vbe_textset takes the
+mode with bit 7 clear (both keepers mask it).  A row count of 0 or
+FFh in the BDA gives no font.  vdm_scrtext keeps every register, so
+vdm_fault's vector in EBX survives it.  Run twice in one ending
+(vdm_fault, then vdm_abend), the second finds a text mode and does
+nothing.  No memory taken, nothing to free.
+
+TESTS.  TOOLS\SCRBACK.ASM, BIN\TESTS\SCRBACK.COM (BUILD.CMD, TESTS.IMG,
+both MKHD lists; RUNTESTS after the VECBACK lines).  /G sets mode 13h
+and makes VECBACK /G's store, /H sets it and halts with interrupts
+off, /R leaves the BIOS in mode 3 and sets the Graphics Controller to
+graphics by its register before the store, /D sets mode 13h and halts
+in protected mode as a DPMI client (a #GP); /V, run after each, wants
+a text mode from the BIOS and from the Graphics Controller, and prints
+the mode and rows - 50 after /G, which RUNTESTS starts on 50 lines.
+/T changes palette entry 1 on a text screen before the store, and /K
+wants the entry still changed: the text screen was left alone.  Old
+kernel: /G, /H and /D leave mode 13h (two failures each), /R leaves
+the Graphics Controller in graphics (one); /T passes.  New kernel:
+all pass.  DOSBox-X does not raise #GP for a read through a null
+selector (it does not check segments), so /D halts instead.  Screens
+recorded: the box report and the DPMI client's, each at the top of a
+cleared text screen with the prompt below.
+
+RUNTESTS -All, first run: on every row the twelve new files, RMFIND
+one more entry in \TESTS and RMTEST three clusters less (SCRBACK.COM's
+two, and one for the longer AUTOEXEC.BAT); and once, on pentium-1024,
+PCITEST's IRQ 0 caught "owed" - a sample of the timer at the moment
+of the call - which matched on the five runs after.  Those 98 files
+recorded from that run; the second run: 118 of 118 on all seven rows,
+VBETEST among them (the native path through vbe_textset).  A copy of
+the VM's own HD16 (EMS=AUTO, NULLTRAP=ON, ES1371.SYS, CMD.EXE in
+C:\DOS) passed /G, /D and /T with their checks in DOSBox-X, 612K free,
+and /H, /R, /D and /T in 86Box on the VM's own machine (pb520r, Cirrus
+GD5436 with its own BIOS), its last /G report on the screen.  wasm and
+MASM 6.13 assemble PMDOS.SYS and SCRBACK.COM; PMIO's body comes out
+the same after CONSOLE.INC's comment.  PMDOS.SYS 192,079 -> 192,325
+bytes.
+
+NOT DONE.  A fault in the kernel itself (PMIO's exception report,
+IO\EXCEPT.INC) and a panic still write to the text page whatever the
+screen is: those are the paths that cannot call the BIOS.  A program
+that ends with 4Ch or ^C in a graphics mode still leaves the shell's
+prompt unseen, as v0.27 said.  Not run on real hardware.  (Both done
+the same evening, the panic aside: A KERNEL FAULT'S REPORT, AND THE
+PROMPT, ON A TEXT SCREEN, below.)
+
+DELIVERED by one BUILD.CMD and MKHD.CMD in the tree: in BIN only
+PMDOS.SYS changed, and TESTS\SCRBACK.COM is new; IMAGES PMDOS, TESTS,
+HD16 and HD32 made again (PMDOS2, PMDOS3 and MULTI came out the same).
+The VM: its own HD16 patched by name (PMDOS.SYS in the root,
+TESTS\SCRBACK.COM) and read back; PMDOS, TESTS and HD32 copied in;
+backups beside them (.bak-20261116-1929).  Not committed.
+
+
+A KERNEL FAULT'S REPORT, AND THE PROMPT, ON A TEXT SCREEN (2026-11-16)
+---------------------------------------------------------------------
+
+The two NOT DONE items above, at Charlie's word ("let's do 1a and 2a"
+of the fixes suggested for them).
+
+1. A RING-0 FAULT'S REPORT WENT UNDER THE PICTURE, OR WAS WIPED (IO\
+   EXCEPT.INC exc_common, exc_say, exc_report; IO\RMCALL.INC rm_busy;
+   DOS\DOSMAIN.ASM dos_fault, df_screen).  Defect: exc_common prints
+   the report from inside the exception handler, where the BIOS cannot
+   be called, so it went into the text page whatever the screen was.
+   Effect: in a box's graphics mode nobody saw it; and for a native
+   program that had set a mode, 4Ch's vbe_exit then set the text mode
+   back - which cleared the screen, report and all: the user got a
+   prompt and no word of a fault.  Fix: exc_common keeps the facts it
+   prints (vector, error code, EIP, CR2, the null-pointer line) and
+   prints them through exc_say.  dos_fault, once its stack and flags
+   are its own again and before IOS_EXCCLEAR, asks PMIO through the new
+   IOS_EXCREP: EXR_ASK says whether a report is kept and the BIOS may
+   be called; df_screen then puts the screen back - vdm_scrtext with a
+   box running, vbe_exit for the native program being ended, as
+   r3_fault does - and if it changed anything, EXR_SAY prints the
+   report again with its "Program terminated" line.  4Ch's own vbe_exit
+   finds nothing left to do.
+
+     NOT IN THE MIDDLE OF A BIOS CALL: rm_int sets rm_busy as it starts
+     and clears it as it ends, and a fault between - the state it was
+     changing half changed - is told no by EXR_ASK; the report stays
+     where exc_common put it.  The report is kept only from the hook's
+     call to IOS_EXCCLEAR, so a ring-3 fault, which reaches dos_fault
+     already reported on a screen put back first, is told there is
+     none.  Before IOS_EXCCLEAR on purpose: a fault in this is a fault
+     in the recovery, and halts rather than going round again.  A
+     panic, and a fault in the recovery, still print into whatever the
+     screen is.
+
+     IOS_EXCREP is a new PMIO service at IOSVC + 11Ch: PMIO.SYS and
+     PMDOS.SYS go together, as with every service before it.
+
+2. THE PROMPT AFTER A PROGRAM THAT ENDED ITSELF IN GRAPHICS (DOS\
+   INT21.INC fF0_text, 21h/F0h AL=0Eh; CMD\CMD.ASM gl_console;
+   CMD\COMMAND\COMMAND.ASM gc_prompt and INIT16.INC).  Defect: a DOS
+   program that ends with 4Ch (or ^C) in a graphics mode leaves it on,
+   as it does under MS-DOS - but MS-DOS's console draws through the
+   BIOS teletype and this one writes the text page.  Effect: the
+   shell's prompt, and everything typed at it, could not be seen.  Fix:
+   21h/F0h AL=0Eh, "a screen a prompt can be read on": vdm_scrtext's
+   test and mode set, answering AL = 1 if a mode was set and DH/DL the
+   size now.  CMD.EXE calls it before every interactive prompt
+   (gl_console: the keyboard, or a file on stdin - not a batch line,
+   not /C); COMMAND.COM before every prompt it would show, and only
+   when 30h's OEM byte says PM-DOS's kernel (03h): RMDOS answers FFh,
+   and another DOS draws in graphics itself and has no F0h.  Between
+   the lines of a batch file nothing changes, so a program that sets
+   up a mode for the next one still can.  vdm_txtkeep now also runs
+   once at boot, so a mono card's mode 7 is the one kept before any
+   program has started.  An older kernel answers F0h AL=0Eh with
+   "invalid function", which both shells ignore.
+
+REVIEW (defect > effect > fix).  Two traps hit on the way, both wasm
+folding case: a label exr_say IS the equate EXR_SAY ("unexpected
+colon"), and NDTEST's ndc_fault would have been NDC_FAULT - renamed
+exrp_* and ndc_gp.  Checked: exc_common's new lines run only for a
+ring-0 fault (V86 and ring 3 leave before them); a second fault in
+the recovery overwrites the kept report with its own and halts, as
+before; CR2 is now read for every vector, which is legal at ring 0;
+df_screen's vbe_exit is bounded by EXEC_MAX inside it; the native
+path's two vbe_exit calls (here and 4Ch) do the work once.  vbe_exit
+and vdm_scrtext now answer CF for "a mode was set"; none of their
+callers looks at the flags after them.  Found, not changed: IOPM.ASM
+fails MASM 6.13 at KEYBD.INC 495-501 (three short jumps 8 to 18 bytes
+too far, which wasm lengthens without a word) - the same on v0.71's
+committed sources.
+
+TESTS.  NDTEST.SYS answers NDC_FAULT (100h; not 2, which is
+NDRVTEST's "unknown function") with a #GP in ring 0: FFF8h, past the
+GDT's end, loaded into FS.  NDRVTEST /F finds NDTEST's row by name,
+sets mode 13h through VBF_SET and asks for it.  Not in RUNTESTS, as
+CRASH is not: it ends with a kernel fault, and what it shows is on the
+screen.  Recorded in DOSBox-X: the new kernel leaves "*** CPU
+exception 0D ... err 0000FFF8" and "Program terminated" at the top of
+the text screen with the prompt under it; the old one leaves the
+prompt alone - 4Ch's mode set had wiped the report.  In 86Box on the
+VM's own machine (pb520r, Cirrus GD5436), with NDTEST.SYS added to a
+copy of its CONFIG.SYS: the same report on the screen.  The box path
+of df_screen (vdm_scrtext) is not reached this way - nothing in a box
+can make a ring-0 fault on purpose - and neither is a fault inside
+rm_int.
+
+SCRBACK /N sets mode 13h and ends with 4Ch; /W, the next batch line,
+wants mode 13h still set, and writes SCRBACK.KEY ("SCRBACK /V",
+"EXIT") for a shell to read: RUNTESTS runs /N, /W, CMD < SCRBACK.KEY,
+/N, /W, COMMAND < SCRBACK.KEY after the other SCRBACK lines, and /V at
+each shell's prompt finds mode 03h.  Old kernel with the new shells,
+and new kernel with the old shells: /V fails at both prompts (mode
+13h), and nothing else goes wrong.  86Box on the VM's machine: the
+same six lines pass, and a SCRBACK /N as AUTOEXEC.BAT's last line
+leaves CMD's prompt on a text screen.
+
+RUNTESTS -All, first run: the six new files on every row, and four
+moved, each for a reason - RMTEST three clusters less (SCRBACK.COM,
+NDRVTEST.EXE and PMIO.SYS one each), XMSTEST and XMSREPT's locked
+block 16 bytes higher (NDTEST.SYS, 26 bytes longer, is in the arena
+under it: with the old NDTEST.SYS and everything else new it is back
+at 002EAB40), and CACHETST's write owed 4 to 5 on six rows (the files'
+layout, as before).  69 files recorded; the second run: 124 of 124 on
+all seven rows.  NLSTESTS: all nine rows.  CMD.OUT's prompt says C:\
+in the full list but C:\WORK in a short one: a test earlier in the
+list leaves the current directory at the root.  Seen, not chased.
+wasm assembles everything; MASM 6.13 assembles PMDOS.SYS, CMD.EXE,
+COMMAND.COM, SCRBACK.COM, NDTEST.SYS and NDRVTEST.EXE.  PMIO.SYS
+90,090 -> 90,286, PMDOS.SYS 192,325 -> 192,429, CMD.EXE 63,182 ->
+63,188, COMMAND.COM 33,535 -> 33,558.
+
+DELIVERED by one BUILD.CMD and MKHD.CMD in the tree: in BIN, PMIO.SYS,
+PMDOS.SYS, CMD.EXE, COMMAND.COM and TESTS\NDTEST.SYS, NDRVTEST.EXE
+and SCRBACK.COM changed; IMAGES PMDOS, TESTS, HD16 and HD32 made again
+(PMDOS2, PMDOS3 and MULTI came out the same).  The VM: its own HD16
+patched by name (PMIO.SYS, PMDOS.SYS and CMD.EXE in the root; CMD.EXE
+and COMMAND.COM in DOS; NDTEST.SYS, NDRVTEST.EXE and SCRBACK.COM in
+TESTS) and read back; PMDOS, TESTS and HD32 copied in; backups beside
+them (.bak-20261116-2027).  Not committed.
+
+
+EIGHT HARD DISKS: 80h TO 87h, AND THE USB UNITS AT 88h (2026-11-17)
+---------------------------------------------------------------------
+
+Charlie: "Only two hard disks can be used.  MAX_PHYS EQU 2 is set in
+DOS/FAT.INC:86, so a third or fourth IDE or AHCI disk can't be reached
+at all.  The README promises both IDE cables and AHCI.  Let's work on
+supporting more hard drives."
+
+WHAT TWO MEANT.  The block layer had geometry slots for 80h and 81h,
+the partition scan walked those two, ATA.INC and AHCI.INC numbered two
+disks by their sector 0, and the USB units were 82h to 85h - which is
+the BIOS's own number for a third hard disk.  So a third disk had no
+letter, and worse than that, in a DOS box: shown on the old kernel in
+QEMU with three IDE disks and a stick, a program's INT 13h on 82h read
+the STICK's sector 0, not the third disk's, and 83h (the stick to the
+BIOS) went to the BIOS's USB code after the takeover and came back 0Ch.
+
+THE NUMBERS.  MAX_PHYS is 8 and lives in PMDOS.INC beside USB_DRV0,
+which is 80h + MAX_PHYS = 88h (FAT.INC's own MAX_PHYS is gone).  Eight
+because MS-DOS 6's FDISK showed eight (cmd\fdisk\bootrec.asm,
+MAX_HDISK 8) and its IO.SYS walks every disk the BIOS counts (msinit,
+hnum from INT 13h 08h); and the byte masks below hold eight.  The USB
+units stay right behind the disks because 21h/F1h AL=0Ch's ECX means
+"numbers from 80h": FDISK and the SDK walk 80h + i, and ECX is now 12
+(it was 6).  The SDK session (repos-ce) was told; its record layout is
+unchanged.  A NINTH BIOS DISK is 88h and meets USB unit 0, as the third
+met it before: no letter, and a DOS box's INT 13h on it goes to the
+stick when one is in the unit.  Not handled.
+
+THE BIOS IS ASKED ABOUT 82h AND UP ONLY WHEN IT COUNTED THEM (40:75),
+in blk_getgeo, which every BIOS path goes through.  A BIOS written for
+two disks need not refuse 82h cleanly, and one that keeps only the low
+bit of the number would read 80h for it and make a third disk of the
+first.  80h and 81h are asked whatever the count says, as before.  The
+scan of 80h-87h costs a disk that is not there nothing then.
+
+A DISK THE BIOS DID NOT COUNT, that the IDE driver drives, is numbered
+after the BIOS's ones (ata_number's probe-order rule, as before, now for
+every number whose sector 0 the BIOS could not give): the board whose
+BIOS knew one cable has its second cable's disks as 82h and 83h.  They
+have no BIOS geometry, so blk_getgeo makes one from the size (bg_made:
+63 sectors, 16 heads to 504MB then 255, cylinders capped at 1024 -
+usbm_geo's rule, now blk_mkgeo, which usbm_geo calls), marked GEO_FLAGS
+2 so that it is worked out at every ask and follows the IDE driver.  So
+FDISK lists them and a DOS box reaches them through the kernel, and
+i13_count_drives gives 08h's DL as the highest number the block layer
+has a geometry for when that is past the BIOS's count.  UNDER WINDOWS
+they are not there: RMDOS asks the BIOS, and LRGDISK.386 finds its
+disks by watching the BIOS read them.  The park hands such a letter
+over absent (PARK.INC, pfh_counted, from 82h on).  A BIOS that refuses
+the number would leave RMDOS no boot sector and RMDOS drops the letter
+itself - PARKDRV in QEMU said so with and without the change - but one
+that keeps only the low bit would answer with 80h's sector, and C:'s
+volume would be mounted a second time under the letter.
+
+ATA.INC: ata_biosread and ata_number over MAX_PHYS numbers, ata_bhash
+and ata_btot MAX_PHYS long.  AHCI.INC: the BIOS's sector 0 for eight
+numbers in the tail (AHM_BIOS 400h -> 1000h, AHM_NEED 4800h -> 5400h,
+so IOPMEND_MAX 177,152 -> 174,080 in IOPM.ASM's .ERRE and BUILD.CMD's
+FSIZE line), the BIOS's sizes in ahci_btot.  THE REPORT KEPT ITS LENGTH
+(AHR_LEN): AHR_BTOT0/1 are still 80h's and 81h's alone, so an older
+AHCITEST's buffer still holds what 21h/F1h AL=2Ah copies; AHR_BIOSOK and
+AHP_MATCH were bytes of bits already and now use bits 0-7.  AHCITEST
+prints 80h and 81h as before and 82h-87h when the BIOS read them.
+
+USB ADOPTION, for every number 80h-87h: a BIOS that started from a hard
+disk numbers the sticks after it, so with three IDE disks a stick is
+83h, and after the takeover a read of 83h by INT 13h would go into the
+BIOS's USB code with the controller gone.  usb_savebios keeps a HASH of
+each sector 0 (ata_hash, as ATA.INC keeps the BIOS's) and the size;
+eight sectors do not fit in the scratch block, SCR_SAVE1 is gone and
+0500h-06FFh is free.  usb_adopt looks for a sector 0 match on every
+number before it tries a size, so a stick the size of another disk is
+not taken for it when its sector 0 says otherwise.  usbm_wasbios is a
+bit test.
+
+THE CACHE'S ROWS (cache_drvst) are laid out from equates now, CCR_HD,
+CCR_DL, CCR_CD, CCR_USB: 2-9 the hard disks, 10-25 driver units, 26-33
+ATAPI, 34-37 USB, CC_UNITS 38.  Each range is bounded on both sides: an
+ATAPI id past F7h used to fall into the USB rows that followed.
+cache_mode's "a hard disk" is below USB_DRV0.
+
+FDISK: MAX_DISKS is MAX_PHYS + USB_MAXUNITS (12; it was 8, which with
+eight disks would have cut the USB units off the list).  The screen
+offers the hard disks that are there and every USB unit, there or not
+(tu_dlist, tui_dmask): a stick can be plugged in while it runs, a hard
+disk cannot, and eight numbers would fill the Disk menu with "(none)".
+Tab and Shift+Tab pass over the rest; the Disk menu's 10 and 11 have no
+digit key and lose a leading space ("  Disk 9", " Disk 10") so the
+label still fits DM_W.  A USB STICK IS DISK 8 TO 11 NOW, on the screen
+and in "FDISK /C 8:1" - it was 2 to 5.  The help's FDISK notes say so.
+
+PMDOS.386: PD_USBDRIVE (its self-test's drive) 88h; nothing else moves
+- its INT 13h mask covers BIOS numbers 80h-87h, and since the kernel's
+own units are 88h up only a number a stick was adopted under is in it
+after Device_Init; the early guess (81h-85h) is as it was.  FORMAT.COM
+and USB.EXE take USB_DRV0 from PMDOS.INC: one byte each.  Help: the
+AHCI= topic and CONFIG.TXT said "only the first two hard disks"; they
+say up to eight.
+
+TESTS (QEMU 11.1, rig dq.ps1 in session 5cdd26fd's scratchpad: every
+disk a copy of HD16.IMG with its own MBR signature 5EED00K0h and a
+MARK.TXT, a 16-bit I13SIG.COM printing 40:75 and, for 80h-8Bh, a DOS
+box's INT 13h 08h and the signature 02h reads; letters written to and
+read back off the images):
+  - four IDE disks: C: to F:, FDISK disks 0-3, I13SIG n=04 and each
+    number its own disk, IDETEST all on bus-master DMA.  Old kernel:
+    C: and D: only.
+  - the same, BIOS order not cable order (bootindex 0,2,1,3 with the
+    boot disk on the secondary slave): IDETEST shows 82h, 83h, 81h,
+    80h by cable, the letters follow the BIOS's numbers.
+  - q35, four SATA ports, ports 2 and 3 swapped in the boot order:
+    AHCITEST 4 disks in use, ports matched 01 02 08 04, letters right.
+  - eight: four IDE (80h-83h) and four on an ich9-ahci card (84h-87h),
+    C: to J:, K: invalid, every write on its own image.
+  - two PIIX disks and two on an ISA channel at 1E8h, which SeaBIOS
+    does not probe (40:75 = 2): the IDE driver numbers them 82h and
+    83h, FDISK shows them at 65/16/63, E: and F: written, a DOS box's
+    INT 13h reaches them through the kernel and DL says 4.
+  - three IDE disks and a stick SeaBIOS mapped as 83h: adopted under
+    83h, F: works after the takeover, FDISK lists the stick once (disk
+    3, removable).  Old kernel: the DOS box's 82h read the stick.
+  - three IDE disks and a stick plugged in after the start (QEMU
+    monitor): unit 0 is 88h with the USB letter F:, FDISK disk 8,
+    written and read back.
+  - FDISK's screen with a key file (FDTEST): the Disk menu lists disks
+    0, 1, 2 and 8-11, Tab goes 0, 1, 2, Shift+Tab back.
+  - PARKDRV.COM (parks as PARKEXEC does and writes C:\PARKDRV.TXT from
+    RMDOS) on the 1E8h machine: C: and D: there, E: and F: absent -
+    with the old park code as well, SeaBIOS refusing 82h.
+86Box, the VM's own machine (pb520r, AMIBIOS 1992, CMD640, Cirrus),
+from copies of its disks and CMOS: with a third disk as the SECONDARY
+MASTER (the CD-ROM moved to slave) the BIOS counts three (40:75 = 3),
+IDETEST shows 80h, 81h and 82h on the CMD640 by PIO, FDISK lists three,
+E: is the third disk, a DOS box's INT 13h on 82h reads it, and under
+RMDOS PARKDRV reads E: through the BIOS.  With the third disk as the
+secondary SLAVE behind the CD-ROM the machine stops after the BIOS's
+"Hard Disk D: Installed" line, before "Starting PM-DOS..." - before any
+of this code; not chased.  A copy of the delivered HD16 with his own
+CONFIG.SYS and AUTOEXEC.BAT starts to C:\> as before (CD-ROM H:).
+MASM 6.13 assembles PMDOS.SYS, FDISK.EXE and AHCITEST.EXE; IOPM.ASM
+still stops only at KEYBD.INC 495-501, as on v0.71.
+
+RUNTESTS -All, first run: RMTEST two clusters less free on all seven
+rows (PMDOS.SYS and FDISK.EXE each crossed a 1K cluster) and CACHETST's
+write owed 5 -> 4 on the six rows but 386-4 (the files' layout, as
+before); nothing else moved.  Recorded with -Update after the last
+build - those 13 files, those two lines; the second run: 124 of 124 on
+all seven rows.  NLSTESTS: all nine rows.  PMIO.SYS 90,286 -> 90,610,
+PMDOS.SYS 192,429 -> 192,562, FDISK.EXE 73,495 -> 73,791, AHCITEST.EXE
+3,848 -> 3,871; FORMAT.COM, USB.EXE and PMDOS.386 one byte each.
+
+FOUND, AND FIXED THE SAME DAY (Charlie: "Yes, let's fix it"), the same
+on the old kernel: on the VM's machine anything that read B: - DRIVES
+stopped at its B: line - ended with "*** CPU exception 00 at 0020DB32"
+(0020DC01 in this build), a divide fault in ring 0.  That BIOS's INT
+13h 08h for drive 01h succeeds with CL = 0, no sectors a track, with a
+diskette in the drive or not; blk_getgeo cached it, and blk_go divided
+the LBA by it.  blk_geo, the DOS box's way in, already refused a
+geometry of zeros.  blk_getgeo now fails on CL's six bits being 0, as
+if 08h had failed, and caches nothing: B: reads as not ready (FFh is
+CERR_NOTREADY for a diskette drive, CRITERR.INC), a hard disk as not
+there.  The heads are DH + 1 and cannot be 0.  FDF_SETGEO already
+refused zeros.  86Box, the same copy: DRIVES lists A: to H:, B: "(will
+not mount)" like the empty A:, no fault.  PMIO.SYS 90,610 -> 90,612.
+
+NOT TESTED: real hardware of any kind; Windows on a machine with three
+or more disks; more than one adapter's worth of SATA ports; a ninth
+disk.
+
+DELIVERED by BUILD.CMD and MKHD.CMD in the tree (BUILD twice, the second
+with PARK.INC): in BIN, PMIO.SYS, PMDOS.SYS, FDISK.EXE, FORMAT.COM,
+USB.EXE, PMDOS.386 and TESTS\AHCITEST.EXE changed; DISK\HELP.HLP made
+again from the parts (the two passages above and nothing else); IMAGES
+PMDOS, PMDOS2, TESTS, HD16, HD32 and the Setup images made again
+(PMDOS3 and MULTI the same).  The VM: its own HD16 patched by name
+(PMIO.SYS and PMDOS.SYS in the root; FDISK.EXE, FORMAT.COM, USB.EXE,
+PMDOS.386 and HELP.HLP in DOS; AHCITEST.EXE in TESTS) and read back;
+PMDOS, PMDOS2, TESTS and HD32 copied in; backups beside them
+(.bak-20261117-1849).  Then the B: fix: BUILD.CMD and MKHD.CMD again
+(PMIO.SYS alone changed in BIN), RUNTESTS -All 124 of 124 on all seven
+rows with nothing moved; the VM's HD16 given the new PMIO.SYS by name
+and read back, PMDOS and HD32 copied in (backups .bak-20261117-1917),
+and a copy of it started to C:\> with his CONFIG.SYS and AUTOEXEC.BAT.
+Not committed.
+
+
+16-BIT SPEED: THE TRAPS COUNTED, A FAST PATH, AND VME (2026-11-18)
+---------------------------------------------------------------------
+
+Charlie: "16-bit programs run slowly.  Boxes run at IOPL 0, so every
+CLI, STI, PUSHF, POPF, INT and IRET traps into the kernel ... What
+would be the best way to address this?"  Four steps, in this order, at
+his word: count the traps, make each one cheaper, move the I/O bitmap,
+then let the processor answer them itself where it can (VME).  IOPL
+stays 0 throughout.  IOPL 3 was considered and turned down: in V86 the
+I/O bitmap still governs the ports, so the A20 argument does not
+apply, but a box at IOPL 3 has the real interrupt flag, and a box
+sitting in a CLI loop would then stop the kernel's timer, the keyboard
+(USB's too), the network and Ctrl-Alt-Del.
+
+1. THE COUNTS (BUILD trapcnt, -dV86_TCOUNT).  Every #GP out of a box by
+its opcode, every INT by its vector, every claimed port, every other
+exception, the interrupts that stopped a box and the ones handed into
+one, the trips to the DOS side, and the VME state - written to port E9h
+every five seconds of the clock (tc_tick, VM86.INC) and zeroed.  The
+first use was Wolfenstein 3-D, driven by KEYINJ in DOSBox-X:
+
+  - its menus poll the mouse in a loop: about 28,000 INT 33h a second,
+    each an INT trap, a HLT trap and a trip to the DOS side;
+  - loading a level, bursts of 30,000 to 50,000 CLI/STI a second;
+  - playing, about 300 traps a second - the EOI, PUSHF/POPF, CLI/STI
+    and IRET of its own timer handler, three or four a tick.
+
+So Wolfenstein's 3-D view is not trap-bound at all, and what a game
+pays for depends on the game: a timer-driven sound player at thousands
+of interrupts a second pays per interrupt.  TOOLS\TRAPBEN.ASM
+(BIN\TESTS\TRAPBEN.COM, not in RUNTESTS: its numbers are the machine's)
+times CLI+STI, PUSHF+POPF, PUSHF+CLI+POPF, PUSHFD+POPFD, an INT to its
+own IRET, IN AL,21h, INT 21h AH=19h, and its bare loop with its own
+INT 08h at 1000 and 8000 Hz.
+
+2. THE FAST PATH (VM86.INC v86_gpfast; EXCEPT.INC exc13).  A #GP with
+VM set goes from its gate straight to v86_gpfast, before exc_common.
+Two registers and a bit table (vgf_ops) decide whether it is one of
+CLI, STI, PUSHF, POPF, IRET, INT n, or IN/OUT AL with the port in the
+instruction or in DX; anything else - the 66h forms, a claimed INT,
+INT 3, INTO, HLT, word I/O, the 0Fh group - goes to exc_common with the
+same frame and is answered exactly as before.  The fast ones load DS
+only (the IRETD back loads all four from the frame), check a stack by
+the page rather than by the trap (vgf_stk: the bytes the instruction
+touches must be on one page the page tables let a box write; the last
+good page is kept in v86_stkpg, which v86_run and every page-table
+writer - pg_a20, pg_map, pg_guard, pg_mapphys - forget), and go back
+through v86_ckkbd only when something may be owed (v86_owed).
+v86_irqexit asks v86_owed first too, so most interrupts go back to the
+box without a stack check or v86_ckkbd.  Byte IN and OUT call the same
+vio_in and vio_out the slow path does, with ES and a clear direction
+flag for them.  In the debug builds that watch traps one at a time
+(V86_TRACE, V86_CALLS, V86_WATCH, V86_WATCHQ, DBG_LPT, HANG_E9) there is
+no fast path (V86_FAST, IOPM.ASM).
+
+3. THE I/O BITMAP MOVES UP 32 BYTES (PMDOS.INC: TSS_REDIR 104,
+TSS_IOBASE 136, TSS_TOTAL 8332).  VME's interrupt redirection bitmap is
+the 32 bytes below the I/O map base, and at 104 those were the TSS's
+own segment fields and TSS_IOMAP itself.  Nothing else changes for a
+processor without VME.
+
+4. VME (VM86.INC, "VME - THE PROCESSOR ANSWERS A BOX'S INTERRUPT FLAG
+ITSELF").  CR4 bit 0, where CPUID says so.  The box still runs at IOPL
+0 with the real IF on; its CLI, STI, PUSHF, POPF and IRET work on VIF
+without faulting, and INT n to an unclaimed vector goes straight to its
+own table (v86_run copies the context's trap bitmap to TSS_REDIR).
+VIP is v86_owed: with it set, the STI, POPF or IRET that would turn the
+flag on faults, which is where v86_ckkbd delivers.  v86_vif is still
+the monitor's flag: v86_vmein copies VIF and NT out of the frame at
+every way in, v86_vmeout puts them back with VIP at every way out.  A
+16-bit PUSHF now shows IOPL 3, as the processor pushes it; PUSHFD still
+shows the shadow, and the CPU detectors' flags test still says 386+.
+rm_park takes VME out of CR4 before Windows or an extender owns the
+machine and rmp_back puts it back (v86_cr4off/v86_cr4back, after
+fpu_park/fpu_unpark); so does the restart through the ROM (kb_reboot).
+
+IT IS CHECKED AT BOOT BEFORE IT IS USED (v86_vmeinit, after fpu_init):
+a box at 0:0E00 with the interrupt controllers shut, counting general
+protection faults (v86_gpn) - run 1 the plain instructions and a
+redirected INT (no faults) and a claimed one (one); run 2 VIP held set,
+a POPF, an STI and an IRET that must each fault; run 3 an INT made with
+the flag off, which must come back with it off.  IOS_VME (IOSVC+120h)
+says how it went: VMES_NONE, VMES_ON, VMES_OFF (VME=OFF), VMES_NOINT,
+or VMES_FAIL + the check.  VME=ON|OFF is a new CONFIG.SYS statement,
+read in the first walk; CONFIG.TXT and the help (30CONFIG.TXT) have it,
+and HELP.HLP was made again from the parts.
+
+WHAT THE EMULATORS DO WITH VME, which is what the check is for:
+  - DOSBox-X's pentium and QEMU's TCG have none: QEMU says "TCG doesn't
+    support requested feature: CPUID.vme" when asked for it.
+  - QEMU with WHPX on this Threadripper (Hyper-V, Zen 2) reports VME
+    and gets runs 1 right, but with VIP set it faults at CLI and PUSHF
+    and reports a fault at the POP after a PUSHF: VMES_FAIL+10, VME off,
+    and VIFTEST 12 of 12 with the monitor answering.
+  - 86Box 6's Pentium has VME and gets runs 1 and 2 right, but its
+    redirected INT pushes the real IF (always on in a box) where VIF
+    belongs - VPROBE showed the image as 0202h after a CLI - so the
+    handler's IRET turned the flag on behind the box's back (VIFTEST
+    check 4).  That is VMES_NOINT: VME stays on and every INT n faults
+    to the monitor, which pushes the right flag.
+
+THE NUMBERS, from TRAPBEN, a second of each (pairs for the pairs):
+
+  86Box 6, pb520r, Pentium 60          old      fast path    VME
+    CLI+STI                         61,250      107,250   3,108,250
+    PUSHF+POPF                      49,000       79,250   4,909,750
+    PUSHF+CLI+POPF                  36,500       59,500   3,108,250
+    INT 0F0h (own IRET)             49,500       76,750     105,500
+    IN AL,21h                       96,750      153,750     121,750
+    PUSHFD+POPFD                    47,000       44,000      37,250
+    INT 21h AH=19h                  24,000       25,000      21,250
+    loop with an 8000 Hz timer     6.69 M       7.28 M      7.32 M  (of 9.76 M)
+  QEMU 486 (TCG, so no VME): CLI+STI 26,000 -> 109,250, PUSHF+POPF
+  23,250 -> 88,500, INT 0F0h 21,500 -> 77,500, IN AL,21h 58,750 ->
+  294,250.  DOSBox-X pentium: CLI+STI 76,500 -> 267,750, IN AL,21h
+  119,250 -> 261,500.
+
+The VME column is VMES_NOINT, 86Box's case.  With every INT n going
+straight to the table (a scratch build that ignored run 3), INT 0F0h
+was 1,690,500.  What still traps costs a little more under VME - the
+flag has to be carried in and out of the frame - which is the port,
+PUSHFD and INT 21h rows; the five that stopped trapping are fifty to a
+hundred times faster.  And the timer row hardly moves: at 8000 Hz most
+of what an interrupt costs a box is not traps at all but the kernel's
+own way through it (irq_common, irq_timer, the delivery, and the two
+writes to the real masks irq_sync makes for every EOI a box sends) -
+about 1,900 clocks an interrupt on the Pentium 60.  That is the next
+place to look if a game with fast timer sound still drags.
+
+TESTS.  TOOLS\VIFTEST.ASM (BIN\TESTS\VIFTEST.COM, in RUNTESTS before
+VECBACK): CLI/STI and POPF and IRET read back with PUSHF, an INT to a
+handler of its own (flag off inside, the caller's back after), the same
+with the frame across a page boundary, PUSHF/POPF with SP at 0, a timer
+tick held off while the flag is off and handed over AT the STI, the
+POPF and the IRET that turn it on (a kernel built with that hand-over
+taken out fails exactly those three), INT 1Ah through the table, and
+the CPU detectors' flags test.  12 of 12 on every row and every kernel,
+and on 86Box under VME.  RUNTESTS -All: the first run moved RMFIND (two
+more files in \TESTS) and RMTEST (five clusters: the two files and
+PMIO.SYS's 2.7K) on all seven rows and had no VIFTEST baseline; those
+21 files recorded, the second run 125 of 125 on all seven rows.
+NLSTESTS: all nine rows.  86Box with VME (NOINT): 26 of the DOS-box
+tests (APITEST to LOLTEST) give the same output as on the old kernel,
+less three clock-made numbers.  Wolfenstein 3-D plays under VME on
+86Box, keys and its 140 Hz timer arriving.  QEMU 486 and DOSBox-X 386:
+VIFTEST 12 of 12 on the fast path.  The debug builds (trace, hang, lpt)
+assemble and keep the old path.
+
+NOT TESTED: VME on real hardware - nothing here has a correct VME INT
+redirection, so VMES_ON's own path ran only in that scratch build on
+86Box.  An Intel DX4 has VME and should show it; the Cyrix 5x86
+probably has none and runs the fast path.  Windows 3.1 enhanced mode
+after a park with VME on (rm_park takes it out of CR4) was not run.
+
+DELIVERED by BUILD.CMD and MKHD.CMD in the tree: in BIN, PMIO.SYS
+(90,612 -> 93,296) and PMDOS.SYS (192,562 -> 192,614) changed and
+TESTS\VIFTEST.COM (805) and TESTS\TRAPBEN.COM (715) are new; DISK\
+HELP.HLP made again from the parts (checked equal to them first; VME=
+and its row in the statements' table are all that changed); IMAGES made
+again.  The VM: its own HD16 patched by name (PMIO.SYS and PMDOS.SYS in
+the root, HELP.HLP in DOS, VIFTEST.COM and TRAPBEN.COM in TESTS) and
+read back; PMDOS, PMDOS2, PMDOS3, TESTS and HD32 copied in; backups
+beside them (.bak-20261118-1822); a copy of the patched HD16 on a copy
+of the VM's machine starts to C:\> with his CONFIG.SYS and AUTOEXEC.BAT.
+Not committed.
+
+
+THE TRUST BUNDLE BROUGHT UP TO DATE (2026-11-18)
+---------------------------------------------------------------------
+
+DISK\CACERT.BND still held two roots past their end dates, Baltimore
+CyberTrust (2025-05-12) and GlobalSign Root CA - R2 (2021-12-15), and
+had no ISRG Root X2.  Both expired roots are out.  ISRG Root X2 and GTS
+Root R4 are in.  Still 24 roots; 25,649 -> 24,868 bytes.
+
+GLOBALSIGN ROOT CA (R1) STAYS UNTIL 2028-01-28, ON PURPOSE.  TLSHS.C
+wants the LAST certificate a server sends to be signed by a bundle
+root, and does not stop at a lower certificate that a bundle root
+signed.  www.google.com and www.cloudflare.com end their chains with
+GTS Root R4 cross-signed by R1, and twelve other Google and Cloudflare
+hosted sites tried also end with a certificate R1 signed, so taking R1
+out now would refuse all of them, with GTS Root R4 in the bundle or
+not.  GTS Root R4 is there for when those
+servers drop the cross-certificate: WE2, the intermediate Google sends,
+checks out against root 17 with the TLS core's own x509_verify_signed.
+No server was found that sends that shorter chain yet, so that root has
+been proved on the certificate and not on a live connection.
+
+AAA CERTIFICATE SERVICES IS NO LONGER ON MICROSOFT'S ROOT LIST (neither
+the store on this machine, the Windows Update list, nor authroot.stl;
+it is not on the disallowed list either).  It is still on Mozilla's,
+and example.com's chain ends with a certificate it signed, so it stays
+(valid to 2028-12-31).  The copy in the bundle is byte for byte
+Mozilla's.
+
+TOOLS\MKCABND.PS1: a root is looked for in the Windows store, then in
+the Windows Update root list (ISRG Root X2 and GTS Root R4 come from
+there on this machine), then in the DISK\CACERT.BND already in the
+tree (AAA).  The thumbprint fixes the content in every case.  A root
+that is missing or expired now stops the script and leaves the bundle
+as it was; it used to write a short bundle with a warning.  The listing
+shows each root's end date.
+
+STILL TRUE, NOT CHANGED: TLSHS.C does not look at the dates of a bundle
+root (anchored_by_ca), so the two expired roots were being accepted
+until today, and R1 will be accepted after 2028-01-28 unless the bundle
+is made again by then.  www.amazon.com is refused, before and after
+this change: its chain ends with Amazon Root CA 1 cross-signed by
+Starfield Services Root G2, which has never been in the bundle.
+
+TESTED, QEMU (RTL8139, TCPIP.SYS, BIN's WGET and TLSTEST), live servers,
+old bundle then new, WGET /V /CA: -
+  valid-isrgrootx2.letsencrypt.org   refused -> verified
+  letsencrypt.org, www.google.com, www.cloudflare.com,
+  www.globalsign.com, www.gmo.jp, example.com, github.com,
+  www.microsoft.com                  verified both times
+  www.amazon.com                     refused both times
+  expired.badssl.com                 refused both times (expired)
+  self-signed.badssl.com             refused both times (not trusted)
+TLSTEST (the bundle TCPIP.SYS loads at INIT): the X2 site failed with
+the old file and passes with the new one; www.google.com passes with
+both.  All 24 roots' keys parse with x509_get_pubkey.  Copies of the
+delivered IMAGES\HD16 and of the VM's HD16 boot and verify the X2 site
+and www.google.com, with the bundle found where each disk keeps it.
+Not run: real hardware, WINSOCK.DLL under WfW, a Setup install (the
+packed CACERT.BN_ unpacks with Windows' EXPAND to the same bytes).
+
+DELIVERED: MKHD.CMD and the Setup steps of BUILD.CMD run in the tree.
+File by file, CACERT.BND is the only difference on HD16 and HD32; on
+SETUPUSB, CACERT.BN_ and SETUP.INF (and the two long-name test files,
+which are copies of the last file packed).  MULTI is unchanged.  BIN
+is unchanged.  RUNTESTS builds its disk from BIN, which does not hold
+the bundle, so no baseline moves.  The VM: DOS\CACERT.BND patched in
+its HD16 and read back, HD32 copied in; backups beside them
+(.bak-20261118-1841).  Not committed.
+
+
+DEFRAG OPTIMIZES ONLY SPINNING DISKS (2026-11-18)
+=================================================
+
+Charlie: DEFRAG must check the type of disk, must not defragment a
+solid-state disk because of the wear on the cells, and should only
+defragment spinning disks.
+
+WHAT IS REFUSED, with exit code 4 and before a sector is read:
+
+  a solid-state disk      "Drive C: is on a solid-state disk. ..."
+  a USB disk              "Drive F: is on a USB disk. ..."
+  a RAM disk              "Drive G: is a RAM disk. ..."
+  a mounted image         as the disk its file is on, followed through
+                          images inside images
+
+The test is in load_drive, which every way of choosing a drive passes
+through, and again before the screen comes up for a drive named on the
+command line.  There is no switch to override it.
+
+HOW A DISK IS KNOWN.  ata_medium (IO\ATA.INC) reads the IDENTIFY block,
+for IDE and for AHCI:
+
+  word 217 = 1                 solid state
+  word 217 = 0401h-FFFEh       spins, and nothing below overrules it
+  word 0 = 848Ah or 844Ah      CompactFlash, so solid state
+  word 83 bits 15-14 = 01
+    and bit 2                  CompactFlash feature set, the same
+  "SSD" or "FLASH" in the
+    model, either case         solid state
+  anything else                not known
+
+Word 217 is believed only from a drive claiming ATA-7 or later in word
+80: it was reserved before that, and an old drive may hold anything
+there.  The answer is kept in ATD_MEDIUM or AHP_MEDIUM, IOS_DRVMEDIUM
+(blk_medium) gives it to the kernel, and 21h/F1h AL=0Ch reports it as
+DSKF_SOLID or DSKF_SPINS in DSK_FLAGS.
+
+A DISK THAT DOES NOT SAY IS OPTIMIZED.  That is every hard disk from
+before ATA-7, which is most of what this system runs on, so refusing
+the unknown would refuse nearly all of them.  It also means an old
+flash disk with no sign of it in its IDENTIFY block is taken for a hard
+disk, and so is anything PM-DOS reaches only through the BIOS (AHCI=OFF,
+SCSI, NVMe), or through a real-mode block driver.
+
+A USB DISK IS REFUSED WITHOUT ASKING.  Nearly all are flash, some of
+those call themselves fixed disks, and asking a stick for the SCSI page
+with the rotation rate is known to hang some.  The price is that a real
+USB hard disk is refused too.
+
+A RAM DISK'S UNIT is a number 21h/F1h AL=0Ch has always refused, and it
+still does, so FORMAT and FDISK see no change; the call now also leaves
+DSKF_MEMORY in DSK_FLAGS.  A real-mode RAM disk driver is not recognized.
+
+TESTED.  TABLE: ata_medium itself, assembled from ATA.INC and called from
+a Windows program, 43 cases: each edge of the rate, of word 80, of the
+CompactFlash tests, and names ending at the last byte of the field or
+cut off by it.  QEMU, with rotation_rate= and model= on ide-hd: IDE and
+q35 AHCI; rate 1, 1024, 1025, 7200, 15000; a 7200 RPM disk named SSD
+(optimized); 40-character names ending in SSD and in FLASH; a
+solid-state boot disk; no drive named, then the refusal box and back to
+the menu; USB adopted from the BIOS and plugged in after boot; RAMDISK;
+images on a solid-state and on a spinning disk.  Every refused disk's
+image was byte for byte the same afterwards.  86Box pb520r, a copy of
+the delivered VM disk: DEFRAG C: /U runs and exits 0.  RUNTESTS -All
+125 of 125 on all seven machines, no baseline moved.
+
+NOT TESTED: a real solid-state disk or CompactFlash card (QEMU cannot
+present CompactFlash on these buses, so those two tests have run only in
+the table), a USB hard disk, an image inside an image.
+
+DELIVERED: BIN\PMIO.SYS, PMDOS.SYS, DEFRAG.EXE; DISK\HELP.HLP regenerated
+(the only difference is the DEFRAG note); PMDOS.IMG, PMDOS2.IMG, HD16,
+HD32, MULTI and IMAGES\SETUP remade from BUILD.CMD's own lines and
+MKHD.CMD, with no compile, because MPLAY was being edited.  The VM:
+PMIO.SYS, PMDOS.SYS, DOS\DEFRAG.EXE and DOS\HELP.HLP patched into its
+HD16 and read back, PMDOS, PMDOS2 and HD32 copied; backups beside them
+(.bak-20261118-1904).  Not committed.
+
+
+MPLAY PLAYS FLAC (2026-11-18)
+=============================
+
+CMD\MPLAY\FLAC.C is one more codec behind DEC.H, written from the
+format's description, RFC 9639, with no code or tables from another
+decoder.  HAVE_FLAC turns it on; BUILD.CMD and MKMP.CMD build it in.  The
+playlist and the file box take .FLAC and .FLA (a long name's short form
+on a FAT disk ends in .FLA).  MPLAY.EXE grew from 269,792 to 279,800
+bytes.
+
+WHAT IT PLAYS.  4 to 31 bits, one to eight channels, 1 kHz to 384 kHz,
+every block size to 65,535, fixed and variable blocking (the old form of
+variable blocking too), all the predictors, all the stereo kinds, wasted
+bits, escaped Rice partitions, an ID3v2 tag in front, and files that do
+not say how long they are.  Title, artist and album come from the Vorbis
+comment.  More than two channels are mixed to two.
+
+WHAT IT REFUSES, BY NAME: 32-bit samples, whose side channel needs 33
+bits, and rates the player cannot convert.  FLAC inside an Ogg file is
+not read: OGG.C says it holds no Vorbis sound.  A frame whose rate,
+channels or sample size differ from STREAMINFO's is passed over.
+
+THE ONE IDEA WORTH KEEPING.  An LPC sum can need 50 bits, but a good
+stream's sample fits its width.  Modulo 2^32 the sum keeps its low 32
+bits, the shift leaves 32 - shift good bits, and if those cover the width
+then extending the sign from the width gives the exact sample.  Every
+16-bit file therefore runs on 32-bit arithmetic whatever its coefficients.
+Only wide samples with a large shift take the 64-bit sum.
+
+NO COST ROW IN PLAYER.C.  Every sample has to be rebuilt for the next one
+to be right, so half rate and mono are averages made after decoding.  A
+row would only have sent a slow machine to quarter-rate mono for nothing.
+
+SPEED, from MPTEST /X in 86Box, times real time, for 16-bit 44.1 kHz
+stereo: the easiest and the hardest of the five conformance files timed.
+    486 DX2-66      1.57 and 1.10
+    486 DX4-100     2.36 and 1.64
+    Pentium 60      2.96 and 2.21
+86Box charges 38 clocks for every 32-bit IMUL, so a real 486 should do
+better.  A 20-bit 96 kHz file decodes at 0.67 on the Pentium 60 and a
+24-bit 192 kHz file at 0.35: those drop out there, and no setting helps.
+The hardest 44.1 kHz file with the equalizer on had 2 dropouts in 4
+seconds on the Pentium 60, and none with it off.
+
+THE REVIEW (code reading, by a second reader), each as defect > effect >
+fix:
+  A retry after a bad frame read nothing new, and only bytes read counted
+  against the search limit > a badly damaged file at the largest block
+  size could hold the player for hours on a slow machine > a failed frame
+  now counts its block as work too.
+  first + search_span could wrap past 4 GB > a valid file with nearly 4 GB
+  of metadata would be refused > the sum stops at FFFFFFFFh.
+Found by the tests while writing it:
+  The bit cache reads ahead, and reaching the end of the file while
+  filling it marked the frame lost > the last frame of many files was
+  dropped > zeros are counted as padding, and only using one loses the
+  frame.
+  A byte limit on a frame's length refused a valid frame of long Rice
+  codes > that file would not play > the limit is gone; the work limit
+  bounds a false frame instead.
+
+TESTED.  The 52 valid files of the IETF working group's conformance
+"subset" (all but its 87 MB combination of six others) and ten valid files
+written here at the format's limits: block of 65,535 with eight 24-bit
+channels, order 32 with 15-bit coefficients and shift 15 at 24 bits and
+at 16 bits, 31-bit samples at both extremes with a 32-bit side channel,
+partition order 15, one-bit width after wasted bits, Rice parameter 0
+with runs of 60,000 zeros.  For all 62: the MD5 of the samples at full
+size equals STREAMINFO's, the sample count is exact, 17 seeks land in the
+frame holding the target and give the same samples, the output at full,
+half and quarter rate, stereo and mono, equals what the block samples
+say, and the heap returns to where it started.  In 86Box: playback
+through ES1371.SYS on the Pentium 60 setup and SBLASTER.SYS on the DX4-100
+(no dropouts at 44.1 kHz with the equalizer off), the screens at text and
+640 x 480, the file box, and a booted copy of the VM's own disk.  RUNTESTS
+-All: 124 of 125 on all seven machines, the other being RMTEST's free
+space, 6732h to 6728h: ten clusters, which is MPLAY.EXE's growth.  RMTEST
+x7 re-recorded from that full run.
+
+NOT TESTED.  Real hardware.  The handling of damaged files has been read,
+not run: no broken files were made.
+
+DELIVERED: BIN\MPLAY.EXE, compiled with BUILD.CMD's flags and link order
+without running BUILD.CMD, because other sessions' sources were in the
+tree; DISK\HELP.HLP regenerated (only the MPLAY topic changed); PMDOS2,
+PMDOS3, HD16, HD32, MULTI and IMAGES\SETUP from BUILD.CMD's own lines and
+MKHD.CMD.  The VM: DOS\MPLAY.EXE and DOS\HELP.HLP patched into its HD16 and
+read back, HD32, PMDOS2 and PMDOS3 copied; backups beside them
+(.bak-20261118-1911).  Not committed.
+
+
+THE CERTIFICATE CHECK FIXED, AND AAA OUT OF THE BUNDLE (2026-11-18)
+---------------------------------------------------------------------
+
+This follows "THE TRUST BUNDLE BROUGHT UP TO DATE" above and replaces
+what that entry says about keeping AAA, about the last certificate of
+a chain, and about root dates.
+
+THREE DEFECTS IN CMD\NET\TLS\TLSHS.C validate_cert, each as defect,
+effect, fix:
+
+  An intermediate was never checked for being a CA.  Any ordinary site
+  certificate from a trusted CA could sign a certificate for any other
+  host name and PM-DOS would accept that certificate.  Every certificate
+  used as an issuer must now have basicConstraints cA TRUE and be within
+  its pathLenConstraint (X509.C x509_ca_limit).
+
+  The dates of a bundle root were never checked.  An expired root went
+  on being trusted for as long as it stayed in the file.
+  anchored_by_ca now skips a root that is out of date, and the refusal
+  says "expired" when only such a root signed the certificate.
+
+  Only the LAST certificate a server sent could reach the bundle.  A
+  good chain failed when the server added a cross-certificate from a
+  root not in the bundle, or one that had expired.  The walk now goes up
+  from the leaf and stops at the first certificate signed by a bundle
+  root in date; what the server sent above that is not looked at.
+
+Roots are matched by issuer name first (X509.C x509_issuer_is), so a
+certificate costs one signature check and not one for each key in the
+bundle.  The last certificate still gets every root, for an issuer name
+encoded differently from the root's subject, so nothing accepted before
+for that reason is lost.  tls_conn did not change.  No allocation was
+added.
+
+THE BUNDLE, 26 roots, 26,212 bytes.  Out: AAA Certificate Services, as
+Charlie decided.  In: Starfield Services Root G2 and Amazon Root CA 1
+(www.amazon.com and the AWS sites), and SSL.com TLS ECC Root CA 2022,
+without which example.com would be refused once AAA is gone: its chain
+reaches AAA only through that root's cross-certificate.  Every root now
+comes from the Windows store or the Windows Update list, so MKCABND.PS1
+no longer reads the old bundle.
+
+The bundle and the binaries belong together: WGET or TCPIP.SYS from
+before this change refuse example.com with this bundle.
+
+TESTED.  A scratch build of the unchanged sources equaled BIN's WGET.EXE
+and TCPIP.SYS byte for byte, so the changed build differs by these edits
+alone, and the tree's build equals the tested one byte for byte.
+  - TLSHS.C's own validate_cert on the chains 20 real servers sent: all
+    accepted, stopping at certificate 1 or 2.
+  - x509_ca_limit on real certificates: leaves are not CAs, WE2 is a CA
+    with path length 0, the SSL.com chain reads 0, 1 and 2.
+  - Root dates, at the limit: the GTS Root R4 cross-certificate against
+    GlobalSign R1 is good at 2028-01-28 12:00:00 and "expired" one
+    second later.
+  - QEMU, RTL8139, live servers, WGET /V: verified for the ISRG X2 site,
+    letsencrypt.org, www.google.com, www.cloudflare.com,
+    www.globalsign.com, www.gmo.jp, example.com, github.com,
+    www.microsoft.com, www.amazon.com, aws.amazon.com, www.comodoca.com,
+    sectigo.com, www.wikipedia.org.  Refused with the right reason:
+    expired, wrong.host, self-signed and untrusted-root.badssl.com.
+    TLSTEST (the bundle TCPIP.SYS loads) passes for www.amazon.com and
+    example.com and refuses expired.badssl.com.
+  - Copies of the delivered HD16 and of the VM's HD16 boot and do the
+    same with the bundle where each disk keeps it.
+  - RUNTESTS -All: 124 of 125 on all seven machines, the other being
+    RMTEST's free space, 6728h to 6727h: one cluster, WGET and TCPIP.SYS
+    having grown.  RMTEST x7 recorded from that full run.
+
+NOT TESTED.  The refusal of a chain whose intermediate is not a CA has
+been read and not run: no such chain was made, as no broken certificates
+are made here.  Its parts ran on real certificates.  Real hardware,
+WINSOCK.DLL under WfW and a Setup install were not run; the Setup copies
+of the three files unpack with Windows' EXPAND to the delivered bytes.
+S:\CPP\DU32\NSTLS has its own copy of this code, with the same three
+defects, and was not changed.
+
+DELIVERED, without BUILD.CMD because other sessions' sources are in the
+tree: X509.C and TLSHS.C compiled and BIN\WGET.EXE (124,272) and
+BIN\TCPIP.SYS (122,260) linked with BUILD.CMD's flags and link order;
+DISK\CACERT.BND from MKCABND.PS1; HD16, HD32, MULTI and IMAGES\SETUP from
+MKHD.CMD and BUILD.CMD's Setup lines.  File by file those three files
+are all that changed on HD16 and HD32.  The VM: DOS\CACERT.BND,
+DOS\TCPIP.SYS and DOS\WGET.EXE patched into its HD16 and read back, HD32
+copied; backups beside them (.bak-20261118-1937).  Not committed.
+
+
+DELETE PROTECTION UNDER WINDOWS: UNDELETE.386 (2026-11-19)
+---------------------------------------------------------------------
+
+Charlie: "Delete protection doesn't work while Windows is running.
+Let's write a delete protection driver for Windows, like UNDELETE.386."
+
+Under Windows in 386 enhanced mode the kernel is parked, and a delete
+goes to RMDOS - or to VFAT, with 32-bit file access - and neither keeps
+anything: RMDOS's 41h frees the chain.  UNDELETE.386 (CMD\UNDELETE\
+UNDEL386.ASM -> BIN\UNDELETE.386, 5,730 bytes) is the third VxD here,
+laid out like LRGDISK.386 and PMDOS.386, and is installed the same way:
+
+        [386Enh]
+        device=C:\DOS\UNDELETE.386
+
+It writes \RECYCLED and UNDELETE.DAT exactly as RECYCLE.INC does - the
+same records, the same D<seq>.<ext> names, the same 10% allowance with
+the oldest purged first - so UNDELETE.EXE lists and restores what was
+deleted under Windows with no change at all.
+
+HOW IT WORKS.  It catches INT 21h AH=41h in front of everything, stops
+the VM where it is, and makes ordinary DOS calls in that VM, nested
+(Begin_Nest_V86_Exec / Exec_Int): 34h, 60h, 4409h, 2Fh/1Ah/4Eh, 36h,
+43h/39h for \RECYCLED, 3Dh/3Ch/42h/3Fh/40h/3Eh for the index, 2Ch/2Ah,
+F1h AL=2Ah for the long name, 43h for a free name, 56h to move the file
+in.  The caller is then told the delete succeeded.  Because these are
+ordinary calls they go through IFSMGR and VFAT, or RMDOS, exactly as
+the VM's own would, so there is no second view of the disk to keep in
+step with a cache.  Any failure on the way - a full index, a disk that
+refuses, no free handle - and the call goes on to DOS untouched, so
+the program always gets the delete it asked for.
+
+  - Two ways in.  The V86 INT 21h chain (Hook_V86_Int_Chain) gets
+    DOS programs and the system VM, and Windows programs when Windows
+    sends their INT 21h down to V86.  A protected-mode INT 21h callback
+    (Allocate_PM_Call_Back, Set_PM_Int_Vector before Sys_VM_Init, so it
+    is every VM's default) gets Windows programs with 32-bit file
+    access, where IFSMGR answers protected-mode INT 21h itself and the
+    call never reaches V86.  Anything but 41h goes straight on to the
+    vector that was there before (Simulate_Far_Jmp).
+  - Both go in at Init_Complete, not Device_Init.  IFSMGR hooks the
+    V86 chain after Device_Init, and the chain runs the last hook
+    first: a hook made at Device_Init never saw a delete VFAT took.
+  - One delete at a time, in the VMM's critical section: the low page
+    (_Allocate_Global_V86_Data_Area) and the index are shared by every
+    VM, and the critical section also keeps a background DOS box
+    running until its delete is done.
+  - INT 24h is answered "fail" during the nested calls (a V86 INT 24h
+    hook that acts only for the VM in the middle of a delete), so no
+    dialog is ever asked for while the critical section is held.  The
+    delete that follows a failed keep asks in the ordinary way.
+  - Not kept, beyond what the kernel leaves out (*.TMP, *.$$$, inside
+    \RECYCLED, read-only, bigger than the allowance): *.SWP, names that
+    start with ~, and network drives (4409h bit 12).  An FCB delete
+    (13h) is not caught: RMDOS does not serve 13h.
+  - The caller's name is copied at ring 0.  For a protected-mode
+    caller the copy is bounded by the selector's limit (verr, lsl), as
+    LRGDISK's API does, so a name at the end of a segment cannot take
+    the copy onto a page that is not there.
+
+WHAT THE KERNEL AND RMDOS GAINED.
+  - GV_UNDEL (GV_BASE+0E9h, INC\PMDOS.INC): undel_on, written by
+    DOSMAIN after CONFIG.SYS.  The driver reads it 1:1 at Device_Init,
+    beside GV_BRGSIG, and hooks nothing unless both say PM-DOS with
+    UNDELETE=ON.  An older kernel leaves the byte 0, which is OFF.
+    PMIO.SYS is unchanged; the byte was a hole between GV_BOX1B and
+    GV_CDBOOT.
+  - RMDOS 21h/F1h AL=2Ah (RMNAME.INC fnF1): the long name of a file,
+    read off the disk the way lfnw_frag/lfnw_seal read it - the pieces
+    must run down to 1 with the checksum of the entry behind them, so a
+    stale sector under VFAT can only ever mean "none".  The rename into
+    \RECYCLED drops the long name, so it is asked for first and goes
+    into UDR_LONG; UNDELETE brings "Long File Name.txt" back by name.
+    Any other F1h is answered as a number past the table always was.
+  - RMDOS 4301h kept no directory bit.  Defect: f43_set wrote the
+    caller's CX with the DIR and volume bits masked off.  Effect:
+    setting a directory's attributes under Windows turned its entry
+    into a file's; the driver hit it making \RECYCLED hidden.  Fix: the
+    DIR and volume bits stay as the entry has them (RMFILE2.INC).
+
+THREE THINGS FOUND ON THE WAY.
+  - Simulate_Iret in a V86 chain hook kills Windows.  Nothing has been
+    pushed for the INT when the chain runs - the end of the chain does
+    that - so the IRET pops the caller's stack.  WIN386 left at once
+    with exit code FFh.  An answered call needs only its carry cleared.
+    The DDK's INT13 calls Simulate_Iret only from a service reached by
+    a BIOS breakpoint, where a frame does exist.  PMDOS.386's
+    pd_i13hook is a chain hook and calls Simulate_Iret; it was NOT
+    changed here, and is worth a look before anyone relies on the USB
+    INT 13h answer under WfW.
+  - Windows makes a 2MB scratch file named "~" in TEMP and deletes it
+    while it still has it open.  Kept, it hung Windows at the
+    hourglass.  Names starting with ~ are left alone for that reason.
+  - RMDOS answers a delete on a write-protected floppy with success
+    and leaves the file there - with no driver loaded too (control
+    run).  Not changed.
+
+TESTED, headless, QEMU (pentium2, 32MB), PM-DOS + Windows from a rig in
+the scratchpad (wr.ps1: MKDISK image + FATPUT of S:\WFW311HD or
+S:\WIN31HD, a Win16 shell that deletes by DOS3Call and OpenFile(
+OF_DELETE) and starts a DOS box, WINSTART.BAT, results read back with
+FATGET).  Every scenario on the release build:
+  - WfW 3.11 without and with 32-bit file access (IFSHLP.SYS, LRGDISK,
+    VFAT.386), and Windows 3.1: a delete from WINSTART.BAT, DOS3Call,
+    OpenFile and a DOS box, and C:\LONGFI~1.TXT, all kept; UNDELETE
+    /LIST lists them and /ALL brings them back, the long one as "Long
+    File Name.txt"; CHKDSK clean.
+  - The allowance: 2MB files kept until the third, which purged the
+    oldest records (three small files and the first 2MB one); a 7MB
+    file, over the whole allowance, deleted outright.
+  - FAT32 (HD32 as D:) and a FAT12 floppy with a long name: kept and
+    restored.
+  - Two VMs at once: 15 deletes from the Windows program while a DOS
+    box deleted 15 more: all 30 kept, CHKDSK clean.
+  - UNDELETE=OFF: nothing hooked, the files deleted, no \RECYCLED.
+  - Excluded names (*.TMP, read-only) behave as at the prompt.
+  - MASM 6.13 assembles UNDEL386.ASM, plain and with UD_TRACE.
+  UD_TRACE (wasm -dUD_TRACE) writes each delete's name and K (kept) on
+  port E9h.
+
+  - RUNTESTS -All: 124 of 125 on all seven machines, the other being
+    SFTSCAN, whose seven address lines move by 0Bh-140h as the kernel
+    (8 bytes) and RMDOS (310 bytes) grew; the three equal-gap copies of
+    the console name KRNL386 looks for are all still found.  SFTSCAN x7
+    recorded.  pentium-260 once gave no output at all in the -All run;
+    run alone, twice, it matched the other six.
+  - Without the edits (HEAD's three RM files, DOSMAIN without its two
+    lines) the tree builds BIN's old PMDOS.SYS and RMDOS.SYS byte for
+    byte, so the new files differ by these edits alone.
+
+NOT TESTED: real hardware; WINFILE itself (its deletes are the
+OpenFile/DOS3Call paths above); a DPMI program in a DOS box deleting
+in protected mode; standard mode, which loads no VxDs and so has no
+protection - as before.
+
+DELIVERED, without BUILD.CMD because other sessions' sources are in the
+tree: BIN\PMDOS.SYS (192,662), BIN\RMDOS.SYS (43,764) and
+BIN\UNDELETE.386 (5,730) built with BUILD.CMD's lines; DISK\HELP.HLP
+regenerated (its parts matched it before the edit); IMAGES\PMDOS.IMG,
+PMDOS2.IMG (UNDELETE.386 beside LRGDISK.386) and IMAGES\SETUP by
+BUILD.CMD's own lines; HD16, HD32 and MULTI by MKHD.CMD.  UNDELETE.386
+is in BUILD.CMD, MKHD.CMD's two lists and SETUP.LST (C:\DOS).  Help:
+21EXTERN.TXT's UNDELETE notes say how to install it (the old "does not
+work while Windows is running" line is gone), 30CONFIG.TXT's UNDELETE=
+says OFF covers it.  The VM: PMDOS.SYS, RMDOS.SYS, DOS\HELP.HLP and the
+new DOS\UNDELETE.386 patched into its HD16 and read back; PMDOS.IMG,
+PMDOS2.IMG, HD32 copied; backups beside them (.bak-20261119-1620); a
+copy of its HD16 boots and UNDELETE /STATUS answers.  The VM's disk has
+no Windows on it, so nothing was added to a SYSTEM.INI.  Not committed.
+
+
+PMDOS.386's INT 13h HOOK, FCB DELETES UNDER WINDOWS, AND WHAT
+UNDELETE.386 COSTS (2026-11-19, later)
+---------------------------------------------------------------------
+
+This follows "DELETE PROTECTION UNDER WINDOWS: UNDELETE.386" above and
+replaces what it says about FCB deletes and about the driver's block.
+
+PMDOS.386, pd_i13hook.  Defect: the hook is on the V86 chain
+(Hook_V86_Int_Chain) and called Simulate_Iret before answering.
+Nothing has been pushed for the INT when the chain runs, so the IRET
+popped three words of the caller's own stack into CS:IP and flags.
+Effect: a DOS program reading a USB disk the bridge serves through
+BIOS INT 13h went somewhere at random.  WfW's own probes never showed
+it: they come by Exec_Int from a VxD that restores the client after.
+Fix: the Simulate_Iret is gone; the client's registers and carry are
+set and the hook returns CF clear, as UNDELETE.386 does.  Proved with
+a probe VxD whose hook is pd_i13hook's for drive 81h, built with and
+without the old line, and I13RD.COM (INT 13h AH=02h on 81h, SP compared
+before and after) in a DOS box: with Simulate_Iret the program never
+returned and Windows could not end; without it, CF=0 AH=00 AL=01 and SP
+unchanged.  The bridge's real USB path was not run: see the next point.
+
+PMDOS.386 DOES NOT LOAD ON A WfW WITHOUT NETWORKING.  On S:\WFW311HD
+(no network installed) Windows stops with "Invalid VxD dynamic link
+call to device number 0028, service 8000": device 28h is NDIS, which
+Stage D calls at init.  Found while setting up the INT 13h test, not
+changed.  Anyone adding device=PMDOS.386 to a WfW without the network
+installed gets that screen.
+
+RMDOS 13h, THE FCB DELETE (RMFILE2.INC fn13), was "function not
+supported".  It is MS-DOS's $FCB_Delete: TransFCB then DOS_Delete
+(DOS6SRC dos/fcbio.asm, dos/delete.asm).  The FCB, plain or extended,
+becomes "D:NAME????.EXT" in the drive's current directory, and every
+entry that matches goes: hidden and system files only by an extended
+FCB's attribute, directories and the volume label never, read-only
+files passed over.  AL = 0 if anything went, FFh if nothing did, with
+59h's error "access denied" when a read-only file matched and "file
+not found" when nothing did.  A redirector's drive - IFSMGR's, with
+32-bit file access - gets 1113h with the question marks in the name, as
+DOS sends it.  41h and 13h now also take the long-name pieces in front
+of an entry they delete (rn_droplfn), which RMNAME.INC's header always
+said they did; 41h never had.
+
+RMDOS 4Bh NEVER COPIED THE PSP's FCBs.  exec_psp copied the
+environment and the command tail out of the parameter block and not
+the two FCBs, so every program a DOS box started under Windows found
+5Ch and 6Ch zeroed - COMMAND.COM's 29h parse of its first two
+arguments thrown away.  Now twelve bytes of each go to 5Ch and 6Ch with
+four zeros behind each, as DOS6SRC dos/msproc.asm copies them.
+PSPFCB.COM in a box shows "*.F1" and "A:FOO.BAR B:X.Y" as the prompt
+shows them; the old RMDOS gave drive 0 and eleven NULs for both.
+
+UNDELETE.386 AND 13h.  The driver now does an FCB delete whole
+(ud_fcb): the walk is 4Eh/4Fh in a DTA of its own, each file is kept,
+or deleted by 41h when it cannot be (*.TMP and the rest), and AL and
+59h's error are answered as DOS answers them - the last nested call is
+one that fails for DOS's own reason (41h on the read-only file, or
+4300h on "D:?").  A network drive's 13h goes on to DOS.  A trap found
+on the way: ud_try set its mode byte before seeing that a call was the
+driver's own, so the walk's own 41h turned a 13h into a 41h, and the
+finished delete went on to RMDOS, which found nothing.  The mode is set
+after that test now.
+
+WHAT IT COSTS IN LOW MEMORY, measured (MEMFREE.COM, PSP:2 less the
+PSP, WfW 3.11, QEMU, 32MB):
+  - at the PM-DOS prompt: 628,064 bytes with the kernel before
+    UNDELETE.386 and with this one; UNDELETE= itself costs nothing
+    there (the kernel is above 1MB, GV_UNDEL is a byte that was free)
+  - in a DOS box, no driver: 518,432 bytes, before and after RMDOS's
+    additions (RMDOS's 64K segment is the same size either way)
+  - in a DOS box with UNDELETE.386: 514,336 - 4,096 less, the same
+    with DOS=HIGH,UMB
+The block was a page; it is now 1,728 bytes (one record at a time, the
+header's first 16 bytes only), paragraph-aligned and taken at
+Init_Complete, so that it can share a page another driver has started.
+On this machine there was none to share and it still costs a page: the
+global V86 data area grows by whole pages.  Getting to nothing would
+mean a buffer in RMDOS's segment, which has 1,086 bytes left after
+these changes (its trace build no longer fits - that was already so at
+HEAD).
+
+WITH 32-BIT FILE ACCESS, LONG NAMES LEAVE PIECES BEHIND.  WfW's VFAT
+knows nothing of long names, so moving C:\LONGFI~1.TXT into \RECYCLED
+through its rename leaves the long-name pieces in front of the freed
+slot, and CHKDSK reports "invalid long filename entry" on whatever file
+is made in that slot later.  A plain VFAT delete of a long-named file
+does the same with no driver loaded; CHKDSK /F removes the pieces, and
+the kernel's own long-name reader ignores them (the checksum).  Without
+32-bit file access RMDOS's rename takes them with it.
+
+TESTED (headless, QEMU, the wr.ps1 rig): FCBDEL.COM (13h on an FCB made
+with 29h, /H for an extended one with hidden and system) on *.F1,
+read-only, missing, hidden with and without /H, and *.TMP - in all four
+of driver on and off, 32-bit file access on and off: the same AL and
+error in all four, and with the driver the matches kept, the hidden one
+only by /H, the read-only one left, X.TMP deleted.  The whole earlier
+matrix again on the release build: WINSTART, DOS3Call, OpenFile, DOS
+box, long names, the allowance, FAT32 and FAT12, two VMs at once,
+Windows 3.1 and UNDELETE=OFF.
+  - RUNTESTS -All: 123 of 125 on six machines, the other two being
+    RMTEST's free space (6727h to 6726h: one cluster, RMDOS.SYS and
+    the two drivers having grown on the disk) and SFTSCAN (its seven
+    address lines only).  On 386-4 also LOCKTEST's "num lock, held",
+    the known 386 timing noise, twice; not re-recorded.  RMTEST x7 and
+    SFTSCAN x7 recorded.
+  - RMDOS.SYS is 44,259 bytes (43,764 before), UNDELETE.386 6,020,
+    PMDOS.386 the same 13,389.
+
+NOT TESTED: the bridge's real USB disk under WfW (PMDOS.386 needs
+WfW's networking to load, above); real hardware; an FCB delete from a
+Windows program in protected mode (the same ud_try13 path as a DOS
+box's, by the PM callback).
+
+DELIVERED as the entry above was, without BUILD.CMD: BIN\RMDOS.SYS,
+BIN\UNDELETE.386 and BIN\PMDOS.386 with BUILD.CMD's lines;
+IMAGES\PMDOS.IMG, PMDOS2.IMG and IMAGES\SETUP by BUILD.CMD's own
+lines; HD16, HD32 and MULTI by MKHD.CMD.  The VM: RMDOS.SYS,
+DOS\UNDELETE.386 and DOS\PMDOS.386 patched into its HD16 and read back;
+PMDOS.IMG, PMDOS2.IMG, HD32 copied; backups beside them
+(.bak-20261119-1816); a copy of its HD16 boots.  Not committed.
+
+
+INT 24h FOR A WRITE THAT FAILS UNDER WINDOWS - WRITTEN AND TESTED, NOT
+DELIVERED: WINDOWS 3.1 WRITES OVER RMDOS AS IT EXITS (2026-11-19/20)
+---------------------------------------------------------------------
+
+Charlie: "Let's address the write protected scenario and handle it
+appropriately."
+
+STATUS.  The source in DOS\ has the change (RMDOS.SYS 45,171 bytes
+from it).  BIN, the floppies, the Setup disks and the hard-disk images
+were delivered with it and then PUT BACK to the round-2 RMDOS.SYS
+(44,259) and UNDELETE.386 (6,020) - byte for byte, the CD's ISO apart
+(its dates) - because the new RMDOS made an older fault show: see
+"WINDOWS 3.1's EXIT" below.  The VM never had it.  A full BUILD.CMD
+will build the new RMDOS from the tree as it stands.  Not committed.
+
+THE DEFECT.  rd_wrsec's carry went back to fat_flush and dir_flush,
+which dropped it, and the call answered success.  Effect: under Windows
+a delete, rename, MD or new file on a write-protected disk said "done"
+and changed nothing (OpenFile( OF_DELETE ) 6, DOS3Call 41h 0).  Fix: a
+failed WRITE asks the program's INT 24h handler as MS-DOS asks it
+(DOS6SRC dos\msctrlc.asm HardErr, dos\msdisp.asm DskROut), and fails
+the call on Fail.  A failed READ is reported as before.
+
+WHAT THE HANDLER IS GIVEN (RMDISK.INC rd_crit):
+  - AH bit 0 (write), bits 1-2 the area (boot, FAT, directory, data),
+    Fail and Retry allowed - not Ignore: the kernel does not offer it
+    for a disk, and ignoring a write that did not happen is the "done"
+    this replaces.  AL the drive; DI 0 write-protected, 2 not ready, 3
+    bad command, 4 data, 6 seek, 8 sector not found, 0Ch general -
+    from the BIOS status (rd_bmap) or a driver's (RMDEV.INC rdq_why);
+    BP:SI the driver's header, or rd_blkdev for a BIOS disk.
+  - MS-DOS's frame on the caller's stack (AX BX CX DX SI DI BP DS ES
+    and the INT 21h return, 24 bytes), so _hardretn works.
+  - InDOS down and ErrorMode up while it runs; 01h-0Ch and 59h
+    allowed, any other call puts the abandoned call away first
+    (RMDOS.ASM crit_abandon: slot, depth, critical section, FAT and
+    directory windows).
+  - Retry repeats the transfer.  Fail: "access denied" (or the call's
+    own error), AL=FFh for an FCB call, 59h 83 (class 0Dh, action 4,
+    locus 1).  Abort: exit type 2.  An answer not offered is Fail, one
+    past 3 is Abort.
+  - Not asked: INT 26h, a write outside a DOS call, a write while a
+    handler runs, every write after the first refusal in a call.
+  - A FAT or directory sector that did not go is forgotten (ff_lost,
+    dir_flush, rd_bufdrop).  RMCACHE writes through, so the question is
+    always asked in the call that made the write.
+UNDELETE.386 (source only, like the rest): its FCB delete notices an
+INT 24h raised during the walk (ud_c24) and, if nothing had gone yet,
+hands the whole 13h to DOS so the program is asked.
+
+TESTED (QEMU, WfW 3.11, wr.ps1; TESTS.IMG as a write-protected A:,
+which QEMU's BIOS answers with 03h; I24W.COM, a program whose INT 24h
+handler records what it gets and answers from a script) - the same
+with and without UNDELETE.386:
+  - 41h, Fail: CF=1 AX=0005, 59h 0053, asked once, AH=1Bh (write, FAT,
+    Fail+Retry), AL=00, DI=0000, frame AX 4100h, frame CS the program's.
+    Retry then Fail: asked twice.  3Ch: AH=1Dh (directory), CF=1 5.
+    13h: AL=FFh, 59h 0053.  _hardretn: CF=1 AX=1234h, later calls
+    work.  Abort: the program ends, COMMAND.COM asks "Terminate batch
+    job".  COMMAND /F: DEL fails, the batch goes on.  A Windows program
+    with SEM_FAILCRITICALERRORS: OpenFile -1, DOS3Call 5.  Every file
+    still there.  The old RMDOS said "done" to all of it.
+
+RMDOS's STACK SLOTS (found in the review; older; fixed in the source).
+Defect: stk_free freed whichever slot SP's offset fell in.  A call that
+finds all six taken runs on its caller's stack, and then that is wrong
+two ways: a program stack whose offsets fall in rd_stks' range frees a
+slot by number, and a call from an INT 28h handler - which the console
+wait issues on its own slot - runs on that slot and at its end frees
+it under the call still waiting there.  Effect: the next call is given
+a slot somebody is standing on.  Fix: i21 writes the slot it took into
+the frame (F_SLOT), stk_free frees exactly that, rd_crit keeps the
+asking call's (rd_c24slot) for crit_abandon.  SLOTS.COM (scratch rig:
+waits for a key, its INT 28h handler waits again, six deep, so the
+last wait has no slot) in a DOS box: new RMDOS, every level gets its
+key in order and DOS works after; old RMDOS, "violated system
+integrity", or the box's DOS left broken.
+
+WINDOWS 3.1's EXIT WRITES OVER WHATEVER IS AT LINEAR FF80h-FFFFh, and
+under PM-DOS that is RMDOS.  Found because the matrix's Windows 3.1 row
+(h3) started to hang at exit with the new RMDOS: under load, the
+round-2 RMDOS passed 9 of 9, the INT 24h one without F_SLOT failed 2 of
+9, with F_SLOT 6 of 7 - and the same INT 24h RMDOS padded by 16 bytes,
+without F_SLOT, failed 2 of 3, so the layout decides, not the logic.
+The port E9h trace shows it: when KRNL386's task ends, RMDOS resumes
+WIN386 on its EXEC frame (1700:035A, the same as WfW), and WIN386 then
+makes its shutdown calls into the system VM - 4Dh, INT 2Fh 1609h and
+1607h, INT 15h C201h, 0C06h, every XMS free, XMS 06h - on a stack of
+0000:0000.  Each frame lands just under 64K (the first at 0000:FFE6,
+FFE6h being 0 less the 1Ah bytes of an INT 21h frame), and RMDOS,
+loaded at 06CBh, has offsets 92D0h-934Fh there.  In the trace build of
+this source that is RMCACHE's cm_fromcache and cm_fill, so the next
+disk read after the exit (WIN386 closing a handle) jumps into the
+wreckage (#UD); the release build's layout differs and it hangs too.  The
+round-2 RMDOS had cache code there that nothing runs afterwards.  WfW
+3.11 does none of it: its shutdown calls use 1700:035A.
+  - Older than this work: every round so far has had those bytes
+    overwritten at each Windows 3.1 exit; which code they hit depends
+    on where RMDOS loads, so another CONFIG.SYS could crash any build.
+  - Not found yet: why WIN386 3.1's stack is 0000:0000 there.  On
+    MS-DOS that region usually belongs to WIN.COM or WIN386 themselves,
+    which would hide it; or DOS gives WIN386 a stack RMDOS does not.
+    One lead: MS-DOS's dispatcher keeps the caller's SS:SP in the SDA
+    (User_SP/User_SS, DOS6SRC inc\ms_data.asm), and RMDOS publishes
+    only the first 1Ah bytes.  To read out of DOSMGR/VMM 3.1 next.
+  - A workaround without the cause: back up those 128 bytes (in XMS -
+    the segment has 99 bytes left) when RMDOS starts and put them back
+    after the first call from a 0000 stack.  It would not help a layout
+    where the shutdown calls themselves run code in that range.
+
+ALSO FOUND, NOT FIXED:
+  - The temporary swap file under 32-bit file access.  Windows makes
+    WIN386.SWP through RMDOS before IFSMGR takes C:, so its handle
+    stays an RMDOS SFT, and when KRNL386 starts and the file is made
+    3MB RMDOS allocates the clusters from the FAT on disk while VFAT
+    and VCACHE hold the FAT for everything else on C:.  Seen once in
+    ten VFAT runs: UNDELETE.DAT's clusters given to the swap file,
+    1,022 lost clusters.  Older than UNDELETE.386 (which only makes it
+    likely, a WINSTART delete being a VFAT write just before).  A
+    permanent swap file should avoid it; not tested.
+  - Another VM's call when all six slots are taken runs on its own
+    caller's stack, and for the system VM that may be too small: with
+    SLOTS.COM holding every slot just as WDT wrote its log, Windows
+    stopped, 4 runs of 4 with F_SLOT and the one run without it.  Not
+    proved;
+    six DOS boxes at a prompt hold six slots.  More slots cost 1K each
+    of a segment with 99 bytes left.
+
+RMDOS.SYS from the source: 45,171 bytes, 99 bytes left by the build's
+own check (padding before rd_imgend until the .ERR fires).
+
+
+SCAN CODES FOR A NATIVE PROGRAM: 21h/F0h AL=0Fh AND 10h (2026-11-20)
+=====================================================================
+For DOOM (S:\CPP\PMDOOM), and for any game after it.  A game has to
+know when a key comes up again, and every key call a native program
+had gives characters, which are made when a key goes down and say
+nothing after.  A DOS box hooks INT 09h for that; a native program
+cannot.
+
+  AL = 0Fh  BL = 1: the keyboard's scan codes for this program from
+            now on; BL = 0: keys again.
+  AL = 10h  EDI -> ECX bytes of room -> EAX = the scan codes moved
+            there, oldest first; 0 for none.
+
+While it is on, kb_byte (IO\KEYBD.INC) keeps every byte the keyboard
+sends in a ring of its own (kbr, KBR_SIZE 128) - E0h prefixes and
+break codes included - and then decodes the byte the way a box's is
+decoded: for Ctrl-Alt-Del, the shift state and the lock keys, with
+nothing put in the BIOS's ring.  So F0h AL=7 and 8 see nothing typed
+meanwhile, and the shift state is right when the program gives the
+keyboard back.  The interrupt moves only the ring's tail and the
+reader only its head, so neither keeps the other out.
+
+It goes off when the program ends, however it ends: 4Ch calls key_exit
+with the EXEC depth, beside vbe_exit, and so does the debugger's kill
+(DBGAPI.INC).  A program that runs another one while it is on leaves
+that one without a keyboard, and so turns it off first.
+
+Native programs only.  The two functions are KLS_RAW and KLS_RAWREAD
+of IOS_KBLAYOUT, so the service table did not grow; r3_pflags
+(RING3.INC) says EDI is a pointer for AL=10h.  21h/F1h AL=23h (a key
+for the tests) goes through kb_byte and so reaches the ring too.
+
+A program asks with the carry set on the way in: a kernel without the
+call (0.71 and before) answers "invalid function" and DOOM then reads
+port 60h instead, which misses a key pressed and let go inside one
+frame.
+
+Files: INC\PMDOS.INC, IO\KEYBD.INC, DOS\INT21.INC, DOS\DBGAPI.INC,
+DOS\RING3.INC.  PMIO.SYS 93,529 -> 93,829, PMDOS.SYS 192,662 ->
+192,853, built in a scratch mirror whose build before the change was
+byte for byte BIN's.
+
+Tested in QEMU with DOOM's -keylog: every code in order, taps of
+20 ms included; E0 48 / E0 C8 for an arrow; the prompt types again
+after the game ends ("ver").
+
+DELIVERED 2026-11-21, at Charlie's word, with a test of its own:
+TOOLS\RAWKEY.ASM -> BIN\TESTS\RAWKEY.EXE presses its keys with F1h
+AL=23h and checks that every code comes back (a key down and up, a
+grey key with its E0h), that no key is made of them, the ring's limit
+(127 whole and in order; of 128 the last dropped; a short read leaves
+the rest; the ring takes codes again), room outside the program
+refused, and keys again after AL=0Fh BL=0.  RAWKEY L ends with the
+codes on and RAWKEY F faults with them on; RAWKEY C after each finds
+the keyboard making keys, which is key_exit from 4Ch - a fault ends
+through 4Ch too.  RUNTESTS runs all five, last but for IRQXTEST.
+
+RUNTESTS -All: everything matched but RMFIND (one more file in \TESTS),
+RMTEST and SFTSCAN.  THOSE TWO HAD BEEN RECORDED THE EVENING BEFORE
+FROM A RUN OF THREE TESTS, which answers differently from a full run
+(000E arena blocks for 000F, a hundred clusters more free, 6 names
+for 13): run alone they gave the recorded answers again, on this
+kernel.  All three were recorded from a full -All -Update, and a
+second -All matched 130 of 130 on the seven rows.  NLSTESTS, which
+types through kb_byte, matched on its nine.
+
+BIN: PMIO.SYS 93,829, PMDOS.SYS 192,853, TESTS\RAWKEY.EXE.  IMAGES:
+PMDOS.IMG, TESTS.IMG, HD16/HD32 by MKHD (kernel and RAWKEY alone
+differ), the Setup set.  VM: the three files into HD16.IMG by name,
+PMDOS.IMG, TESTS.IMG and HD32.IMG copied (.bak-20261121-0042).  The
+SDK has pm_key_raw() and pm_key_raw_read() (pmdos.h), and DOOM uses
+those.  Windows on this kernel was run the same night by the session
+that owns the RMDOS work, on its own rig: RMDOS's segment under
+WIN386 is where it was (06E4h under WfW 3.11, 06CBh under Windows
+3.1) and its nine rows passed (the "LATER, 2026-11-21" paragraph of
+the entry after this one).  Not run: the debugger's kill of a program
+with the codes on, 86Box, a real keyboard.
+
+
+TCPIP.SYS: A UDP SOCKET'S OWN PORT, SOCK_BIND 17 (2026-11-20)
+==============================================================
+For DOOM's network game (S:\CPP\PMDOOM), and for any program that
+others send datagrams to.  A UDP socket had no way to have a port: one
+was picked at its first send, so a program could ask a server (SNTP)
+and could not be one.  DOOM's first network game went over TCP for
+that reason alone.
+
+  SOCK_BIND (17)  buf -> SOCK_BINDREQ { handle, port, spare }, the
+                  block SOCK_LISTEN takes.  Answer = the port.
+                  Port 0 asks for a picked one now.
+
+  ERR_ACCESS (5, new in NDRV.H)  another UDP socket has the port, or
+                  the stack does: 68 (DHCP) and 137 (the name service)
+                  are taken in udp_input before any socket is looked
+                  for, so a socket bound to one would never be given
+                  a datagram.
+  ERR_BADDATA     not a socket, or a TCP one.
+  ERR_FUNC        a TCPIP.SYS from before this: how a program tells.
+
+A bound socket is given every datagram for its port, whoever sent it;
+ip_input does not look at the address a frame came to, so one sent to
+the network's broadcast address arrives as well.  They wait in the
+socket's 4,096 bytes, each taking 8 more than its data, and one that
+does not fit is dropped whole.
+
+Three things beside it in TCPIP.C:
+
+  - SOCK_CONNECT on a UDP socket threw the socket's port away for a
+    picked one.  The port stays now; a socket can have a port and a
+    peer.
+  - A picked port (udp_port_pick) is one no other UDP socket has.  The
+    pick was blind before, and a match would have sent one socket's
+    datagrams to the other.
+  - udp_socket_for( 0 ) answers no socket.  A UDP socket that has no
+    port yet says 0 too, and a datagram sent to port 0 was queued on
+    the first of those.
+
+Nothing closes a program's sockets when the program ends: the stack
+does not know whose they are.  A bound port left behind by a program
+that was killed stays taken until the restart.  DOOM closes its own on
+every way out, Ctrl-C included.
+
+The SDK has it as pm_sock_bind() (pmsock.h; EACCES, ENOSYS).  SOCKLIB
+and WINSOCK.DLL do not: WINSOCK's bind() still only remembers the port
+for listen(), so a Windows program's UDP socket is not bound.
+
+Tested in QEMU, two PM-DOS machines on one wire (rtl8139), with a
+program made for it: the refusals above; 1 to 1,472 bytes there and
+back, each compared; 1,473 cut to 1,472; the port as the other end
+sees it, before and after SOCK_CONNECT; a full queue (19 of 200 bytes
+kept, whole and in order; 8 of 504 fills it exactly and the ninth is
+dropped), and the queue taking datagrams again afterwards.  Then DOOM:
+two, three and four players over UDP, and four and three over TCP.
+
+Files: DRV\TCPIP\TCPIP.C, INC\SOCKET.H, INC\NDRV.H.  TCPIP.SYS 122,260
+-> 122,436.
+
+DELIVERED the same day: BIN\TCPIP.SYS; IMAGES\HD16.IMG and HD32.IMG by
+MKHD.CMD (each differs from the image before in TCPIP.SYS alone, file
+by file; MULTI.IMG is the same bytes); the Setup disks, SETUPUSB.IMG
+and PMDOSCD.ISO by MKSETUP (DISK3 the same bytes, DISK1 three bytes of
+SETUP.INF); the VM's HD16.IMG by FATREPL (DOS\TCPIP.SYS, backup
+.bak-20261120-2043).  The UDP test and a four-player game were run
+again from the delivered HD16.IMG.  Not run: RUNTESTS (TCPIP.SYS takes
+the same clusters on the hard disks as before), SOCKTEST, the WfW
+bridge, 86Box, a real card.
+
+
+WHY WINDOWS 3.1 LEAVES ON A STACK OF 0000:0000, RMDOS's STACK SLOTS PUT
+UNDER IT, AND INT 24h FOR A FAILED WRITE DELIVERED (2026-11-20)
+---------------------------------------------------------------------
+
+Charlie, of the entry before this one's three choices: "Let's do 1 and
+find out why."
+
+THE CAUSE IS A BUG IN WINDOWS 3.1's DOSMGR, AND IT NEEDS A WINSTART.BAT.
+With one, DOSMGR EXECs twice in the System VM: COMMAND /C WINSTART, and
+when that returns, KRNL386.  Each EXEC is a Simulate_Int with
+Call_When_VM_Returns in front of it, and the handler that call names
+(WIN386.EXE 3.10, DOSMGR, file offset 5F4E1h) puts the client's SS:SP
+back out of its reference word, DOS 2's way.  For the first EXEC the
+word is SS:SP (5F4ABh: MOV DX,[ESI+34h] / SHL EDX,10h / MOV DX,[ESI+30h]).
+For the second (5F512h-5F58Ch) EDX is never loaded again, and between
+the two there is a _HeapFree, which leaves nought in it.  So when
+KRNL386 ends, Windows' last calls are made with SS:SP = 0000:0000 -
+SHELL's 4Dh (WSHELL, 6D348h), 2Fh 1609h and 1607h, 15h C201h, 0C06h,
+every XMS free - and write down from linear 10000h.  Without a
+WINSTART.BAT there is one EXEC and the right stack.  WfW 3.11's DOSMGR
+has a PUSH EDX and a POP EDX around both places (its file offsets
+664E1h and 66533h): Microsoft found it.
+  - Seen three ways.  The disassembly (the bytes wrapped in an OMF
+    object for wdis: scratch vmm\mkomf.pl, dis.sh).  The port E9h trace
+    of the entry before: two 4B00h from 1700:035A, C:\COMMAND.COM then
+    KRNL386.EXE, and after the second one's TERM the 4Dh on 0000:FFE6.
+    And MS-DOS 5 with Windows 3.1 (a copy of the 86Box VM's disk in
+    DOSBox-X, scratch ora\; t\WSTK.COM stays resident and keeps the
+    stack of each 4Dh): with a WINSTART.BAT the call arrives on
+    0000:0000, without one on 055E:0380.
+  - ON MS-DOS THE BYTES ARE FREE MEMORY.  WSTK walks the memory chain
+    when SS is 0000: the block that holds paragraph 0FFFh was the free
+    one at 0609h - KRNL386's, just given back.  That is why nobody saw
+    it.  Under PM-DOS RMDOS's segment starts below 64K and is 64K long,
+    so the line is inside RMDOS, at offset 10000h less 16 times the
+    segment.
+
+WHAT RMDOS DOES ABOUT IT (DOS\RMDOS.ASM; RMDOS.SYS 45,235 bytes, 35
+left by the build's own check).  The six stack slots are not at the
+end of the image any more.  rd_stks is between RMUSB.INC and RMXMS.INC,
+81D2h-99D2h, which is where the line falls for the segment RMDOS is
+given below Windows: 9350h from 06CBh with the kernel alone below it
+(Windows 3.1), 91C0h from 06E4h (WfW), lower by what CONFIG.SYS adds.
+rd_entry works out which slot the byte under the line is in
+(rd_linemap; the slot below as well when the line is less than
+RD_LINEMIN, 256, bytes up from that slot's foot), and the first call
+that arrives with SS = 0000 marks it taken for good (i21, before
+stk_take).  The stray stack is then standing on a stack.  Until that
+call the slot is one like the others; no call can be standing on it at
+that moment, because Windows does not leave while another machine runs
+and KRNL386's 4Ch has given its own slot back.
+  - COVERS segments 0663h to 07E2h.  Outside that the line is in code,
+    as it was in every build before: Windows started from COMMAND.COM
+    put RMDOS at 0D51h and the line at 2AF0h, which is rd_fatbuf.
+  - A kernel half was written and taken out again: vl_winres set the
+    segment up so that the line was a slot's top whatever was below.
+    It works for the exit, and it brought on the stall described next,
+    which is not understood - so RMDOS stays where first fit puts it.
+
+TESTED (QEMU, wr.ps1; the delivered kernel, this RMDOS, UNDELETE.386):
+  - Windows 3.1 with a WINSTART.BAT, nine machines at once: 9 of 9
+    leave (the INT 24h RMDOS at the old layout: 1 of 7).
+  - The matrix of the entry before (matrix6.txt): all nine rows exit 0
+    and say what they said, h3 - Windows 3.1 - with them.
+  - INT 24h (i24run4.txt): the same lines as before, to the byte.
+  - SLOTS.COM at the slot limit (slotrun5.txt): depth 07, every key in
+    order, DOS working after; the round-2 RMDOS still fails it.
+  - RUNTESTS: see the end.
+
+A STALL THAT IS OLDER THAN THIS AND NOT UNDERSTOOD.  A DOS box that ends
+stays on the screen as "(Inactive COMMAND)" and Windows then will not
+leave ("Application still active").  It needs UNDELETE.386 loaded, TWO
+OR MORE deletes kept from Windows programs in the System VM before the
+box is started (DOS3Call or OpenFile, either; one is not enough; two
+made in a DOS box do not do it; two from WINSTART.BAT gave a run that
+never reached the test shell's log, which was not looked into), and
+RMDOS at certain segments - which is why moving the segment found it.
+WfW 3.11 and Windows 3.1 both.  RMDOS's own calls and answers are the
+same in a run that stalls and one that does not (port E9h traces,
+compared line for line); the disk is whole afterwards.
+  - Measured, WfW, test kernels that force the segment:
+      round-2 RMDOS (44,259, as delivered 11-19): 06E4h (first fit),
+        06FFh, 0700h pass; 0720h stalls
+      INT 24h RMDOS of the entry before (its port E9h trace build,
+        47,827): 06E4h pass, 0700h stalls
+      this work's first build (slots at 7A0Dh): 06E0h, 06E4h, 0780h
+        pass; 06FFh, 0700h, 0704h, 0720h stall
+      the delivered build (slots at 81D2h): 06CBh, 06E4h, 0700h, 077Dh
+        pass
+  - Ruled out, each by a run: the free block the move left below RMDOS
+    (kept allocated: the same); where UNDELETE.386's low block is (taken
+    at Device_Init, and as a whole page of its own: the same); a range
+    Windows keeps per machine falling on RMDOS's buffers (a test copy of
+    the driver printed _TestGlobalV86Mem for all of the first 128K: the
+    only such ranges inside RMDOS are 16 bytes at B0E0h and 32 at B9D0h,
+    in the file table, and they move with RMDOS); the FAT, directory and
+    data buffers straddling a 4K page (fits every measurement but the
+    last: the delivered build passes at 0700h with rd_datbuf across
+    linear A000h).
+  - SO THE DELIVERED SYSTEM HAS IT TOO, somewhere: round 2 stalls at
+    0720h.  At the segments first fit gives in the rig it does not.
+    This is very likely what PARK.INC's "forty-eight more bytes of
+    RMDOS" was.
+
+ALSO SEEN, NOT FOLLOWED:
+  - With the CONFIG.SYS lines of the 86Box VM (SETVER, BUFFERS=30,8,
+    FCBS=4,0, STACKS=9,256, DOS=HIGH,UMB, EMS=AUTO, LFN, DPMI, NULLTRAP;
+    ES1371.SYS left out) Windows 3.1 in the rig starts and goes no
+    further than the test shell's first step - with the round-2 pair
+    exactly as with this one.  WfW 3.11 with the same lines passes
+    (RMDOS at 077Dh).  Which line it is was not looked for.
+  - The two from the entry before stand: the temporary swap file under
+    32-bit file access, and another machine's call when every slot is
+    taken.
+
+DELIVERED: BIN\RMDOS.SYS (45,235) and BIN\UNDELETE.386 (6,052 - the
+INT 24h driver of the entry before), by dlv.cmd; PMDOS.IMG, PMDOS2.IMG
+and the Setup disks by BUILD.CMD's own lines; HD16, HD32 and MULTI by
+MKHD.CMD; the VM as noted at the end.  NO KERNEL: PMIO.SYS and PMDOS.SYS
+in BIN are as they were.  The tree's kernel sources carry another
+session's change that has not been delivered (scan codes for a native
+program, 21h/F0h AL=0Fh and 10h - its own entry above); a full BUILD.CMD
+would build it in.  What was replaced is in scratch wr\bak4.
+
+RUNTESTS -All, the seven rows: everything matches but RMTEST (36h's free
+clusters 6726 -> 6725, RMDOS.SYS being a cluster longer), SFTSCAN (the
+addresses alone, RMDOS's image being longer) and, on the six rows that
+have a cache, CACHETST ("a write is owed" 0004 -> 0005, its file being a
+cluster further on).  Those three were recorded again on every row and
+run once more: same.
+
+THE VM (C:\86Box\VMs\PM-DOS): HD16.IMG's RMDOS.SYS, DOS\UNDELETE.386 and
+DOS\PMDOS.386 by FATREPL, read back identical; PMDOS.IMG, PMDOS2.IMG and
+HD32.IMG copied.  Backups .bak-20261120-2346.  Not committed.
+
+LATER, 2026-11-21, AFTER THE SCAN-CODE KERNEL WAS DELIVERED (PMIO.SYS
+93,829, PMDOS.SYS 192,853 - its own entry above).  Two things in this
+entry stopped being so:
+  - "NO KERNEL ... has not been delivered": that kernel is in BIN, the
+    images and the VM now.  Windows was run on that kernel with this
+    RMDOS.SYS and UNDELETE.386 (the rig, the files taken from BIN).
+    RMDOS's segment has not moved: 06E4h under WfW 3.11, 06CBh under
+    Windows 3.1 (VEC21 in a DOS box).  Windows 3.1 with a WINSTART.BAT
+    leaves 9 times of 9.  The matrix's nine rows exit 0 and say what
+    matrix6.txt says, one "box ended after" second apart.
+  - THE RUNTESTS PARAGRAPH IS WRONG ABOUT WHAT WAS RECORDED.  RMTEST and
+    SFTSCAN were recorded again from a run of RMTEST, SFTSCAN and
+    CACHETST alone, and those two answer differently alone from in a
+    full run (000E arena blocks for 000F, a hundred clusters more free,
+    6 names for 13) - the same mistake as the one noted on 2026-11-01.
+    The other session found it and recorded both from a full
+    -All -Update; CACHETST's stands.  A BASELINE IS RECORDED FROM A FULL
+    RUN ONLY.
+
+
+ROOM IN RMDOS (35 BYTES -> 665), AND WHAT LOOKING FOR IT FOUND: THE
+"INACTIVE COMMAND" STALL WAS sft_grow, AND A FULL VOLUME LOST THE FRONT
+OF ITS ROOT DIRECTORY (2026-11-21)
+---------------------------------------------------------------------
+
+Charlie: "if there's only 35 bytes left in RMDOS, is there something we
+should do?" - and, of rd_sysinit in the stack slots, "let's go forward
+with the 830 byte change".  RMDOS.SYS 45,235 -> 44,606; the build's own
+check leaves 665 bytes behind the stacks and 62 in front of them.  No
+kernel file, no header change, RMDOS_VER the same.
+
+THE ROOM (DOS\RMSTK.INC, new; RMDOS.ASM; RMINFO.INC).  rd_sysinit and
+rd_cdletter run once, from rd_entry, while the three slots rd_lowkeep is
+in are still marked taken.  They are assembled there now, above
+rd_lowkeep (819 bytes of the 832 that were spare: RD_INITLEN, and
+RD_KEEPSLOTS is worked out from both, so a ninth volume takes a fourth
+slot by itself), and rd_entry writes noughts over them as soon as they
+have returned.  park_loadrm reads the image from the disk at every park,
+so they are there each time Windows starts.  NOTHING IN THERE MAY BE
+CALLED AFTERWARDS, and the assembler cannot say so.
+  - THE SLOTS STAY AT 81D2h, which the Windows 3.1 exit of the entry
+    before depends on, and now the build says so: RMSTK.INC ORGs rd_stks
+    to RD_STKORG and stops when the code in front has grown past it.
+    Code had to move from behind the slots to in front to keep them
+    there, so RMXMS.INC is cut in two - its first part (A20, INT 15h,
+    the handle table) included after RMINFO.INC, RMXMS2.INC (rx_scan,
+    rx_stats, the entry, the calls, the block move) behind the slots -
+    and the cut is what is moved when the build stops.  A trace build
+    has more in front than any cut allows; its slots float
+    (RD_STKFLOAT).  RMDOS_MARK, RMDOS_EDBG and EXIT_TRACE assemble
+    again; RMDOS_E9 and DBG_LPT still do not fit, as before.
+
+WHAT THE TEST RUNS DID WITH THE FIRST SHAPE OF IT, and it is the stall
+of the entry before.  With rd_sysinit left standing in slot 2 the runs
+timed out: Windows up, the test shell on its first step.  Three things
+came out of that, in this order.
+
+1. QEMU MAKES A WRITE SLOW WHEN THE 4K PAGE IT GOES TO HOLDS CODE QEMU
+   HAS RUN.  It watches every page it has translated code from, and
+   while any of that code stands as it was run every write to the page
+   takes its slow way.  Measured outside Windows (scratch t\SMCT.COM,
+   in a PM-DOS box): 64,000,000 PUSH/POP pairs in 6 ticks on a clean
+   page; 640,000 in 6 once one RET in the page had been called;
+   64,000,000 in 6 again when the RET was written over.  A hundred
+   times.  A real processor does none of it.  In RMDOS, a build that
+   was the delivered one to the byte but for rd_sysinit run from the
+   slot failed; the same with the copy there and never run passed.  So
+   the start-up code is cleared - and RMSTK.INC has the note, NEXT TO
+   THE SLOTS, for whoever next puts code beside a stack.
+   -trace memory_notdirty_write_access (wr.ps1 -TraceAt) lists the
+   writes that take the slow way.  In every build, delivered ones too,
+   they are the FAT window, rd_fatbuf, a byte at a time - it is in a
+   page of RMFILE.INC's code - and SeaBIOS's own stack.
+
+2. THE STALL IS sft_grow, AND IT IS SLOWNESS, NOT A HANG.  Windows makes
+   its swap file by setting a length a megabyte further on, three times
+   over (seek, write of nothing: file_trunc).  Every cluster that added
+   walked the chain from the file's first cluster to find the end - in
+   sft_grow, and in the sft_clus before it - and the walk goes through
+   the FAT window, written back and read again each time the chain
+   crosses a FAT sector.  The third megabyte is some ten thousand
+   window loads; under QEMU, with the window in a page of code, a
+   megabyte took a minute or more (memory saved every few seconds,
+   wr.ps1 -DumpAt, and the file table read out of it: the delivered
+   build had 2MB at 60 s and was still at the third at 120).  Everything
+   else in Windows waits behind that call.  A pair that "stalled" on
+   11-20 - the round-2 RMDOS forced to 0720h - given fifty minutes
+   (t\WDTL.EXE, the test shell with an hour's patience) ends by itself,
+   exit 0, every answer right.  The test shell's "box ended after 2xx"
+   was its own 120-second limit.  So the table of segments in the entry
+   before is a table of how slow each layout was, and "two or more
+   deletes" was whatever made the run long enough to matter.
+   NOW (RMFILE2.INC): the first cluster a call adds is hooked on after
+   a walk from the front, as before, and each one after that is hooked
+   onto the one before it; sft_clus starts from there too.  The end is
+   remembered for ONE CALL, in three words of RMDOS's own (rd_growsft,
+   rd_growclus, rd_growidx) that file_io and file_trunc forget as they
+   start - not in the file table entry, whose spare bytes are SHARE's
+   and which VSHARE and IFSMGR may write, and not from call to call,
+   between which another handle or VFAT may have changed the chain.
+   Windows has its 2MB at 20 seconds and the whole run is over inside
+   30; the eleven forced segments all pass with the DOS box gone in 0
+   to 2 seconds.
+   NOT DONE: a program that writes a file a cluster at a time still
+   walks the chain once per call.
+
+3. A VOLUME FILLED TO THE END LOST THE FIRST SECTOR OF ITS ROOT
+   DIRECTORY.  In every RMDOS until now.  The FAT window is two sectors
+   (a FAT12 entry may straddle), read and written as a pair wherever it
+   was - at the FAT's last sector too, where the second of the pair is
+   the sector after the FAT: the first sector of the next copy, and for
+   the LAST copy the first sector of the root directory.  fat_flush
+   wrote the window's second half over it - sixteen directory entries
+   replaced by a sector of FAT - as soon as a cluster in the last 256
+   of the volume was given out or freed.  Found by the test of the
+   limit (scratch t\GROW.COM F, a length set past the end of the
+   volume): CHKDSK afterwards had "C:\<F8>" for a first entry, fifteen
+   cross links sixteen clusters apart, 242 lost clusters.  fat_pair
+   (RMFILE.INC) makes the window one sector there.  The same test now:
+   the root whole, no cross link, nothing lost.
+
+REVIEW, defect > effect > fix:
+  - Start-up code left in a stack slot after it had run > under an
+    emulator that watches code pages every DOS call Windows made was a
+    hundred times slower > rd_entry clears it (above).
+  - Removing 819 bytes in front of the stacks moved them, and nothing
+    said so > the Windows 3.1 exit stack would have landed 138 bytes up
+    a slot, two slots given up for one > rd_stks is pinned and the
+    build checks it.
+  - The end of the chain kept in the file table entry from call to
+    call (the second shape of the sft_grow change) > a chain changed
+    between calls, or SHARE's bytes written by Windows, and the next
+    cluster is hooked onto the wrong one > kept for one call, in
+    RMDOS's own words.
+  - The FAT window's pair at the FAT's last sector > the root
+    directory's first sector overwritten > fat_pair (above).
+  - SEEN, NOT CHANGED: a length set past the end of the volume leaves
+    the length as it was (as file_trunc says) AND every cluster it
+    managed to get on the file's chain - CHKDSK says "allocation error,
+    size adjusted", deleting the file gives them back.  MS-DOS gives
+    them back itself.
+
+TESTED (QEMU, wr.ps1; BIN's kernel, this RMDOS, BIN's UNDELETE.386):
+  - RMDOS's segment 06E4h under WfW, 06CBh under Windows 3.1, as before.
+  - Windows 3.1 with a WINSTART.BAT: 9 of 9 leave.
+  - The eleven forced segments 06F0h-0780h, two Windows deletes and a
+    DOS box: 11 of 11, the box gone in 0 to 2 seconds.
+  - INT 24h: the lines of the entry before, to the byte.  SLOTS.COM at
+    the slot limit: passes.
+  - GROW.COM in a DOS box: three lengths a megabyte apart with four
+    bytes written in the middle and read back; shorter, then longer;
+    100 writes of 8192 bytes read back; the first byte of an empty
+    file - the same answers, DIR and CHKDSK (the kernel's, afterwards)
+    as the delivered RMDOS gives, in 33 seconds for its 353.  And the
+    full volume, above.
+  - The matrix: eight rows say what they said (a cluster more free,
+    RMDOS.SYS being one shorter).  THE NINTH DOES NOT - next.
+
+32-BIT FILE ACCESS NOW ENDS WITH 822 LOST CLUSTERS (matrix row h1), and
+it is the two writers of the FAT that the entry of 11-20 left open, not
+this work: but this work is what lets it show.  The lost chain is 3700h
+to 3A35h - the third megabyte of Windows' swap file from the first
+cluster of FAT sector 37h on.  The file was 2MB when VFAT read FAT
+sector 36h for a file of its own; RMDOS then added the third megabyte
+straight on the disk; and VFAT, deleting the swap file as Windows left,
+followed its own copy of sector 36h, freed what it knew and wrote that
+copy back.  The delivered RMDOS ends this row clean (run again today)
+because its three megabytes take minutes, one straight after the other,
+with everything else in Windows waiting behind them.  A machine that is
+not QEMU should not wait like that with either RMDOS (not measured on
+one).  STILL OPEN, and it
+is a real fault with either: RMDOS and VFAT both give out clusters on
+the same volume.  On MS-DOS IFSMGR takes over the files DOS has open;
+RMDOS's entries have no parameter block in SFT_DEVPTR, which may be why
+it does not here.  Not looked into.
+
+WINDOWS STARTED TWICE IN ONE BOOT (the start-up code has to be in the
+slots again the second time): both runs right, under both Windows.
+The RMDOS delivered on 11-20 got Windows 3.1 through both and Windows
+for Workgroups through the first only, inside the run's 600 seconds -
+the slowness again.
+
+DELIVERED: BIN\RMDOS.SYS (44,606), built from the tree by BUILD.CMD's
+own lines and the same bytes as the build that was tested; PMDOS.IMG
+and the Setup disks by BUILD.CMD's own lines; HD16, HD32 and MULTI by
+MKHD.CMD.  New source files DOS\RMSTK.INC and DOS\RMXMS2.INC (RMDOS.ASM
+includes them; BUILD.CMD needs no line).  The kernel and UNDELETE.386
+are as they were.  What was replaced is in scratch wr\bak5.
+
+RUNTESTS -All, the seven rows: 128 matched and two did not - RMTEST
+(36h's free clusters 6722 -> 6723, RMDOS.SYS being a cluster shorter)
+and SFTSCAN (addresses alone).  Both recorded again from a FULL
+-All -Update, and a second -All: 130 of 130 on every row.
+
+THE VM (C:\86Box\VMs\PM-DOS): HD16.IMG's RMDOS.SYS by FATREPL, read back
+identical (UNDELETE.386 and PMDOS.386 with it, the same files as were
+there); PMDOS.IMG, PMDOS2.IMG and HD32.IMG copied.  Backups
+.bak-20261121-1323.  Not committed.
+
+FOR NEXT TIME: the two FAT writers under 32-bit file access (above);
+a file written a cluster at a time still walks its chain once per call;
+the clusters a failed lengthening leaves on the file; the FAT window in
+a page of code is what makes every FAT sector slow under QEMU, and so
+is every buffer RMDOS has - moving them into the room after the image
+would take that away for whoever tests in QEMU.
+
+
+THE FOUR THINGS LEFT OPEN BY THE ENTRY BEFORE: 32-BIT FILE ACCESS AND THE
+SWAP FILE (IFSMGR's OWN CHECK, WHICH RMDOS DID NOT FEED), A LENGTH THAT
+CANNOT BE REACHED, THE CHAIN WALKED ONCE A CALL, THE TRACE BUILDS
+(2026-11-21)
+---------------------------------------------------------------------
+
+Charlie: "Let's keep the delivery and focus on fixing all the still open
+issues."  RMDOS.SYS 44,606 -> 44,744.  No kernel file, no header change.
+
+1. TWO WRITERS OF ONE FAT UNDER 32-BIT FILE ACCESS.  SOLVED, AND THE
+   ANSWER IS IN IFSMGR.  Before IFSMGR.386 takes a drive for VFAT it
+   counts the files DOS has open on that drive, and with one or more it
+   LEAVES THE DRIVE TO DOS (WfW 3.11 IFSMGR.386: the routine at 1078h of
+   its first object counts file table entries in use whose device
+   pointer, +07h, is the parameter block the drive's CDS names, +45h,
+   and whose device word has neither 80h nor 8000h; its caller, 119Ch
+   of the init object, answers error 4 when the count is not nought).
+   MS-DOS puts the drive's parameter block in a disk file's entry.
+   RMDOS put FFFF:FFFF there - "there is none", from before rd_sysinit
+   built the blocks - so IFSMGR counted nought, took C: with Windows'
+   swap file open on it by RMDOS, and both gave out clusters.
+   - sub_open (RMFILE2.INC) now writes the block's address.  With a
+     temporary swap file on C:, WfW on PM-DOS does what it does on
+     MS-DOS: C: stays the DOS's.  The matrix's 32-bit file access row
+     ends clean - no lost clusters, and no "invalid long filename entry"
+     either, which was WfW's VFAT deleting a file with a long name and
+     leaving the long-name entries (it does not know them).
+   - THE CONTROL (scratch msd.ps1, msd\): WfW 3.11 on real MS-DOS 5 in
+     the same rig - a copy of the 86Box Windows VM's disk, its Windows
+     3.1 put aside, the same WfW tree grafted on, the same LRGDISK.386,
+     t\T21.COM resident and printing every INT 21h and 2Fh on port E9h.
+     With the swap file on C:, creates and deletes go on reaching
+     MS-DOS: VFAT has not taken C:.  With Paging=No they stop reaching
+     it: VFAT has.  The disk is clean both ways (r5\fatchk.pl, a FAT16
+     checker for a disk image; MS-DOS's CHKDSK agrees).
+   - With the swap file on a second disk (PagingDrive=D) VFAT takes C:
+     here too, the test shell's deletes are kept and listed, and both
+     FATs are whole.  That row is what tests VFAT now.
+   - WHAT ELSE A REAL DOS DOES THAT RMDOS DID NOT, found on the way
+     and put right, each of them MS-DOS's own behaviour:
+       EVERY CLOSE COMMITS (sft_release).  The directory entry and the
+       FAT window went out with the last handle only, so "duplicate
+       the handle, close the duplicate" - how a program commits a file,
+       and what Windows' pager does after each megabyte - did nothing.
+       68h/6Ah wrote the windows and not the directory entry: now
+       file_commit as well.
+       A DISK RESET FORGETS (fn0D): the FAT window and the directory
+       sector are dropped once written, as $DISK_RESET invalidates
+       DOS's buffers.  IFSMGR makes the call when it has taken a drive.
+       NOTHING IS KEPT BETWEEN CALLS WHILE WINDOWS HAS A DRIVE
+       (i21_cdone, rd_shared): IFSMGR turns the cache's reads of a drive
+       off as it takes it (4A10h BX=3 DL=2) and on as it gives it back,
+       and while one is off every call ends with the windows written
+       and dropped - VFAT writes that disk, and this DOS still reads it
+       for an EXEC.
+   - STILL OPEN, AND OLDER THAN ALL OF THIS: with VFAT on C: AND
+     Paging=No, Windows gives up while its drivers start (after DOSMGR
+     has looked for WINSTART.BAT) and WIN386's stub then prints two
+     blank lines and stops.  The RMDOS of 11-19, of this morning and
+     this one all do it; MS-DOS does not; 16, 32 or 64MB makes no
+     difference, and Paging=No without VFAT is fine.  Not followed.
+
+2. A LENGTH SET PAST THE END OF THE VOLUME gives back the clusters it
+   took on the way (file_trunc), as MS-DOS's ALLOCATE does.  The length
+   stays what it was, as before; the clusters used to stay on the chain
+   behind it.
+
+3. THE END OF THE CHAIN IS KEPT FROM CALL TO CALL (sft_grow), for the
+   file that grew last, so a program writing a little at a time walks
+   its chain once.  It is forgotten wherever the chain may have changed
+   without it: fat_freechain, sft_alloc, rd_mount, vol_forget, a disk
+   reset, and the end of every call while Windows has a drive.
+
+4. THE TRACE BUILDS ASSEMBLE.  The room check at rd_imgend asked every
+   build for a 4M cache's tables.  A trace build (RD_STKFLOAT) is now
+   asked only for a file table of DOS's floor: rd_layout gives it as
+   many entries as the room holds when FILES= says more, and cm_place
+   gives the cache what is left - none, in the LPT build, whose buffer
+   is sixteen kilobytes.  cm_place added in sixteen bits, and with no
+   room at all the sum passed 64K and looked like room: thirty-two now.
+   RMDOS_E9 (47,087 bytes) runs Windows and leaves, and its trace is
+   what found item 1.  DBG_LPT (62,739) loads, reaches the Windows
+   logo and holds there - which is what RME9.INC's own header says the
+   disk trace has always done to the thing it watches.
+
+ROOM: 527 bytes behind the stacks and 79 in front (rx_owner, rx_scan and
+rx_stats went behind them to make the front fit: RMXMS2.INC).
+
+REVIEW, defect > effect > fix (beyond the four above):
+  - sft_release wrote nothing unless it was the last handle > a
+    committed file was not on the disk; under VFAT the FAT on the disk
+    lacked what this DOS had just allocated > every close commits.
+  - A file's table entry named no drive > IFSMGR's "does DOS have files
+    open here" always said no > the parameter block's address.
+  - fn0D kept the windows > after a reset this DOS went on from a FAT
+    that was not the disk's > dropped.
+  - cm_place's sums in sixteen bits > with less than 6K after the image
+    the tables would have been laid over the start of the segment >
+    thirty-two bits (no release build has that little room; the build
+    checks).
+  - file_trunc on a full volume > the file kept clusters past its
+    length, and CHKDSK said so > given back.
+
+TESTED (QEMU, wr.ps1; BIN's kernel, this RMDOS, BIN's UNDELETE.386):
+  - RMDOS's segment 06E4h under WfW, 06CBh under Windows 3.1, as before;
+    Windows 3.1 with a WINSTART.BAT leaves 9 times of 9; the eleven
+    forced segments 06F0h-0780h pass; INT 24h to the byte; SLOTS.COM
+    passes; Windows started twice in one boot, both Windows.
+  - The matrix: the 32-bit file access row now ends with no error at
+    all; the other eight say what they said.
+  - GROW.COM, longer now: the megabyte steps, shorter then longer, 100
+    writes of 8192, an empty file's first byte, 3000 writes of 512
+    read back, two files grown turn and turn about and both read back,
+    a file grown with another deleted in between - the same answers,
+    DIR and free space as the RMDOS delivered in the morning gives.
+    And GROW F: the length stays 1,500, CHKDSK finds nothing, and the
+    volume has its space back.
+  - 32-bit file access with the swap file on a second disk: VFAT has
+    C:, the deletes are kept and listed, both FATs whole (fatchk.pl).
+    CHKDSK has its one "invalid long filename entry" on C: there -
+    WfW's VFAT deleting LONGFI~1.TXT, as above.
+
+DELIVERED: BIN\RMDOS.SYS (44,744), built from the tree by BUILD.CMD's
+own lines and the same bytes as the build that was tested; PMDOS.IMG
+and the Setup disks by BUILD.CMD's own lines; HD16, HD32 and MULTI by
+MKHD.CMD.  The kernel and UNDELETE.386 are as they were.  What was
+replaced is in scratch wr\bak6.
+
+RUNTESTS -All, the seven rows: 129 matched and SFTSCAN did not - its
+addresses alone, the image being longer; RMDOS.SYS has as many clusters
+as before, so RMTEST matched.  Recorded again from a FULL -All -Update,
+and a second -All: 130 of 130 on every row.
+
+THE VM (C:\86Box\VMs\PM-DOS): HD16.IMG's RMDOS.SYS by FATREPL, read back
+identical; PMDOS.IMG, PMDOS2.IMG and HD32.IMG copied.  Backups
+.bak-20261121-1526.  Not committed.
+
+FOR NEXT TIME: Windows with VFAT on C: and Paging=No (above).  And the
+rig can now boot MS-DOS beside PM-DOS (wr.ps1 -BaseImage, msd.ps1) and
+read any Windows VxD (vmm\le.pl turns an LE file's objects into flat
+code with the fixups applied, for wdis) - which is how this was found.
+
+
+WINDOWS WITH VFAT ON C: AND Paging=No GIVES UP AS IT STARTS: NOT THIS
+DOS.  WfW 3.11's VSHARE.386 COUNTS ON ECX COMING BACK FROM A C SERVICE,
+AND ONE MEMORY LAYOUT IN 256 SHOWS IT - THE TEST RIG'S (2026-11-21)
+---------------------------------------------------------------------
+
+Charlie: "Let's fix that new problem" - the one the entry before left
+open.  NOTHING IN PM-DOS IS CHANGED: there is nothing of PM-DOS's to
+change.  Real MS-DOS 5 stops the same way when Windows' loader sits at
+the same address.
+
+WHAT HAPPENS.  The two blank lines and the stop are WIN386's stub being
+told "fatal, do not return to DOS" (its flag word bit 0) with a message
+of CR LF: VMM's own answer to a page fault in ring 0 that nobody takes.
+The fault is in VSHARE.386's Device_Init:
+
+        mov  ecx,0Eh
+        push 0
+        push ecx
+        VMMcall _Allocate_Global_V86_Data_Area      ; 14 bytes
+        add  esp,8
+        ...
+        mov  esi,OFFSET stub
+        rep  movsb                                  ; ECX bytes
+
+A C-convention service keeps EBX, ESI, EDI and EBP and nothing else.
+What ECX holds afterwards depends on where the allocator found room:
+  - in a HOLE (the bytes between the WIN386 stub's PSP+80h and the next
+    page, and any free arena block below the stub): ECX = the size.
+    This is the usual case, and VSHARE works by it.
+  - the first request that no hole holds: ECX = the linear address of
+    the end of the page just taken.  1A000h here.  The copy of "14
+    bytes" runs from VSHARE's init code past the end of what is mapped
+    (CR2 = 80293000h) and Windows is over.
+  - a later request that no hole holds: ECX = 0 (nothing is copied, and
+    VSHARE's V86 stub is never written) or 1000h a page.
+
+WHY THE RIG.  The requests before VSHARE's 14 bytes are the same on
+MS-DOS and here, to the byte (WfW 3.11, 32-bit file access, Paging=No,
+FILES=40): 1Bh, 374h, 50h, BFh, 24h, 7, 256h, and VSHARE's own table of
+3C0h (sixteen file table entries, always - NOT 24 bytes a file as this
+said at first: see the entry after).  In the rig the stub's PSP is
+1849h, the hole is
+18510h-18FFFh, and the 3C0h ends on 19000h exactly: no byte of hole is
+left, no request has gone past the holes yet, and the 14 bytes are the
+first that do.  Played for every PSP (r5\holesim.pl): of the 256 values
+of its low byte ONE gives this - 49h - and twenty more leave the 14
+bytes outside a hole with ECX = 0.  Paging on, no VFAT, or the swap file
+on D: are other sums, which is why only this row of the tests saw it.
+
+PROVED BOTH WAYS (t\PAD.COM hh: stays resident with hh paragraphs, so
+that what loads next sits higher):
+  - PM-DOS, PAD 12 in front of WIN: Windows starts with VFAT on C: and
+    Paging=No, the test shell deletes, Windows leaves, CHKDSK is clean.
+  - MS-DOS 5, PAD 80 (stub's PSP 0749h): the same exact fit, the 14
+    bytes are the first past the hole, ECX = 9000h - and Windows runs,
+    because the stub is low there (DOS=HIGH) and 9000h bytes of copy
+    stay inside mapped memory.  36K of conventional memory above the
+    stub are written over on the way.
+  - MS-DOS 5, PAD 1180 (stub's PSP 1849h, as here): the two blank lines
+    and the stop, flag word 0001, message CR LF.  The same.
+A stub above about 0C000h is what makes the exact fit fatal; this DOS
+always has it there (RMDOS is 64K below it), an MS-DOS with its drivers
+low has it too.
+
+HOW IT WAS FOUND - AND THE RIG HAS A DEBUGGER NOW.  wr.ps1 -Gdb port
+opens QEMU's gdb stub; r5\gdbc.pl is forty lines of its protocol in
+perl: a breakpoint at VMM's Fatal_Error_Handler (8000A8ADh in WfW 3.11;
+service BEh of the table at 800116C0h), then the registers, the stack,
+the VxD chain, CR2 from the monitor, and the kernel's memory saved for
+wdis (r5\dk.sh).  The stack named the fault (0Eh, EIP 80286C43h, ESI on
+a page boundary), the listing named VSHARE.  r5\gdbt.pl logs every
+_Allocate_Global_V86_Data_Area with the hole tables before and EAX and
+ECX after; that log, taken on PM-DOS and on MS-DOS, is the proof above.
+wr.ps1 -FullDump saves all of memory on a timeout; r5\stubat.pl reads
+the stub's flag word and message out of it, r5\ddb.pl and r5\holes.pl
+the VxD chain and the allocator's words.
+
+WHAT COULD BE DONE HERE, AND IS NOT: one of PM-DOS's own VxDs
+(LRGDISK.386 is always there when 32-bit file access is) could hook
+_Allocate_Global_V86_Data_Area and hand ECX back as the size, which
+would put VSHARE right in every layout, the twenty quiet ones as well.
+That is mending Windows from a driver that is closed as working, for a
+fault MS-DOS has too.  Charlie's call.  Until then: a Windows for
+Workgroups that stops on two blank lines as it starts, with 32-bit file
+access on, starts when anything that moves WIN386's loader by a
+paragraph is changed (a resident program in front of WIN; NOT FILES= on
+this DOS, as this said at first: see the entry after).
+
+DELIVERED: nothing - no file of PM-DOS changed.  BIN, IMAGES and the VM
+are as the entry before left them.
+
+
+LRGDISK 1.5: VSHARE GETS ITS FOURTEEN BACK IN ECX WHATEVER THE VMM LEFT
+THERE - THE HOOK THE ENTRY BEFORE DID NOT MAKE.  AND TWO THINGS THAT
+ENTRY HAD WRONG ABOUT FILES= (2026-11-21)
+---------------------------------------------------------------------
+
+Charlie: "yes, let's patch it with LRGDISK.386."  LRGDISK.386 25,949 ->
+25,985.  Nothing else of PM-DOS changed.
+
+WHAT IT IS.  At Sys_Critical_Init (init order 0D000000h; VSHARE's is
+58008000h) LRGDISK hooks _Allocate_Global_V86_Data_Area (000100A8h)
+with Hook_Device_Service, and the hook is the whole of it:
+
+ld_gv86:
+        push    dword ptr [esp+8]       ; the flags
+        push    dword ptr [esp+8]       ; the size
+        call    dword ptr [ld_prevgv86]
+        add     esp,8
+        mov     ecx,[esp+4]             ; the size, for the caller
+        ret
+
+In the locked code, not the start-up code: the VMM's table names it for
+as long as Windows runs.  The account's flags word has a bit for it
+(LIF_GV86, 0100h) beside the INT 13h hook's.  The version is 1.5
+(0105h; the DDB, the banner, BUILD.CMD's description).  LRGSTAT.EXE is
+not rebuilt: it takes 1.4 or later and prints the number it is given.
+
+TWO THINGS THE ENTRY BEFORE HAD WRONG, both put right there:
+  - VSHARE's 3C0h is NOT 24 bytes for each of FILES=.  It is a
+    constant in VSHARE (3C0h, or 360h by a byte it keeps): sixteen file
+    table entries with the six-byte heading "next FFFFFFFFh, count
+    16", which VSHARE hangs on the end of DOS's chain.  960 divided by
+    the rig's 40 came out even, and I took the quotient for a fact.
+  - So "change FILES= and the hang goes" is NOT so on this DOS.
+    FILES=20 and FILES=255 give the same sums as FILES=40 here, to the
+    byte: RMDOS is one block whatever FILES= says, WIN386's stub has
+    PSP 1849h each time, and the 3C0h ends on 19000h each time.  What
+    moves the stub is something resident in front of WIN, or a longer
+    environment.  (On MS-DOS FILES= changes the size of DOS's own
+    data, so there the stub should move with it.  Not tried.)
+And one more, seen in the log: ECX is "the size" on the way out of a
+hole only for a request with no alignment asked.  With alignment in
+the flags the VMM leaves FFFFFFFFh or 0 there even from a hole (374h
+flags 1102h, 256h flags 0302h, VSHARE's own 3C0h flags 0204h).
+VSHARE's fourteen bytes ask for none.
+
+WHAT IT DOES NOT COVER.  The hook is there while LRGDISK is.  The
+real-mode start-up leaves LRGDISK out of Windows altogether when it
+takes no drive (rmi_refuse: 32BitDiskAccess=off, no IDE disk, a disk it
+will not drive), and then VSHARE is on its own again.  Keeping LRGDISK
+loaded for the hook alone is a different driver - memory locked for
+nothing but that, LRGSTAT answered by a driver with no drives - and is
+not done.  Charlie's call.
+
+REVIEW, defect > effect > fix:
+  - A hook in the start-up code > the VMM's table would name memory
+    given back after Init_Complete > it is in _LTEXT.
+  - EDX after Hook_Device_Service is taken from ld_ref again, not on
+    trust > ld_syscrit reads its reference data from it straight after.
+  - The other callers > one that read ECX after the call would see a
+    different number now > the nine in this configuration read from
+    the kernel's memory (wr\vn8_fatal.bin, r5\dk.sh): the 1Bh, 24h,
+    50h, BFh and E5h callers load ECX themselves before they use it
+    (the first copies its 1Bh bytes with "mov ecx,1Bh" in front - the
+    line VSHARE's lacks), the others do not read it.  Only VSHARE's
+    fourteen sees a change.
+  - The stack > a C service's arguments are the caller's to take off >
+    the hook pushes two and takes two off, and leaves the caller's;
+    stepped through the gdb stub, every call comes back to its caller
+    with the VMM's EAX.
+  - Nothing is allocated, so there is nothing to leak.
+
+TESTED (QEMU; BIN's kernel with the RMDOS delivered this afternoon;
+the driver tested is the one delivered, byte for byte):
+  - THE ROW THAT STOPPED - VFAT on C:, Paging=No - on PM-DOS, twice:
+    Windows starts, the test shell deletes, the DOS box runs, Windows
+    leaves, CHKDSK is clean.  In the log the VMM still leaves 1A000h
+    in ECX for the fourteen bytes (the first past the hole, as before);
+    VSHARE now has 0Eh.
+  - MS-DOS 5 with PAD 1180 in front of WIN - the stub at PSP 1849h, the
+    run that stopped on two blank lines in the entry before - twice:
+    starts, leaves, MS-DOS's CHKDSK clean.  The same log.
+  - Two of the twenty quiet layouts (PAD 5B and 5D: PSP 18ABh, 18ADh):
+    the VMM leaves ECX nought, VSHARE has 0Eh, and its fourteen bytes
+    are written for the first time.  PAD 5A and 5C beside them come out
+    of the hole and had 0Eh anyway.
+  - FILES=255 and FILES=20: the exact fit again, and Windows starts.
+  - WfW with 32-bit disk access alone; with VFAT and the swap file on
+    C:; with VFAT and PagingDrive=D; Windows 3.1 with LRGDISK: each
+    starts, runs the list, leaves, CHKDSK clean.  In every DOS box
+    t\LRGF.COM (new: the version and the flags word through the API)
+    says "LRGDISK version 0105 flags 01AF" - on Windows 3.1 too, whose
+    VMM is another build with the same service number.
+NOT RUN: LRGSTAT on the screen (the file is the one from 10-11); 86Box;
+any real machine.  RUNTESTS: its disks do not carry the driver, so
+nothing there can move.  MASM: PM-DOS is Open Watcom's alone.
+
+THE RIG.  lrg5\gdbu.pl is gdbt.pl that knows a hook: where the VMM's
+service was called from ld_gv86 it follows the return one frame up and
+prints what the real caller is left with.  np.ps1 -lrg (a driver in
+place of the base image's), -more (files for C:\), -tree; msd.ps1 -lrg;
+wr.ps1: a FILES= among -Cfg replaces the rig's FILES=40.  The base
+images carry 1.5 now.  ONE THING TO KNOW when reading addresses again:
+LRGDISK's start-up code is 28h longer, so the start-up code of every
+driver loaded after it sits 28h higher (VSHARE's call comes back to
+80286C42h, not 80286C1Ah).  The VMM's own addresses have not moved.
+
+DELIVERED: CMD\LRGDISK\lrgdisk.asm; BUILD.CMD (the description, and a
+remark); BIN\LRGDISK.386 (25,985) by BUILD.CMD's own lines, the same
+bytes as the build that was tested; PMDOS2.IMG and the Setup disks by
+BUILD.CMD's own lines; HD16, HD32 and MULTI by MKHD.CMD.  What was
+replaced is in scratch wr\lrg5\bak.
+
+THE VM (C:\86Box\VMs\PM-DOS): HD16.IMG's DOS\LRGDISK.386 by FATREPL,
+read back identical; PMDOS2.IMG and HD32.IMG copied.  Backups
+.bak-20261121-1817.  Not committed.
+
+
+SETUP SHOWS A BILLBOARD FOR EACH DISK WHILE IT COPIES, FROM SETUP.MSG,
+A TEXT FILE ON DISK 1 (2026-11-21)
+---------------------------------------------------------------------
+
+Charlie: "Let's add billboard messages to SETUP like MS-DOS.  We should
+store the strings in either SETUP.INF or SETUP.MSG, and the file should
+be in ASCII so that the text can be changed simply by editing the file.
+It should also support C formatting ... The billboarding should work in
+both the 16bit and 32bit modes of SETUP."  He gave the text for disks
+1, 2 and 3.
+
+WHERE THE TEXT IS.  DISK\SETUP.MSG, not SETUP.INF: MKSETUP writes
+SETUP.INF from SETUP.LST at every build, so an edit there would not
+last.  SETUP.LST carries SETUP.MSG as one of Setup's own files
+("SETUP 1": disk 1, unpacked, never installed), so it is a plain file
+in the root of disk 1, the USB image and the CD, and editing it there
+changes what the next Setup shows.  SETUP.INF lists it like the boot
+code (WH_SETUP), which no part of Setup copies or counts.
+
+THE FORMAT (the head of CMD\SETUP\BBOARD.C has all of it).  [disk1] to
+[disk9]; the text is C strings in double quotes, joined end to end as C
+joins them; inside them \r\n or \n, \r, \t (to a multiple of 8), \\ \"
+\', \a \b \f \v, \xHH (one or two digits) and \ooo, and any typed
+character from code page 437.  \x07 is the bullet; his asterisks are
+written \x07 in the file.  ';' outside the quotes is a comment.  A
+section named twice: the last counts.
+
+THE SCREEN.  The copy screen keeps 6.22's gauge (rows 16 to 20).  The
+billboard goes in rows 3 to 15, laid out as written: the lines, as one
+block, centered across and down that space.  Not filled or re-broken; a
+line wider than 76 is broken at its last space that fits, more than 13
+lines are cut.  A disk with no billboard, or a source with no SETUP.MSG,
+gets "Setup is copying the PM-DOS files." as before.  A new disk's
+billboard goes up once that disk is in, so a request for disk 2 opens
+over disk 1's billboard.  Disk 1's text is 13 lines, all the space
+there is: rows 3 to 15, cols 8 to 70.  The F7 floppy install keeps its
+"Please wait" line.
+
+THE CODE.  CMD\SETUP\BBOARD.C (new), compiled into both halves:
+billboard_load() in setup_main after SETUP.INF and the boot code are
+read, while disk 1 is where Setup can read it; billboard_draw(disk)
+from COPY.C's copy_screen.  The file is read whole (16,000 bytes at
+most; a bigger one is no billboards), each section decoded into a
+buffer the size of the file with a check on every byte, then kept in
+a block of its own length; the read buffers are freed.  The layout
+works in a line of 160 and a grid of 13 x 77, every write checked.
+BUILD.CMD: bboard in both SETUP compile lists and links (bboard16.obj,
+eight letters).  SETUP.EXE 171,504 -> 176,172.
+
+TESTED.  A host harness (BBOARD.C + RT.C + stubs) on his SETUP.MSG and
+on ordinary text at each limit: 15 lines (13 shown), lines of exactly
+76, 89 with spaces, 100 with none, one of 169 (160 kept), tabs, \r
+over a line, octal and hex, \" and \\, a last line with no new line, a
+repeated section, an empty one, files of 16,000 and 16,001 bytes, no
+file at all.  No block left but the billboards, no file left open.
+QEMU, disks 1 to 3 swapped through the monitor, the screen read from
+B800h: the 32-bit half on a blank disk (partition, restart, format,
+copy, boots C:\>) and the 16-bit half upgrading a copy of the DOS 5
+rig disk with /G (boots PM-DOS after).  Each disk's billboard came up
+in both, as laid out above.  NOT RUN: the USB and CD sources (same
+code; SETUP.MSG is in both roots), 86Box, real hardware.
+
+DELIVERED: BIN\SETUP.EXE (built in the tree's CMD\SETUP by BUILD.CMD's
+lines); IMAGES\SETUP by BUILD.CMD's own Setup step - DISK1 to DISK3 and
+SETUPUSB the same bytes as the images tested; disk 1 has 4 clusters
+less, so NE2000.SY_ went to disk 2 and SMBSRV.EX_ to disk 3.  The VM
+reads the Setup disks from IMAGES\SETUP itself; none of its own images
+carries SETUP.EXE.  What was replaced is in scratch bak\.  Not
+committed.
+
+
+NET USE ON AN SMB1 SERVER: A BIG DIRECTORY'S LISTING ANSWERED THE NEXT
+REQUESTS, ON EVERY DRIVE MAPPED TO THAT SERVER (2026-11-24)
+---------------------------------------------------------------------
+
+Charlie, on real hardware: O: mapped to \\trolla-storage\os, DIR of the
+root right.  In a subdirectory DIR showed some of the files and a
+second DIR a few more; CD \ and DIR showed the subdirectory's files;
+I: mapped to \\trolla-storage\images, and DIR of I: showed part of O:.
+Not a regression: the listing and SMB1_RECVBUF are as they were on
+10-18 and 11-02, and the 11-02 tests listed 88 and 91 entries - about
+11K, one message.
+
+THE CAUSE.  smb1_list_dir asked for 32,768 bytes of listing a time
+(MaxDataCount) and read one message for each request.  A server sends
+a TRANS2 reply bigger than its buffer in several messages, each with
+the request's MID and a piece of the data at a displacement; Windows
+Server 2003's buffer is 16,644 bytes, which is about 120 long names.
+The listing stopped at the first piece.  The others stayed in the
+stream and answered the next requests - FIND_NEXT2, the next DIR's
+FIND_FIRST2, anything - and every reply after them was behind.  The
+drives mapped to one server with one logon share one connection
+(SMBFS's netconn), so I:'s DIR read O:'s pieces.  Fixed: smb1_rx takes
+only the message that carries the request's MID (req_mid, set by
+smb1_begin, which no longer gives out FFFFh - the server's oplock
+breaks) and passes over up to 64 others; trans2_txrx puts a TRANS2
+reply together from all its messages into trparm and trdata (16 and
+16,384 bytes, the most a request asks for), each piece checked against
+the message it came in and the totals; a reply that breaks them ends
+the connection.  MaxDataCount is 16,384, so Windows Server 2003
+answers each batch in one message and FIND_NEXT2 gets the rest.
+fs_size_trans2 goes through trans2_txrx too.
+
+A SEARCH LEFT OPEN.  FIND_NEXT2's flags were 000Ch, resume keys and
+continue; the comment beside them said close at the end of the
+search.  Every listing long enough for a FIND_NEXT2 left its search
+open on the server until the logoff, and a server keeps only so many.
+Now 000Eh, and a search that ends early (a reply with no entries, a
+FIND_NEXT2 refused) is closed with FIND_CLOSE2 (find_close), the
+failure's stage and status kept for the report.  A FIND reply with
+too few parameter bytes is a failure now, not a search with SID 0.
+
+Files: CMD\NET\SMB\SMB1.C, SMB1.H (req_mid, trparm, trdata: an
+smb1_client is 16K bigger).  SMBFS.SYS 95,736 -> 96,528.
+
+TESTED.  A scratch copy of rig\smb1peer.pl that answers a search as
+Windows does - SearchCount and MaxDataCount kept to, FIND_NEXT2 going
+on from where the last left off, FIND_CLOSE2, the searches it holds
+counted - and PEER_SPLIT=n, a reply's data in messages of n bytes;
+PEER_OPLOCK, an oplock break before each TRANS2 reply; PEER_NEXTFAIL,
+FIND_NEXT2 refused.  A share of 13, 300, 150 and 5 entries.  A host
+harness, SMB1.C over Winsock, one connection and two trees:
+  - The old SMB1.C, replies split at 16,500: BIG 193 of 302, then 0,
+    the root 128 (110 of them BIG's), SMALL on the second tree 0, MID
+    failed; the peer held 1, then 2 searches.
+  - The new one split at 16,500, 3,001 and 997 (replies of up to 17
+    messages, cut in the middle of entries): every listing the
+    folder's names, each once; no search left open.  Oplock breaks:
+    the old one fails 3 listings of 4, the new one none.  FIND_NEXT2
+    refused: 111 entries, FIND_CLOSE2 sent, none open.
+  - QEMU, PM-DOS from IMAGES\HD16 (RTL8139.SYS, TCPIP.SYS,
+    SMBFS.SYS), the peer as 10.0.2.200:139, Charlie's steps: NET USE
+    O: /SMB1, CD O:\BIG, DIR O: twice, CD O:\, DIR O:, NET USE I:,
+    DIR I:\SMALL, DIR O:\MID.  BIN's SMBFS.SYS: 193 files, then 15 -
+    the root's - under "Directory of O:\BIG", I:\SMALL 1.  The new
+    one: 302, 302, 15, 7 and 152, the byte totals right, at both
+    16,500 and 3,001.
+NOT RUN: Windows Server 2003 itself (no password here); a LAN Manager
+server such as WfW, whose replies carry the MID as every SMB server's
+do; 86Box; real hardware.
+SEEN, NOT CHANGED: SMB2.C's recv_msg takes whatever message comes
+next - no MessageId check - and would take an interim STATUS_PENDING
+reply as the answer; SMBFS keeps 1,024 entries of a directory
+(NET_FIND_MAX) and DIR shows no more; a listing that fails part-way
+shows the entries that came (do_findfirst).
+
+DELIVERED: BIN\SMBFS.SYS; IMAGES\HD16 and HD32 by MKHD (MULTI the
+same bytes; HD16's root differs from before in SMBFS.SYS only); the
+Setup set by BUILD.CMD's own step (STAGE: SMBFS.SY_ and SETUP.INF
+changed, nothing else).  The VM: HD16's DOS\SMBFS.SYS by FATREPL,
+read back identical; HD32 copied.  Backups .bak-20261124-2019, and
+what was replaced in scratch bak\.  Not committed.
+
+
+A NETWORK DIRECTORY LISTS WHOLE, UP TO 65,535 ENTRIES: SMBFS'S LISTING
+GROWS AS THE DIRECTORY NEEDS (2026-11-24)
+---------------------------------------------------------------------
+
+Charlie: "Yes, let's fix it" - the 1,024-entry cap in the entry above.
+
+THE DEFECT.  A find kept the whole directory in a table of 1,024
+entries and a 48K pool of long names, made with every mapped drive.
+The rest of a bigger directory was dropped without a word: DIR, DIR /S
+and TREE of a 1,502-entry directory showed 1,024, and COPY *.* would
+have copied as many.  Fixed: the table starts at 256 entries and the
+pool at 8K, made at the mount, and each doubles as a listing needs
+(copied over, the old block freed), up to 65,535 entries - 4Fh's DTA
+keeps the next index in a word - and a 4MB pool.  Only what the find
+can give back is kept: collect() matches the pattern and attributes as
+the entries arrive (find_from no longer does), so OVER\*.TXT keeps
+65,534 of a 65,536-entry directory, and one name in it keeps one.  A
+listing that grew goes back to the start sizes when it has been read
+to the end, or when the next find starts; one that did not grow stays
+as before, so a program that goes back over a small listing still can.
+
+WHAT DOES NOT FIT.  More matches than 65,535, or no memory for the
+table to grow: no listing - FINDFIRST answers 8 (not enough memory),
+which 4Eh and 714Eh pass on - rather than part of one that reads as
+the whole directory.  At the end of a listing the kernel answers "no
+more files" whatever the driver says (net_findnext_none, nln_nomore),
+so the first find is the one place an error can be seen.  CMD.EXE's
+DIR prints "No files found" for any first-find failure.  A pool that
+cannot grow leaves that entry its 8.3 name, as before.  A listing the
+server ended part-way still shows what came, as before (a server that
+ends its listings with an odd status would otherwise list nothing).
+
+THE CODE.  DRV\SMBFS\SMBFS.C: session's ent/lpool are pointers with
+entmax/poolmax, fshort (did not fit), fseen (entries the server sent:
+a failed listing with none is still "path not found"); list_alloc,
+list_free, list_reset, ent_grow, pool_grow, sess_free (every place a
+session was freed - drop_session, the mount's failures, nd_park).  A
+session is about 90K smaller: 107,680 bytes for a mapped drive and its
+connection (MEM /D).  SMBFS.SYS 96,528 -> 97,420.
+
+TESTED.  QEMU, PM-DOS from IMAGES\HD16 (RTL8139.SYS, TCPIP.SYS,
+SMBFS.SYS), the scratch SMB1 peer (now making each entry only when a
+reply takes it - building all 65,535 first took 18 s, past SMBFS's 6 s
+wait) as 10.0.2.200:139.  DIR of directories of 255, 256, 257, 1,024,
+1,025, 1,502 and 65,535 entries: each count and byte total right.
+65,536 entries: "No files found"; *.TXT in it: 65,534.  *.DAT in the
+1,502: none; *0777*: the one long name (and . and .., by the 8.3
+rule).  DIR /AD of the root: its 13 directories.  MEM /D: SMBFS
+107,680 bytes before and after every one of them, after a listing read
+to the end too.  With 8MB (largest block 2.9MB): the 65,535-entry DIR
+"No files found", the memory back, then 1,025, 1,502 and 7 entries
+right.  The entry above's steps again, replies split at 16,500 and
+3,001: right.
+NOT RUN: an SMB2 server (the same collect), NetBEUI, WfW through
+PMDOS.386 (a listing that grows allocates while the bridge has the
+kernel - not tried), real hardware.
+SEEN, NOT CHANGED: CMD.EXE's DIR takes no quoted path - DIR
+"C:\CONFIG.SYS" lists C:\ and says "No files found", on a local drive
+too.  ATTRIB /S on a share asks the server about every file in turn:
+about 0.35 s each under QEMU.
+
+DELIVERED: BIN\SMBFS.SYS; IMAGES\HD16 and HD32 by MKHD (MULTI the same
+bytes; HD16's root: SMBFS.SYS only), the Setup set by BUILD.CMD's step
+(STAGE: SMBFS.SY_ and SETUP.INF); the VM's HD16 DOS\SMBFS.SYS by
+FATREPL, read back identical, and HD32 copied.  Backups
+.bak-20261124-2122, and what was replaced in scratch bak2\.  Not
+committed.
+
+
+DIR SAYS WHY A LISTING FAILED - "INSUFFICIENT MEMORY", NOT "NO FILES
+FOUND" (2026-11-24)
+---------------------------------------------------------------------
+
+Charlie: "Yes, make those changes" - DIR's message when the network
+drive cannot hold a listing (the entry above), and DIR with a quoted
+path.
+
+THE QUOTED PATH NEEDED NOTHING.  DIR already takes one (unquote_arg)
+where quotes group arguments: at the prompt and in a .CMD file.  In a
+.BAT file a quote is an ordinary character, as in MS-DOS (adv_parse),
+and the test that looked like a failure ran from AUTOEXEC.BAT.  From a
+.CMD file, DIR "O:\HUGE\Huge folder entry 0777.txt" and DIR
+"C:\CONFIG.SYS" each list their one file.
+
+THE MESSAGE.  dir_list threw the find's error away: whatever 714Eh
+answered, a listing that found nothing printed "No files found", and
+under /S a directory that could not be listed was stepped over as if
+it had nothing to match.  Now dir_list keeps it in dir_ferr (0 when
+the find answered and /A turned every entry away), dir_ferrmsg turns
+ERR_NOMEM, ERR_ACCESS, ERR_NOHANDLES and ERR_GENERAL into "Insufficient
+memory", "Access denied", "Too many open files" and "General failure"
+- "No files found" for anything else, as before - and dir_one says it
+under that directory's heading, /S or not (dir_heading, so /B prints
+the message alone).  dir_errs counts what was said, so the closing "No
+files found" is not printed after it.  The sorted listing's two finds
+(/O) keep the error the same way (ds_freeerr).  CMD.EXE 63,188 ->
+63,370.
+
+TESTED.  QEMU, PM-DOS from IMAGES\HD16, SMBFS.SYS as delivered, the
+scratch SMB1 peer: the same twelve commands with BIN's CMD.EXE and the
+new one.  O:\OVER (65,536 entries) - DIR, /B, /O:N, /S - "No files
+found" four times before, "Insufficient memory" four times now (the
+first three under "Directory of O:\OVER", /B alone).  DIR O:\ /S /W:
+OVER was missing before; now it has its heading and the message, and
+every other directory and the totals are as they were.  Unchanged: *.DAT
+in a directory with none, C:\NOSUCH.XYZ, C:\NODIR\*.*, C:\*.XYZ /S,
+/A:H on a directory with nothing hidden - all "No files found".
+RUNTESTS -All with the new CMD.EXE: 129 of 130 on every row, RMTEST's
+free count 6723h -> 671Eh.  That move is SETUP.EXE's (171,504 ->
+176,172, five more 1K clusters on the test disk, delivered 11-21 19:40
+after the 15:14 baseline): CMD.EXE is 62 clusters either way, and
+SMBFS.SYS and LRGDISK.386 are not on that disk.  Re-recorded with -All
+-Update, then a plain -All: 130 matched, every row.  NLSTESTS: every
+row ok.  CMD.ASM assembles with wasm; the source before the change made
+BIN's CMD.EXE byte for byte.
+SEEN, NOT CHANGED: DIR /S that finds nothing anywhere prints the
+volume line with no line end - " Volume in drive C is PM-DOSNo files
+found" - before this change and after it.
+
+DELIVERED: BIN\CMD.EXE; IMAGES\PMDOS.IMG by BUILD.CMD's own MKDISK line
+(only CMD.EXE differs), HD16 and HD32 by MKHD (MULTI the same bytes),
+the Setup set by BUILD.CMD's step (STAGE: CMD.EXE and SETUP.INF).  The
+VM: HD16's CMD.EXE in the root and in DOS by FATREPL, read back
+identical; PMDOS.IMG and HD32 copied.  Backups .bak-20261124-2217, and
+what was replaced (BASELINE RMTEST.OUT x7 too) in scratch bak3\.  Not
+committed.
+
+
+DIR /S THAT FINDS NOTHING SAYS WHERE IT LOOKED (2026-11-24)
+---------------------------------------------------------------------
+
+Charlie: "Yes" - the volume line with no line end, from the entry
+above.  " Volume in drive C is PM-DOSNo files found": vol_line ends
+without a line end because the heading after it starts with one
+(msg_dirof), and under /S each heading waits for its directory's first
+match - so a walk that matched nothing printed none, and the message
+ran on.  DOS 6's DIR.ASM (catNoFiles) prints the header of the
+directory it was asked about and then "File not found", /S or not.
+Now dir_none does the same when no heading came out: dir_showpath
+(dir_dirpath is the start directory again once the walk is done) and
+dir_heading, then the message - what a DIR without /S already printed.
+dir_hdrdone is set to 0 when DIR starts too, so a heading said by one
+DIR cannot stand for the next.  CMD.EXE 63,370 -> 63,399.
+
+TESTED.  QEMU, BIN's CMD.EXE then the new one, eleven commands: C:\*.XYZ
+/S, the same without /S, with /B, with /O:N, in C:\TESTS, relative
+(DIR /S *.XYZ), on the network drive (O:\SMALL\*.XYZ /S, O:\*.ZZZ /S
+/W).  Each /S one: " Volume in drive C is PM-DOS", " Directory of
+C:\" (or C:\TESTS, O:\SMALL, O:\), a blank line, "No files found" -
+the lines the form without /S gives, which is unchanged; /B still
+prints the message alone; C:\TESTS\*.BAT /S, which finds files, is the
+same byte for byte.  RUNTESTS -All 130 matched on every row (no
+baseline moved: CMD.EXE is 62 clusters still), NLSTESTS every row ok.
+SEEN, NOT CHANGED: DIR C:\NOSUCHDIR\*.* /S heads "Directory of C:\",
+before and after.
+
+DELIVERED as the entry above: BIN\CMD.EXE; IMAGES\PMDOS.IMG, HD16 and
+HD32 (MKHD; MULTI the same bytes), the Setup set; the VM's HD16 CMD.EXE
+in the root and in DOS by FATREPL, PMDOS.IMG and HD32 copied.  Only
+CMD.EXE differs in each.  Backups .bak-20261124-2232, scratch bak4\.
+Not committed.
+
+
+SETUP: A FILE IT COULD NOT READ OR WRITE CAN BE TRIED AGAIN - ENTER
+RETRIES, ESC SKIPS (2026-11-25)
+---------------------------------------------------------------------
+
+Charlie: "For PM-DOS's SETUP.EXE, right now if there's an error reading
+a file off the disk, it presents a single option to press ENTER to
+skip.  Let's change that to using ENTER to retry and ESC to skip."
+
+THE BOX.  "SETUP ERROR DETECTED" keeps its message ("Setup could not
+read the file X." or "... write ...") and now ends with "To try again,
+press ENTER." and "To go on without this file, press ESC."  The status
+line is "ENTER=Retry  ESC=Skip  F3=Exit"; F3 and then ESC in the
+Exiting Setup box comes back to the error box, as before.  ESC does
+what ENTER used to do at every place the box comes up.  copy_error_box
+is copy_retry_box now (1 = ENTER, 0 = ESC): renamed, so that no caller
+could keep the old meaning by mistake.
+
+WHERE IT COMES UP - all seven places, both halves:
+  COPY.C    copy_one, a file to drive C:, read or write.  One try is
+            copy_try now; copy_one asks and goes round again.
+            copy_all, a disk's tag file missing from a source that is
+            not a diskette (a CD, a directory).
+  FLOPPY.C  floppy_install (F7): the tag file, held_copy (reading in),
+            held_write (writing the startup disk - what is held is
+            kept for the retry and freed after).
+  UNDO.C    undo_disk: reading SETUP.EXE in for the Uninstall disk,
+            and OLD_DOS.n\BOOTSECT.DOS.
+
+AFTER A READ ERROR the source diskette is remounted (source_again:
+plat_vol_remount of src_drive when it is a diskette), for ESC as well
+as ENTER.  PM-DOS keeps the old disk's view until then, so a disk taken
+out and put back before ESC would fail the next file too.
+
+THE GAUGE.  A failed try kept what it had counted, so a retry would
+count those bytes twice.  copy_try, held_copy and held_write put
+gauge_done back where it was when they fail; the whole size copy_all
+adds for a skipped file is now exact.
+
+FIXED ON THE WAY, in lines the change went through: undo_disk left
+BOOTSECT.DOS open when the read after the open failed, and returned
+without freeing boot, disk_boot and the SETUP.EXE it held (up to 177K,
+for the rest of Setup - MAIN goes on to copy_all).  read_sector_file
+closes the handle on every path and the ESC path frees all three.
+floppy_install's give-up on a missing tag returned without freeing
+held, which and the files read so far (Setup exits after it); it frees
+them now.
+
+SETUP.EXE 176,172 -> 177,072.
+
+TESTED.  QEMU (SeaBIOS 1.17); the read error made the ordinary way, the
+Setup floppy taken out during the copy (monitor "eject -f floppy0") and
+put back ("change").  SETUP.EXE put on a copy of DISK1.IMG by COPY from
+PM-DOS.
+  32-bit half, fresh install on a blank 64MB disk: the box on
+  ATTRIB.EX_.  ENTER with the drive empty: the box again.  Disk back,
+  ENTER: copying went on, disk 1 ending at 40% as it did before.
+  Disk 2 out at TCPIP.SY_, back in, ESC: the rest of disk 2 copied (97%
+  at the disk 3 request).  From C: afterwards: ATTRIB.EXE 5,844 (= BIN),
+  NETBEUI.SYS there, TCPIP.SYS not.
+  16-bit half, MS-DOS 5 upgrade (SETUP /G on a copy of
+  C:\DOSBoxRoot\RIG\dos5.vhd): the box on DEBUG.EX_; disk back, ENTER:
+  copying went on.  Disk 2 out at HELP.HL_, ESC with the drive still
+  empty: QBASIC.EX_ failed next, as it should; disk back, ESC: the rest
+  of disk 2 copied.  PM-DOS started; DEBUG.EXE 46,536 (= BIN) and
+  QBASIC.HLP there, HELP.HLP and QBASIC.EXE not.
+  The delivered set: a plain fresh install from DISK1-3, no box;
+  UNDELETE.386 and CACERT.BND (the two files that moved, below) in
+  C:\DOS.
+Not run: F7, the Uninstall disk's two boxes, a CD or network source,
+86Box, real hardware.
+SEEN, NOT CHANGED: on an upgrade a skipped file's old DOS file has
+already gone to OLD_DOS.n (undo_save runs before the copy), so C:\DOS
+has neither - QBASIC.EXE above.  ENTER did the same before.
+
+THE SETUP DISKS MOVED.  With SETUP.EXE 900 bytes bigger, MKSETUP put
+UNDELETE.38_ on disk 2 and CACERT.BN_ on disk 3 (each was one disk
+earlier).  Every other file has the same name and size on the same
+disk (FLOPGET lists of the old and new images compared).
+
+DELIVERED: BIN\SETUP.EXE; IMAGES\SETUP by BUILD.CMD's own Setup step
+(MKSETUP, MKIMG.CMD).  The VM reads IMAGES\SETUP directly and no VM
+image carries SETUP.EXE.  Backups: scratch d8680674 bak\ (the sources,
+BIN's SETUP.EXE, the old IMAGES\SETUP set, NOTES.TXT).  Not committed.
+
+
+A DISKETTE IMAGE ON A NETWORK DRIVE, LOADED INTO MEMORY; .IMZ; MOUNT
+IN C (2026-11-25)
+---------------------------------------------------------------------
+
+Charlie: "I tried loading a .IMA file from a network drive and gave an
+error", then "Can we make it so that only disk image files (.IMG, .IMA,
+.IMZ, .DSK) are loaded into memory so they can be mounted from a
+network drive?"  His answers: changes saved at MOUNT /U; a changed
+.IMZ packed again; floppy sizes only (2.88 MB at most).
+
+WHY IT FAILED.  F1h AL=0Fh maps a file's cluster chain into a list of
+host sectors, once - a file on a share has no sectors here, and the
+mount refused anything not on a FAT volume with ERR_NOPATH, which MOUNT
+printed as "no such directory, or the file is not on a FAT volume".
+Worse, for a file in a DIRECTORY on the share: img_mount called
+resolve_parent before looking at vol_fs, and walk_to is FAT's walk -
+fat_search on FS_NET read sectors from drive 0FEh with the last
+volume's layout, a critical error before the refusal was reached.
+
+THE KERNEL (IMAGE.INC, INT21.INC, RING3.INC, PMDOS.INC; VDM.INC a
+comment):
+  - img_mount: resolve_core first and FS_NET refused before any walk;
+    every "no clusters to map" answer (network, CD, exFAT, a FAT volume
+    on an image, driver or ATAPI unit - RAMDISK.SYS's included) is now
+    ERR_NOTSUP (50), new in PMDOS.INC.  ERR_NOPATH means a path again.
+    The slot-and-letter half is img_claim, the letter half img_assign,
+    shared with the new load.
+  - F1h AL=2Bh, bits 16-23 = IMEM_*:  IMEM_LOAD (ESI/ECX the image, EDX
+    its file, BL letter or FFh, BH read-only) copies the bytes into a
+    block of the kernel's (cur_own 0, AF_LAST - the cache's idiom) and
+    mounts it through img_sniff and img_assign like a mapped one;
+    IMF_MEM in the slot.  At most IMG_MEM_MAX = 2,949,120 bytes; the
+    path must fit IM_PATH whole (MOUNT /U saves to it); the same path
+    twice is ERR_EXISTS.  IMEM_COPY (BL letter, EDI/ECX room) runs
+    dos_commit, refuses an open file (ERR_ACCESS), copies the image out
+    and returns ECX = its length and EDX = IM_GEN.
+  - img_iobody: an IMF_MEM transfer is a bounds-checked REP MOVSD to or
+    from the block - no host drive, no map, no cache - and a write
+    counts in IM_GEN (new field; IM_PATH moved to 20h).
+  - F1h AL=10h: BH = 0 refuses a memory image with IM_GEN not 0, 1
+    throws the changes away, 2 unmounts if IM_GEN still equals EDX -
+    the count IMEM_COPY handed MOUNT, so a write after the copy is
+    refused, not lost.  AL=11h reports IMF_CHANGED (10h, worked out,
+    not kept) and the path's letter as the host (FFh if none).
+  - img_locked skips IMF_MEM slots: the file is free to change, and
+    IM_CLUS 0 matched every empty file on the volume.
+  - r3_pflags: F1h/2Bh's pointers by hand (LOAD: ESI and EDX, COPY:
+    EDI).  It had no row, so the first load was refused by cbuf_ok as
+    a pointer outside the slot.  F1h/10h stays row-less: EDX is a count.
+PMDOS.SYS 192,853 -> 193,906.
+
+MOUNT.EXE IS C NOW (CMD\MOUNT: dosint.asm, main.c, imz.c, rt.c,
+sys_d32.c), DELTREE's kind, with PMWRITE's FLATE.C and CRC.C compiled
+from PMWRITE's folder (BUILD.CMD); MOUNT.ASM is gone.  Same commands,
+switches and messages, plus:
+  - F1h AL=0Fh first; on error 50 a .IMG/.IMA/.DSK is read here and
+    handed over with IMEM_LOAD.  Anything else there: "only a diskette
+    image (.IMG, .IMA, .IMZ or .DSK) can be mounted from a network
+    drive, CD or exFAT drive - copy the file to a local FAT drive
+    first"; over 2.88 MB: "the file is larger than a 2.88 MB diskette".
+  - .IMZ (a ZIP holding one image, as WinImage keeps one) is always
+    loaded: IMZ.C reads the first file in the central directory, stored
+    or deflated, CRC checked; every offset checked against the length.
+    More than one file: read-only.
+  - The path kept is TRUENAME's 8.3 form, at most 79 characters.  A
+    file read-only on the host, or that will not open for writing (a
+    CD, a read-only share), is mounted read-only and says why.
+  - MOUNT /U of a changed memory image: "Saving E: to ...", IMEM_COPY,
+    the file rewritten in place (a .IMZ packed again - deflated, or
+    stored if no smaller - keeping its member's name, read from the
+    end of the old file), then AL=10h BH=2.  If the write fails: the
+    reason, "Unmount E: anyway and lose the changes (Y/N)?", and on N
+    the drive stays.  An unchanged one just unmounts.
+  - The listing: "memory" in the Extents column, sizes with the
+    country's separator (38h), a Type column wide enough for exFAT.
+  - "/U" or "-U"; a quoted path for a name with a space.
+MOUNT.EXE 2,513 -> 21,660 (bound).
+
+HELP: 21EXTERN.TXT's MOUNT topic (.IMZ, a "Network drives, CD-ROMs and
+exFAT drives" section, an example); HELP.HLP regenerated (it matched
+its parts byte for byte first).
+
+TESTED.  DOSBox-X, a scratch copy of HD16 with RAMDISK.SYS 8192 /L:R:
+the mapped mount unchanged; a .IMZ loaded, written, saved (2,476 ->
+2,756), reloaded with the new file and directory; unchanged: no save;
+the same file twice refused; a .IMA on the RAM disk loaded, saved,
+reloaded; the save made to fail (ATTRIB +R): N keeps the drive, Y
+throws the changes away and they are gone on the next mount; .ISO and
+4.4 MB refused; read-only file, /R; error messages.  The limit:
+2,949,120 bytes on the RAM disk and inside a .IMZ loaded, written,
+saved, reloaded; one byte more refused both ways; a stored .IMZ saved
+back deflated; two files in a .IMZ read-only.  No leak: MEM the same
+to the KB before and after five load-write-save rounds and a thrown-
+away one (the cache size unchanged).  .NET's ZipFile opens every .IMZ
+MOUNT wrote, member name kept, and the image inside has the files.
+QEMU with RTL8139 + TCPIP.SYS + SMBFS.SYS against session 42cdf956's
+SMB1 peer (copied, port 8449): O:\TESTIMG.IMA loaded, written, saved
+to the share and there on the host (FLOPGET); O:\SUB\DEEP.IMA (the
+walk that went wrong); a .IMZ on the share round trip; the share
+dropped (NET USE O: /DELETE) before MOUNT /U: "access denied", N, NET
+USE again, MOUNT /U saved; .ISO and BIG.IMG refused; the next free
+letter.
+RUNTESTS -All -Update moved RMTEST alone, on all seven rows: free
+clusters 671Eh -> 670Ah, the 20 that MOUNT.EXE (3 -> 22) and HELP.HLP
+(317 -> 318) took on its disk; a plain -All then 130 matched x 7, and
+NLSTESTS every row ok.  A copy of the VM's HD16 booted (DOSBox-X):
+VER, the mapped mount and MOUNT /? from C:\DOS.
+Not run: a CD or exFAT host, SMB2, 86Box, real hardware.
+SEEN, NOT CHANGED: a letter once used keeps drv_count up, so after
+MOUNT Z: ... MOUNT /U Z: the next free letter is none (img_claim's
+rule since the start).
+
+DELIVERED (Charlie: "Deliver now"): BIN\PMDOS.SYS (scratch build k\,
+the BUILD.CMD lines with the objects moved out) and BIN\MOUNT.EXE
+(BUILD.CMD's MOUNT block run verbatim in a scratch tree gave the same
+bytes, then D32BIND); IMAGES\PMDOS.IMG and PMDOS2.IMG by BUILD.CMD's
+MKDISK lines (only PMDOS.SYS, MOUNT.EXE and HELP.HLP changed size);
+HD16 and HD32 by MKHD (MULTI the same bytes); the Setup set by
+BUILD.CMD's step - THE SETUP DISKS MOVED: LRGSTAT.EX_ and PMDOS.38_
+from disk 1 to disk 2, UNDELETE.38_ from disk 2 to disk 1, DISK3 the
+same.  The VM: HD16 by FATREPL (root PMDOS.SYS, DOS\MOUNT.EXE,
+DOS\HELP.HLP; his CONFIG.SYS and AUTOEXEC.BAT untouched), HD32,
+PMDOS.IMG and PMDOS2.IMG copied; backups .bak-20261125-2105.  BASELINE
+RMTEST.OUT x7 re-recorded.  Backups of everything replaced (BIN's two,
+the five images, the Setup set, BASELINE) in scratch d7f42e01
+bak\deliver\, and MOUNT.ASM, 21EXTERN.TXT, HELP.HLP, BUILD.CMD and
+NOTES.TXT in its bak\.  Not committed.
+
+
+ANY IMAGE ON A NETWORK DRIVE, READ AND WRITTEN WHERE IT IS (2026-11-25)
+---------------------------------------------------------------------
+
+Charlie, after the entry above: "How can we make it so that .ISOs and
+hard drive images can be mounted from a network share?  Surely a
+network share with more storage is the most likely scenario ... rather
+than telling them to copy it local first, which the hard drive may not
+even have enough space for."  And: diskette images on a share are
+streamed too, not loaded (his answer to the one question).
+
+WHY IT CAN BE DONE NOW AND COULD NOT FOR A LOCAL FILE.  IMAGE.INC's
+header gives three reasons not to serve an image through a file
+handle: re-entrancy (reading the file selects the host volume in the
+middle of the image volume's operation), a DOS call inside a DOS call
+on the critical-error path, and two views of one set of blocks in the
+cache.  None of them holds for a file on a share.  net_read and
+net_write select no volume and touch nothing of the FAT layer's: they
+fill a request block with the driver's handle and a 64-bit position
+and call the redirector (nd_call_row), which is not INT 21h.  And a
+share's bytes are in the disk cache under no number at all.
+
+THE KERNEL (IMAGE.INC; NETFS.INC; PMDOS.INC; INT21.INC a comment):
+  - F1h AL=0Fh on FS_NET no longer refuses: img_netopen asks the
+    driver for the canonical name (REDIR_CANON, the 8.3 form) for
+    IM_PATH and the one-file-one-letter test, then REDIR_OPEN for
+    reading and writing - again for reading only if the server refuses
+    (the driver says "no such file" for any refusal), so a read-only
+    file or share mounts read-only.  A directory, or under 512 bytes,
+    is ERR_ACCESS.  The size is 64 bits: IM_SECS from both halves (2TB
+    of sectors at most), IM_SIZE saturates at 4GB.  New slot field
+    IM_FILE = the driver's handle (IM_PATH moved to 24h), new flag
+    IMF_NET (20h, reported).  The sniff and the letter are a mapped
+    file's; a sniff that finds nothing closes the file.
+  - img_iobody: an IMF_NET transfer is one REDIR_READ or REDIR_WRITE
+    at LBA * 512 (NR_POSHI = LBA >> 23), bounds checked against
+    IM_SECS first; a short answer is a failure (AH 0Ch).  Through
+    img_nreq, IMAGE.INC's own request block, never net_req, and
+    img_nfire holds cache_busy for the call: the transfer is inside
+    dio_try, and a driver allocation that made cache_reclaim flush
+    through disk_write would overwrite dio_try's statics.
+  - img_umount closes the file (REDIR_CLOSE) after the volume is gone.
+    img_locked skips IMF_NET slots; imld_dup compares IMF_NET and
+    IMF_MEM names.
+  - NET USE /DELETE (fnu_unmap) refuses with ERR_ACCESS while an image
+    is mounted from the drive (img_netbusy): the image reads through a
+    handle on the session that goes with the letter.  NET.EXE says "An
+    image file on O: is mounted.  Unmount the image with MOUNT /U
+    first."; NET LOGOFF says the drive stays connected.
+  - ERR_NOTSUP (50) now means a CD, exFAT, an image or a driver's unit:
+    only those load into memory, and only diskettes (and .IMZ).
+PMDOS.SYS 193,906 -> 195,581.
+
+MOUNT: "network" in the listing's Extents column; the refusals now say
+"copy the file to a hard disk or a network drive first"; usage text.
+
+A BUG IN THE ENTRY ABOVE, FIXED: SMBFS does not truncate ("truncate:
+not yet" in do_write - a 40h of no bytes does nothing on a share), so
+MOUNT /U rewriting a .IMZ in place left a smaller archive followed by
+the old one's tail and its old end record, which a ZIP reader finds
+first.  The .IMZ tests above all grew.  A .IMZ is now CREATED over
+(3Ch: OVERWRITE_IF on a share, emptied on a disk); a raw image is the
+same size and is still written in place.  MOUNT.EXE 21,660 -> 21,768,
+NET.EXE 39,564 -> 39,764 (bound).
+
+HELP: 21EXTERN.TXT's MOUNT notes - "Network drives" (where it is, any
+size, NET USE /DELETE) and "CD-ROMs, exFAT drives and .IMZ files"; the
+example is a hard disk image on a share.  HELP.HLP regenerated (it was
+this session's own 20:58 generation).
+
+SMB1 SIZES PAST 4GB (Charlie: "Fix it next").  SMB1.C's open is
+OPEN_ANDX, whose DataSize is 32 bits, so size_hi was 0 and a file of
+4GB and more looked 4GB smaller over SMB1 - his Windows Server 2003
+share among them.  file_size_trans2 asks TRANS2 QUERY_FILE_INFORMATION
+at level 102h (SMB_QUERY_FILE_STANDARD_INFO: EndOfFile, 64 bits) after
+every successful open of a file in the NT dialect (not LANMAN's, not a
+directory); a server that refuses keeps the 32-bit size and the open
+stands (stage and last_status put back).  One more round trip per open
+on SMB1; SMB2 opens already had the size.  READ_ANDX and WRITE_ANDX
+already sent OffsetHigh.  SMBFS.SYS built as session 42cdf956 built
+the delivered 97,420 - smb1.c and smbfs.c compiled fresh, the rest the
+tree's objects (the tree's smbfs.obj is older than the source and
+links 95,736) - 97,420 -> 97,884.  The rig's peer (this session's copy)
+answers QUERY_FILE_INFORMATION 102h, or refuses it with PEER_NOQFI=1.
+
+TESTED.  QEMU, RTL8139 + TCPIP.SYS + SMBFS.SYS.  Against the SMB1 peer
+(a copy of 42cdf956's, port 8449): IMAGES\SETUP\PMDOSCD.ISO on the
+share mounted (ISO, ro, "network"), HELP.HLP and QBASIC.EXE copied off
+it byte for byte the CD folder's; HD16.IMG on the share: written (a
+file, a directory, a 324K copy inside it), remounted, FC no
+differences, CHKDSK clean, and the host's copy has them (fatls.pl); a
+diskette image written with no save step (FLOPPY.IMA has STREAM.TXT
+on the host); NET USE /DELETE refused while mounted; a stored .IMZ
+(1,474,678) saved as 2,553 and remounted with its new file; /R; the
+same file twice refused; no such file; a directory.  Against
+S:\CPP\SMBAUTH\RIG\SMB2PEER.PL run in place (port 8451, SMB 2.1): a
+4,334,313,984-byte sparse file whose one FAT16 partition starts at
+sector 8,400,000 (byte 4,300,800,000) - mounted, written, remounted,
+CHKDSK clean, and FAR.TXT is in the volume on the host; the CD image
+again.  DOSBox-X: the local batch of the entry above, the same apart
+from the reworded refusals.  Times in QEMU: 467K off the CD image in
+about 2 s; the 324K copy inside the HD image in about 2 s.
+With the SMB1 fix, the same batch against the SMB1 peer: the 4.3GB
+image mounts over SMB1 too - written, remounted, CHKDSK clean, FAR.TXT
+on the host - and the peer saw the query after all 14 opens; with
+PEER_NOQFI=1 all 14 were refused, every other case still passed and
+the 4.3GB image was refused as before the fix.
+Not run: a real Windows or Samba server, NetBEUI, 86Box, real hardware.
+
+DELIVERED (Charlie: "Deliver now", the SMB1 fix in the same delivery):
+BIN\PMDOS.SYS 195,581, MOUNT.EXE 21,768 (BUILD.CMD's MOUNT block run
+verbatim in a scratch tree gave the tested bytes), NET.EXE 39,764,
+SMBFS.SYS 97,884 - MOUNT and NET bound, both the bytes the rig ran;
+IMAGES\PMDOS.IMG and PMDOS2.IMG by BUILD.CMD's MKDISK lines, HD16 and
+HD32 by MKHD (MULTI the same bytes), the Setup set by BUILD.CMD's step
+- in each only these files and HELP.HLP changed size, and no file
+moved between Setup disks.  The VM: HD16 by FATREPL (root PMDOS.SYS;
+DOS\MOUNT.EXE, HELP.HLP, NET.EXE, SMBFS.SYS; his CONFIG.SYS and
+AUTOEXEC.BAT untouched), HD32, PMDOS.IMG and PMDOS2.IMG copied;
+backups .bak-20261125-2203.  RUNTESTS -All -Update moved RMTEST x7
+(670Ah -> 6709h: PMDOS.SYS is a cluster longer) and CACHETST on the six
+rows with lazy writes ("a write is owed" 4 -> 5, the layout's effect);
+a plain -All then 130 matched x 7, NLSTESTS every row ok.  Backups of
+everything replaced in scratch d7f42e01 bak\deliver2\.  Not committed.
+
+NET USE LETTERS COME BACK FROM WINDOWS, AND WORK UNDER WINDOWS IN
+STANDARD MODE (2026-11-26)
+
+Charlie's real-hardware report.  Installing Windows for Workgroups 3.11
+from O: (NET USE O: \\trolla-storage\os, I: \\trolla-storage\images)
+did not finish, and when Windows exited DIR on both letters said no
+files were found.  Installing Windows 3.1 from O: then stopped as the
+DOS part handed over to Windows: "Standard Mode: Invalid DPMI return
+from 06E7:01B2".
+
+THE LETTERS.  SMBFS.SYS's nd_park freed every session and connection
+on the way back from a park ("so the next use re-mounts" - nothing
+re-mounted), so every NET USE letter came back from Windows with no
+session behind it: the kernel still called it a network drive, and
+every request on it failed ("Invalid drive specification" in QEMU).
+TCPIP.SYS keeps its sockets across a park, and the bridge uses the
+sessions while Windows runs, so they are kept now.  What a park can
+leave behind is put right on the way back: an op the bridge started
+and Windows did not let finish (its fibre dropped, every connection
+made again at its next use - the op may have left half a message in
+the stream), and a file opened through the bridge and never closed
+(its slot freed, its connection made again, which closes it at the
+server).  A file the kernel itself had open is left alone - a slot
+opened on the worker fibre is marked "bridged" - and the fibre flag
+is cleared, so a native call after the un-park cannot yield.  A
+connection the server ended meanwhile is found and made again by the
+first request, as after an idle disconnect.
+
+STANDARD MODE.  Both Setups run their Windows half in standard mode -
+DOSX, KRNL386, and SETUP.EXE's own NE half as the shell - and read the
+rest of the disks from where SETUP was started.  The kernel's NET USE
+letters reached the parked kernel only through PMDOS.386 (RMNET2.INC's
+n2_pdapi, INT 2Fh AX=1684h), and standard mode has no VxDs, so every
+request failed.  In QEMU, Windows 3.1's Setup copied its first files
+in the DOS part (the kernel, not yet parked) and then, in Windows,
+asked for "the disk labeled Microsoft Windows 3.1 Disk #3 into Drive
+O:".
+
+DOS\RMBRG.INC is PMDOS.386's trampoline done from real mode.  DOSX
+drops to real mode for every DOS call, and real mode is RMDOS's to
+leave, as the block move already leaves it (rx_moveflat).  rb_call:
+a free stack slot (stk_take) as a flat stack; rx_gdt with three more
+descriptors (flat 32-bit code, 16-bit code at RMDOS's segment, 16-bit
+data with a 64K limit); protected mode; the kernel's CR3 out of
+GV_PGDIR; paging on with WP clear; brg_entry out of GV_BRGENTRY; and
+back through 16-bit protected mode to real mode, with A20 and the
+caller's interrupt flag as they were.  The 32-bit part is spelled in
+bytes, because the segment is USE16.  rb_up checks the bridge
+signature and wakes the card polled once (NIC_WAKE; the un-park puts
+it back); rb_redir runs an op as the VxD's caller does - SOCK_PUMP,
+then a REDIR_RESUME slice, until the slice is not REDIR_PENDING, the
+caller's interrupts let in between, two minutes at most.  n2_pdapi
+takes that way when SMSW says real mode; PE set is V86 mode, and the
+VxD's way as before.  RMDOS.SYS 44,744 -> 45,265: the room after the
+image for FILES= and a 4M cache has 9 bytes left.  MASM 6.13 gives
+the three layout errors it gave before and no other.
+
+NOT COVERED: a NET USE letter connected over NetBEUI, under standard
+mode (rb_redir pumps the TCP/IP stack only); USB disks under standard
+mode (RMUSB.INC still reaches them only through PMDOS.386).
+
+WHAT THE CRASH WAS is not proved.  It did not happen in QEMU, where
+the same Setup asked for Disk #3 instead.  DOSX prints that message
+from its protected-mode side (DOSX.EXE is EXEPACKed; unpacked, the
+code is at 150Ch:499Bh) with two words it pops off its stack; 06E7h
+is about where DOSX's own image sits on a machine like his (06DAh in
+QEMU, PSP 06CAh, Setup's resident stub below it at 0669h).  With this
+change a request in real mode no longer goes near INT 2Fh 1684h and
+1680h, where whatever answers them on his machine is not known.  His
+retest is what settles it.
+
+TESTED.  QEMU, RTL8139 + TCPIP.SYS + SMBFS.SYS, the SMB1 peer (a copy
+of 42cdf956's, port 8461); scratch rig nw.ps1 (Windows 3.1 from
+S:\WIN31HD on a disk MKDISK makes from BIN, WNT.EXE as the shell: a
+list of reads, finds and writes from Windows into C:\WNT.LOG).
+  - The report's first half, old SMBFS: DIR O: after WIN /S said
+    "Invalid drive specification".  New: the same listing before and
+    after, TYPE O:\TEST1.TXT after.
+  - WIN /S, both changes: from Windows, read O:\TEST1.TXT 22 bytes,
+    find O:\*.* 5 and O:\SUB\*.* 3, write O:\WFROMW.TXT and read it
+    back, a missing file -1; after Windows, DIR O: has WFROMW.TXT and
+    TYPE prints it.  Old RMDOS: read -1, find -2.
+  - Windows 3.1 Setup from O: (S:\WIN31 copied to the peer's share),
+    Express: the DOS part, the name, every file of the Windows part
+    off O:, the printer, the groups, Skip Tutorial, "Windows 3.1 is
+    now set up", Return to MS-DOS; DIR O: afterwards.  PROGMAN,
+    WINFILE, WINHELP and WRITE byte for byte S:\WIN31HD's; the volume
+    checks clean (fatchk.pl).
+  - WIN /3 (386 enhanced, no PMDOS.386): O: from Windows -1/-2 as
+    before - the V86 way - and DIR O: after it.
+  - The nine-row Windows matrix of the UNDELETE.386 work (session
+    18175080's matrix11.ps1: WfW 3.11 with and without VFAT, Windows
+    3.1, DOS boxes, FCB deletes, CHKDSK, UNDELETE) with that run's
+    11-21 kernel and only RMDOS.SYS changed: every line as on 11-21
+    but each disk's free allocation units, one fewer (RMDOS.SYS is a
+    cluster longer).
+Not run: WfW 3.11's Setup (no media here), PMDOS.386's way (no NDIS
+rig), a real server, 86Box, real hardware.
+Delivered with the <stdint.h> work below (its RUNTESTS -All -Update
+and -All cover it).  BIN's RMDOS.SYS and SMBFS.SYS are byte for byte
+this work's builds; on a disk made from BIN after the delivery, the
+WIN /S run and Windows 3.1's Setup from O: gave the same results as
+above.  Not committed.
+
+INTEGER TYPES FROM <STDINT.H> IN ALL THE C CODE (2026-11-26)
+
+Charlie: where an integer's width is part of a function's contract, use
+the C99 names (int8_t to uint64_t); where it is not, the plain types
+(short, int, long and the unsigned forms); no private names like u8.
+
+WHAT CHANGED.  u8, u16, u32, u64, s8, s16 and s32, the XArchive
+backend's Byte, UInt16, UInt32 and Int32, and the TLS runtime's u_size
+are gone from every C file.  A script did the renaming in about 540
+files, kept the hand-aligned columns, and checked that each file's
+tokens changed by those names and nothing else; each private typedef
+became #include <stdint.h>.  On wcc386 uint32_t is "unsigned int", so
+the "unsigned long" u32 of most programs is now the type the TLS and
+XArchive code always had, and NST_U32_DEFINED is gone.  Then by hand,
+one review per group of programs:
+  - raw types with a format contract became fixed width: SMBSRV's
+    FILETIME and size fields, the TLS byte data, the zip headers, DOS
+    date and time words, the host tools' on-disk fields;
+  - fixed-width counts, lengths and indices became unsigned int or int.
+No struct field changed width.  SHA512.C's {hi,lo} struct, which was
+called u64, is pair64.
+
+DEFECTS FOUND AND FIXED ON THE WAY.
+  - HELP: a help line of 64K or more had its length wrapped into a
+    uint16_t before the 1000-byte clamp, so the clamp did not apply
+    and the wrong text was shown.  The length is clamped first now.
+  - XARC backend, DISKARC.C: (long)sector * bytesPerSector wrapped
+    past 2 GB, so on a FAT16 image with 64K clusters a read past 4 GB
+    returned the wrong data and a delete wrote E5h into the wrong
+    slot.  Such an offset is refused now.
+  - XARC backend, RARARC.C and RAR5ARC.C: the open walk added a packed
+    size of 2 GB or more to the position with no range check, so a bad
+    archive could make the walk go back and loop forever.
+Left for Charlie: a /P: port above FFFFh is cut to 16 bits by the
+NETCORE cards, NE2000 and SBLASTER (/P:10000 writes port 0); PDF
+text.c turns a negative glyph advance into a large positive width.
+
+PROOF.  Two scratch mirrors at the same path length, before and after:
+of 601 objects, 514 disassemble the same, 69 differ only in the order
+their data is laid out (a new typedef does that), and 18 differ in
+code, each one explained (the fixes above, the counters SETUP, QBASIC
+and HELP widened, DOS words and port_out in XARC and TREEVIEW, two
+declarations split in EDIT and PMD, and the host tools).  Old and new
+MKDISK made the same four floppies byte for byte, old and new MKSETUP
+the same 295 staged Setup files, and 36 programs came out byte for byte
+the same from old and new D32BIND.  RUNTESTS -All -Update moved RMTEST
+x7, SFTSCAN x7 and CACHETST x6 (RMDOS.SYS is a cluster longer), then
+-All matched 130 on all seven rows; NLSTESTS nine rows ok.
+
+ALSO IN THIS DELIVERY, at Charlie's word: the NET USE fix above (BIN
+RMDOS.SYS 45,265, SMBFS.SYS 97,968), and PMWRITE's shorter usage line.
+
+OTHER TREES.  The backend is copied byte for byte into
+S:\CPP\DU32\XARCHIVE and S:\CPP\DU-OS2\XARCHIVE again, and their front
+ends follow it; DU32\NSTLS has the rename only.  MSVC 2.2 has no
+stdint.h, so DU32\MSVC22\STDINT.H is on the /I of XARCHIVE.mak and
+NSTLS.mak.  Not built with MSVC 2.2 (not on this machine); the Watcom
+builds of both trees (-bt=nt, os2, dos) compile as they did.
+
+Delivered to BIN, IMAGES and the VM (backups .bak-20261126-1325).  Not
+committed.
+
+A CARD'S PORT MUST BE ONE A CARD CAN HAVE, AND MIRRORED PDF TEXT
+(2026-11-26)
+
+The two defects the <stdint.h> review left for Charlie; his word: fix
+both.
+
+/P: AND THE SOUND BLASTER'S PORTS.  Each card driver cut its /P: to 16
+bits, so /P:10000 probed port 0 (the DMA controller), and NE2000's and
+AUDCORE's number readers wrapped a nine-digit number: /P:100000300 was
+300h, /A:10220 was 220h.  Now a port below 100h (the motherboard's) or
+above FFFFh refuses the load before any port is touched: NETCORE.C's
+nd_init for the fifteen NETCORE cards ("the /P: port must be from 100
+to FFFF"), NE2000.C, and SBLASTER.C for A, P and F ("A must be a port
+from 100 to FFFF").  NE2000's and AUDCORE's num_after keep a number too
+long to read at FFFFFFFFh, as NETCORE's always did.  /P:0 is still no
+/P: at all.
+
+PDF TEXT.  note() in PDF\text.c turned a negative size into a 16-bit
+mess: a negative font size (Tf -12, legal, drawn mirrored) made a line
+look about 244 points tall and ran the lines round it together.  Widths
+and heights are kept without their sign now (in_256ths); past 250
+points either way is still "not known", 64000.
+
+TESTED.  DOSBox-X with an SB16 at 220h: every bad value refused with
+its message, SBLASTER /A:220 loaded; the old drivers loaded SBLASTER
+from /A:10220 and from P30.  QEMU with an ISA NE2000 at 300h and a PCI
+RTL8139: /P:300 and RTL8139 found both cards; the bad values loaded
+nothing; the old NE2000 loaded from /P:100000300.  PDF: four real
+documents (35,000 lines) extract the same as before; a hand-made page
+with a Tf -12 line now comes out line by line.  RUNTESTS -All 130 on
+all seven rows with no re-recording, NLSTESTS nine rows.
+
+Delivered to BIN, IMAGES and the VM (HD16 by FATREPL, HD32 and
+PMDOS3 copied; backups .bak-20261126-1456).  Not committed.
+
+v0.71 AS PUBLISHED (2026-11-26)
+
+The 0.71 of 11-15 ("Release 0.71") was never pushed.  At Charlie's word
+the work delivered since then - every entry from "NETWORK CARDS
+(2026-11-15)" down to here - goes out as 0.71 as well: one commit on
+top of "Release 0.71", the v0.71 tag moved to it, and main and v0.71
+pushed to GitHub.  The kernel already said 0.71, so nothing was rebuilt
+for the tag; BIN, IMAGES and the VM are this commit's build.  Left out
+as before: NICTEST.TXT, and MPLAY's WMA files (.gitignore).

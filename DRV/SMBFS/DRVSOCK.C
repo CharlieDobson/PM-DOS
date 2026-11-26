@@ -21,40 +21,40 @@
 
 /* ---- the clock: the 18.2 Hz tick, and milliseconds turned into ticks -- */
 
-static u32 ms_ticks( u32 ms )
+static uint32_t ms_ticks( uint32_t ms )
 {
     /* 18.2065 Hz: ticks ~= ms * 0.0182.  Round up, and never zero, so a
        short timeout still waits at least one tick. */
-    u32 ticks = ( ms * 182UL + 9999UL ) / 10000UL;
+    uint32_t ticks = ( ms * 182UL + 9999UL ) / 10000UL;
     return ticks ? ticks : 1;
 }
 
-static u32 since( u32 start )
+static uint32_t since( uint32_t start )
 {
     return nds_ticks() - start;             /* unsigned: wraps cleanly */
 }
 
 /* ---- the socket call (NDS_SOCKCALL) ---- */
 
-static u32 sk( u32 fn, void *buf, u32 len, int *err )
+static uint32_t sk( uint32_t fn, void *buf, uint32_t len, int *err )
 {
-    u32 answer = 0;
+    uint32_t answer = 0;
     int rc = nds_sockcall( fn, buf, len, &answer );
     if ( rc != 0 ) { if ( err ) *err = rc; return 0; }
     if ( err ) *err = 0;
     return answer;
 }
 
-static void zero( void *to, u32 len )
+static void zero( void *to, unsigned int len )
 {
-    u8 *dst = (u8 *)to;
+    uint8_t *dst = (uint8_t *)to;
     while ( len-- ) *dst++ = 0;
 }
 
-static void copy( void *to, const void *from, u32 len )
+static void copy( void *to, const void *from, unsigned int len )
 {
-    u8 *dst = (u8 *)to;
-    const u8 *src = (const u8 *)from;
+    uint8_t *dst = (uint8_t *)to;
+    const uint8_t *src = (const uint8_t *)from;
     while ( len-- ) *dst++ = *src++;
 }
 
@@ -74,10 +74,10 @@ void dsock_nbname( char *out )
     out[i] = 0;
 }
 
-int dsock_up( u32 ms )
+int dsock_up( uint32_t ms )
 {
     SOCK_IF info;
-    u32 start = nds_ticks(), limit = ms_ticks( ms );
+    uint32_t start = nds_ticks(), limit = ms_ticks( ms );
     int err;
 
     for ( ;; ) {
@@ -90,19 +90,20 @@ int dsock_up( u32 ms )
     }
 }
 
-u32 dsock_resolve( const char *name, u32 ms )
+uint32_t dsock_resolve( const char *name, uint32_t ms )
 {
     SOCK_RES req;
-    u32 start = nds_ticks(), limit = ms_ticks( ms ), state;
+    uint32_t start = nds_ticks(), limit = ms_ticks( ms );
+    unsigned int state;
     int err;
 
     /* a dotted quad resolves to itself */
     {
-        u32 parts[4], np = 0, value = 0, digits = 0;
+        unsigned int parts[4], np = 0, value = 0, digits = 0;
         const char *scan = name;
         int dotted = 1;
         for ( ;; scan++ ) {
-            if ( *scan >= '0' && *scan <= '9' ) { value = value * 10 + (u32)( *scan - '0' ); digits++; }
+            if ( *scan >= '0' && *scan <= '9' ) { value = value * 10 + (unsigned int)( *scan - '0' ); digits++; }
             else if ( *scan == '.' || *scan == 0 ) {
                 if ( !digits || np > 3 ) { dotted = 0; break; }
                 if ( np < 4 ) parts[np] = value;
@@ -116,7 +117,7 @@ u32 dsock_resolve( const char *name, u32 ms )
 
     zero( &req, sizeof( req ) );
     {
-        u32 i;
+        unsigned int i;
         for ( i = 0; i + 1 < sizeof( req.name ) && name[i]; i++ ) req.name[i] = name[i];
         req.name[i] = 0;
     }
@@ -131,10 +132,10 @@ u32 dsock_resolve( const char *name, u32 ms )
 
 /* ---- TCP ---- */
 
-int dsock_open( u32 type )
+int dsock_open( unsigned int type )
 {
     SOCK_OPENREQ req;
-    u32 handle;
+    uint32_t handle;
     int err;
     req.type = type;
     handle = sk( SOCK_OPEN, &req, sizeof( req ), &err );
@@ -145,27 +146,28 @@ void dsock_close( int handle )
 {
     SOCK_HANDLE req;
     int err;
-    req.handle = (u32)handle;
+    req.handle = (uint32_t)handle;
     sk( SOCK_CLOSE, &req, sizeof( req ), &err );
 }
 
-static u32 dsock_state( int handle, SOCK_STAT *st )
+static unsigned int dsock_state( int handle, SOCK_STAT *st )
 {
     int err;
     zero( st, SOCKSTAT_LEN );
-    st->handle = (u32)handle;
+    st->handle = (uint32_t)handle;
     return sk( SOCK_STATE, st, SOCKSTAT_LEN, &err );
 }
 
-int dsock_connect( int handle, u32 ip, u16 port, u32 ms )
+int dsock_connect( int handle, uint32_t ip, uint16_t port, uint32_t ms )
 {
     SOCK_CONNREQ req;
     SOCK_STAT st;
-    u32 start = nds_ticks(), limit = ms_ticks( ms ), state;
+    uint32_t start = nds_ticks(), limit = ms_ticks( ms );
+    unsigned int state;
     int err;
 
     zero( &req, sizeof( req ) );
-    req.handle = (u32)handle;
+    req.handle = (uint32_t)handle;
     req.ip = ip;
     req.port = port;
     sk( SOCK_CONNECT, &req, sizeof( req ), &err );
@@ -182,20 +184,21 @@ int dsock_connect( int handle, u32 ip, u16 port, u32 ms )
     }
 }
 
-int dsock_send( int handle, const void *data, u32 len, u32 ms )
+int dsock_send( int handle, const void *data, unsigned int len, uint32_t ms )
 {
-    const u8 *ptr = (const u8 *)data;
-    u32 start = nds_ticks(), limit = ms_ticks( ms ), done = 0, state;
+    const uint8_t *ptr = (const uint8_t *)data;
+    uint32_t start = nds_ticks(), limit = ms_ticks( ms );
+    unsigned int done = 0, state;
     int err;
     SOCK_STAT st;
-    static u8 sbuf[2048];
+    static uint8_t sbuf[2048];
     SOCK_IO *msg = (SOCK_IO *)sbuf;
 
     while ( done < len ) {
-        u32 chunk = len - done, taken;
+        unsigned int chunk = len - done, taken;
         if ( chunk > sizeof( sbuf ) - SOCK_IO_HDR ) chunk = sizeof( sbuf ) - SOCK_IO_HDR;
         zero( msg, SOCK_IO_HDR );
-        msg->handle = (u32)handle;
+        msg->handle = (uint32_t)handle;
         msg->len = chunk;
         copy( sbuf + SOCK_IO_HDR, ptr + done, chunk );
         taken = sk( SOCK_SEND, sbuf, SOCK_IO_HDR + chunk, &err );
@@ -214,16 +217,16 @@ int dsock_send( int handle, const void *data, u32 len, u32 ms )
     return (int)done;
 }
 
-static int dsock_recv( int handle, void *buf, u32 max )
+static int dsock_recv( int handle, void *buf, unsigned int max )
 {
-    static u8 rbuf[2048];
+    static uint8_t rbuf[2048];
     SOCK_IO *msg = (SOCK_IO *)rbuf;
-    u32 want = max, got;
+    unsigned int want = max, got;
     int err;
 
     if ( want > sizeof( rbuf ) - SOCK_IO_HDR ) want = sizeof( rbuf ) - SOCK_IO_HDR;
     zero( msg, SOCK_IO_HDR );
-    msg->handle = (u32)handle;
+    msg->handle = (uint32_t)handle;
     msg->len = want;
     got = sk( SOCK_RECV, rbuf, SOCK_IO_HDR + want, &err );
     if ( err || got == 0 ) return 0;
@@ -234,14 +237,14 @@ static int dsock_recv( int handle, void *buf, u32 max )
 static int dsock_closed( int handle )
 {
     SOCK_STAT st;
-    u32 state = dsock_state( handle, &st );
+    unsigned int state = dsock_state( handle, &st );
     if ( st.rxready ) return 0;
     return state == SS_CLOSED || state == SS_ERROR || state == SS_CLOSING;
 }
 
-int dsock_recvwait( int handle, void *buf, u32 max, u32 ms )
+int dsock_recvwait( int handle, void *buf, unsigned int max, uint32_t ms )
 {
-    u32 start = nds_ticks(), limit = ms_ticks( ms );
+    uint32_t start = nds_ticks(), limit = ms_ticks( ms );
     int got;
 
     for ( ;; ) {
@@ -257,15 +260,15 @@ int dsock_recvwait( int handle, void *buf, u32 max, u32 ms )
 
 #define NB_PIECE 1024                   /* what one call carries, on the stack */
 
-static u32 nb( u32 fn, void *buf, u32 len, int *err )
+static uint32_t nb( uint32_t fn, void *buf, uint32_t len, int *err )
 {
-    u32 answer = 0;
+    uint32_t answer = 0;
     int rc = nds_flagcall( NDTF_NETBIOS, fn, buf, len, &answer );
     if ( err ) *err = rc;
     return rc == 0 ? answer : 0;
 }
 
-static u32 nb_state( u32 handle, NB_STAT *st )
+static unsigned int nb_state( uint32_t handle, NB_STAT *st )
 {
     int err;
     zero( st, NBSTAT_LEN );
@@ -286,11 +289,12 @@ int dnb_here( char *name )
     return 1;
 }
 
-u32 dnb_call( const char *name, u8 suffix, u32 ms )
+uint32_t dnb_call( const char *name, uint8_t suffix, uint32_t ms )
 {
     NB_NAMEREQ req;
     NB_STAT st;
-    u32 handle, start = nds_ticks(), limit = ms_ticks( ms ), state;
+    uint32_t handle, start = nds_ticks(), limit = ms_ticks( ms );
+    unsigned int state;
     int err, i;
 
     zero( &req, NBNAME_LEN );
@@ -309,7 +313,7 @@ u32 dnb_call( const char *name, u8 suffix, u32 ms )
     }
 }
 
-void dnb_hangup( u32 handle )
+void dnb_hangup( uint32_t handle )
 {
     int err;
     nb( NB_HANGUP, &handle, sizeof( handle ), &err );
@@ -317,13 +321,14 @@ void dnb_hangup( u32 handle )
 
 /* one message, in pieces of NB_PIECE: the parts first, the last with
    NB_SEND, each part waiting while the message before is still going */
-int dnb_send( u32 handle, const void *data, u32 len, u32 ms )
+int dnb_send( uint32_t handle, const void *data, unsigned int len, uint32_t ms )
 {
-    static u8 buf[NBIO_HDR + NB_PIECE];  /* off the stack, like dsock_send's */
+    static uint8_t buf[NBIO_HDR + NB_PIECE]; /* off the stack, like dsock_send's */
     NB_IO *io = (NB_IO *)buf;
     NB_STAT st;
-    const u8 *p = (const u8 *)data;
-    u32 start = nds_ticks(), limit = ms_ticks( ms ), n, got;
+    const uint8_t *p = (const uint8_t *)data;
+    uint32_t start = nds_ticks(), limit = ms_ticks( ms );
+    unsigned int n, got;
     int err;
 
     do {
@@ -346,10 +351,10 @@ int dnb_send( u32 handle, const void *data, u32 len, u32 ms )
 
 /* wait for a message: its length, or 0 when the session ended or the
    time ran out */
-u32 dnb_wait( u32 handle, u32 ms )
+unsigned int dnb_wait( uint32_t handle, uint32_t ms )
 {
     NB_STAT st;
-    u32 start = nds_ticks(), limit = ms_ticks( ms );
+    uint32_t start = nds_ticks(), limit = ms_ticks( ms );
 
     for ( ;; ) {
         if ( nb_state( handle, &st ) != NBX_UP ) return st.state == NBX_CLOSED && st.rxready ? st.rxready : 0;
@@ -360,11 +365,11 @@ u32 dnb_wait( u32 handle, u32 ms )
 }
 
 /* the next part of the message waiting, up to max bytes */
-u32 dnb_recv( u32 handle, void *out, u32 max )
+unsigned int dnb_recv( uint32_t handle, void *out, unsigned int max )
 {
-    static u8 buf[NBIO_HDR + NB_PIECE];
+    static uint8_t buf[NBIO_HDR + NB_PIECE];
     NB_IO *io = (NB_IO *)buf;
-    u32 got;
+    unsigned int got;
     int err;
 
     if ( max > NB_PIECE ) max = NB_PIECE;

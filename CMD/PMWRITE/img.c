@@ -23,12 +23,12 @@
 /* what it is                                                          */
 /* ------------------------------------------------------------------ */
 
-static const u8 png_sig[8] = { 0x89, 'P', 'N', 'G', 13, 10, 26, 10 };
+static const uint8_t png_sig[8] = { 0x89, 'P', 'N', 'G', 13, 10, 26, 10 };
 
 /* a DIB's header starts with its own length */
-static int dib_header( const u8 *data, u32 len )
+static int dib_header( const uint8_t *data, uint32_t len )
 {
-    u32 size;
+    uint32_t size;
 
     if ( len < 16 ) {
         return 0;
@@ -37,7 +37,7 @@ static int dib_header( const u8 *data, u32 len )
     return size == 12 || size == 40 || size == 52 || size == 56 || size == 108 || size == 124;
 }
 
-int img_kind( const u8 *data, u32 len )
+int img_kind( const uint8_t *data, uint32_t len )
 {
     if ( len >= 8 && mem_cmp( data, png_sig, 8 ) == 0 ) {
         return IMG_PNG;
@@ -71,9 +71,9 @@ int img_kind( const u8 *data, u32 len )
     return IMG_UNKNOWN;
 }
 
-static int jpeg_size( const u8 *data, u32 len, u32 *width, u32 *height, u32 *dpi_x, u32 *dpi_y )
+static int jpeg_size( const uint8_t *data, uint32_t len, uint32_t *width, uint32_t *height, uint32_t *dpi_x, uint32_t *dpi_y )
 {
-    u32 pos = 2, seg;
+    uint32_t pos = 2, seg;
 
     while ( IN_RANGE( pos, 4, len ) ) {
         if ( data[pos] != 0xFF ) {
@@ -113,11 +113,11 @@ static int jpeg_size( const u8 *data, u32 len, u32 *width, u32 *height, u32 *dpi
     return 0;
 }
 
-int img_size( const u8 *data, u32 len, u32 *width, u32 *height, u32 *dpi_x, u32 *dpi_y )
+int img_size( const uint8_t *data, uint32_t len, uint32_t *width, uint32_t *height, uint32_t *dpi_x, uint32_t *dpi_y )
 {
-    const u8 *dib;
-    u32 pos, clen, left;
-    s32 high;
+    const uint8_t *dib;
+    uint32_t pos, clen, left;
+    int32_t high;
 
     *width = *height = *dpi_x = *dpi_y = 0;
     switch ( img_kind( data, len ) ) {
@@ -144,7 +144,7 @@ int img_size( const u8 *data, u32 len, u32 *width, u32 *height, u32 *dpi_x, u32 
     case IMG_BMP:
     case IMG_DIB:
         dib = data[0] == 'B' && !dib_header( data, len ) ? data + 14 : data;
-        left = len - (u32)(dib - data);
+        left = len - (uint32_t)(dib - data);
         if ( LE32( dib ) == 12 ) {
             *width = LE16( dib + 4 );
             *height = LE16( dib + 6 );
@@ -152,9 +152,9 @@ int img_size( const u8 *data, u32 len, u32 *width, u32 *height, u32 *dpi_x, u32 
             if ( left < 40 ) {
                 return 0;
             }
-            high = (s32)LE32( dib + 8 );
+            high = (int32_t)LE32( dib + 8 );
             *width = LE32( dib + 4 );
-            *height = high < 0 ? (u32)0 - (u32)high : (u32)high;
+            *height = high < 0 ? (uint32_t)0 - (uint32_t)high : (uint32_t)high;
             *dpi_x = (LE32( dib + 24 ) / 10 * 254 + 500) / 1000;
             *dpi_y = (LE32( dib + 28 ) / 10 * 254 + 500) / 1000;
         }
@@ -170,9 +170,9 @@ int img_size( const u8 *data, u32 len, u32 *width, u32 *height, u32 *dpi_x, u32 
     return 0;
 }
 
-void img_natural( const u8 *data, u32 len, s32 *width, s32 *height )
+void img_natural( const uint8_t *data, uint32_t len, int *width, int *height )
 {
-    u32 pix_w, pix_h, dpi_x, dpi_y;
+    uint32_t pix_w, pix_h, dpi_x, dpi_y;
 
     *width = *height = 1440;
     if ( !img_size( data, len, &pix_w, &pix_h, &dpi_x, &dpi_y ) ) {
@@ -187,11 +187,11 @@ void img_natural( const u8 *data, u32 len, s32 *width, s32 *height )
     if ( pix_h > 30000 ) {
         pix_h = 30000;
     }
-    *width = (s32)(pix_w * 1440 / dpi_x);
-    *height = (s32)(pix_h * 1440 / dpi_y);
+    *width = (int)(pix_w * 1440 / dpi_x);
+    *height = (int)(pix_h * 1440 / dpi_y);
     if ( *width > 8640 ) {
         /* six inches at most, and in proportion */
-        *height = (s32)((u32)*height * 864 / ((u32)*width / 10 + 1));
+        *height = (int)((unsigned int)*height * 864 / ((unsigned int)*width / 10 + 1));
         *width = 8640;
     }
     if ( *width < 20 ) {
@@ -207,20 +207,20 @@ void img_natural( const u8 *data, u32 len, s32 *width, s32 *height )
 /* ------------------------------------------------------------------ */
 
 typedef struct {
-    u32 width, height;
-    int depth, color, interlace;
-    int channels;               /* samples a pixel */
-    int bpp;                    /* bytes a pixel, for the filters: 1 at least */
-    u8  pal[256][3];            /* red, green, blue */
-    u8  pal_alpha[256];
-    int npal;
-    int has_key;                /* one colour is clear */
-    u32 key[3];
+    uint32_t width, height;
+    int      depth, color, interlace;
+    int      channels;          /* samples a pixel */
+    int      bpp;               /* bytes a pixel, for the filters: 1 at least */
+    uint8_t  pal[256][3];       /* red, green, blue */
+    uint8_t  pal_alpha[256];
+    int      npal;
+    int      has_key;           /* one colour is clear */
+    uint32_t key[3];
 } PNG;
 
-static u32 png_row_bytes( const PNG *png, u32 width )
+static uint32_t png_row_bytes( const PNG *png, uint32_t width )
 {
-    return (width * (u32)png->channels * (u32)png->depth + 7) / 8;
+    return (width * (uint32_t)png->channels * (uint32_t)png->depth + 7) / 8;
 }
 
 static int paeth( int left, int up, int corner )
@@ -237,29 +237,29 @@ static int paeth( int left, int up, int corner )
 }
 
 /* a line's filter undone in place: 0 if it names a filter there is not */
-static int png_unfilter( int filter, u8 *row, const u8 *prev, u32 bytes, int bpp )
+static int png_unfilter( int filter, uint8_t *row, const uint8_t *prev, uint32_t bytes, int bpp )
 {
-    u32 index;
+    unsigned int index;
     int left, up, corner;
 
     for ( index = 0; index < bytes; index++ ) {
-        left = index >= (u32)bpp ? row[index - (u32)bpp] : 0;
+        left = index >= (unsigned int)bpp ? row[index - (unsigned int)bpp] : 0;
         up = prev != NULL ? prev[index] : 0;
-        corner = prev != NULL && index >= (u32)bpp ? prev[index - (u32)bpp] : 0;
+        corner = prev != NULL && index >= (unsigned int)bpp ? prev[index - (unsigned int)bpp] : 0;
         switch ( filter ) {
         case 0:
             return 1;
         case 1:
-            row[index] = (u8)(row[index] + left);
+            row[index] = (uint8_t)(row[index] + left);
             break;
         case 2:
-            row[index] = (u8)(row[index] + up);
+            row[index] = (uint8_t)(row[index] + up);
             break;
         case 3:
-            row[index] = (u8)(row[index] + ((left + up) >> 1));
+            row[index] = (uint8_t)(row[index] + ((left + up) >> 1));
             break;
         case 4:
-            row[index] = (u8)(row[index] + paeth( left, up, corner ));
+            row[index] = (uint8_t)(row[index] + paeth( left, up, corner ));
             break;
         default:
             return 0;
@@ -269,9 +269,10 @@ static int png_unfilter( int filter, u8 *row, const u8 *prev, u32 bytes, int bpp
 }
 
 /* sample "index" of a line, as 0 to 255 whatever the depth */
-static u32 png_sample( const PNG *png, const u8 *row, u32 index, u32 *raw )
+static uint32_t png_sample( const PNG *png, const uint8_t *row, unsigned int index, uint32_t *raw )
 {
-    u32 value, shift;
+    uint32_t value;
+    unsigned int shift;
 
     switch ( png->depth ) {
     case 8:
@@ -281,16 +282,16 @@ static u32 png_sample( const PNG *png, const u8 *row, u32 index, u32 *raw )
         *raw = BE16( row + index * 2 );
         return row[index * 2];
     }
-    shift = 8 - (u32)png->depth - (index * (u32)png->depth) % 8;
-    value = (row[index * (u32)png->depth / 8] >> shift) & ((1u << png->depth) - 1);
+    shift = 8 - (uint32_t)png->depth - (index * (uint32_t)png->depth) % 8;
+    value = (row[index * (uint32_t)png->depth / 8] >> shift) & ((1u << png->depth) - 1);
     *raw = value;
     return value * 255 / ((1u << png->depth) - 1);
 }
 
 /* pixel "col" of a decoded line, written as blue, green, red */
-static void png_pixel( const PNG *png, const u8 *row, u32 col, u8 *bgr )
+static void png_pixel( const PNG *png, const uint8_t *row, unsigned int col, uint8_t *bgr )
 {
-    u32 red, green, blue, alpha = 255, raw[4];
+    uint32_t red, green, blue, alpha = 255, raw[4];
 
     switch ( png->color ) {
     case 0:                             /* grey */
@@ -332,18 +333,20 @@ static void png_pixel( const PNG *png, const u8 *row, u32 col, u8 *bgr )
         green = (green * alpha + 255 * (255 - alpha) + 127) / 255;
         blue = (blue * alpha + 255 * (255 - alpha) + 127) / 255;
     }
-    bgr[0] = (u8)blue;
-    bgr[1] = (u8)green;
-    bgr[2] = (u8)red;
+    bgr[0] = (uint8_t)blue;
+    bgr[1] = (uint8_t)green;
+    bgr[2] = (uint8_t)red;
 }
 
-static u8 *png_decode( const u8 *data, u32 len, u32 *width, u32 *height )
+static uint8_t *png_decode( const uint8_t *data, uint32_t len, uint32_t *width, uint32_t *height )
 {
-    static const u8 pass_x0[7] = { 0, 4, 0, 2, 0, 1, 0 }, pass_dx[7] = { 8, 8, 4, 4, 2, 2, 1 };
-    static const u8 pass_y0[7] = { 0, 0, 4, 0, 2, 0, 1 }, pass_dy[7] = { 8, 8, 8, 4, 4, 2, 2 };
+    static const uint8_t pass_x0[7] = { 0, 4, 0, 2, 0, 1, 0 }, pass_dx[7] = { 8, 8, 4, 4, 2, 2, 1 };
+    static const uint8_t pass_y0[7] = { 0, 0, 4, 0, 2, 0, 1 }, pass_dy[7] = { 8, 8, 8, 4, 4, 2, 2 };
     PNG *png;
-    u8 *idat = NULL, *raw = NULL, *out = NULL, *row, *prev;
-    u32 pos, clen, idat_len = 0, used = 0, raw_len, need = 0, pass_w, pass_h, line, col, bytes;
+    uint8_t *idat = NULL, *raw = NULL, *out = NULL, *row, *prev;
+    uint32_t pos, clen, idat_len = 0, used = 0, raw_len, need = 0, pass_w, pass_h;
+    unsigned int line, col;
+    uint32_t bytes;
     int pass, passes, index, good = 0;
 
     png = (PNG *)try_alloc( sizeof( PNG ) );
@@ -411,7 +414,7 @@ static u8 *png_decode( const u8 *data, u32 len, u32 *width, u32 *height )
             } else if ( pass == 0 && mem_cmp( data + pos + 4, "PLTE", 4 ) == 0 ) {
                 png->npal = (int)(clen / 3 > 256 ? 256 : clen / 3);
                 for ( index = 0; index < png->npal; index++ ) {
-                    mem_cpy( png->pal[index], data + pos + 8 + (u32)index * 3, 3 );
+                    mem_cpy( png->pal[index], data + pos + 8 + (uint32_t)index * 3, 3 );
                 }
             } else if ( pass == 0 && mem_cmp( data + pos + 4, "tRNS", 4 ) == 0 ) {
                 if ( png->color == 3 ) {
@@ -433,7 +436,7 @@ static u8 *png_decode( const u8 *data, u32 len, u32 *width, u32 *height )
             if ( idat_len == 0 ) {
                 goto done;
             }
-            idat = (u8 *)try_alloc( idat_len );
+            idat = (uint8_t *)try_alloc( idat_len );
             if ( idat == NULL ) {
                 goto done;
             }
@@ -454,7 +457,7 @@ static u8 *png_decode( const u8 *data, u32 len, u32 *width, u32 *height )
     if ( raw == NULL || raw_len != need ) {
         goto done;
     }
-    out = (u8 *)try_alloc( png->width * png->height * 3 );
+    out = (uint8_t *)try_alloc( png->width * png->height * 3 );
     if ( out == NULL ) {
         goto done;
     }
@@ -502,13 +505,15 @@ done:
 /* BMP and DIB                                                         */
 /* ------------------------------------------------------------------ */
 
-static u8 *dib_decode( const u8 *dib, u32 len, const u8 *bits, u32 bits_len, u32 *width, u32 *height )
+static uint8_t *dib_decode( const uint8_t *dib, uint32_t len, const uint8_t *bits, uint32_t bits_len, uint32_t *width, uint32_t *height )
 {
-    u8 *out, *dst;
-    const u8 *row, *pal;
-    u32 head = LE32( dib ), wide, high, depth, compress = 0, colors = 0, stride, line, col, value, entry;
-    u32 pal_len;
-    s32 signed_high;
+    uint8_t *out, *dst;
+    const uint8_t *row, *pal;
+    uint32_t head = LE32( dib ), wide, high, depth, compress = 0, colors = 0, stride;
+    unsigned int line, col;
+    uint32_t value, entry;
+    uint32_t pal_len;
+    int32_t signed_high;
     int top_down = 0, five_six = 0;
 
     if ( head == 12 ) {
@@ -521,9 +526,9 @@ static u8 *dib_decode( const u8 *dib, u32 len, const u8 *bits, u32 bits_len, u32
             return NULL;
         }
         wide = LE32( dib + 4 );
-        signed_high = (s32)LE32( dib + 8 );
+        signed_high = (int32_t)LE32( dib + 8 );
         top_down = signed_high < 0;
-        high = top_down ? (u32)0 - (u32)signed_high : (u32)signed_high;
+        high = top_down ? (uint32_t)0 - (uint32_t)signed_high : (uint32_t)signed_high;
         depth = LE16( dib + 14 );
         compress = LE32( dib + 16 );
         colors = LE32( dib + 32 );
@@ -564,7 +569,7 @@ static u8 *dib_decode( const u8 *dib, u32 len, const u8 *bits, u32 bits_len, u32
     if ( bits_len / stride < high ) {
         return NULL;
     }
-    out = (u8 *)try_alloc( wide * high * 3 );
+    out = (uint8_t *)try_alloc( wide * high * 3 );
     if ( out == NULL ) {
         return NULL;
     }
@@ -582,13 +587,13 @@ static u8 *dib_decode( const u8 *dib, u32 len, const u8 *bits, u32 bits_len, u32
             case 16:
                 value = LE16( row + col * 2 );
                 if ( five_six ) {
-                    dst[0] = (u8)((value & 0x1F) * 255 / 31);
-                    dst[1] = (u8)(((value >> 5) & 0x3F) * 255 / 63);
-                    dst[2] = (u8)(((value >> 11) & 0x1F) * 255 / 31);
+                    dst[0] = (uint8_t)((value & 0x1F) * 255 / 31);
+                    dst[1] = (uint8_t)(((value >> 5) & 0x3F) * 255 / 63);
+                    dst[2] = (uint8_t)(((value >> 11) & 0x1F) * 255 / 31);
                 } else {
-                    dst[0] = (u8)((value & 0x1F) * 255 / 31);
-                    dst[1] = (u8)(((value >> 5) & 0x1F) * 255 / 31);
-                    dst[2] = (u8)(((value >> 10) & 0x1F) * 255 / 31);
+                    dst[0] = (uint8_t)((value & 0x1F) * 255 / 31);
+                    dst[1] = (uint8_t)(((value >> 5) & 0x1F) * 255 / 31);
+                    dst[2] = (uint8_t)(((value >> 10) & 0x1F) * 255 / 31);
                 }
                 continue;
             case 8:
@@ -612,9 +617,9 @@ static u8 *dib_decode( const u8 *dib, u32 len, const u8 *bits, u32 bits_len, u32
     return out;
 }
 
-u8 *img_decode( const u8 *data, u32 len, u32 *width, u32 *height )
+uint8_t *img_decode( const uint8_t *data, uint32_t len, uint32_t *width, uint32_t *height )
 {
-    u32 start;
+    uint32_t start;
 
     *width = *height = 0;
     switch ( img_kind( data, len ) ) {

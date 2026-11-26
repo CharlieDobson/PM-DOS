@@ -13,9 +13,9 @@
 
 int tab_size = 8;
 
-static int line_reserve( LINE *line, u32 need )
+static int line_reserve( LINE *line, unsigned int need )
 {
-    u32 cap;
+    unsigned int cap;
     char *grown;
 
     if ( need > 65535u ) {
@@ -44,7 +44,7 @@ static int line_reserve( LINE *line, u32 need )
     }
     xfree( line->text );
     line->text = grown;
-    line->cap = (u16)cap;
+    line->cap = (uint16_t)cap;
     return 1;
 }
 
@@ -56,9 +56,9 @@ static void line_release( LINE *line )
     line->flags = 0;
 }
 
-static int lines_reserve( DOC *doc, u32 need )
+static int lines_reserve( DOC *doc, unsigned int need )
 {
-    u32 cap;
+    unsigned int cap;
     LINE *grown;
 
     if ( need <= doc->cap ) {
@@ -104,7 +104,7 @@ DOC *doc_new( void )
 
 void doc_free( DOC *doc )
 {
-    u32 index;
+    unsigned int index;
 
     if ( doc == NULL ) {
         return;
@@ -116,13 +116,13 @@ void doc_free( DOC *doc )
     xfree( doc );
 }
 
-LINE *doc_line( DOC *doc, u32 line )
+LINE *doc_line( DOC *doc, unsigned int line )
 {
     return line < doc->count ? &doc->lines[line] : NULL;
 }
 
 /* a line's text replaced; its breakpoint stays */
-int doc_set_line( DOC *doc, u32 line, const char *text, u32 len )
+int doc_set_line( DOC *doc, unsigned int line, const char *text, unsigned int len )
 {
     LINE *ln = &doc->lines[line];
 
@@ -133,13 +133,13 @@ int doc_set_line( DOC *doc, u32 line, const char *text, u32 len )
         return 0;
     }
     mem_cpy( ln->text, text, len );
-    ln->len = (u16)len;
+    ln->len = (uint16_t)len;
     doc->modified = 1;
     return 1;
 }
 
 /* a whole line put in before "at" */
-int doc_insert_line( DOC *doc, u32 at, const char *text, u32 len )
+int doc_insert_line( DOC *doc, unsigned int at, const char *text, unsigned int len )
 {
     LINE fresh;
 
@@ -152,7 +152,7 @@ int doc_insert_line( DOC *doc, u32 at, const char *text, u32 len )
         return 0;
     }
     mem_cpy( fresh.text, text, len );
-    fresh.len = (u16)len;
+    fresh.len = (uint16_t)len;
     mem_cpy( doc->lines + at + 1, doc->lines + at, (doc->count - at) * sizeof( LINE ) );
     doc->lines[at] = fresh;
     doc->count++;
@@ -161,14 +161,14 @@ int doc_insert_line( DOC *doc, u32 at, const char *text, u32 len )
 }
 
 /* a line at the end; a new document's first, empty line is used first */
-int doc_append( DOC *doc, const char *text, u32 len )
+int doc_append( DOC *doc, const char *text, unsigned int len )
 {
     return doc_insert_line( doc, doc->count, text, len );
 }
 
-int doc_delete_lines( DOC *doc, u32 at, u32 count )
+int doc_delete_lines( DOC *doc, unsigned int at, unsigned int count )
 {
-    u32 index;
+    unsigned int index;
 
     if ( at + count > doc->count ) {
         count = doc->count - at;
@@ -186,9 +186,9 @@ int doc_delete_lines( DOC *doc, u32 at, u32 count )
     return 1;
 }
 
-u32 doc_col_of( DOC *doc, LINE *line, u32 index )
+unsigned int doc_col_of( DOC *doc, LINE *line, unsigned int index )
 {
-    u32 pos, col = 0;
+    unsigned int pos, col = 0;
 
     (void)doc;
     for ( pos = 0; pos < index && pos < line->len; pos++ ) {
@@ -204,9 +204,9 @@ u32 doc_col_of( DOC *doc, LINE *line, u32 index )
     return col;
 }
 
-u32 doc_index_of( DOC *doc, LINE *line, u32 col )
+unsigned int doc_index_of( DOC *doc, LINE *line, unsigned int col )
 {
-    u32 pos, at = 0, width;
+    unsigned int pos, at = 0, width;
 
     (void)doc;
     for ( pos = 0; pos < line->len; pos++ ) {
@@ -222,10 +222,10 @@ u32 doc_index_of( DOC *doc, LINE *line, u32 col )
 /* "text" (with '\n' between lines) into the document at "at", which is
    moved to the end of it.  0 when there was no memory - and then the
    document is as it was. */
-int doc_insert( DOC *doc, POS *at, const char *text, u32 len )
+int doc_insert( DOC *doc, POS *at, const char *text, unsigned int len )
 {
     LINE *line = &doc->lines[at->line];
-    u32 breaks = 0, pos, seg, index, tail_len;
+    unsigned int breaks = 0, pos, seg, index, tail_len;
     LINE *fresh;
     char *tail;
 
@@ -239,7 +239,7 @@ int doc_insert( DOC *doc, POS *at, const char *text, u32 len )
             return 0;
         }
         mem_set( line->text + line->len, ' ', at->col - line->len );
-        line->len = (u16)at->col;
+        line->len = (uint16_t)at->col;
     }
     if ( breaks == 0 ) {
         if ( line->len + len > MAX_LINE || !line_reserve( line, line->len + len ) ) {
@@ -247,7 +247,7 @@ int doc_insert( DOC *doc, POS *at, const char *text, u32 len )
         }
         mem_cpy( line->text + at->col + len, line->text + at->col, line->len - at->col );
         mem_cpy( line->text + at->col, text, len );
-        line->len = (u16)(line->len + len);
+        line->len = (uint16_t)(line->len + len);
         at->col += len;
         doc->modified = 1;
         return 1;
@@ -274,7 +274,7 @@ int doc_insert( DOC *doc, POS *at, const char *text, u32 len )
     seg = ++pos;
     for ( ; pos <= len; pos++ ) {
         if ( pos == len || text[pos] == '\n' ) {
-            u32 want = pos - seg + (index == breaks - 1 ? tail_len : 0);
+            unsigned int want = pos - seg + (index == breaks - 1 ? tail_len : 0);
             if ( want > MAX_LINE || !line_reserve( &fresh[index], want ? want : 1 ) ) {
                 for ( ;; ) {
                     xfree( fresh[index].text );
@@ -287,20 +287,20 @@ int doc_insert( DOC *doc, POS *at, const char *text, u32 len )
                 return 0;
             }
             mem_cpy( fresh[index].text, text + seg, pos - seg );
-            fresh[index].len = (u16)(pos - seg);
+            fresh[index].len = (uint16_t)(pos - seg);
             index++;
             seg = pos + 1;
         }
     }
     tail = line->text + at->col;
     mem_cpy( fresh[breaks - 1].text + fresh[breaks - 1].len, tail, tail_len );
-    fresh[breaks - 1].len = (u16)(fresh[breaks - 1].len + tail_len);
+    fresh[breaks - 1].len = (uint16_t)(fresh[breaks - 1].len + tail_len);
     seg = 0;
     while ( seg < len && text[seg] != '\n' ) {
         seg++;
     }
     mem_cpy( line->text + at->col, text, seg );
-    line->len = (u16)(at->col + seg);
+    line->len = (uint16_t)(at->col + seg);
     mem_cpy( doc->lines + at->line + 1 + breaks, doc->lines + at->line + 1,
              (doc->count - at->line - 1) * sizeof( LINE ) );
     mem_cpy( doc->lines + at->line + 1, fresh, breaks * sizeof( LINE ) );
@@ -314,7 +314,7 @@ int doc_insert( DOC *doc, POS *at, const char *text, u32 len )
 
 /* the length of the line a delete from "from" to "to" leaves, when it
    joins two lines (MAX_LINE is the most a line may be) */
-u32 doc_joined_len( DOC *doc, POS from, POS to )
+unsigned int doc_joined_len( DOC *doc, POS from, POS to )
 {
     LINE *last = &doc->lines[to.line];
 
@@ -324,7 +324,7 @@ u32 doc_joined_len( DOC *doc, POS from, POS to )
 int doc_delete( DOC *doc, POS from, POS to )
 {
     LINE *first, *last;
-    u32 index, keep;
+    unsigned int index, keep;
 
     if ( to.line < from.line || (to.line == from.line && to.col <= from.col) ) {
         return 1;
@@ -338,7 +338,7 @@ int doc_delete( DOC *doc, POS from, POS to )
             return 0;
         }
         mem_set( first->text + first->len, ' ', from.col - first->len );
-        first->len = (u16)from.col;
+        first->len = (uint16_t)from.col;
     }
     last = &doc->lines[to.line];
     if ( to.col > last->len ) {
@@ -347,7 +347,7 @@ int doc_delete( DOC *doc, POS from, POS to )
     if ( from.line == to.line ) {
         if ( to.col > from.col ) {
             mem_cpy( first->text + from.col, first->text + to.col, first->len - to.col );
-            first->len = (u16)(first->len - (to.col - from.col));
+            first->len = (uint16_t)(first->len - (to.col - from.col));
         }
         doc->modified = 1;
         return 1;
@@ -358,7 +358,7 @@ int doc_delete( DOC *doc, POS from, POS to )
     }
     last = &doc->lines[to.line];
     mem_cpy( first->text + from.col, last->text + to.col, keep );
-    first->len = (u16)(from.col + keep);
+    first->len = (uint16_t)(from.col + keep);
     for ( index = from.line + 1; index <= to.line; index++ ) {
         line_release( &doc->lines[index] );
     }
@@ -370,9 +370,9 @@ int doc_delete( DOC *doc, POS from, POS to )
     return 1;
 }
 
-char *doc_extract( DOC *doc, POS from, POS to, u32 *len )
+char *doc_extract( DOC *doc, POS from, POS to, unsigned int *len )
 {
-    u32 total = 0, index, start, end;
+    unsigned int total = 0, index, start, end;
     LINE *line;
     char *text;
 

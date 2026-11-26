@@ -20,12 +20,12 @@ typedef struct {
 
 /* Build a public key from big-endian modulus and exponent byte strings. */
 void rsa_pubkey_init(rsa_pubkey *k,
-                     const unsigned char *n, int nlen,
-                     const unsigned char *e, int elen);
+                     const uint8_t *n, int nlen,
+                     const uint8_t *e, int elen);
 
 /* Raw RSAEP: out = in^e mod n.  Both buffers are k->klen bytes, big-endian. */
 void rsa_public_raw(const rsa_pubkey *k,
-                    const unsigned char *in, unsigned char *out);
+                    const uint8_t *in, uint8_t *out);
 
 /* RSAES-PKCS1-v1_5 encrypt (block type 2):
  *   EM = 0x00 0x02 PS 0x00 M     (PS = k->klen-3-mlen NONZERO pad bytes)
@@ -34,8 +34,8 @@ void rsa_public_raw(const rsa_pubkey *k,
  * Returns 0, or -1 if the message is too long for the key.
  */
 int  rsa_pkcs1_encrypt(const rsa_pubkey *k,
-                       const unsigned char *msg, int mlen,
-                       const unsigned char *rnd, unsigned char *out);
+                       const uint8_t *msg, int mlen,
+                       const uint8_t *rnd, uint8_t *out);
 
 /* RSASSA-PKCS1-v1_5 verify with SHA-256 (block type 1):
  *   EM = s^e mod n must equal  00 01 FF..FF 00 || DigestInfo(SHA-256) || hash
@@ -43,8 +43,8 @@ int  rsa_pkcs1_encrypt(const rsa_pubkey *k,
  * Returns 0 if the signature is valid, -1 otherwise.
  */
 int  rsa_pkcs1_verify_sha256(const rsa_pubkey *k,
-                             const unsigned char hash[32],
-                             const unsigned char *sig, int siglen);
+                             const uint8_t hash[32],
+                             const uint8_t *sig, int siglen);
 
 /* RSASSA-PSS verify with SHA-256 + MGF1-SHA256 and salt length == 32 (hLen),
  * per RFC 8017 §8.1.2 / §9.1.2.  Modern (TLS 1.2+) certs are frequently signed
@@ -53,17 +53,17 @@ int  rsa_pkcs1_verify_sha256(const rsa_pubkey *k,
  * Returns 0 if the signature is valid, -1 otherwise.
  */
 int  rsa_pss_verify_sha256(const rsa_pubkey *k,
-                           const unsigned char hash[32],
-                           const unsigned char *sig, int siglen);
+                           const uint8_t hash[32],
+                           const uint8_t *sig, int siglen);
 
 /* The same two checks for any SHA-2 digest the TLS signature schemes use:
  * hlen is 32 (SHA-256), 48 (SHA-384) or 64 (SHA-512).  PSS takes MGF1 over
  * the same hash and a salt of hlen bytes.  0 if valid, -1 otherwise. */
 int  rsa_pkcs1_verify( const rsa_pubkey *k, int hlen,
-                       const unsigned char *hash,
-                       const unsigned char *sig, int siglen );
+                       const uint8_t *hash,
+                       const uint8_t *sig, int siglen );
 int  rsa_pss_verify( const rsa_pubkey *k, int hlen,
-                     const unsigned char *hash,
-                     const unsigned char *sig, int siglen );
+                     const uint8_t *hash,
+                     const uint8_t *sig, int siglen );
 
 #endif /* NETSPLOR_RSA_H */

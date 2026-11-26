@@ -50,27 +50,27 @@
 /* pixels to a point, 16.16, for a screen of "dpi" dots to the inch
    showing a page at "percent" of its size: PV_ZOOM( 96, 100 ) */
 #define PV_ZOOM( dpi, percent ) \
-    ((s32)((u32)(dpi) * 65536UL / 72UL * (u32)(percent) / 100UL))
+    ((int32_t)((uint32_t)(dpi) * 65536UL / 72UL * (uint32_t)(percent) / 100UL))
 
 /* A file by name, or one that is in memory already (and stays there,
    unmoved, until it is closed).  PV_PASSWORD leaves the file waiting
    for pdfview_password; any other failure leaves nothing open.  A file
    whose password is the empty one opens without asking. */
 int   pdfview_open( const char *path );
-int   pdfview_open_mem( const u8 *data, u32 len );
+int   pdfview_open_mem( const uint8_t *data, uint32_t len );
 /* PV_OK: it was the user's or the owner's password, and the file is
    open.  PV_PASSWORD: it was neither; the file still waits. */
-int   pdfview_password( const char *text, u32 len );
+int   pdfview_password( const char *text, unsigned int len );
 void  pdfview_close( void );            /* harmless when nothing is open */
 int   pdfview_is_open( void );
 int   pdfview_pages( void );            /* 0 when nothing is open */
 
 /* A page's width and height in points, 16.16, as it is meant to be
    looked at - turned as the file says it is.  Pages count from 0. */
-int   pdfview_page_size( int page, s32 *width, s32 *height );
+int   pdfview_page_size( int page, int32_t *width, int32_t *height );
 /* ...and in pixels at a zoom, turned a further 0, 90, 180 or 270
    degrees clockwise: the size of the block that holds all of it */
-int   pdfview_page_pixels( int page, s32 zoom, int turn, int *width, int *height );
+int   pdfview_page_pixels( int page, int32_t zoom, int turn, int *width, int *height );
 
 /*
  * Where a page is drawn: the caller's memory.  A row is "width" pixels
@@ -81,17 +81,17 @@ int   pdfview_page_pixels( int page, s32 zoom, int turn, int *width, int *height
  * can be drawn a tile at a time, or only as much of it as is on show.
  */
 typedef struct {
-    u8  *pix;
-    int  width, height;
-    int  bpp;
-    u32  stride;
-    int  org_x, org_y;
+    uint8_t     *pix;
+    int          width, height;
+    int          bpp;
+    unsigned int stride;
+    int          org_x, org_y;
 } PVBLOCK;
 
 /* The block is made white and the page drawn into it.  When the answer
    is not PV_OK the block has what was drawn before the page was given
    up, which is worth showing. */
-int   pdfview_render( int page, s32 zoom, int turn, const PVBLOCK *block );
+int   pdfview_render( int page, int32_t zoom, int turn, const PVBLOCK *block );
 
 /* "poll" is called every hundred or so of a page's operators while it
    is drawn; a 1 from it gives the page up (PV_ABORT).  NULL for none.
@@ -125,6 +125,6 @@ void  fmt_pdf_password( const char *text );
  * into light as a PDF's is.  No PDF need be open, and one that is open
  * is not disturbed.
  */
-u8   *pdfview_jpeg( const u8 *data, u32 len, u32 *width, u32 *height );
+uint8_t *pdfview_jpeg( const uint8_t *data, uint32_t len, uint32_t *width, uint32_t *height );
 
 #endif

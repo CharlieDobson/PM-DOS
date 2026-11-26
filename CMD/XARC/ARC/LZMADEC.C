@@ -81,17 +81,17 @@
  * packed size, so a corrupt stream cannot read past its own data.
  *-------------------------------------------------------------------------- */
 typedef struct {
-    LzmaRead    read;          /* NULL: the whole stream is already in memory */
-    void       *user;
-    const Byte *p, *end;       /* bytes available right now                   */
-    Byte       *stage;         /* owned when read != NULL                     */
-    UInt32      remaining;     /* packed bytes not yet pulled from 'read'     */
+    LzmaRead       read;       /* NULL: the whole stream is already in memory */
+    void          *user;
+    const uint8_t *p, *end;    /* bytes available right now                   */
+    uint8_t       *stage;      /* owned when read != NULL                     */
+    uint32_t       remaining;  /* packed bytes not yet pulled from 'read'     */
 } CIn;
 
 /* Ensure at least one byte is available.  0 = end of the packed stream. */
 static int InFill( CIn *s )
 {
-    UInt32 n;
+    uint32_t n;
 
     if ( s->p < s->end ) return 1;
     if ( !s->read || s->remaining == 0 ) return 0;
@@ -108,13 +108,13 @@ static int InFill( CIn *s )
 
 /* Skip 'n' bytes of the packed stream (used to step over a chunk's unread
  * tail).  0 if the stream ended early. */
-static int InSkip( CIn *s, UInt32 n )
+static int InSkip( CIn *s, uint32_t n )
 {
     while ( n )
     {
-        UInt32 have;
+        uint32_t have;
         if ( !InFill( s ) ) return 0;
-        have = (UInt32)( s->end - s->p );
+        have = (uint32_t)( s->end - s->p );
         if ( have > n ) have = n;
         s->p += have;
         n    -= have;
@@ -128,13 +128,13 @@ static int InSkip( CIn *s, UInt32 n )
  *-------------------------------------------------------------------------- */
 typedef struct {
     CIn        *in;
-    UInt32      avail;
-    UInt32      range;
-    UInt32      code;
+    uint32_t    avail;
+    uint32_t    range;
+    uint32_t    code;
     int         corrupted;
 } CRangeDec;
 
-static Byte RcByte( CRangeDec *rc )
+static uint8_t RcByte( CRangeDec *rc )
 {
     if ( rc->avail == 0 || !InFill( rc->in ) )
     {
@@ -147,8 +147,8 @@ static Byte RcByte( CRangeDec *rc )
 
 static int RcInit( CRangeDec *rc )
 {
-    int  i;
-    Byte first;
+    int     i;
+    uint8_t first;
 
     rc->corrupted = 0;
     if ( rc->avail < 5 )
@@ -172,18 +172,18 @@ static int RcInit( CRangeDec *rc )
  * and the caller's limits are expressed in.
  *-------------------------------------------------------------------------- */
 typedef struct {
-    Byte    *win;
-    UInt32   size;             /* bytes in win                               */
-    UInt32   pos;              /* next write index within win                */
-    UInt32   flushed;          /* index of the first byte not yet emitted    */
-    UInt32   total;            /* absolute bytes produced                    */
+    uint8_t *win;
+    uint32_t size;             /* bytes in win                               */
+    uint32_t pos;              /* next write index within win                */
+    uint32_t flushed;          /* index of the first byte not yet emitted    */
+    uint32_t total;            /* absolute bytes produced                    */
     /* Absolute position of the most recent DICTIONARY RESET.  LZMA's position
      * context and its "how far back may a match reach" limit are both counted
      * from here, not from the start of the stream - which is what lets an
      * LZMA2 stream reset its dictionary part-way through.  Multi-threaded
      * 7-Zip does exactly that: it splits the input into independent blocks
      * and each one after the first begins with a reset. */
-    UInt32   dictBase;
+    uint32_t dictBase;
     LzmaEmit emit;             /* NULL in buffered mode                      */
     void    *user;
     int      err;              /* SZ_ERR_CANCEL once the sink says stop      */
@@ -226,7 +226,7 @@ static int WinFlush( CWin *w )
  * sink needed changing for this. */
 #define LZ_FLUSH_CHUNK 65536U
 
-static int WinPutByte( CWin *w, Byte b )
+static int WinPutByte( CWin *w, uint8_t b )
 {
     w->win[w->pos++] = b;
     w->total++;
@@ -244,9 +244,9 @@ static int WinPutByte( CWin *w, Byte b )
 
 /* The byte 'dist+1' positions back.  The caller has already checked that the
  * distance is within both the produced output and the window. */
-static Byte WinBack( CWin *w, UInt32 dist )
+static uint8_t WinBack( CWin *w, uint32_t dist )
 {
-    UInt32 d = dist + 1;
+    uint32_t d = dist + 1;
     return w->win[ ( w->pos >= d ) ? ( w->pos - d ) : ( w->pos + w->size - d ) ];
 }
 
@@ -259,10 +259,10 @@ static void RcNormalize( CRangeDec *rc )
     }
 }
 
-static unsigned RcBit( CRangeDec *rc, UInt16 *prob )
+static unsigned RcBit( CRangeDec *rc, uint16_t *prob )
 {
     unsigned v = *prob;
-    UInt32   bound = ( rc->range >> kNumBitModelTotalBits ) * v;
+    uint32_t bound = ( rc->range >> kNumBitModelTotalBits ) * v;
     unsigned symbol;
 
     if ( rc->code < bound )
@@ -278,20 +278,20 @@ static unsigned RcBit( CRangeDec *rc, UInt16 *prob )
         rc->range -= bound;
         symbol = 1;
     }
-    *prob = (UInt16)v;
+    *prob = (uint16_t)v;
     RcNormalize( rc );
     return symbol;
 }
 
-static UInt32 RcDirect( CRangeDec *rc, unsigned numBits )
+static uint32_t RcDirect( CRangeDec *rc, unsigned numBits )
 {
-    UInt32 res = 0;
+    uint32_t res = 0;
     do
     {
-        UInt32 t;
+        uint32_t t;
         rc->range >>= 1;
         rc->code -= rc->range;
-        t = 0 - ( (UInt32)rc->code >> 31 );   /* 0xFFFFFFFF on borrow, else 0 */
+        t = 0 - ( (uint32_t)rc->code >> 31 ); /* 0xFFFFFFFF on borrow, else 0 */
         rc->code += rc->range & t;
         RcNormalize( rc );
         res <<= 1;
@@ -300,7 +300,7 @@ static UInt32 RcDirect( CRangeDec *rc, unsigned numBits )
     return res;
 }
 
-static unsigned RcBitTree( CRangeDec *rc, UInt16 *probs, unsigned numBits )
+static unsigned RcBitTree( CRangeDec *rc, uint16_t *probs, unsigned numBits )
 {
     unsigned m = 1, i;
     for ( i = 0; i < numBits; i++ )
@@ -308,7 +308,7 @@ static unsigned RcBitTree( CRangeDec *rc, UInt16 *probs, unsigned numBits )
     return m - ( (unsigned)1 << numBits );
 }
 
-static unsigned RcBitTreeRev( CRangeDec *rc, UInt16 *probs, unsigned numBits )
+static unsigned RcBitTreeRev( CRangeDec *rc, uint16_t *probs, unsigned numBits )
 {
     unsigned m = 1, sym = 0, i;
     for ( i = 0; i < numBits; i++ )
@@ -320,7 +320,7 @@ static unsigned RcBitTreeRev( CRangeDec *rc, UInt16 *probs, unsigned numBits )
     return sym;
 }
 
-static unsigned LenDecode( CRangeDec *rc, UInt16 *probs, unsigned posState )
+static unsigned LenDecode( CRangeDec *rc, uint16_t *probs, unsigned posState )
 {
     if ( RcBit( rc, probs + LenChoice ) == 0 )
         return RcBitTree( rc, probs + LenLow + ( posState << kLenNumLowBits ),
@@ -337,25 +337,25 @@ static unsigned LenDecode( CRangeDec *rc, UInt16 *probs, unsigned posState )
  * Resettable LZMA decode state
  *===========================================================================*/
 typedef struct {
-    UInt16  *probs;
-    UInt32   numProbsAlloc;   /* probs[] capacity                            */
-    UInt32   numProbs;        /* active prob count for current lc/lp         */
-    unsigned lc, lp, pb;
-    UInt32   pbMask, lpMask;
-    unsigned state;
-    UInt32   rep0, rep1, rep2, rep3;
+    uint16_t *probs;
+    uint32_t  numProbsAlloc;  /* probs[] capacity                            */
+    uint32_t  numProbs;       /* active prob count for current lc/lp         */
+    unsigned  lc, lp, pb;
+    uint32_t  pbMask, lpMask;
+    unsigned  state;
+    uint32_t  rep0, rep1, rep2, rep3;
 } CLzma;
 
-static UInt32 LzmaNumProbs( unsigned lc, unsigned lp )
+static uint32_t LzmaNumProbs( unsigned lc, unsigned lp )
 {
-    return oLiteral + ( (UInt32)0x300 << ( lc + lp ) );
+    return oLiteral + ( (uint32_t)0x300 << ( lc + lp ) );
 }
 
 /* Decode the lclppb byte; (re)allocate probs to fit.  SZ_ERR_* on failure. */
-static int LzmaSetProps( CLzma *s, Byte d )
+static int LzmaSetProps( CLzma *s, uint8_t d )
 {
     unsigned lc, lp, pb;
-    UInt32   need;
+    uint32_t need;
 
     if ( d >= 9 * 5 * 5 )
         return SZ_ERR_UNSUPPORTED;
@@ -366,7 +366,7 @@ static int LzmaSetProps( CLzma *s, Byte d )
     need = LzmaNumProbs( lc, lp );
     if ( need > s->numProbsAlloc )
     {
-        UInt16 *np = (UInt16 *)realloc( s->probs, need * sizeof( UInt16 ) );
+        uint16_t *np = (uint16_t *)realloc( s->probs, need * sizeof( uint16_t ) );
         if ( !np )
             return SZ_ERR_MEMORY;
         s->probs        = np;
@@ -374,15 +374,15 @@ static int LzmaSetProps( CLzma *s, Byte d )
     }
     s->numProbs = need;
     s->lc = lc;  s->lp = lp;  s->pb = pb;
-    s->pbMask = ( (UInt32)1 << pb ) - 1;
-    s->lpMask = ( (UInt32)1 << lp ) - 1;
+    s->pbMask = ( (uint32_t)1 << pb ) - 1;
+    s->lpMask = ( (uint32_t)1 << lp ) - 1;
     return SZ_OK;
 }
 
 /* Reset LZMA state, repeated distances and all probabilities to defaults. */
 static void LzmaResetState( CLzma *s )
 {
-    UInt32 i;
+    unsigned i;
     s->state = 0;
     s->rep0 = s->rep1 = s->rep2 = s->rep3 = 0;
     for ( i = 0; i < s->numProbs; i++ )
@@ -400,38 +400,38 @@ static void LzmaResetState( CLzma *s )
  * With no reset (LZMA1, or LZMA2 with one reset at the start) dictBase is 0
  * and rel == pos, exactly as before.
  */
-static int LzmaRun( CLzma *s, CRangeDec *rc, CWin *w, UInt32 limit )
+static int LzmaRun( CLzma *s, CRangeDec *rc, CWin *w, uint32_t limit )
 {
-    UInt16  *probs  = s->probs;
-    UInt32   pbMask = s->pbMask;
-    UInt32   lpMask = s->lpMask;
-    unsigned lc     = s->lc;
-    unsigned state  = s->state;
-    UInt32   rep0 = s->rep0, rep1 = s->rep1, rep2 = s->rep2, rep3 = s->rep3;
-    UInt32   pos  = w->total;
-    UInt32   base = w->dictBase;
-    int      ret  = SZ_OK;
+    uint16_t *probs  = s->probs;
+    uint32_t  pbMask = s->pbMask;
+    uint32_t  lpMask = s->lpMask;
+    unsigned  lc     = s->lc;
+    unsigned  state  = s->state;
+    uint32_t  rep0 = s->rep0, rep1 = s->rep1, rep2 = s->rep2, rep3 = s->rep3;
+    uint32_t  pos  = w->total;
+    uint32_t  base = w->dictBase;
+    int       ret  = SZ_OK;
 
     while ( pos < limit )
     {
-        UInt32   rel      = pos - base;
-        unsigned posState = (unsigned)( rel & pbMask );
-        UInt16  *prob = probs + oIsMatch + ( state << kNumPosBitsMax ) + posState;
+        uint32_t  rel      = pos - base;
+        unsigned  posState = (unsigned)( rel & pbMask );
+        uint16_t *prob = probs + oIsMatch + ( state << kNumPosBitsMax ) + posState;
 
         if ( RcBit( rc, prob ) == 0 )
         {
             /*---- literal ---------------------------------------------- */
-            UInt16  *probLit;
-            unsigned symbol = 1;
-            Byte     prevByte = ( rel == 0 ) ? 0 : WinBack( w, 0 );
-            unsigned litState =
+            uint16_t *probLit;
+            unsigned  symbol = 1;
+            uint8_t   prevByte = ( rel == 0 ) ? 0 : WinBack( w, 0 );
+            unsigned  litState =
                 (unsigned)( ( ( rel & lpMask ) << lc ) + ( prevByte >> ( 8 - lc ) ) );
 
-            probLit = probs + oLiteral + (UInt32)0x300 * litState;
+            probLit = probs + oLiteral + (uint32_t)0x300 * litState;
 
             if ( state >= 7 )
             {
-                Byte matchByte;
+                uint8_t matchByte;
                 if ( rep0 + 1 > rel || rep0 + 1 > w->size )
                     { ret = SZ_ERR_DATA; break; }
                 matchByte = WinBack( w, rep0 );
@@ -449,7 +449,7 @@ static int LzmaRun( CLzma *s, CRangeDec *rc, CWin *w, UInt32 limit )
             while ( symbol < 0x100 )
                 symbol = ( symbol << 1 ) | RcBit( rc, probLit + symbol );
 
-            if ( !WinPutByte( w, (Byte)symbol ) ) { ret = w->err; break; }
+            if ( !WinPutByte( w, (uint8_t)symbol ) ) { ret = w->err; break; }
             pos++;
             state = ( state < 4 ) ? 0 : ( state < 10 ) ? state - 3 : state - 6;
             continue;
@@ -473,7 +473,7 @@ static int LzmaRun( CLzma *s, CRangeDec *rc, CWin *w, UInt32 limit )
                     if ( RcBit( rc, prob ) == 0 )
                     {
                         /* short rep: one byte from rep0 */
-                        Byte b;
+                        uint8_t b;
                         if ( rep0 + 1 > rel || rep0 + 1 > w->size )
                             { ret = SZ_ERR_DATA; break; }
                         state = ( state < 7 ) ? 9 : 11;
@@ -485,7 +485,7 @@ static int LzmaRun( CLzma *s, CRangeDec *rc, CWin *w, UInt32 limit )
                 }
                 else
                 {
-                    UInt32 dist;
+                    uint32_t dist;
                     prob = probs + oIsRepG1 + state;
                     if ( RcBit( rc, prob ) == 0 )
                     {
@@ -514,7 +514,7 @@ static int LzmaRun( CLzma *s, CRangeDec *rc, CWin *w, UInt32 limit )
             else
             {
                 /* new match: decode length, then distance */
-                UInt32   dist;
+                uint32_t dist;
                 unsigned posSlot, lenToPosState;
 
                 rep3 = rep2; rep2 = rep1; rep1 = rep0;
@@ -585,7 +585,7 @@ static int LzmaRun( CLzma *s, CRangeDec *rc, CWin *w, UInt32 limit )
                 int cancelled = 0;
                 do
                 {
-                    Byte b = WinBack( w, rep0 );
+                    uint8_t b = WinBack( w, rep0 );
                     if ( !WinPutByte( w, b ) ) { cancelled = 1; break; }
                     pos++;
                 } while ( --len );
@@ -605,8 +605,8 @@ static int LzmaRun( CLzma *s, CRangeDec *rc, CWin *w, UInt32 limit )
 
 /* Wire an input source: a caller-held buffer, or a read callback with its
  * staging buffer.  Returns SZ_OK or SZ_ERR_MEMORY. */
-static int InOpen( CIn *in, const Byte *src, UInt32 srcLen,
-                   LzmaRead read, void *user, UInt32 packSize )
+static int InOpen( CIn *in, const uint8_t *src, uint32_t srcLen,
+                   LzmaRead read, void *user, uint32_t packSize )
 {
     in->read      = read;
     in->user      = user;
@@ -616,7 +616,7 @@ static int InOpen( CIn *in, const Byte *src, UInt32 srcLen,
 
     if ( read )
     {
-        in->stage = (Byte *)malloc( LZ_IN_STAGE );
+        in->stage = (uint8_t *)malloc( LZ_IN_STAGE );
         if ( !in->stage ) return SZ_ERR_MEMORY;
         in->remaining = packSize;
     }
@@ -636,8 +636,8 @@ static void InClose( CIn *in )
 
 /* Wire the output window: the caller's buffer, or a ring of the dictionary
  * size (never bigger than the output itself).  SZ_OK or SZ_ERR_MEMORY. */
-static int WinOpen( CWin *w, Byte *dst, UInt32 dstLen,
-                    UInt32 dictSize, UInt32 unpackSize,
+static int WinOpen( CWin *w, uint8_t *dst, uint32_t dstLen,
+                    uint32_t dictSize, uint32_t unpackSize,
                     LzmaEmit emit, void *user )
 {
     w->pos = w->flushed = w->total = w->dictBase = 0;
@@ -656,7 +656,7 @@ static int WinOpen( CWin *w, Byte *dst, UInt32 dstLen,
     if ( unpackSize && unpackSize < dictSize )
         dictSize = unpackSize;         /* a match can never reach further back */
 
-    w->win = (Byte *)malloc( dictSize );
+    w->win = (uint8_t *)malloc( dictSize );
     if ( !w->win ) return SZ_ERR_MEMORY;
     w->size = dictSize;
     return SZ_OK;
@@ -671,8 +671,8 @@ static void WinClose( CWin *w )
 /*===========================================================================
  * LZMA1
  *===========================================================================*/
-static int LzmaRunStream( const Byte *props, UInt32 propsSize,
-                          CIn *in, UInt32 packSize, CWin *w, UInt32 unpackSize )
+static int LzmaRunStream( const uint8_t *props, uint32_t propsSize,
+                          CIn *in, uint32_t packSize, CWin *w, uint32_t unpackSize )
 {
     CLzma     s;
     CRangeDec rc;
@@ -704,9 +704,9 @@ static int LzmaRunStream( const Byte *props, UInt32 propsSize,
     return rc.corrupted ? SZ_ERR_DATA : SZ_OK;
 }
 
-int LzmaDecode( const Byte *props, UInt32 propsSize,
-                const Byte *src, UInt32 srcLen,
-                Byte *dst, UInt32 dstLen )
+int LzmaDecode( const uint8_t *props, uint32_t propsSize,
+                const uint8_t *src, uint32_t srcLen,
+                uint8_t *dst, uint32_t dstLen )
 {
     CIn  in;
     CWin w;
@@ -724,9 +724,9 @@ int LzmaDecode( const Byte *props, UInt32 propsSize,
     return rc;
 }
 
-int LzmaDecodeStream( const Byte *props, UInt32 propsSize,
-                      LzmaRead read, void *readUser, UInt32 packSize,
-                      UInt32 unpackSize, UInt32 dictSize,
+int LzmaDecodeStream( const uint8_t *props, uint32_t propsSize,
+                      LzmaRead read, void *readUser, uint32_t packSize,
+                      uint32_t unpackSize, uint32_t dictSize,
                       LzmaEmit emit, void *emitUser )
 {
     CIn  in;
@@ -769,7 +769,7 @@ int LzmaDecodeStream( const Byte *props, UInt32 propsSize,
  * with one.  CWin::dictBase records where the current dictionary starts, and
  * LzmaRun counts its position context and match reach from there.
  *===========================================================================*/
-static int Lzma2RunStream( CIn *in, CWin *w, UInt32 unpackTotal )
+static int Lzma2RunStream( CIn *in, CWin *w, uint32_t unpackTotal )
 {
     CLzma s;
     int   haveProps = 0;
@@ -781,8 +781,8 @@ static int Lzma2RunStream( CIn *in, CWin *w, UInt32 unpackTotal )
 
     for ( ;; )
     {
-        Byte control, hdr[5];
-        int  i;
+        uint8_t control, hdr[5];
+        int     i;
 
         if ( !InFill( in ) ) { rcCode = SZ_ERR_DATA; break; }
         control = *in->p++;
@@ -793,7 +793,7 @@ static int Lzma2RunStream( CIn *in, CWin *w, UInt32 unpackTotal )
         if ( control < 0x80 )
         {
             /*---- uncompressed chunk (control 1 = reset dict, 2 = keep) -- */
-            UInt32 size;
+            uint32_t size;
 
             if ( control > 2 ) { rcCode = SZ_ERR_DATA; break; }
             for ( i = 0; i < 2; i++ )
@@ -803,7 +803,7 @@ static int Lzma2RunStream( CIn *in, CWin *w, UInt32 unpackTotal )
             }
             if ( rcCode != SZ_OK ) break;
 
-            size = ( ( (UInt32)hdr[0] << 8 ) | hdr[1] ) + 1;
+            size = ( ( (uint32_t)hdr[0] << 8 ) | hdr[1] ) + 1;
             if ( control == 1 )
                 w->dictBase = w->total;      /* reset dictionary here */
             if ( w->total + size > unpackTotal ) { rcCode = SZ_ERR_DATA; break; }
@@ -822,10 +822,10 @@ static int Lzma2RunStream( CIn *in, CWin *w, UInt32 unpackTotal )
         {
             /*---- LZMA chunk ------------------------------------------- */
             unsigned  reset      = (unsigned)( ( control >> 5 ) & 3 );
-            UInt32    unpackSize = (UInt32)( control & 0x1F ) << 16;
-            UInt32    packSize;
+            uint32_t  unpackSize = (uint32_t)( control & 0x1F ) << 16;
+            uint32_t  packSize;
             CRangeDec rc;
-            UInt32    limit;
+            uint32_t  limit;
 
             for ( i = 0; i < 4; i++ )
             {
@@ -834,8 +834,8 @@ static int Lzma2RunStream( CIn *in, CWin *w, UInt32 unpackTotal )
             }
             if ( rcCode != SZ_OK ) break;
 
-            unpackSize += ( ( (UInt32)hdr[0] << 8 ) | hdr[1] ) + 1;
-            packSize    = ( ( (UInt32)hdr[2] << 8 ) | hdr[3] ) + 1;
+            unpackSize += ( ( (uint32_t)hdr[0] << 8 ) | hdr[1] ) + 1;
+            packSize    = ( ( (uint32_t)hdr[2] << 8 ) | hdr[3] ) + 1;
 
             if ( reset >= 2 )
             {
@@ -875,9 +875,9 @@ static int Lzma2RunStream( CIn *in, CWin *w, UInt32 unpackTotal )
     return rcCode;
 }
 
-int Lzma2Decode( Byte dictProp,
-                 const Byte *src, UInt32 srcLen,
-                 Byte *dst, UInt32 dstLen )
+int Lzma2Decode( uint8_t dictProp,
+                 const uint8_t *src, uint32_t srcLen,
+                 uint8_t *dst, uint32_t dstLen )
 {
     CIn  in;
     CWin w;
@@ -897,9 +897,9 @@ int Lzma2Decode( Byte dictProp,
     return rc;
 }
 
-int Lzma2DecodeStream( Byte dictProp,
-                       LzmaRead read, void *readUser, UInt32 packSize,
-                       UInt32 unpackSize, UInt32 dictSize,
+int Lzma2DecodeStream( uint8_t dictProp,
+                       LzmaRead read, void *readUser, uint32_t packSize,
+                       uint32_t unpackSize, uint32_t dictSize,
                        LzmaEmit emit, void *emitUser )
 {
     CIn  in;

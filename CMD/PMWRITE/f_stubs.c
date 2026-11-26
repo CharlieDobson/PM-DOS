@@ -9,7 +9,7 @@
  */
 #include "fmt.h"
 
-static int stub_detect( const u8 *data, u32 len, const char *ext )
+static int stub_detect( const uint8_t *data, uint32_t len, const char *ext )
 {
     (void)data;
     (void)len;
@@ -17,7 +17,7 @@ static int stub_detect( const u8 *data, u32 len, const char *ext )
     return 0;
 }
 
-static int stub_load( const u8 *data, u32 len, WDOC *doc )
+static int stub_load( const uint8_t *data, uint32_t len, WDOC *doc )
 {
     (void)data;
     (void)len;

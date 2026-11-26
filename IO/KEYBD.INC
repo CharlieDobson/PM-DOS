@@ -109,6 +109,9 @@ KBQ_SIZE        EQU     32              ; scan codes held for a DOS box.  A
                                         ; the guest drains it inside its own
                                         ; INT 09h, so this is deep enough to
                                         ; be an overflow nobody reaches
+KBR_SIZE        EQU     128             ; scan codes held for a native
+                                        ; program that reads them itself
+                                        ; (KLS_RAW).  A power of two
 
 ;=====================================================================
 ; kb_init - drain anything the BIOS left in the controller.
@@ -240,6 +243,19 @@ kb_byte:                                ; AL = a byte from the keyboard - or
                                         ; from KLS_INJECT, which is a test's
                                         ; way of pressing a key
         mov     byte ptr [kb_forbox],0
+
+        ; A NATIVE PROGRAM THAT ASKED FOR THE SCAN CODES GETS EVERY ONE
+        ; (KLS_RAW): a game wants to know when a key comes up again,
+        ; which no key in the ring says.  The code is kept for it, and
+        ; then decoded the way a box's is - for Ctrl-Alt-Del, the shift
+        ; state and the lock keys, and nothing put in the ring - because
+        ; the program has said the keyboard is its own to read.
+        cmp     byte ptr [kb_rawon],0
+        je      kb_cooked
+        mov     byte ptr [kb_forbox],1
+        call    kbr_put
+        jmp     short kb_decode
+kb_cooked:
         cmp     byte ptr ds:[v86_active],0
         je      kb_decode               ; no box: the keyboard is all ours
         cmp     byte ptr ds:[v86_irqx],0
@@ -815,6 +831,9 @@ kbr_nohook:
                                         ; BIOS's again before it starts
         xor     al,al
         call    nt_arm
+        call    v86_cr4off              ; VME too, where FPU.INC has no CR4
+                                        ; of the BIOS's to hand down: the
+                                        ; restart need not reset the processor
         mov     edx,dword ptr [fpu_cr0boot]
         xor     ecx,ecx                 ; CL = there is a CR4
         test    byte ptr [fpu_cpu],FPC_CR4
@@ -1663,6 +1682,10 @@ ksm_have:
 ; goes on reaching the ROM, which no table can change.
 ;=====================================================================
 kb_laysvc:
+        cmp     al,KLS_RAW
+        je      kly_raw
+        cmp     al,KLS_RAWREAD
+        je      kly_rawrd
         cmp     al,KLS_GET
         je      kly_get
         cmp     al,KLS_MODE
@@ -1735,6 +1758,81 @@ kli_go:
         mov     byte ptr ds:[v86_active],bl
         popad
         popfd
+        ret
+
+;=====================================================================
+; THE SCAN CODES A NATIVE PROGRAM ASKED FOR (KLS_RAW, KLS_RAWREAD:
+; 21h/F0h AL=0Fh and 10h).
+;
+; A ring that IRQ 1 fills (kbr_put, from kb_byte) and the program
+; empties.  The interrupt moves only the tail and the reader only the
+; head, a byte each, so neither has to keep the other out.  A code that
+; finds the ring full is dropped, as the BIOS drops a key: KBR_SIZE is
+; some forty keys pressed and let go between two reads.
+;
+; THE RING THE BIOS KEEPS IS LEFT AS IT WAS.  Keys typed before the
+; program asked are still in it for whoever reads next, and what the
+; shift keys did while the program had the keyboard has been counted
+; all along (kb_decode), so the state is right when it gives it back.
+;=====================================================================
+kbr_put:                                ; AL = the code; all preserved
+        push    ebx
+        push    ecx
+        movzx   ebx,byte ptr [kbr_tail]
+        lea     ecx,[ebx+1]
+        and     cl,KBR_SIZE - 1
+        cmp     cl,byte ptr [kbr_head]
+        je      krp_full
+        mov     [kbr + ebx],al
+        mov     byte ptr [kbr_tail],cl
+krp_full:
+        pop     ecx
+        pop     ebx
+        ret
+
+;--- KLS_RAW: DL = 1 on, 0 off.  Whatever was kept goes either way: a
+;--- program starts with the keys pressed from now on, and nothing is
+;--- left for the next one that asks.
+kly_raw:
+        pushfd
+        cli
+        mov     byte ptr [kb_rawon],0
+        mov     byte ptr [kbr_head],0
+        mov     byte ptr [kbr_tail],0
+        or      dl,dl
+        jz      klr_off
+        mov     byte ptr [kb_rawon],1
+klr_off:
+        popfd
+        ret
+
+;--- KLS_RAWREAD: EDI -> room, ECX = its bytes -> ECX = the bytes moved.
+kly_rawrd:
+        push    eax
+        push    ebx
+        push    edx
+        push    edi
+        xor     edx,edx
+krr_next:
+        cmp     edx,ecx
+        jae     krr_done
+        movzx   ebx,byte ptr [kbr_head]
+        cmp     bl,byte ptr [kbr_tail]
+        je      krr_done
+        mov     al,[kbr + ebx]
+        mov     [edi],al
+        inc     edi
+        inc     edx
+        inc     bl
+        and     bl,KBR_SIZE - 1
+        mov     byte ptr [kbr_head],bl
+        jmp     short krr_next
+krr_done:
+        mov     ecx,edx
+        pop     edi
+        pop     edx
+        pop     ebx
+        pop     eax
         ret
 
 ;=====================================================================
@@ -1931,3 +2029,8 @@ kb_obf      db  0                       ; ...and its "there is a byte" bit
 kbq_head    db  0
 kbq_tail    db  0
 kbq         db  KBQ_SIZE dup (0)
+kb_rawon    db  0                       ; a native program reads the scan
+                                        ; codes itself (KLS_RAW)
+kbr_head    db  0
+kbr_tail    db  0
+kbr         db  KBR_SIZE dup (0)

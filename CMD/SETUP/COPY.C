@@ -23,6 +23,8 @@
  *
  * THE GAUGE counts bytes as they are written, against the size of all
  * that will be written, and stays at 99% until the last file is shut.
+ * Above the gauge is the billboard of the disk being copied (BBOARD.C,
+ * from SETUP.MSG), or "Setup is copying" when that disk has none.
  */
 #include "setup.h"
 #include "text.h"
@@ -31,9 +33,9 @@ char srcdir[PATHLEN];
 int  src_drive;
 int  src_removable;
 
-static u8 *buf_in, *buf_out;
-static u8 window[4096];
-static u32 gauge_done, gauge_total;
+static uint8_t *buf_in, *buf_out;
+static uint8_t window[4096];
+static uint32_t gauge_done, gauge_total;
 static char status_text[40];
 
 /* ------------------------------------------------------------------ */
@@ -43,7 +45,7 @@ static char status_text[40];
 static int tags_in( const char *dir )
 {
     char path[PATHLEN];
-    u16 attr;
+    uint16_t attr;
     int disk, have = 0;
 
     for ( disk = 1; disk <= inf.ndisks; disk++ ) {
@@ -58,7 +60,7 @@ static int tags_in( const char *dir )
 static int has_inf( const char *dir )
 {
     char path[PATHLEN];
-    u16 attr;
+    uint16_t attr;
 
     path_join( path, dir, "SETUP.INF", sizeof( path ) );
     return plat_get_attr( path, &attr ) == 0;
@@ -175,7 +177,7 @@ int disk_wanted( int disk )
 {
     static const int keys[] = { K_ENTER, 0 };
     char path[PATHLEN], line[60];
-    u16 attr;
+    uint16_t attr;
     DLG dlg;
 
     for ( ;; ) {
@@ -220,7 +222,7 @@ static void show( const char *what, const char *name )
     scr_status( "", status_text );
 }
 
-static void tick( u32 bytes )
+static void tick( uint32_t bytes )
 {
     gauge_done += bytes;
     if ( gauge_total ) {
@@ -232,26 +234,26 @@ static void tick( u32 bytes )
 /* Where copied bytes go: a file, or memory (a startup floppy made in
    the drive the Setup disks are read from has to be read in first) */
 typedef struct {
-    u16   handle;
-    HELD *held;                         /* NULL = the file               */
+    uint16_t handle;
+    HELD    *held;                      /* NULL = the file               */
 } SINK;
 
 /* Memory runs out as a write error would: the caller then writes what
    it holds and comes back for the rest.  The budget leaves the rest of
    Setup room to work in - 256K in the 16-bit half, under MS-DOS. */
-static u32 held_total;
+static uint32_t held_total;
 
-static int hold_bytes( HELD *held, const u8 *data, u16 len )
+static int hold_bytes( HELD *held, const uint8_t *data, uint16_t len )
 {
-    u32 budget = (plat_caps & PC_32BIT) ? 0x800000ul : 0x40000ul;
-    u16 room, step;
+    uint32_t budget = (plat_caps & PC_32BIT) ? 0x800000ul : 0x40000ul;
+    uint16_t room, step;
 
     while ( len ) {
         if ( held->n == 0 || held->len[held->n - 1] == COPYBUF ) {
             if ( held->n == HELD_PIECES || held_total + COPYBUF > budget ) {
                 return 1;
             }
-            held->piece[held->n] = (u8 *)plat_alloc( COPYBUF );
+            held->piece[held->n] = (uint8_t *)plat_alloc( COPYBUF );
             if ( held->piece[held->n] == NULL ) {
                 return 1;
             }
@@ -268,9 +270,9 @@ static int hold_bytes( HELD *held, const u8 *data, u16 len )
     return 0;
 }
 
-static int write_all( SINK *sink, const u8 *data, u16 len )
+static int write_all( SINK *sink, const uint8_t *data, uint16_t len )
 {
-    u16 done;
+    uint16_t done;
 
     if ( len == 0 ) {
         return 0;
@@ -287,12 +289,12 @@ static int write_all( SINK *sink, const u8 *data, u16 len )
 }
 
 /* SZDD in, plain out.  -> 0, or 1 for a bad file, 2 for a write error */
-static int expand_into( u16 in, SINK *out, u32 *written )
+static int expand_into( uint16_t in, SINK *out, uint32_t *written )
 {
-    u16 have = 0, at = 0, outlen = 0, got;
-    u32 total = 0, want;
+    uint16_t have = 0, at = 0, outlen = 0, got;
+    uint32_t total = 0, want;
     int pos = 4096 - 16, bits = 0, flags = 0, i, len, from;
-    u8 byte, low;
+    uint8_t byte, low;
 
 #define NEXT( var ) \
     if ( at == have ) { \
@@ -333,7 +335,7 @@ static int expand_into( u16 in, SINK *out, u32 *written )
             from = low | ((byte & 0xF0) << 4);
             len = (byte & 0x0F) + 3;
             for ( i = 0; i < len; i++ ) {
-                u8 val = window[(from + i) & 4095];
+                uint8_t val = window[(from + i) & 4095];
                 EMIT( val );
             }
         }
@@ -350,7 +352,7 @@ ended:
 #undef EMIT
 }
 
-int expand_file( u16 in, u16 out, u32 *written )
+int expand_file( uint16_t in, uint16_t out, uint32_t *written )
 {
     SINK sink;
 
@@ -359,10 +361,10 @@ int expand_file( u16 in, u16 out, u32 *written )
     return expand_into( in, &sink, written );
 }
 
-static int raw_copy( u16 in, SINK *out, u32 *written )
+static int raw_copy( uint16_t in, SINK *out, uint32_t *written )
 {
-    u16 got;
-    u32 total = 0;
+    uint16_t got;
+    uint32_t total = 0;
 
     for ( ;; ) {
         if ( plat_read( in, buf_in, COPYBUF, &got ) ) {
@@ -413,9 +415,11 @@ int copy_rootdest( const INFFILE *file, char *dest, int max )
     return 1;
 }
 
-int copy_error_box( const char *fmt, const char *name )
+/* A file that could not be read or written.  -> 1 = ENTER, try again;
+   0 = ESC, go on without it */
+int copy_retry_box( const char *fmt, const char *name )
 {
-    static const int keys[] = { K_ENTER, 0 };
+    static const int keys[] = { K_ENTER, K_ESC, 0 };
     char line[80];
     DLG dlg;
 
@@ -424,32 +428,39 @@ int copy_error_box( const char *fmt, const char *name )
     dlg_blank( &dlg );
     dlg_para( &dlg, line );
     dlg_blank( &dlg );
-    dlg_para( &dlg, tx_cperr_go );
+    dlg_para( &dlg, tx_cperr_retry );
+    dlg_para( &dlg, tx_cperr_skip );
     dlg_blank( &dlg );
-    dlg_run( &dlg, A_BAR, tx_keys_ex, keys, 1 );
-    return 1;
+    return dlg_run( &dlg, A_BAR, tx_keys_retry, keys, 1 ) == K_ENTER;
 }
 
-/* One file from the source to "dest", expanded on the way if packed.
-   -> 0 done, 1 not done (the user was told unless "quiet") */
-int copy_one( const INFFILE *file, const char *dest, int quiet )
+/* After a read error, before the source is read again: a diskette may
+   have been taken out and put back, and PM-DOS would still see the old
+   one.  Done for ESC as well as ENTER, for the files after it. */
+void source_again( void )
+{
+    if ( src_removable ) {
+        plat_vol_remount( src_drive );
+    }
+}
+
+/* One try at a file.  -> 0 done, 1 the source could not be read, 2
+   "dest" could not be written.  A failed try leaves no "dest" and
+   takes back what it added to the gauge. */
+static int copy_try( const INFFILE *file, const char *dest, int quiet )
 {
     char src[PATHLEN];
-    u16 in, out, date, time, attr;
-    u32 written = 0;
+    uint16_t in, out, date, time, attr;
+    uint32_t written = 0, gauge_at = gauge_done;
     SINK sink;
     int rc;
 
-    if ( buf_in == NULL ) {
-        buf_in = (u8 *)xalloc( COPYBUF );
-        buf_out = (u8 *)xalloc( COPYBUF );
-    }
     path_join( src, srcdir, file->src, sizeof( src ) );
     if ( !quiet ) {
         show( tx_reading, file->dst );
     }
     if ( plat_open( src, 0, &in ) ) {
-        return quiet ? 1 : copy_error_box( tx_cperr_read, file->src );
+        return 1;
     }
     if ( plat_get_ftime( in, &date, &time ) ) {
         date = time = 0;
@@ -460,7 +471,7 @@ int copy_one( const INFFILE *file, const char *dest, int quiet )
     }
     if ( plat_create( dest, &out ) ) {
         plat_close( in );
-        return quiet ? 1 : copy_error_box( tx_cperr_write, dest );
+        return 2;
     }
     if ( !quiet ) {
         show( tx_writing, file->dst );
@@ -481,8 +492,8 @@ int copy_one( const INFFILE *file, const char *dest, int quiet )
     }
     if ( rc ) {
         plat_delete( dest );
-        return quiet ? 1 : copy_error_box( rc == 2 ? tx_cperr_write : tx_cperr_read,
-                                       rc == 2 ? dest : file->src );
+        gauge_done = gauge_at;
+        return rc;
     }
     if ( file->flags & FF_SYSTEM ) {
         plat_set_attr( dest, FA_RDONLY | FA_HIDDEN | FA_SYSTEM );
@@ -490,10 +501,37 @@ int copy_one( const INFFILE *file, const char *dest, int quiet )
     return 0;
 }
 
-/* the bytes the gauge counts to */
-u32 copy_total( int floppy )
+/* One file from the source to "dest", expanded on the way if packed.
+   On an error the user picks: try again, or go on without the file.
+   -> 0 done, 1 not done (the user was told unless "quiet") */
+int copy_one( const INFFILE *file, const char *dest, int quiet )
 {
-    u32 total = 0;
+    int rc, again;
+
+    if ( buf_in == NULL ) {
+        buf_in = (uint8_t *)xalloc( COPYBUF );
+        buf_out = (uint8_t *)xalloc( COPYBUF );
+    }
+    while ( (rc = copy_try( file, dest, quiet )) != 0 ) {
+        if ( quiet ) {
+            return 1;
+        }
+        again = copy_retry_box( rc == 2 ? tx_cperr_write : tx_cperr_read,
+                                rc == 2 ? dest : file->src );
+        if ( rc == 1 ) {
+            source_again();             /* either way: the next file too */
+        }
+        if ( !again ) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* the bytes the gauge counts to */
+uint32_t copy_total( int floppy )
+{
+    uint32_t total = 0;
     int i;
 
     for ( i = 0; i < inf.nfiles; i++ ) {
@@ -512,10 +550,15 @@ u32 copy_total( int floppy )
     return total;
 }
 
+/* the disk whose files are being copied: its billboard is up */
+static int copy_disk;
+
 static void copy_screen( void )
 {
     scr_desk( setup_title() );
-    scr_para( 4, tx_copying );
+    if ( billboard_draw( copy_disk ) ) {
+        scr_para( 4, tx_copying );
+    }
     scr_gauge( gauge_done, gauge_total );
     scr_status( "", status_text );
     scr_flush();
@@ -533,6 +576,7 @@ int copy_all( void )
     gauge_done = 0;
     gauge_total = copy_total( 0 );
     status_text[0] = 0;
+    copy_disk = 1;
     copy_screen();
     for ( disk = 1; disk <= inf.ndisks; disk++ ) {
         for ( i = 0; i < inf.nfiles; i++ ) {
@@ -540,11 +584,15 @@ int copy_all( void )
             if ( file->disk != disk || file->where == WH_SETUP ) {
                 continue;
             }
-            if ( disk_now != disk ) {
-                if ( disk_wanted( disk ) ) {
-                    copy_error_box( tx_cperr_read, inf.disktag[disk] );
-                    return 1;
+            /* the next disk: asked for when it is a diskette, and its
+               billboard put up once it is in */
+            if ( disk_now != disk || copy_disk != disk ) {
+                while ( disk_now != disk && disk_wanted( disk ) ) {
+                    if ( !copy_retry_box( tx_cperr_read, inf.disktag[disk] ) ) {
+                        return 1;
+                    }
                 }
+                copy_disk = disk;
                 copy_screen();
             }
             copy_dest( file, dest, sizeof( dest ) );
@@ -584,13 +632,13 @@ void held_free( HELD *held )
 int held_read( HELD *held, const char *path )
 {
     SINK sink;
-    u16 in;
-    u32 written;
+    uint16_t in;
+    uint32_t written;
     int rc;
 
     if ( buf_in == NULL ) {
-        buf_in = (u8 *)xalloc( COPYBUF );
-        buf_out = (u8 *)xalloc( COPYBUF );
+        buf_in = (uint8_t *)xalloc( COPYBUF );
+        buf_out = (uint8_t *)xalloc( COPYBUF );
     }
     held->n = 0;
     held->date = held->time = 0;
@@ -608,18 +656,19 @@ int held_read( HELD *held, const char *path )
 }
 
 /* A file from the Setup disk, expanded.  0 = read, 1 = it could not
-   be, 3 = there is no memory left for it */
+   be, 3 = there is no memory left for it.  A failure takes back what
+   the gauge counted, so the file can be tried again. */
 int held_copy( HELD *held, const INFFILE *file )
 {
     char src[PATHLEN];
     SINK sink;
-    u16 in;
-    u32 written;
+    uint16_t in;
+    uint32_t written, gauge_at = gauge_done;
     int rc;
 
     if ( buf_in == NULL ) {
-        buf_in = (u8 *)xalloc( COPYBUF );
-        buf_out = (u8 *)xalloc( COPYBUF );
+        buf_in = (uint8_t *)xalloc( COPYBUF );
+        buf_out = (uint8_t *)xalloc( COPYBUF );
     }
     held->n = 0;
     path_join( src, srcdir, file->src, sizeof( src ) );
@@ -636,15 +685,18 @@ int held_copy( HELD *held, const INFFILE *file )
     plat_close( in );
     if ( rc ) {
         held_free( held );
+        gauge_done = gauge_at;
         return rc == 2 ? 3 : 1;
     }
     return 0;
 }
 
-/* What is held, written out as "path".  0 = written */
-int held_write( HELD *held, const char *path, u16 attr )
+/* What is held, written out as "path".  0 = written.  A failure keeps
+   what is held and takes back what the gauge counted, for a retry. */
+int held_write( HELD *held, const char *path, uint16_t attr )
 {
-    u16 handle, done, old;
+    uint16_t handle, done, old;
+    uint32_t gauge_at = gauge_done;
     int i, rc = 0;
 
     if ( plat_get_attr( path, &old ) == 0 && (old & (FA_RDONLY | FA_HIDDEN | FA_SYSTEM)) ) {
@@ -672,11 +724,12 @@ int held_write( HELD *held, const char *path, u16 attr )
     }
     if ( rc ) {
         plat_delete( path );
+        gauge_done = gauge_at;
     }
     return rc;
 }
 
-void gauge_start( u32 total )
+void gauge_start( uint32_t total )
 {
     gauge_done = 0;
     gauge_total = total;

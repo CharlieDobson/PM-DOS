@@ -21,7 +21,7 @@ const char *const page_names[PG_COUNT] = {
 
 static void sum_set( char *dst, const char *src )
 {
-    u32 len = str_len( src );
+    unsigned int len = str_len( src );
 
     if ( len > SUM_WIDTH ) {
         len = SUM_WIDTH;
@@ -59,23 +59,23 @@ static const char *const bios_names[] = {
 };
 
 typedef struct {
-    int  have;
-    char name[24], maker[24];
-    char versions[3][64];
-    int  nversions;
-    char date[12];
-    int  config_ok;
-    u8   model, submodel, revision, features;
-    CPUINFO cpu;
-    char copro[12];
-    int  enhanced, dma, cascade, mca, eisa, pci;
-    u32  ebda_seg, ebda_k;
+    int      have;
+    char     name[24], maker[24];
+    char     versions[3][64];
+    int      nversions;
+    char     date[12];
+    int      config_ok;
+    uint8_t  model, submodel, revision, features;
+    CPUINFO  cpu;
+    char     copro[12];
+    int      enhanced, dma, cascade, mca, eisa, pci;
+    uint32_t ebda_seg, ebda_k;
 } COMPUTER;
 
 static COMPUTER computer;
-static u8 *bios_rom;
+static uint8_t *bios_rom;
 
-static const u8 *system_rom( void )
+static const uint8_t *system_rom( void )
 {
     if ( bios_rom == NULL ) {
         bios_rom = rom_load( 0xF0000UL, 0x10000UL );
@@ -86,7 +86,7 @@ static const u8 *system_rom( void )
 static const char *bios_category( const COMPUTER *comp )
 {
     static const struct {
-        u8          model, submodel;        /* submodel FFh: any */
+        uint8_t     model, submodel;        /* submodel FFh: any */
         const char *name;
     } kinds[] = {
         { 0xFF, 0xFF, "IBM PC" },           { 0xFE, 0xFF, "IBM PC/XT" },
@@ -117,11 +117,11 @@ static const char *bios_category( const COMPUTER *comp )
 static COMPUTER *get_computer( void )
 {
     COMPUTER *comp = &computer;
-    const u8 *rom;
+    const uint8_t *rom;
     BREGS regs;
-    u8 table[10];
+    uint8_t table[10];
     int index, last, count;
-    u32 fpu;
+    uint32_t fpu;
 
     if ( comp->have ) {
         return comp;
@@ -298,7 +298,7 @@ static VIDEO video;
 static void display_code( int code, const char **adapter, const char **display )
 {
     static const struct {
-        u8          code;
+        uint8_t     code;
         const char *adapter, *display;
     } codes[] = {
         { 0x01, "MDA", "Monochrome" },      { 0x02, "CGA", "CGA Color" },
@@ -340,8 +340,8 @@ static VIDEO *get_video( void )
     VIDEO *vid = &video;
     BREGS regs;
     const char *adapter, *display;
-    u8 *rom;
-    u32 len;
+    uint8_t *rom;
+    unsigned int len;
     int index, ega;
 
     if ( vid->have ) {
@@ -387,7 +387,7 @@ static VIDEO *get_video( void )
 
     /* the video BIOS: 55 AA and its length in 512s at C000:0000 */
     if ( peek_w( 0xC0000UL ) == 0xAA55 ) {
-        len = (u32)peek_b( 0xC0002UL ) * 512;
+        len = (unsigned int)peek_b( 0xC0002UL ) * 512;
         if ( len < 0x2000 ) {
             len = 0x2000;
         }
@@ -436,7 +436,7 @@ void pg_video( TEXT *text )
         tx_fieldf( text, width, "VESA Version: ", "%u.%02u", vid->vesa_version >> 8,
                    vid->vesa_version & 0xFF );
         tx_field( text, width, "VESA OEM Name: ", vid->oem );
-        tx_fieldf( text, width, "VESA Video Memory: ", "%,uK", (u32)vid->memory_64k * 64 );
+        tx_fieldf( text, width, "VESA Video Memory: ", "%,uK", (uint32_t)vid->memory_64k * 64 );
         tx_fieldf( text, width, "VESA Video Modes: ", "%u", vid->modes );
     }
     tx_field( text, width, "Secondary Adapter: ", vid->second );
@@ -459,7 +459,7 @@ void sum_video( char *line1, char *line2 )
 void pg_os( TEXT *text )
 {
     int major, minor, dos_major, dos_minor, oem, revision, flags, width = 22;
-    u32 serial;
+    uint32_t serial;
     const char *env;
 
     sys_version( &major, &minor );
@@ -491,7 +491,7 @@ void pg_os( TEXT *text )
 void sum_os( char *line1, char *line2 )
 {
     int major, minor, dos_major, dos_minor, oem;
-    u32 serial;
+    uint32_t serial;
     char line[40];
 
     sys_version( &major, &minor );
@@ -515,12 +515,12 @@ void sum_os( char *line1, char *line2 )
 
 static int packet_vector( int from )
 {
-    u8 head[12];
-    u32 vec;
+    uint8_t head[12];
+    uint32_t vec;
     int number;
 
     for ( number = from; number <= 0x80; number++ ) {
-        vec = peek_d( (u32)number * 4 );
+        vec = peek_d( (uint32_t)number * 4 );
         if ( vec == 0 ) {
             continue;
         }
@@ -535,7 +535,7 @@ static int packet_vector( int from )
 static int network_lines( TEXT *text )
 {
     int found = 0, vec, index, line, pin, width = 22;
-    u32 addr, ident, class_rev;
+    uint32_t addr, ident, class_rev;
 
     for ( vec = packet_vector( 0x60 ); vec; vec = packet_vector( vec + 1 ) ) {
         found++;
@@ -721,14 +721,14 @@ int game_port( int stick[4], int *switches )
     return 1;
 }
 
-static const char *pci_class( u32 class_rev )
+static const char *pci_class( uint32_t class_rev )
 {
     static const char *const base[] = {
         "Older device", "Disk controller", "Network controller", "Display controller",
         "Multimedia device", "Memory controller", "Bridge", "Communications port",
         "System device", "Input device", "Docking station", "Processor", "Serial bus"
     };
-    u32 code = class_rev >> 16;             /* class and subclass */
+    uint32_t code = class_rev >> 16;        /* class and subclass */
 
     switch ( code ) {
     case 0x0100: return "SCSI controller";
@@ -754,7 +754,7 @@ static const char *pci_class( u32 class_rev )
 void pg_other( TEXT *text )
 {
     int stick[4], switches, last, count, index, line, pin, port, cards, width = 16;
-    u32 addr, ident, class_rev;
+    uint32_t addr, ident, class_rev;
     char irq[8];
 
     if ( game_port( stick, &switches ) ) {

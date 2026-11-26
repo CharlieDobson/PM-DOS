@@ -27,8 +27,11 @@
 ; THE STICK THE MACHINE BOOTED FROM is a special case.  The BIOS had
 ; it as drive 80h and PMDOS mounted C: on it through INT 13h; taking
 ; the controller ends that, so before the takeover usb_savebios keeps
-; sector 0 of every BIOS hard disk the IDE driver does not own, and
-; afterwards usb_adopt looks for the same sector on a USB unit.  A
+; a hash of sector 0 of every BIOS hard disk the IDE and SATA drivers
+; do not own, 80h to 87h, and afterwards usb_adopt looks for the same
+; sector on a USB unit.  A BIOS that started from a hard disk numbers
+; the sticks it found after it - 81h, 82h and on - so any of them can
+; be one.  A
 ; match means the unit answers for that BIOS number too (UN_ALIAS),
 ; and C: goes on without noticing.
 ;
@@ -100,7 +103,8 @@ umi_lp:
         mov     dword ptr [edi+UN_SECS],0
         add     edi,UN_LEN
         loop    umi_lp
-        mov     byte ptr [usbm_saved],0
+        mov     byte ptr [usbm_ssec],0
+        mov     byte ptr [usbm_ssize],0
         mov     byte ptr [usbm_adopted],0
         pop     edi
         pop     ecx
@@ -936,7 +940,7 @@ usbm_owns:
         call    usbm_unitof
         jnc     umo_yes
         ; A USB NUMBER WITH NOTHING IN THE SLOT IS STILL OURS: the BIOS
-        ; has no drive 82h, and the answer for an empty slot is "not
+        ; has no drive 88h, and the answer for an empty slot is "not
         ; ready" from usbm_rw, as it is for an empty A:, so that a
         ; letter kept for a stick says so instead of "invalid drive"
         cmp     al,USB_DRV0
@@ -961,21 +965,25 @@ umo_no:
         ret
 
 ;--- usbm_wasbios - CF clear if AL is a BIOS drive a unit once took over
+;--- (a bit of usbm_adopted, 80h to 87h).  Everything kept.
 usbm_wasbios:
-        cmp     al,80h
-        jne     uwb_81
-        test    byte ptr [usbm_adopted],1
-        jz      uwb_no
-        clc
-        ret
-uwb_81:
-        cmp     al,81h
-        jne     uwb_no
-        test    byte ptr [usbm_adopted],2
-        jz      uwb_no
+        push    eax
+        push    ecx
+        movzx   ecx,al
+        sub     ecx,80h
+        jb      uwb_no                  ; a diskette
+        cmp     ecx,MAX_PHYS
+        jae     uwb_no
+        movzx   eax,byte ptr [usbm_adopted]
+        bt      eax,ecx
+        jnc     uwb_no
+        pop     ecx
+        pop     eax
         clc
         ret
 uwb_no:
+        pop     ecx
+        pop     eax
         stc
         ret
 
@@ -996,44 +1004,18 @@ umc_no:
         stc
         ret
 
-;--- 63 sectors a track; 16 heads until that runs out at 504MB, then
-;--- 255, which is what every translating BIOS did; and the cylinders
-;--- stop at 1024, as INT 13h's do
+;--- the geometry a translating BIOS would have given its size, which
+;--- is BLOCK.INC's blk_mkgeo: an IDE disk past the BIOS's count gets
+;--- the same
 usbm_geo:
         push    esi
         push    eax
         call    usbm_capacity           ; -> EBX
+        pop     eax                     ; (POP leaves the flags)
+        pop     esi
         jc      umg_no
-        mov     ecx,63
-        mov     edx,16
-        cmp     ebx,1024 * 16 * 63
-        jbe     umg_heads
-        mov     edx,255
-umg_heads:
-        mov     eax,ebx
-        push    edx
-        push    ecx
-        imul    ecx,edx                 ; sectors a cylinder
-        push    ecx
-        xor     edx,edx
-        div     ecx                     ; EAX = cylinders
-        cmp     eax,1024
-        jbe     umg_cyls
-        mov     eax,1024
-umg_cyls:
-        pop     ecx
-        imul    eax,ecx
-        mov     ebx,eax
-        pop     ecx
-        pop     edx
-        pop     eax
-        pop     esi
-        clc
-        ret
+        jmp     blk_mkgeo               ; -> CX, DX, EBX
 umg_no:
-        pop     eax
-        pop     esi
-        stc
         ret
 
 usbm_read:
@@ -1201,33 +1183,40 @@ urw_fail:
 ;=====================================================================
 ; THE BOOT STICK.
 ;
-; usb_savebios - before the takeover: sector 0 of the BIOS's hard disks
-;                the IDE driver does not drive, through the BIOS, into
-;                SCR_SAVE0 and SCR_SAVE1.  From usb_start.
+; usb_savebios - before the takeover: for each BIOS hard disk, 80h to
+;                87h, that the IDE and SATA drivers do not drive and the
+;                BIOS counted (blk_getgeo asks no other), its size and a
+;                hash of its sector 0, read through the BIOS.  From
+;                usb_start.
 ; usb_adopt    - after it: a unit whose sector 0 is one of those takes
-;                the BIOS drive's number as well (UN_ALIAS).
+;                the BIOS drive's number as well (UN_ALIAS).  A sector 0
+;                that matches is looked for on every number before a
+;                size is: a stick the same size as another disk is not
+;                that disk when its sector 0 says it is a third.
+;
+; HASHES AND NOT THE SECTORS, as ATA.INC keeps the BIOS's (ata_hash):
+; eight sectors do not fit in the scratch block, and a match on 128
+; dwords mixed through a multiply is not a coincidence.
 ;=====================================================================
+.ERRE   MAX_PHYS LE 8, <usbm_ssec, usbm_ssize and usbm_adopted are a byte>
+
 usb_savebios:
         pushad
-        mov     byte ptr [usbm_saved],0
-        mov     al,80h
-        mov     edi,dword ptr [usb_scr]
-        add     edi,SCR_SAVE0
-        mov     dl,1
+        mov     byte ptr [usbm_ssec],0
+        mov     byte ptr [usbm_ssize],0
+        xor     edx,edx                 ; EDX = 0 for 80h, and on
+usb_sblp:
         call    usv_one
-        mov     al,81h
-        mov     edi,dword ptr [usb_scr]
-        add     edi,SCR_SAVE1
-        mov     dl,2
-        call    usv_one
+        inc     edx
+        cmp     edx,MAX_PHYS
+        jb      usb_sblp
         popad
         ret
 
-;--- usv_one - AL = the drive, EDI -> 512 bytes, DL = its bit
+;--- usv_one - EDX = which hard disk, 0 for 80h.  Everything kept.
 usv_one:
-        push    eax
-        push    ebx
-        push    ecx
+        pushad
+        lea     eax,[edx+80h]           ; AL = the drive
         call    ata_owns
         jnc     uso_out                 ; the IDE driver's: not the BIOS's
         call    ahci_owns
@@ -1235,47 +1224,47 @@ usv_one:
                                         ; the BIOS must not be sent to
         call    blk_getgeo              ; -> EBX = its geometry record
         jc      uso_out
+        mov     cl,dl
+        mov     ch,1
+        shl     ch,cl                   ; CH = its bit
         ; the capacity the BIOS gave it is a key as well: a stick that
         ; has never been formatted has an all-zero sector 0, which is
         ; nothing to recognise it by, and its size is all there is
-        push    eax
-        mov     eax,dword ptr [ebx+GEO_LBATOT]
-        or      eax,eax
+        mov     esi,dword ptr [ebx+GEO_LBATOT]
+        or      esi,esi
         jz      uso_nosize
-        cmp     dl,1
-        jne     uso_size81
-        mov     dword ptr [usbm_biostot],eax
-        jmp     uso_sized
-uso_size81:
-        mov     dword ptr [usbm_biostot+4],eax
-uso_sized:
-        mov     al,dl
-        shl     al,2                    ; bits 2 and 3: the size is known
-        or      byte ptr [usbm_saved],al
+        mov     dword ptr [usbm_biostot+edx*4],esi
+        or      byte ptr [usbm_ssize],ch
 uso_nosize:
-        pop     eax
+        mov     byte ptr [uso_bit],ch
         xor     ebx,ebx
         mov     cx,1
-        call    blk_read
+        mov     edi,dword ptr [usb_scr]
+        add     edi,SCR_SAVE0
+        call    blk_read                ; AL is still the drive
         jc      uso_out
         ; all zeros would match anything: not a sector to recognise by
         push    edi
         mov     ecx,128
         xor     eax,eax
+        cld
         repe    scasd
         pop     edi
         je      uso_out
-        or      byte ptr [usbm_saved],dl
+        mov     esi,edi
+        call    ata_hash                ; -> EAX
+        mov     dword ptr [usbm_bhash+edx*4],eax
+        mov     al,byte ptr [uso_bit]
+        or      byte ptr [usbm_ssec],al
 uso_out:
-        pop     ecx
-        pop     ebx
-        pop     eax
+        popad
         ret
 
 usb_adopt:
         pushad
-        cmp     byte ptr [usbm_saved],0
-        je      uad_out
+        mov     al,byte ptr [usbm_ssec]
+        or      al,byte ptr [usbm_ssize]
+        jz      uad_out
         mov     esi,OFFSET usb_units
         xor     ebp,ebp                 ; EBP = the unit
 uad_unit:
@@ -1288,41 +1277,51 @@ uad_unit:
         add     edi,SCR_SECT
         call    usbm_read
         jc      uad_next
-        ; 80h: the same sector 0, or failing that the same size
-        test    byte ptr [usbm_saved],1
-        jz      uad_size80
-        mov     edi,dword ptr [usb_scr]
-        add     edi,SCR_SAVE0
-        call    uad_same
-        je      uad_is80
-uad_size80:
-        test    byte ptr [usbm_saved],4
-        jz      uad_try81
-        mov     eax,dword ptr [esi+UN_SECS]
-        cmp     eax,dword ptr [usbm_biostot]
-        jne     uad_try81
-uad_is80:
-        mov     byte ptr [esi+UN_ALIAS],80h
-        and     byte ptr [usbm_saved],NOT 5
-        or      byte ptr [usbm_adopted],1
-        jmp     uad_next
-uad_try81:
-        test    byte ptr [usbm_saved],2
-        jz      uad_size81
-        mov     edi,dword ptr [usb_scr]
-        add     edi,SCR_SAVE1
-        call    uad_same
-        je      uad_is81
-uad_size81:
-        test    byte ptr [usbm_saved],8
-        jz      uad_next
-        mov     eax,dword ptr [esi+UN_SECS]
-        cmp     eax,dword ptr [usbm_biostot+4]
-        jne     uad_next
-uad_is81:
-        mov     byte ptr [esi+UN_ALIAS],81h
-        and     byte ptr [usbm_saved],NOT 0Ah
-        or      byte ptr [usbm_adopted],2
+        push    esi
+        mov     esi,edi
+        call    ata_hash                ; -> EAX, this unit's sector 0
+        pop     esi
+        mov     ebx,eax                 ; EBX = its hash
+
+        ; the same sector 0, on any number
+        xor     edx,edx
+uad_seclp:
+        movzx   eax,byte ptr [usbm_ssec]
+        bt      eax,edx
+        jnc     uad_secnext
+        cmp     ebx,dword ptr [usbm_bhash+edx*4]
+        je      uad_take
+uad_secnext:
+        inc     edx
+        cmp     edx,MAX_PHYS
+        jb      uad_seclp
+
+        ; failing that, the same size
+        mov     ecx,dword ptr [esi+UN_SECS]
+        xor     edx,edx
+uad_sizelp:
+        movzx   eax,byte ptr [usbm_ssize]
+        bt      eax,edx
+        jnc     uad_sizenext
+        cmp     ecx,dword ptr [usbm_biostot+edx*4]
+        je      uad_take
+uad_sizenext:
+        inc     edx
+        cmp     edx,MAX_PHYS
+        jb      uad_sizelp
+        jmp     short uad_next
+
+        ; BIOS drive 80h + EDX is this unit, and no other unit is it
+uad_take:
+        lea     eax,[edx+80h]
+        mov     byte ptr [esi+UN_ALIAS],al
+        mov     cl,dl
+        mov     al,1
+        shl     al,cl
+        or      byte ptr [usbm_adopted],al
+        not     al
+        and     byte ptr [usbm_ssec],al
+        and     byte ptr [usbm_ssize],al
 uad_next:
         add     esi,UN_LEN
         inc     ebp
@@ -1330,20 +1329,6 @@ uad_next:
         jb      uad_unit
 uad_out:
         popad
-        ret
-
-;--- uad_same - ZF if the 512 bytes at EDI are those at SCR_SECT
-uad_same:
-        push    esi
-        push    edi
-        push    ecx
-        mov     esi,dword ptr [usb_scr]
-        add     esi,SCR_SECT
-        mov     ecx,128
-        repe    cmpsd
-        pop     ecx
-        pop     edi
-        pop     esi
         ret
 
 ;=====================================================================
@@ -1362,14 +1347,17 @@ usbm_iswrite db 0
 usbm_sensing db 0                       ; REQUEST SENSE is out: do not ask
                                         ; why REQUEST SENSE failed
 usbm_tries  db  0
-usbm_saved  db  0                       ; bit 0: SCR_SAVE0 holds 80h's
-usbm_biostot dd  0,0                    ; ...and their capacities, for a
-                                        ; stick with nothing in sector 0
-                                        ; sector 0, bit 1: SCR_SAVE1 81h's
+usbm_ssec   db  0                       ; bit n: usbm_bhash holds BIOS drive
+                                        ; 80h + n's sector 0, as a hash
+usbm_ssize  db  0                       ; bit n: usbm_biostot holds its size,
+                                        ; for a stick with nothing in sector 0
 usbm_adopted db 0                       ; the same bits: that drive was a
                                         ; USB disk, and the BIOS is never
                                         ; asked for it again
-            db  0
+usbm_bhash  dd  MAX_PHYS dup(0)
+usbm_biostot dd MAX_PHYS dup(0)
+uso_bit     db  0                       ; usv_one's drive, as its bit
+            db  0, 0, 0
 usbm_buf    dd  0
 usbm_len    dd  0
 usbm_moved  dd  0                       ; of usbm_len, what the device took

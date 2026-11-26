@@ -30,12 +30,20 @@
 ; ms_conshow in MOUSE.INC).  A program drawing through 21h/F0h therefore
 ; never writes over it, reads it back as a character, or scrolls it.
 ;
-; NOT handled, and known: a guest that leaves the screen in a GRAPHICS
-; mode.  Text written by this driver then goes into the framebuffer as
-; character cells and comes out as noise.  Doing better means routing
-; con_out through the BIOS teletype, which cannot be done from the
-; panic and exception paths this driver has to keep working in.  The
-; geometry check below at least stops it scribbling outside the page.
+; NOT handled HERE, and known: a guest that leaves the screen in a
+; GRAPHICS mode.  Text written by this driver then goes into the text
+; page, which nothing shows, or into a CGA mode's framebuffer as
+; character cells, which come out as noise.  Doing better here means
+; routing con_out through the BIOS teletype, which cannot be done from
+; the panic and exception paths this driver has to keep working in.
+; So the callers that can call the BIOS put the screen right before
+; they write: the kernel's report when it ends a DOS box (DOS\VDM.INC,
+; vdm_scrtext), a native program's fault and exit (DOS\VBE.INC,
+; vbe_exit), the recovery from a ring-0 fault, which has the report
+; EXCEPT.INC printed under the picture printed again (dos_fault,
+; IOS_EXCREP), and the shells before a prompt (21h/F0h AL=0Eh).  A
+; panic still writes into whatever the screen is.  The geometry check
+; below at least stops it scribbling outside the page.
 ;
 ; Included by IOPM.ASM.
 ;=====================================================================

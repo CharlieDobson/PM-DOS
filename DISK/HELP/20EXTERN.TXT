@@ -582,6 +582,12 @@ errors.  [[CHKDSK]] reports whether a file is in one piece.
 DEFRAG works on FAT12, FAT16 and FAT32 drives.  exFAT drives are not
 supported.
 
+{b}Solid-state disks{p}
+
+DEFRAG works only on spinning disks.  Solid-state disks, USB disks and
+RAM disks are refused.  Moving files on flash memory wears the memory
+out and does not make the disk faster.
+
 {b}The screen{p}
 
 A map of the disk, a block for each group of clusters, shows the
@@ -1225,7 +1231,8 @@ to boot.
 
 A USB disk is a disk of its own in the list, marked removable.  A
 partition made, deleted or changed on it is used the next time its
-drive letter is used, so no restart is asked for.  See [[USB]].
+drive letter is used, so no restart is asked for.  Hard disks are
+numbered 0 to 7 and USB disks 8 to 11.  See [[USB]].
 
 {b}The screen{p}
 

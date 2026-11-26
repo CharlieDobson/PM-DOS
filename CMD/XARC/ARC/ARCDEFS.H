@@ -10,15 +10,13 @@
 #include <stdio.h>      /* FILE, for ArcDelScratch */
 
 /*---- Fixed-width integer types ------------------------------------------- *
- * MSVC 2.2 is a 32-bit compiler; int/long are 32 bits.  We deliberately do
- * NOT use __int64 (support is unreliable on this toolchain): the 7z format's
- * 64-bit numbers are read but clamped to 32 bits, with an overflow guard that
+ * The widths come from <stdint.h>.  MSVC 2.2 has none, so the Win32s build
+ * takes DU32\MSVC22\STDINT.H.  We deliberately do NOT use a 64-bit type
+ * (__int64 support is unreliable on MSVC 2.2): the 7z format's 64-bit
+ * numbers are read but clamped to 32 bits, with an overflow guard that
  * rejects anything that would not fit (irrelevant for era-sized archives).
  *-------------------------------------------------------------------------- */
-typedef unsigned char  Byte;
-typedef unsigned short UInt16;
-typedef unsigned int   UInt32;
-typedef int            Int32;
+#include <stdint.h>
 
 /*---- Result codes -------------------------------------------------------- */
 #define SZ_OK             0
@@ -124,13 +122,13 @@ typedef int            Int32;
 #define ARC_MIN_ENTRIES     16384
 #define ARC_MAX_ENTRIES     1000000UL
 
-UInt32 ArcMaxEntries( void );
+uint32_t ArcMaxEntries( void );
 
 /* Verdict on an entry count a header just declared.  SZ_OK to go ahead,
  * SZ_ERR_NORAM for "plausible, but more than this machine can hold", and
  * SZ_ERR_TOOBIG for "past anything real" - the two are different problems
  * and want different messages. */
-int    ArcCheckEntryCount( UInt32 n );
+int    ArcCheckEntryCount( uint32_t n );
 
 #define SZ_MAX_FILES        ArcMaxEntries()
 #define SZ_MAX_FOLDERS      256                 /* coded folders            */
@@ -212,12 +210,12 @@ int    ArcCheckEntryCount( UInt32 n );
  * produced.  This, and not ArcMemLimitMB, is what an "is there enough?"
  * question must be weighed against - the budget has a floor and a ceiling on
  * it and both are deliberate departures from what was measured. */
-UInt32 ArcMemLargest( void );
+uint32_t ArcMemLargest( void );
 
-UInt32 ArcMaxDictSize( void );      /* LZMA sliding dictionary               */
-UInt32 ArcMaxBufferSize( void );    /* biggest whole-file buffer: a RAR entry,
+uint32_t ArcMaxDictSize( void );    /* LZMA sliding dictionary               */
+uint32_t ArcMaxBufferSize( void );  /* biggest whole-file buffer: a RAR entry,
                                        a mounted disk image, the 7z header   */
-UInt32 ArcMemLimitMB( void );       /* the budget in whole MB, for messages  */
+uint32_t ArcMemLimitMB( void );     /* the budget in whole MB, for messages  */
 
 /* The workings behind ArcMemLimitMB, in whole MB, for a diagnostics box.
  * The budget is one number with three quite different causes behind it, and
@@ -233,13 +231,13 @@ UInt32 ArcMemLimitMB( void );       /* the budget in whole MB, for messages  */
  *   budgetMB  - what the program allows itself: three quarters of largestMB,
  *               clamped to the floor and ceiling above.
  * Any pointer may be NULL.  Forces the measurement if it has not run. */
-void   ArcMemReport( UInt32 *sysFreeMB, UInt32 *largestMB, UInt32 *budgetMB );
+void   ArcMemReport( uint32_t *sysFreeMB, uint32_t *largestMB, uint32_t *budgetMB );
 
 /* The same three in KB.  Required, not convenient: on a machine small enough
  * to need this screen all three round to 0 MB, and a diagnostic that prints
  * zero whether the machine is short or the program is broken tells the user
  * nothing.  sysFreeKB == 0 still means "the system would not say". */
-void   ArcMemReportKB( UInt32 *sysFreeKB, UInt32 *largestKB, UInt32 *budgetKB );
+void   ArcMemReportKB( uint32_t *sysFreeKB, uint32_t *largestKB, uint32_t *budgetKB );
 
 #define SZ_MAX_DICT_SIZE    ArcMaxDictSize()
 #define SZ_MAX_BUFFER_SIZE  ArcMaxBufferSize()

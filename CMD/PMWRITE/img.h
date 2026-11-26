@@ -18,21 +18,21 @@
 
 /* the kind a picture file is, from its first bytes: IMG_* (WDOC.H),
    IMG_UNKNOWN when it is none this knows */
-int   img_kind( const u8 *data, u32 len );
+int   img_kind( const uint8_t *data, uint32_t len );
 
 /* its size in pixels, and how many of them it says go to an inch (0
    when it does not say).  1 if the size could be read. */
-int   img_size( const u8 *data, u32 len, u32 *width, u32 *height, u32 *dpi_x, u32 *dpi_y );
+int   img_size( const uint8_t *data, uint32_t len, uint32_t *width, uint32_t *height, uint32_t *dpi_x, uint32_t *dpi_y );
 
 /* its pixels: a heap block of width * height * 3 bytes that the caller
    xfrees, or NULL - a kind that is not decoded, a damaged file, a
    picture of more than IMG_MAX_SIDE pixels a side, or no memory */
 #define IMG_MAX_SIDE    4096
-u8   *img_decode( const u8 *data, u32 len, u32 *width, u32 *height );
+uint8_t *img_decode( const uint8_t *data, uint32_t len, uint32_t *width, uint32_t *height );
 
 /* the size a picture is shown at when its file is all there is to go
    by: its pixels at the resolution it names, or at 96 to the inch,
    and never wider than six inches.  In twips. */
-void  img_natural( const u8 *data, u32 len, s32 *width, s32 *height );
+void  img_natural( const uint8_t *data, uint32_t len, int *width, int *height );
 
 #endif

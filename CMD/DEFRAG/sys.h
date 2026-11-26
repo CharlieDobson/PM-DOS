@@ -25,6 +25,13 @@
 #define DK_FLOPPY       1
 #define DK_FIXED        2       /* a hard disk, or a file mounted as one */
 
+/* sys_drive_medium() results */
+#define MED_DISK        0       /* a diskette, or a hard disk not known to be
+                                   anything but one that spins */
+#define MED_SOLID       1       /* a solid-state disk */
+#define MED_USB         2       /* a USB disk, nearly always flash */
+#define MED_RAM         3       /* a RAM disk */
+
 /* sys_write_sec() kinds (INT 21h/7305h write flags) */
 #define WR_UNKNOWN      0
 #define WR_FAT          1
@@ -57,10 +64,10 @@ int   sys_init( void );                     /* 0 = ok */
 const char *sys_cmdline( void );            /* the command tail */
 const char *sys_getenv( const char *name );
 void  sys_exit( int code );
-void *sys_mem_alloc( u32 size );
+void *sys_mem_alloc( unsigned int size );
 void  sys_break_install( void );            /* ^C raises a flag... */
 int   sys_break_take( void );               /* ...which this reads and lowers */
-void  sys_stdout( const char *buf, u32 len );
+void  sys_stdout( const char *buf, unsigned int len );
 int   sys_stdin_is_console( void );
 int   sys_stdin_byte( void );               /* -1 at the end */
 int   sys_handle_is_file( int handle );     /* 1 = open, and not a device */
@@ -70,36 +77,37 @@ int   sys_exec( const char *prog, const char *tail, int *error );
 void  sys_restart( void );                  /* comes back only if it could not */
 
 /* the clock */
-u32   sys_hundredths( void );               /* the time of day */
-void  sys_get_country( COUNTRY *ctry );
+uint32_t sys_hundredths( void );            /* the time of day */
+void     sys_get_country( COUNTRY *ctry );
 
 /* drives */
 int   sys_get_drive( void );
 int   sys_boot_drive( void );
-int   sys_drive_kind( int drv );            /* DK_* */
-int   sys_drive_exfat( int drv );           /* 1 = exFAT, so DK_NONE */
+int   sys_drive_kind( int drv );                /* DK_* */
+int   sys_drive_exfat( int drv );               /* 1 = exFAT, so DK_NONE */
+int   sys_drive_medium( int drv );              /* MED_* */
 int   sys_get_cwd( int drv, char *buf, int max );   /* "DIR\SUB", 0 = ok */
 int   sys_chdir( int drv, const char *dir );        /* "" = the root */
-int   sys_get_bpb( int drv, u8 *sector );   /* a boot sector made from the DPB */
-int   sys_lock( int drv, int fat32 );       /* 0 = locked, or no lock needed */
+int   sys_get_bpb( int drv, uint8_t *sector );  /* a boot sector made from the DPB */
+int   sys_lock( int drv, int fat32 );           /* 0 = locked, or no lock needed */
 void  sys_unlock( int drv, int fat32 );
-int   sys_vol_flags( int drv );             /* VLS_* */
-int   sys_read_sec( int drv, u32 lba, u32 count, u32 bps, void *buf );
-int   sys_write_sec( int drv, u32 lba, u32 count, u32 bps, const void *buf, int kind );
-void  sys_reset_drive( int drv );           /* flush and forget */
+int   sys_vol_flags( int drv );                 /* VLS_* */
+int   sys_read_sec( int drv, uint32_t lba, uint32_t count, uint32_t bps, void *buf );
+int   sys_write_sec( int drv, uint32_t lba, uint32_t count, uint32_t bps, const void *buf, int kind );
+void  sys_reset_drive( int drv );               /* flush and forget */
 
 /* files: the test log, a picture of the screen */
-int   sys_create( const char *path, u32 *handle );
-int   sys_write( u32 handle, const void *buf, u32 len, u32 *done );
-int   sys_close( u32 handle );
+int   sys_create( const char *path, uint32_t *handle );
+int   sys_write( uint32_t handle, const void *buf, unsigned int len, unsigned int *done );
+int   sys_close( uint32_t handle );
 int   sys_exists( const char *path );
 
 /* ------------------------------------------------------------------ */
 /* the screen, the keyboard and the mouse - SYS_D32.C only             */
 /* ------------------------------------------------------------------ */
 void  sys_screen_size( int *rows, int *cols );
-void  sys_put_cells( u32 first, const u16 *cells, u32 count );
-void  sys_get_cells( u32 first, u16 *cells, u32 count );
+void  sys_put_cells( unsigned int first, const uint16_t *cells, unsigned int count );
+void  sys_get_cells( unsigned int first, uint16_t *cells, unsigned int count );
 void  sys_cursor( int row, int col );
 void  sys_get_cursor( int *row, int *col );
 #define CUR_HIDE        0
@@ -130,23 +138,23 @@ void  sys_mouse_inject( int buttons );  /* test mode: buttons as if pressed */
 /* ------------------------------------------------------------------ */
 
 /* the first megabyte: 1 if it was read */
-int   sys_peek( u32 addr, void *buf, u32 len );
+int   sys_peek( uint32_t addr, void *buf, unsigned int len );
 
 /* a BIOS call that only asks */
 typedef struct {
-    u32 eax, ebx, ecx, edx, esi, edi;
-    u16 es, ds;
-    u32 flags;
+    uint32_t eax, ebx, ecx, edx, esi, edi;
+    uint16_t es, ds;
+    uint32_t flags;
 } BREGS;
 int   sys_bios( int vector, BREGS *regs );  /* 1 = it was called */
 
 /* Set a BIOS graphics mode.  -> the selector of its video memory and
    the bytes there; 0 when the mode was set. */
-int   sys_video_set( u32 mode, u32 *selector, u32 *bytes );
+int   sys_video_set( uint32_t mode, uint32_t *selector, uint32_t *bytes );
 void  sys_video_restore( void );            /* the text screen from before */
 
 /* DOSINT.ASM: bytes to the video memory, and a port */
-void     __cdecl vid_put( u32 selector, u32 offset, const void *src, u32 len );
+void     __cdecl vid_put( uint32_t selector, uint32_t offset, const void *src, uint32_t len );
 void     __cdecl port_out( unsigned port, unsigned value );
 unsigned __cdecl port_in( unsigned port );
 

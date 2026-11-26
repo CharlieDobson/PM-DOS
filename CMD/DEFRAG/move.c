@@ -38,20 +38,20 @@
 
 #define MOVE_BYTES      (128u * 1024u)  /* the most one move carries */
 
-u32 move_error_clus;
+uint32_t move_error_clus;
 
-static u8  *xbuf;
-static u32  xbuf_clus;          /* how many clusters it holds */
+static uint8_t *xbuf;
+static uint32_t xbuf_clus;      /* how many clusters it holds */
 
 /* how many clusters one move may be of */
-u32 move_limit( void )
+uint32_t move_limit( void )
 {
     if ( xbuf == NULL ) {
         xbuf_clus = MOVE_BYTES / vol.bpc;
         if ( xbuf_clus == 0 ) {
             xbuf_clus = 1;
         }
-        xbuf = (u8 *)xalloc( xbuf_clus * vol.bpc );
+        xbuf = (uint8_t *)xalloc( xbuf_clus * vol.bpc );
     }
     return xbuf_clus;
 }
@@ -64,9 +64,9 @@ void move_done( void )
 }
 
 /* a node is leaving its final place after all: the map is told */
-static void unplace( u32 node )
+static void unplace( unsigned int node )
 {
-    u32 clus;
+    uint32_t clus;
 
     if ( !(nodes[node].flags & NF_PLACED) ) {
         return;
@@ -79,7 +79,7 @@ static void unplace( u32 node )
 
 /* the directory entry that names a node's first cluster, and its sector
    written */
-static int link_entry( u32 node, u32 first )
+static int link_entry( unsigned int node, uint32_t first )
 {
     DIRBUF *dir = &dirs[nodes[nodes[node].parent].dir].buf;
 
@@ -88,11 +88,11 @@ static int link_entry( u32 node, u32 first )
 }
 
 /* the ".." of every directory inside directory "dirno" */
-static int link_children( u32 dirno, u32 first )
+static int link_children( unsigned int dirno, uint32_t first )
 {
     const DIRINFO *di = &dirs[dirno];
     DIRBUF *sub;
-    u32 idx, node;
+    unsigned int idx, node;
     int bad = 0;
 
     for ( idx = 0; idx < di->buf.nent; idx++ ) {
@@ -111,9 +111,9 @@ static int link_children( u32 dirno, u32 first )
 
 /* steps 2 to 4, and the tables: "count" clusters of "node" that were
    src[] and followed "before" are dst.. now */
-static int relink( u32 node, u32 before, const u32 *src, u32 count, u32 dst )
+static int relink( unsigned int node, uint32_t before, const uint32_t *src, uint32_t count, uint32_t dst )
 {
-    u32 after = fat_get( src[count - 1] ), index;
+    uint32_t after = fat_get( src[count - 1] ), index;
     int bad = 0;
 
     for ( index = 0; index < count; index++ ) {
@@ -169,10 +169,11 @@ static int relink( u32 node, u32 before, const u32 *src, u32 count, u32 dst )
  * the chain) - into the free clusters dst to dst+count-1.  No more than
  * move_limit() at a time.
  */
-int move_run( u32 node, u32 before, const u32 *src, u32 count, u32 dst )
+int move_run( unsigned int node, uint32_t before, const uint32_t *src, uint32_t count, uint32_t dst )
 {
     DIRBUF *dir = NULL;
-    u32 index, run, at = 0;
+    uint32_t     index, run;
+    unsigned int at = 0;
 
     move_limit();
     if ( count == 0 || count > xbuf_clus || node == N_NONE || (nodes[node].flags & NF_FIXED) ) {
@@ -218,7 +219,7 @@ int move_run( u32 node, u32 before, const u32 *src, u32 count, u32 dst )
         }
     }
     fe_activity( ACT_FAT, dst, count );
-    index = (u32)relink( node, before, src, count, dst );
+    index = (uint32_t)relink( node, before, src, count, dst );
     fe_activity( ACT_IDLE, 0, 0 );
     return (int)index;
 }
@@ -229,11 +230,12 @@ int move_run( u32 node, u32 before, const u32 *src, u32 count, u32 dst )
  * reaches the disk without ever being half one thing and half the
  * other: the old one is there until the new one is complete.
  */
-int move_dir( u32 dirno, u32 dst )
+int move_dir( unsigned int dirno, uint32_t dst )
 {
     DIRINFO *di = &dirs[dirno];
-    u32 node = di->node, count = di->buf.clus.count, old_first = nodes[node].first, index;
-    u32 *src;
+    unsigned int node = di->node;
+    uint32_t     count = di->buf.clus.count, old_first = nodes[node].first, index;
+    uint32_t *src;
     int rc;
 
     if ( count == 0 || node == N_ROOT || (nodes[node].flags & NF_FIXED) ) {
@@ -248,8 +250,8 @@ int move_dir( u32 dirno, u32 dst )
         fe_activity( ACT_IDLE, 0, 0 );
         return DFE_WRITE;
     }
-    src = (u32 *)xalloc( count * sizeof( u32 ) );
-    mem_cpy( src, di->buf.clus.items, count * sizeof( u32 ) );
+    src = (uint32_t *)xalloc( count * sizeof( uint32_t ) );
+    mem_cpy( src, di->buf.clus.items, count * sizeof( uint32_t ) );
     for ( index = 0; index < count; index++ ) {
         di->buf.clus.items[index] = dst + index;
     }
@@ -282,13 +284,13 @@ int move_dir( u32 dirno, u32 dst )
  * It takes room for both, and without it (0 is the answer) the caller
  * writes the directory straight through.
  */
-static int rewrite_twice( DIRBUF *dir, const u8 *old, u32 old_end, u32 new_end )
+static int rewrite_twice( DIRBUF *dir, const uint8_t *old, unsigned int old_end, unsigned int new_end )
 {
-    u32 per = vol.bps / 32;
-    u32 bytes = dir->fixed_root ? vol.root_secs * vol.bps : dir->nent * 32;
-    u32 behind = (old_end + per - 1) / per * per;       /* where the copy starts */
-    u32 first_sec = old_end / per, last_sec, head_secs, sec, idx;
-    u8 *both;
+    unsigned int per = vol.bps / 32;
+    unsigned int bytes = dir->fixed_root ? vol.root_secs * vol.bps : dir->nent * 32;
+    unsigned int behind = (old_end + per - 1) / per * per;  /* where the copy starts */
+    unsigned int first_sec = old_end / per, last_sec, head_secs, sec, idx;
+    uint8_t *both;
     int bad = 0;
 
     if ( new_end == 0 || behind + new_end > dir->nent ) {
@@ -299,7 +301,7 @@ static int rewrite_twice( DIRBUF *dir, const u8 *old, u32 old_end, u32 new_end )
     last_sec = behind + new_end < dir->nent ? (behind + new_end) / per
                                             : (behind + new_end - 1) / per;
     head_secs = (new_end + per - 1) / per;
-    both = (u8 *)xzalloc( bytes );
+    both = (uint8_t *)xzalloc( bytes );
     mem_cpy( both, old, old_end * 32 );
     for ( idx = old_end; idx < behind; idx++ ) {
         both[idx * 32] = DEL_MARK;
@@ -319,10 +321,10 @@ static int rewrite_twice( DIRBUF *dir, const u8 *old, u32 old_end, u32 new_end )
 }
 
 /* a directory written where it is */
-int dir_rewrite( u32 dirno )
+int dir_rewrite( unsigned int dirno )
 {
     DIRBUF *dir = &dirs[dirno].buf;
-    u32 first = dir->fixed_root ? 0 : dir->clus.count ? dir->clus.items[0] : 0;
+    uint32_t first = dir->fixed_root ? 0 : dir->clus.count ? dir->clus.items[0] : 0;
     int rc = 0;
 
     fe_activity( ACT_SORT, first, dir->fixed_root ? 0 : dir->clus.count );

@@ -108,13 +108,13 @@ void  scr_resume( void );
 enum { DB_TEXT, DB_PLANAR, DB_LFB8, DB_LFBHI };
 
 typedef struct {
-    u8   backend;               /* DB_* */
-    u8   bpp;                   /* the hardware's bits a pixel: 0 (text), 4, 8, 15, 16, 24, 32 */
-    u16  width, height;         /* pixels; 0 and 0 for a text screen */
-    u16  cols, rows;            /* cells */
-    u16  colors;                /* what gfx_colors will be: 16 or 256 (16 for text) */
-    u16  vmode;                 /* the BIOS's or VBE's number for it - not for the application */
-    char name[40];              /* for a list: "Text, 50 lines", "800 x 600, 256 colors" */
+    uint8_t  backend;           /* DB_* */
+    uint8_t  bpp;               /* the hardware's bits a pixel: 0 (text), 4, 8, 15, 16, 24, 32 */
+    uint16_t width, height;     /* pixels; 0 and 0 for a text screen */
+    uint16_t cols, rows;        /* cells */
+    uint16_t colors;            /* what gfx_colors will be: 16 or 256 (16 for text) */
+    uint16_t vmode;             /* the BIOS's or VBE's number for it - not for the application */
+    char     name[40];          /* for a list: "Text, 50 lines", "800 x 600, 256 colors" */
 } DISPMODE;
 
 int   disp_mode_count( void );
@@ -156,7 +156,7 @@ int   disp_error( void );       /* why the last disp_set_mode returned 0 */
 /* an attribute is a text screen's: the text colour in the low four
    bits, the background in the high four - sixteen of each on a
    graphics screen, eight backgrounds on a text one */
-#define ATTR( fg, bg )  ((u8)(((bg) << 4) | (fg)))
+#define ATTR( fg, bg )  ((uint8_t)(((bg) << 4) | (fg)))
 
 /* more that a cell can carry on a graphics screen (scr_flag); a text
    screen ignores them */
@@ -180,39 +180,39 @@ extern int gfx_width, gfx_height;       /* its pixels; 0 on a text screen */
 extern int gfx_colors;          /* 16 or 256 */
 
 /* Everything is clipped: a cell off the screen is not drawn. */
-void  scr_ch( int row, int col, int ch, u8 attr );
-void  scr_putn( int row, int col, const char *text, int len, u8 attr );
-void  scr_put( int row, int col, const char *text, u8 attr );
-void  scr_putw( int row, int col, const char *text, int width, u8 attr );   /* padded or cut to "width" */
-void  scr_fill( int row, int col, int len, int ch, u8 attr );
-void  scr_recolor( int row, int col, int len, u8 attr );    /* the characters stay */
-void  scr_flag( int row, int col, int len, u32 flags );     /* CELLF_* onto cells already drawn */
+void  scr_ch( int row, int col, int ch, uint8_t attr );
+void  scr_putn( int row, int col, const char *text, int len, uint8_t attr );
+void  scr_put( int row, int col, const char *text, uint8_t attr );
+void  scr_putw( int row, int col, const char *text, int width, uint8_t attr ); /* padded or cut to "width" */
+void  scr_fill( int row, int col, int len, int ch, uint8_t attr );
+void  scr_recolor( int row, int col, int len, uint8_t attr );  /* the characters stay */
+void  scr_flag( int row, int col, int len, uint32_t flags );   /* CELLF_* onto cells already drawn */
 
 /* "&File": the character after the first '&' in hot_attr - and
    underlined, on a graphics screen - with the '&' not shown.  Pass
    hot_attr the same as attr when access keys are not being shown. */
-void  scr_hot( int row, int col, const char *text, u8 attr, u8 hot_attr );
+void  scr_hot( int row, int col, const char *text, uint8_t attr, uint8_t hot_attr );
 int   scr_hotlen( const char *text );           /* its length without the '&' */
 int   scr_hotkey( const char *text );           /* the access key as a capital, or 0 */
 
 /* a single-line box, its inside filled with blanks; on a graphics
    screen the lines are one pixel wide */
-void  scr_box( int top, int left, int bottom, int right, u8 attr );
+void  scr_box( int top, int left, int bottom, int right, uint8_t attr );
 
 /* the shadow a box casts: two columns to its right and a row below
    take "attr" and keep their characters.  A pane's pixels under a
    shadow are covered by plain cells of that colour. */
-void  scr_shadow( int top, int left, int bottom, int right, u8 attr );
+void  scr_shadow( int top, int left, int bottom, int right, uint8_t attr );
 
 /* The cursor of the cells: CUR_HIDE, CUR_LINE or CUR_BLOCK at a cell.
    It is the hardware's on a text screen and drawn on a graphics one.
    Set it on every turn before scr_flush, as everything else is. */
 void  scr_cursor( int row, int col, int kind );
 
-u32   scr_cell( int row, int col );     /* what was drawn there: character in bits 0-7,
+uint32_t scr_cell( int row, int col );  /* what was drawn there: character in bits 0-7,
                                            attribute in bits 8-15; 0 off the screen */
-void  scr_flush( void );                /* what changed, to the screen */
-void  scr_repaint( void );              /* the next scr_flush sends everything again */
+void     scr_flush( void );             /* what changed, to the screen */
+void     scr_repaint( void );           /* the next scr_flush sends everything again */
 
 /* the colour (a pixel number, 0 to 15) of the spare lines under the
    last row of cells - 800x600 has eight */
@@ -279,10 +279,10 @@ void  gfx_clip_get( int *x0, int *y0, int *x1, int *y1 );
 
 /* the nearest pixel number for a colour written 0x00RRGGBB - of all
    256 on a 256-colour screen, of the first sixteen on a 16-colour one */
-int   gfx_rgb( u32 rgb );
+int   gfx_rgb( uint32_t rgb );
 
 /* the colour of a pixel number, as 0x00RRGGBB */
-u32   gfx_color_rgb( int color );
+uint32_t gfx_color_rgb( int color );
 
 void  gfx_rect( int x, int y, int w, int h, int color );      /* filled */
 void  gfx_hline( int x, int y, int len, int color );
@@ -326,7 +326,7 @@ void  gfx_icon( int x, int y, const char *const *rows, int ink, int disabled );
 
 /* a block of pixel numbers, "stride" bytes from one row of "src" to
    the next */
-void  gfx_blit( int x, int y, int w, int h, const u8 *src, int stride );
+void  gfx_blit( int x, int y, int w, int h, const uint8_t *src, int stride );
 
 /* A block of COVERAGE - 0 is all background, 255 all foreground, as an
    antialiasing rasterizer makes for text - in colour "fg" over colour
@@ -334,7 +334,7 @@ void  gfx_blit( int x, int y, int w, int h, const u8 *src, int stride );
    colour cube and the greys; on a 16-colour one a pixel is "fg" when
    its coverage is 128 or more.  bg < 0 mixes with what is in the
    picture already (slower). */
-void  gfx_cover( int x, int y, int w, int h, const u8 *cov, int stride, int fg, int bg );
+void  gfx_cover( int x, int y, int w, int h, const uint8_t *cov, int stride, int fg, int bg );
 
 /* The coverage from which a pixel is "fg" on a 16-colour screen: 128
    until this is called, 1 to 255.  At 128 a thin upright stroke that
@@ -355,8 +355,8 @@ void  gfx_invert( int x, int y, int w, int h );
    text screen), and afterwards a call to say which pixels were
    written.  THE CLIP RECTANGLE IS NOT APPLIED TO WHAT IS WRITTEN THIS
    WAY: stay inside the rectangle the paint function was given. */
-u8   *gfx_row( int y );
-void  gfx_dirty( int x0, int y0, int x1, int y1 );
+uint8_t *gfx_row( int y );
+void     gfx_dirty( int x0, int y0, int x1, int y1 );
 
 /* ------------------------------------------------------------------ */
 /* the caret                                                           */

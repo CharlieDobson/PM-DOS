@@ -47,36 +47,37 @@
 #define TYPE_STREAM     2
 #define TYPE_ROOT       5
 
-static const u8 cfb_sig[8] = { 0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1 };
+static const uint8_t cfb_sig[8] = { 0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1 };
 
 struct CFB {
-    const u8 *data;
-    u32   len;
-    u32   shift;                /* 9 or 12 */
-    u32   ssz;                  /* a sector's bytes */
-    u32   nsect;                /* sectors after the header; the last may be short */
-    u32  *fatsect;              /* where each sector of the FAT is */
-    u32   nfat;
-    u8   *dir;                  /* the directory */
-    u32   ndir;                 /* ...and how many entries */
-    s32  *parent;               /* the storage each entry is in, -1 for none */
-    u8   *minifat;
-    u32   nminifat;             /* entries */
-    u8   *mini;                 /* the mini stream */
-    u32   mini_len;
-    u32   cutoff;
+    const uint8_t *data;
+    uint32_t  len;
+    uint32_t  shift;            /* 9 or 12 */
+    uint32_t  ssz;              /* a sector's bytes */
+    uint32_t  nsect;            /* sectors after the header; the last may be short */
+    uint32_t *fatsect;          /* where each sector of the FAT is */
+    uint32_t  nfat;
+    uint8_t  *dir;              /* the directory */
+    uint32_t  ndir;             /* ...and how many entries */
+    int32_t  *parent;           /* the storage each entry is in, -1 for none */
+    uint8_t  *minifat;
+    uint32_t  nminifat;         /* entries */
+    uint8_t  *mini;             /* the mini stream */
+    uint32_t  mini_len;
+    uint32_t  cutoff;
 };
 
-int cfb_is( const u8 *data, u32 len )
+int cfb_is( const uint8_t *data, uint32_t len )
 {
     return len >= HEADER_LEN && mem_cmp( data, cfb_sig, sizeof( cfb_sig ) ) == 0;
 }
 
 /* the sector that follows "sect", or ENDOFCHAIN when the FAT has
    nothing to say about it */
-static u32 fat_next( const CFB *cfb, u32 sect )
+static uint32_t fat_next( const CFB *cfb, uint32_t sect )
 {
-    u32 per = cfb->ssz / 4, which = sect / per, where, pos;
+    unsigned int per = cfb->ssz / 4, which = sect / per;
+    uint32_t where, pos;
 
     if ( which >= cfb->nfat ) {
         return ENDOFCHAIN;
@@ -94,9 +95,9 @@ static u32 fat_next( const CFB *cfb, u32 sect )
 
 /* a sector's bytes into "dst": "want" of them, zeroes for what a file
    cut short has not got */
-static void sect_copy( const CFB *cfb, u32 sect, u8 *dst, u32 want )
+static void sect_copy( const CFB *cfb, uint32_t sect, uint8_t *dst, uint32_t want )
 {
-    u32 pos = (sect + 1) << cfb->shift, have;
+    uint32_t pos = (sect + 1) << cfb->shift, have;
 
     have = pos < cfb->len ? cfb->len - pos : 0;
     if ( have > want ) {
@@ -108,10 +109,12 @@ static void sect_copy( const CFB *cfb, u32 sect, u8 *dst, u32 want )
 
 /* a chain of sectors as one heap block: "size" bytes of it, or all of
    it when "size" is NOT_KNOWN.  NULL on damage or no memory. */
-static u8 *chain_read( const CFB *cfb, u32 start, u32 size, u32 *got )
+static uint8_t *chain_read( const CFB *cfb, uint32_t start, uint32_t size, uint32_t *got )
 {
-    u32 sect, count, index, left, part;
-    u8 *block;
+    uint32_t sect;
+    unsigned int count, index;
+    uint32_t left, part;
+    uint8_t *block;
 
     if ( size == NOT_KNOWN ) {
         count = 0;
@@ -127,7 +130,7 @@ static u8 *chain_read( const CFB *cfb, u32 start, u32 size, u32 *got )
         }
         count = (size + cfb->ssz - 1) >> cfb->shift;
     }
-    block = (u8 *)try_alloc( size ? size : 1 );
+    block = (uint8_t *)try_alloc( size ? size : 1 );
     if ( block == NULL ) {
         return NULL;
     }
@@ -149,14 +152,16 @@ static u8 *chain_read( const CFB *cfb, u32 start, u32 size, u32 *got )
 
 /* where the FAT's sectors are: 109 in the header, the rest in the
    DIFAT's own chain, each of whose sectors ends with the next one */
-static int fat_list( CFB *cfb, u32 nfat, u32 difat_first )
+static int fat_list( CFB *cfb, uint32_t nfat, uint32_t difat_first )
 {
-    u32 per = cfb->ssz / 4 - 1, have = 0, sect, steps = 0, index, pos;
+    uint32_t per = cfb->ssz / 4 - 1, have = 0, sect;
+    unsigned int steps = 0, index;
+    uint32_t pos;
 
     if ( nfat > cfb->nsect ) {
         return 0;
     }
-    cfb->fatsect = (u32 *)try_alloc( (nfat ? nfat : 1) * sizeof( u32 ) );
+    cfb->fatsect = (uint32_t *)try_alloc( (nfat ? nfat : 1) * sizeof( uint32_t ) );
     if ( cfb->fatsect == NULL ) {
         return 0;
     }
@@ -183,12 +188,12 @@ static int fat_list( CFB *cfb, u32 nfat, u32 difat_first )
     return 1;
 }
 
-static const u8 *dir_entry( const CFB *cfb, u32 entry )
+static const uint8_t *dir_entry( const CFB *cfb, uint32_t entry )
 {
     return cfb->dir + entry * DIR_ENTRY;
 }
 
-static int dir_type( const CFB *cfb, u32 entry )
+static int dir_type( const CFB *cfb, uint32_t entry )
 {
     return dir_entry( cfb, entry )[0x42];
 }
@@ -198,11 +203,12 @@ static int dir_type( const CFB *cfb, u32 entry )
    the stack, so the stack cannot run over. */
 static int dir_parents( CFB *cfb )
 {
-    u32 *stack;
-    u32 top = 0, entry, from, index, link;
+    uint32_t *stack;
+    unsigned int top = 0;
+    uint32_t entry, from, index, link;
 
-    cfb->parent = (s32 *)try_alloc( cfb->ndir * sizeof( s32 ) );
-    stack = (u32 *)try_alloc( (cfb->ndir * 3 + 1) * 2 * sizeof( u32 ) );
+    cfb->parent = (int32_t *)try_alloc( cfb->ndir * sizeof( int32_t ) );
+    stack = (uint32_t *)try_alloc( (cfb->ndir * 3 + 1) * 2 * sizeof( uint32_t ) );
     if ( cfb->parent == NULL || stack == NULL ) {
         xfree( stack );
         return 0;
@@ -224,7 +230,7 @@ static int dir_parents( CFB *cfb )
         if ( entry == 0 || cfb->parent[entry] >= 0 ) {
             continue;
         }
-        cfb->parent[entry] = (s32)from;
+        cfb->parent[entry] = (int32_t)from;
         for ( index = 0; index < 3; index++ ) {
             /* its two neighbours in the same storage, and for a storage
                the first of what is in it */
@@ -241,10 +247,10 @@ static int dir_parents( CFB *cfb )
     return 1;
 }
 
-CFB *cfb_open( const u8 *data, u32 len )
+CFB *cfb_open( const uint8_t *data, uint32_t len )
 {
     CFB *cfb;
-    u32 shift, got, size;
+    uint32_t shift, got, size;
 
     if ( !cfb_is( data, len ) || len > 0x7FFFFFFFUL ) {
         return NULL;
@@ -311,16 +317,17 @@ void cfb_close( CFB *cfb )
 }
 
 /* 1 if an entry's name is the "len" characters at "name" */
-static int name_is( const CFB *cfb, u32 entry, const char *name, u32 len )
+static int name_is( const CFB *cfb, uint32_t entry, const char *name, unsigned int len )
 {
-    const u8 *raw = dir_entry( cfb, entry );
-    u32 bytes = LE16( raw + 0x40 ), index;
+    const uint8_t *raw = dir_entry( cfb, entry );
+    uint32_t bytes = LE16( raw + 0x40 );
+    unsigned int index;
 
     if ( bytes < 2 || bytes > 64 || bytes / 2 - 1 != len ) {
         return 0;
     }
     for ( index = 0; index < len; index++ ) {
-        if ( raw[index * 2 + 1] != 0 || ch_upper( raw[index * 2] ) != ch_upper( (u8)name[index] ) ) {
+        if ( raw[index * 2 + 1] != 0 || ch_upper( raw[index * 2] ) != ch_upper( (uint8_t)name[index] ) ) {
             return 0;
         }
     }
@@ -329,7 +336,8 @@ static int name_is( const CFB *cfb, u32 entry, const char *name, u32 len )
 
 int cfb_find( CFB *cfb, const char *name )
 {
-    u32 within = 0, entry, len;
+    uint32_t within = 0, entry;
+    unsigned int len;
 
     if ( cfb == NULL || name == NULL ) {
         return -1;
@@ -338,7 +346,7 @@ int cfb_find( CFB *cfb, const char *name )
         for ( len = 0; name[len] && name[len] != '/'; len++ ) {
         }
         for ( entry = 1; entry < cfb->ndir; entry++ ) {
-            if ( cfb->parent[entry] == (s32)within && name_is( cfb, entry, name, len ) ) {
+            if ( cfb->parent[entry] == (int32_t)within && name_is( cfb, entry, name, len ) ) {
                 break;
             }
         }
@@ -354,28 +362,28 @@ int cfb_find( CFB *cfb, const char *name )
     return within ? (int)within : -1;
 }
 
-u32 cfb_size( CFB *cfb, int entry )
+uint32_t cfb_size( CFB *cfb, int entry )
 {
-    if ( cfb == NULL || entry <= 0 || (u32)entry >= cfb->ndir ||
-         dir_type( cfb, (u32)entry ) != TYPE_STREAM ) {
+    if ( cfb == NULL || entry <= 0 || (uint32_t)entry >= cfb->ndir ||
+         dir_type( cfb, (uint32_t)entry ) != TYPE_STREAM ) {
         return 0;
     }
     /* a version 3 file's high half is not to be believed, and a stream
        of more than 4G is not one this reads */
-    return LE32( dir_entry( cfb, (u32)entry ) + 0x78 );
+    return LE32( dir_entry( cfb, (uint32_t)entry ) + 0x78 );
 }
 
-u8 *cfb_read( CFB *cfb, int entry, u32 *len )
+uint8_t *cfb_read( CFB *cfb, int entry, uint32_t *len )
 {
-    const u8 *raw;
-    u8 *block;
-    u32 size, start, sect, left, part, total;
+    const uint8_t *raw;
+    uint8_t *block;
+    uint32_t size, start, sect, left, part, total;
 
-    if ( cfb == NULL || entry <= 0 || (u32)entry >= cfb->ndir ||
-         dir_type( cfb, (u32)entry ) != TYPE_STREAM ) {
+    if ( cfb == NULL || entry <= 0 || (uint32_t)entry >= cfb->ndir ||
+         dir_type( cfb, (uint32_t)entry ) != TYPE_STREAM ) {
         return NULL;
     }
-    raw = dir_entry( cfb, (u32)entry );
+    raw = dir_entry( cfb, (uint32_t)entry );
     start = LE32( raw + 0x74 );
     size = LE32( raw + 0x78 );
     if ( size >= cfb->cutoff ) {
@@ -386,7 +394,7 @@ u8 *cfb_read( CFB *cfb, int entry, u32 *len )
     if ( size > cfb->mini_len ) {
         return NULL;
     }
-    block = (u8 *)try_alloc( size ? size : 1 );
+    block = (uint8_t *)try_alloc( size ? size : 1 );
     if ( block == NULL ) {
         return NULL;
     }
@@ -412,19 +420,19 @@ u8 *cfb_read( CFB *cfb, int entry, u32 *len )
 #define CFBW_NAME       32
 
 typedef struct {
-    char  name[CFBW_NAME];
-    const u8 *data;
-    u32   len;
-    u32   start;                /* its first sector, or mini sector */
-    u32   left, right;          /* directory entries, or NOSTREAM */
-    int   depth;
+    char     name[CFBW_NAME];
+    const uint8_t *data;
+    uint32_t len;
+    uint32_t start;             /* its first sector, or mini sector */
+    uint32_t left, right;       /* directory entries, or NOSTREAM */
+    int      depth;
 } CFBW_ITEM;
 
 struct CFBW {
     CFBW_ITEM item[CFBW_MAX];
-    int   count;
-    int   deepest;
-    u8    clsid[16];
+    int     count;
+    int     deepest;
+    uint8_t clsid[16];
 };
 
 CFBW *cfbw_new( void )
@@ -442,7 +450,7 @@ void cfbw_free( CFBW *w )
     xfree( w );
 }
 
-void cfbw_clsid( CFBW *w, const u8 *clsid )
+void cfbw_clsid( CFBW *w, const uint8_t *clsid )
 {
     if ( w != NULL ) {
         mem_cpy( w->clsid, clsid, 16 );
@@ -453,13 +461,13 @@ void cfbw_clsid( CFBW *w, const u8 *clsid )
    of two as long the one whose capitals come first */
 static int name_order( const char *lhs, const char *rhs )
 {
-    u32 lhs_len = str_len( lhs ), rhs_len = str_len( rhs ), index;
+    unsigned int lhs_len = str_len( lhs ), rhs_len = str_len( rhs ), index;
 
     if ( lhs_len != rhs_len ) {
         return lhs_len < rhs_len ? -1 : 1;
     }
     for ( index = 0; index < lhs_len; index++ ) {
-        int one = ch_upper( (u8)lhs[index] ), two = ch_upper( (u8)rhs[index] );
+        int one = ch_upper( (uint8_t)lhs[index] ), two = ch_upper( (uint8_t)rhs[index] );
 
         if ( one != two ) {
             return one < two ? -1 : 1;
@@ -468,7 +476,7 @@ static int name_order( const char *lhs, const char *rhs )
     return 0;
 }
 
-int cfbw_add( CFBW *w, const char *name, const u8 *data, u32 len )
+int cfbw_add( CFBW *w, const char *name, const uint8_t *data, uint32_t len )
 {
     CFBW_ITEM hold;
     int index;
@@ -496,7 +504,7 @@ int cfbw_add( CFBW *w, const char *name, const u8 *data, u32 len )
 
 /* the tree over items low .. high-1: its top's directory entry.  No
    deeper than the list is long, which is 16. */
-static u32 tree_build( CFBW *w, int low, int high, int depth )
+static uint32_t tree_build( CFBW *w, int low, int high, int depth )
 {
     int mid;
 
@@ -510,35 +518,35 @@ static u32 tree_build( CFBW *w, int low, int high, int depth )
     }
     w->item[mid].left = tree_build( w, low, mid, depth + 1 );
     w->item[mid].right = tree_build( w, mid + 1, high, depth + 1 );
-    return (u32)mid + 1;
+    return (uint32_t)mid + 1;
 }
 
 /* count links of a chain that starts at "first" */
-static void put_chain( OUT *out, u32 first, u32 count )
+static void put_chain( OUT *out, uint32_t first, uint32_t count )
 {
-    u32 index;
+    unsigned int index;
 
     for ( index = 0; index < count; index++ ) {
         out_le32( out, index + 1 < count ? first + index + 1 : ENDOFCHAIN );
     }
 }
 
-static void pad_to( OUT *out, u32 unit, int value )
+static void pad_to( OUT *out, uint32_t unit, int value )
 {
-    u32 over = out_tell( out ) % unit;
+    uint32_t over = out_tell( out ) % unit;
 
     if ( over ) {
         out_fill( out, value, unit - over );
     }
 }
 
-static void put_dir_entry( OUT *out, const char *name, int type, int red, u32 left, u32 right,
-                           u32 child, const u8 *clsid, u32 start, u32 size )
+static void put_dir_entry( OUT *out, const char *name, int type, int red, uint32_t left, uint32_t right,
+                           uint32_t child, const uint8_t *clsid, uint32_t start, uint32_t size )
 {
-    u32 len = str_len( name ), index;
+    unsigned int len = str_len( name ), index;
 
     for ( index = 0; index < 32; index++ ) {
-        out_le16( out, index < len ? (u8)name[index] : 0 );
+        out_le16( out, index < len ? (uint8_t)name[index] : 0 );
     }
     out_le16( out, (len + 1) * 2 );
     out_byte( out, type );
@@ -559,9 +567,10 @@ static void put_dir_entry( OUT *out, const char *name, int type, int red, u32 le
 
 int cfbw_write( CFBW *w, OUT *out )
 {
-    u32 ndir, nmini = 0, nminifat, nms, nbig = 0, ndata, nfat = 0, ndifat = 0, next_fat;
-    u32 total = 0, sect, mini_at = 0, index, top, filled, in_tree = 0;
-    u32 dir_at, minifat_at, ms_at, big_at;
+    uint32_t ndir, nmini = 0, nminifat, nms, nbig = 0, ndata, nfat = 0, ndifat = 0, next_fat;
+    uint32_t total = 0, sect, mini_at = 0, index, top, filled;
+    unsigned int in_tree = 0;
+    uint32_t dir_at, minifat_at, ms_at, big_at;
     int item, perfect;
 
     if ( w == NULL || out == NULL ) {
@@ -578,7 +587,7 @@ int cfbw_write( CFBW *w, OUT *out )
             nbig += (w->item[item].len + HEADER_LEN - 1) / HEADER_LEN;
         }
     }
-    ndir = ((u32)w->count + 1 + 3) / 4;
+    ndir = ((uint32_t)w->count + 1 + 3) / 4;
     nminifat = (nmini + 127) / 128;
     nms = (nmini + 7) / 8;
     ndata = ndir + nminifat + nms + nbig;
@@ -611,10 +620,10 @@ int cfbw_write( CFBW *w, OUT *out )
     }
     w->deepest = 0;
     top = tree_build( w, 0, w->count, 0 );
-    for ( index = 1; index <= (u32)w->deepest + 1; index++ ) {
+    for ( index = 1; index <= (uint32_t)w->deepest + 1; index++ ) {
         in_tree = in_tree * 2 + 1;
     }
-    perfect = in_tree == (u32)w->count;
+    perfect = in_tree == (uint32_t)w->count;
 
     /* the header */
     out_put( out, cfb_sig, sizeof( cfb_sig ) );
@@ -661,7 +670,7 @@ int cfbw_write( CFBW *w, OUT *out )
     /* the DIFAT's own sectors: 127 FAT sectors each, and the next one */
     filled = HEADER_DIFAT;
     for ( index = 0; index < ndifat; index++ ) {
-        u32 slot;
+        unsigned int slot;
 
         for ( slot = 0; slot < 127; slot++ ) {
             out_le32( out, filled < nfat ? filled : FREESECT );
@@ -679,7 +688,7 @@ int cfbw_write( CFBW *w, OUT *out )
                        w->item[item].left, w->item[item].right, NOSTREAM, NULL,
                        w->item[item].start, w->item[item].len );
     }
-    for ( index = (u32)w->count + 1; index < ndir * 4; index++ ) {
+    for ( index = (uint32_t)w->count + 1; index < ndir * 4; index++ ) {
         out_fill( out, 0, 0x44 );
         out_le32( out, NOSTREAM );
         out_le32( out, NOSTREAM );

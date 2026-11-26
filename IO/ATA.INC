@@ -145,6 +145,9 @@ ATA_ID_CABLE    EQU     93 * 2          ; bits 15-14 = 01: the word is used,
 ATA_ID_MODEL    EQU     27 * 2          ; 40 bytes - the model, in words
                                         ; whose two bytes are swapped
 ATA_ID_LBA48    EQU     100 * 2         ; qword - LBA48 sector count
+ATA_ID_CONFIG   EQU     0 * 2           ; 848Ah or 844Ah: a CompactFlash card
+ATA_ID_MAJOR    EQU     80 * 2          ; a bit for each ATA version it meets
+ATA_ID_ROTATE   EQU     217 * 2         ; 1 = no rotation, 0401h-FFFEh = RPM
 
 ; Per-device table entry
 ATD_BASE        EQU     0               ; word - command block base port
@@ -170,7 +173,9 @@ ATD_PIO         EQU     22              ; byte - the fastest PIO mode the
                                         ; drive offers, 0 to 4, which a
                                         ; multiword mode's timing must not
                                         ; outrun (IDEHOST.INC)
-ATD_MODEL       EQU     24              ; ATA_MODEL_LEN bytes - the model
+ATD_MEDIUM      EQU     23              ; byte - DSKF_SOLID, DSKF_SPINS or 0
+                                        ; (ata_medium)
+ATD_MODEL       EQU     24             ; ATA_MODEL_LEN bytes - the model
                                         ; string out of IDENTIFY words
                                         ; 27-46, byte-swapped into reading
                                         ; order, space padded.  Kept so a
@@ -184,7 +189,7 @@ ATD_HDRV        EQU     ATD_HOST + 4    ; byte - which of that controller's
                                         ; four drives: 0 and 1 its primary
                                         ; channel, 2 and 3 the secondary
 ATD_NUM         EQU     ATD_HOST + 5    ; byte - the BIOS number it answers
-                                        ; for, 80h or 81h; 0 for none.  See
+                                        ; for, 80h to 87h; 0 for none.  See
                                         ; ata_number
 ATD_S0OK        EQU     ATD_HOST + 6    ; byte - ATD_S0 holds its sector 0
 ATD_S0          EQU     ATD_HOST + 8    ; dword - a hash of its sector 0
@@ -556,7 +561,7 @@ aid_busy:
         ;
         ; EITHER WAY THIS RETURNS "NOT A HARD DISK", which is what the
         ; carry means to ata_init - so a CD-ROM does not take a place
-        ; in the 80h, 81h numbering that ata_slot hands out.
+        ; in the 80h-and-up numbering that ata_slot hands out.
         mov     byte ptr [ata_stage],'P'
         call    ata_sig
         ; THE SIGNATURE IS TESTED BEFORE THE ZERO TEST, and that order
@@ -1023,7 +1028,7 @@ awd_ok:
 ;            which is the disk whose ATD_NUM it is.  See ata_number.
 ;
 ; NOTHING AT USB_DRV0 OR ABOVE.  Those numbers are the USB units', and
-; blk_read asks this driver first.  ata_number gives out 80h and 81h
+; blk_read asks this driver first.  ata_number gives out 80h to 87h
 ; and nothing else, so this only says so.
 ;=====================================================================
 ata_slot:
@@ -1055,9 +1060,14 @@ as_bad:
         ret
 
 ;=====================================================================
-; ata_number - which IDE disk answers for BIOS 80h, and which for 81h?
-;              ATD_NUM, for every disk.  Called by ata_init once the
-;              probe is over and before any disk is on DMA.
+; ata_number - which IDE disk answers for BIOS 80h, which for 81h, and
+;              on to 87h (MAX_PHYS)?  ATD_NUM, for every disk.  Called
+;              by ata_init once the probe is over and before any disk
+;              is on DMA.
+;
+; UP TO v0.71 THERE WERE TWO NUMBERS, and a third or fourth disk on the
+; second cable had none at all.  There are as many as MS-DOS's FDISK
+; showed now, and the rules below are the same for every one of them.
 ;
 ; UP TO v0.67 THE ANSWER WAS PROBE ORDER: the first disk found was 80h
 ; and the next 81h, on the theory that the BIOS numbers them the same
@@ -1085,8 +1095,9 @@ as_bad:
 ; WHEN THE BIOS COULD NOT BE ASKED - a number it does not have, a read
 ; it refused - the number goes by probe order to a disk on the board's
 ; own channels, as it always did, and never to one on a second
-; controller.  A disk the BIOS does not know cannot be mounted anyway:
-; blk_getgeo asks the BIOS for its geometry first.
+; controller.  So a board whose BIOS knew two disks has its third and
+; fourth numbered 82h and 83h, after the BIOS's; blk_getgeo makes up
+; their geometry from their size, there being no BIOS one to ask for.
 ;
 ; A CD'S HARD DISK IMAGE IS 80h (GV_HDEMU): that number is the BIOS's,
 ; and the first disk of ours can be no lower than 81h.
@@ -1121,7 +1132,7 @@ anu_rnext:
         cmp     ecx,ATA_MAXDEV
         jb      anu_read
 
-        xor     edx,edx                 ; EDX = 0 for 80h, 1 for 81h
+        xor     edx,edx                 ; EDX = 0 for 80h, and on to 87h
 anu_num:
         or      edx,edx
         jnz     anu_noemu
@@ -1157,14 +1168,14 @@ anu_give:
         mov     [esi+ATD_NUM],al
 anu_next:
         inc     edx
-        cmp     edx,2
+        cmp     edx,MAX_PHYS
         jb      anu_num
         popad
         ret
 
 ;---------------------------------------------------------------------
-; ata_matchnum - EDX = 0 or 1.  -> ESI = the unnumbered disk whose
-;                sector 0 is what the BIOS read from 80h + EDX, CF if
+; ata_matchnum - EDX = 0 to MAX_PHYS - 1.  -> ESI = the unnumbered disk
+;                whose sector 0 is what the BIOS read from 80h + EDX, CF if
 ;                there is none that can be told apart.  ata_number has
 ;                the rules.
 ;---------------------------------------------------------------------
@@ -1206,7 +1217,7 @@ amn_none:
         stc
         ret
 
-; amn_count - EDX = 0 or 1, EBP = 1 to ask the size as well as sector
+; amn_count - EDX = which number, EBP = 1 to ask the size as well as sector
 ; 0.  -> EBX = how many unnumbered disks fit, EDI = the first, AL = 1
 ; if one of them is on a second controller's channel.  AH is kept.
 amn_count:
@@ -1349,9 +1360,10 @@ anz_next:
         ret
 
 ;---------------------------------------------------------------------
-; ata_biosread - what the BIOS reads as sector 0 of 80h and 81h, and
-;                how big it says each is.  ata_bhash, ata_btot and
-;                ata_bok.  The first call does it; later ones return.
+; ata_biosread - what the BIOS reads as sector 0 of each hard disk it
+;                counted, 80h up to 87h, and how big it says each is.
+;                ata_bhash, ata_btot and ata_bok.  The first call does
+;                it; later ones return.
 ;
 ; BEFORE THE PROBE AND NEVER AGAIN.  ata_identify sets nIEN in every
 ; drive it finds, and a BIOS whose INT 13h waits for the drive's
@@ -1395,7 +1407,7 @@ abr_noemu:
         bts     dword ptr [ata_bok],edx
 abr_next:
         inc     edx
-        cmp     edx,2
+        cmp     edx,MAX_PHYS
         jb      abr_one
         popad
 abr_out:
@@ -1541,7 +1553,7 @@ api_fits:
 ; themselves "other mass storage" or RAID (most Promise, HighPoint and
 ; SiI ones) have registers of their own beside the standard ones and
 ; stay with their option ROM, through the BIOS, as before.  Whose
-; disk answers for 80h and 81h is ata_number's to say.
+; disk answers for each of 80h to 87h is ata_number's to say.
 ;=====================================================================
 ata_bminit:
         pushad
@@ -2207,11 +2219,101 @@ aki_model:
         add     ebx,2
         add     edi,2
         loop    aki_model
+
+        ; SPINNING OR SOLID STATE, for blk_medium.  After the loop above
+        ; because the test wants the model in reading order
+        mov     ebx,OFFSET ata_idbuf
+        push    esi
+        add     esi,ATD_MODEL
+        call    ata_medium
+        pop     esi
+        mov     [esi+ATD_MEDIUM],al
         pop     edi
         pop     edx
         pop     ecx
         pop     ebx
         pop     eax
+        ret
+
+;=====================================================================
+; ata_medium - EBX -> a disk's IDENTIFY block, ESI -> its model in
+;              reading order, ATA_MODEL_LEN bytes -> AL = DSKF_SOLID,
+;              DSKF_SPINS, or 0 when the disk does not say.  The rest of
+;              EAX is lost; everything else is kept.  AHCI.INC uses it
+;              too.
+;
+; WORD 217 IS THE ANSWER WHEN THERE IS ONE: 1 for no rotation, 0401h to
+; FFFEh for revolutions a minute.  It is believed only from a drive that
+; claims ATA-7 or later in word 80.  The word was reserved before that,
+; and an old drive may hold anything in it.
+;
+; A DRIVE WITH NO RATE CAN STILL BE KNOWN FOR FLASH.  A CompactFlash card
+; says so in word 0 or in word 83 bit 2, and IDE flash disks from before
+; word 217 tend to say so in the model name.  None of these overrules a
+; rate.  Anything else is 0, which is what every older hard disk gives.
+;=====================================================================
+ata_medium:
+        push    ecx
+        mov     ax,word ptr [ebx+ATA_ID_MAJOR]
+        cmp     ax,0FFFFh
+        je      amed_norate
+        test    ax,7F80h                ; ATA-7 and up
+        jz      amed_norate
+        movzx   eax,word ptr [ebx+ATA_ID_ROTATE]
+        cmp     eax,1
+        je      amed_solid
+        cmp     eax,0401h
+        jb      amed_norate
+        cmp     eax,0FFFEh
+        ja      amed_norate
+        mov     al,DSKF_SPINS
+        jmp     short amed_out
+
+amed_norate:
+        mov     ax,word ptr [ebx+ATA_ID_CONFIG]
+        cmp     ax,848Ah
+        je      amed_solid
+        cmp     ax,844Ah
+        je      amed_solid
+        mov     ax,word ptr [ebx+ATA_ID_CMDSET]
+        and     ax,0C004h               ; bits 15-14 = 01: the word is in use
+        cmp     ax,4004h
+        je      amed_solid
+
+        ; "SSD" or "FLASH" anywhere in the name, in either case.  Clearing
+        ; bit 5 leaves each of these letters matching only itself
+        xor     ecx,ecx
+amed_name:
+        mov     ax,word ptr [esi+ecx]
+        and     ax,0DFDFh
+        cmp     ax,5353h                ; "SS"
+        jne     amed_flash
+        mov     al,[esi+ecx+2]
+        and     al,0DFh
+        cmp     al,'D'
+        je      amed_solid
+amed_flash:
+        cmp     ecx,ATA_MODEL_LEN - 5
+        ja      amed_next
+        mov     eax,dword ptr [esi+ecx]
+        and     eax,0DFDFDFDFh
+        cmp     eax,53414C46h           ; "FLAS"
+        jne     amed_next
+        mov     al,[esi+ecx+4]
+        and     al,0DFh
+        cmp     al,'H'
+        je      amed_solid
+amed_next:
+        inc     ecx
+        cmp     ecx,ATA_MODEL_LEN - 3
+        jbe     amed_name
+        xor     al,al
+        jmp     short amed_out
+
+amed_solid:
+        mov     al,DSKF_SOLID
+amed_out:
+        pop     ecx
         ret
 
 ;=====================================================================
@@ -3418,6 +3520,19 @@ acap_bad:
         ret
 
 ;=====================================================================
+; ata_diskmed - AL = BIOS drive -> AL = what ata_medium found on that
+;               disk.  CF set, and AL kept, if the drive is not ours.
+;=====================================================================
+ata_diskmed:
+        push    esi
+        call    ata_slot
+        jc      amed_notours
+        mov     al,[esi+ATD_MEDIUM]
+amed_notours:
+        pop     esi
+        ret
+
+;=====================================================================
 ; Driver state
 ;=====================================================================
 ata_count   dd  0                       ; usable ATA disks found
@@ -3456,9 +3571,9 @@ ata_found   dd  0                       ; a drive answered on the channel, a
 ata_used    dd  0                       ; bit each; and this driver uses one
                                         ; (ata_irqs)
 ata_bok     dd  0                       ; the BIOS's sector 0 was read: bit 0
-                                        ; for 80h, bit 1 for 81h
-ata_bhash   dd  0, 0                    ; ...and its hash, ata_hash's
-ata_btot    dd  0, 0                    ; ...and its size, if the BIOS said
+                                        ; for 80h, and on to bit 7 for 87h
+ata_bhash   dd  MAX_PHYS dup(0)         ; ...and its hash, ata_hash's
+ata_btot    dd  MAX_PHYS dup(0)         ; ...and its size, if the BIOS said
 ata_prdaddr dd  0                       ; the descriptor table, placed by
                                         ; ata_prdinit rather than declared
 ata_hosts   db  ATA_MAXHOST * AH_LEN dup(0)

@@ -32,14 +32,17 @@ extern const CODEC codec_mp3;
 #ifdef HAVE_OGG
 extern const CODEC codec_ogg;
 #endif
+#ifdef HAVE_FLAC
+extern const CODEC codec_flac;
+#endif
 #ifdef HAVE_WMA
 extern const CODEC codec_wma;
 #else
-static const u8 asf_guid[16] = {
+static const uint8_t asf_guid[16] = {
     0x30, 0x26, 0xB2, 0x75, 0x8E, 0x66, 0xCF, 0x11, 0xA6, 0xD9, 0x00, 0xAA, 0x00, 0x62, 0xCE, 0x6C
 };
 
-static int nowma_detect( SRC *src, const u8 *head, u32 len, const char *ext )
+static int nowma_detect( SRC *src, const uint8_t *head, unsigned int len, const char *ext )
 {
     (void)src;
     (void)ext;
@@ -67,7 +70,7 @@ static int nowma_decode( void *state, DECBUF *buf )
     return DE_FORMAT;
 }
 
-static int nowma_seek( void *state, u32 ms, u32 *at_ms )
+static int nowma_seek( void *state, uint32_t ms, uint32_t *at_ms )
 {
     (void)state;
     (void)ms;
@@ -104,6 +107,9 @@ const CODEC *const codecs[] = {
 #endif
 #ifdef HAVE_OGG
     &codec_ogg,
+#endif
+#ifdef HAVE_FLAC
+    &codec_flac,
 #endif
 #ifdef HAVE_WMA
     &codec_wma,
@@ -144,9 +150,9 @@ int dec_open( SRC *src, const char *path, const DECOPT *opt,
 {
     int score[16], tried[16];
     char ext[8], unsup[sizeof( info->format )];
-    u8 *head;
-    const u8 *peek;
-    u32 len;
+    uint8_t *head;
+    const uint8_t *peek;
+    unsigned int len;
     int i, best, rc, result = DE_FORMAT, count = codec_count;
 
     *codec = NULL;
@@ -158,7 +164,7 @@ int dec_open( SRC *src, const char *path, const DECOPT *opt,
     if ( rc != 0 ) {
         return rc == ERR_NOMEM ? DE_NOMEM : DE_READ;
     }
-    head = (u8 *)try_alloc( SRC_PEEK );
+    head = (uint8_t *)try_alloc( SRC_PEEK );
     if ( head == NULL ) {
         src_close( src );
         return DE_NOMEM;

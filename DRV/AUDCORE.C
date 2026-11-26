@@ -47,42 +47,42 @@
 #endif
 
 AUD_INFOBLOCK aud_info;
-u8  *dma_buf;
-u32  dma_phys;
-u32  dma_size;
-u32  blk_bytes;
-u32  blk_count;
-u32  frame_bytes;
+uint8_t *dma_buf;
+uint32_t dma_phys;
+unsigned int dma_size;
+unsigned int blk_bytes;
+unsigned int blk_count;
+unsigned int frame_bytes;
 
-static u8  *dma_block;                  /* the allocation dma_buf is inside */
-static u8   opened;                     /* a program has the card */
-static u8   state = AUDST_CLOSED;
-static u8   hooked;                     /* the line is ours */
-static u8   polled;                     /* ...or could not be had */
-static u8   silence;                    /* the value of a silent byte */
-static u8   vol_left = 255, vol_right = 255;
+static uint8_t *dma_block;              /* the allocation dma_buf is inside */
+static unsigned char opened;            /* a program has the card */
+static unsigned char state = AUDST_CLOSED;
+static unsigned char hooked;            /* the line is ours */
+static unsigned char polled;            /* ...or could not be had */
+static uint8_t  silence;                /* the value of a silent byte */
+static uint8_t  vol_left = 255, vol_right = 255;
 
-static u8  *ring;
-static u32  ring_size;                  /* a power of two */
-static u32  written, copied, released;
-static u32  played;                     /* frames, since AUD_OPEN or AUD_STOP */
-static u32  underruns, irq_count;
-static u8   was_dry;
-static u8   had_sound;                  /* the card has played something since it started */
-static u8   pause_kept;                 /* the card paused itself: card_resume goes on */
+static uint8_t *ring;
+static unsigned int ring_size;          /* a power of two */
+static uint32_t written, copied, released;
+static uint32_t played;                 /* frames, since AUD_OPEN or AUD_STOP */
+static unsigned int underruns, irq_count;
+static unsigned char was_dry;
+static unsigned char had_sound;         /* the card has played something since it started */
+static unsigned char pause_kept;        /* the card paused itself: card_resume goes on */
 
-static u32  blk_src[AUD_MAXBLK];        /* "copied" at the block's first byte */
-static u32  blk_len[AUD_MAXBLK];        /* the ring's bytes in it; silence after */
-static u32  play_blk;                   /* the block the card is in */
+static uint32_t blk_src[AUD_MAXBLK];     /* "copied" at the block's first byte */
+static unsigned int blk_len[AUD_MAXBLK]; /* the ring's bytes in it; silence after */
+static unsigned int play_blk;            /* the block the card is in */
 
-static AUDEV *evq;
-static u32  ev_size;                    /* records, a power of two; 0 for none */
-static u32  ev_in, ev_out;
+static AUDEV   *evq;
+static unsigned int ev_size;            /* records, a power of two; 0 for none */
+static uint32_t ev_in, ev_out;
 
-static u32  last_call;                  /* the tick of the program's last call */
-static u8   stale;                      /* the watchdog gave the card back; the opening waits */
-static u8   resume_after;               /* ...and the card was playing then */
-static u8   park_resume;                /* a park stopped the card while it played */
+static uint32_t last_call;              /* the tick of the program's last call */
+static unsigned char stale;             /* the watchdog gave the card back; the opening waits */
+static unsigned char resume_after;      /* ...and the card was playing then */
+static unsigned char park_resume;       /* a park stopped the card while it played */
 static AUD_OPENBLOCK open_fmt;          /* the format as opened, to take the card back with */
 
 #define WATCHDOG_TICKS  182             /* ten seconds */
@@ -93,20 +93,20 @@ static AUD_OPENBLOCK open_fmt;          /* the format as opened, to take the car
 /* ---------------------------------------------------------------- */
 /* small routines: no C library in a driver                          */
 /* ---------------------------------------------------------------- */
-void mem_zero( void *dst, u32 len )
+void mem_zero( void *dst, unsigned int len )
 {
-    u8 *out = (u8 *)dst;
+    uint8_t *out = (uint8_t *)dst;
 
     while ( len-- ) *out++ = 0;
 }
 
-void mem_copy( void *dst, const void *src, u32 len )
+void mem_copy( void *dst, const void *src, unsigned int len )
 {
-    u8 *out = (u8 *)dst;
-    const u8 *in = (const u8 *)src;
+    uint8_t *out = (uint8_t *)dst;
+    const uint8_t *in = (const uint8_t *)src;
 
     while ( len >= 4 ) {
-        *(u32 *)out = *(const u32 *)in;
+        *(uint32_t *)out = *(const uint32_t *)in;
         out += 4;
         in += 4;
         len -= 4;
@@ -114,22 +114,22 @@ void mem_copy( void *dst, const void *src, u32 len )
     while ( len-- ) *out++ = *in++;
 }
 
-static void mem_fill( void *dst, u8 value, u32 len )
+static void mem_fill( void *dst, uint8_t value, unsigned int len )
 {
-    u8 *out = (u8 *)dst;
-    u32 word = value * 0x01010101UL;
+    uint8_t *out = (uint8_t *)dst;
+    uint32_t word = value * 0x01010101UL;
 
     while ( len >= 4 ) {
-        *(u32 *)out = word;
+        *(uint32_t *)out = word;
         out += 4;
         len -= 4;
     }
     while ( len-- ) *out++ = value;
 }
 
-int mem_same( const void *lhs, const void *rhs, u32 len )
+int mem_same( const void *lhs, const void *rhs, unsigned int len )
 {
-    const u8 *one = (const u8 *)lhs, *two = (const u8 *)rhs;
+    const uint8_t *one = (const uint8_t *)lhs, *two = (const uint8_t *)rhs;
 
     while ( len-- ) {
         if ( *one++ != *two++ ) return 0;
@@ -137,9 +137,9 @@ int mem_same( const void *lhs, const void *rhs, u32 len )
     return 1;
 }
 
-u32 str_len( const char *str )
+unsigned int str_len( const char *str )
 {
-    u32 len = 0;
+    unsigned int len = 0;
 
     while ( str[len] ) len++;
     return len;
@@ -155,7 +155,7 @@ void str_cat( char *dst, const char *src )
     str_cpy( dst + str_len( dst ), src );
 }
 
-void str_hex( char *dst, u32 value, int digits )
+void str_hex( char *dst, uint32_t value, int digits )
 {
     static const char hex[] = "0123456789ABCDEF";
     char *at = dst + str_len( dst );
@@ -168,7 +168,7 @@ void str_hex( char *dst, u32 value, int digits )
     at[digits] = 0;
 }
 
-void str_dec( char *dst, u32 value )
+void str_dec( char *dst, unsigned int value )
 {
     char tmp[12];
     int len = 0;
@@ -183,9 +183,9 @@ void str_dec( char *dst, u32 value )
 }
 
 /* a number at text: decimal, or hexadecimal with "0x" or without */
-u32 num_after( const char *text, int hex, u32 none )
+uint32_t num_after( const char *text, int hex, uint32_t none )
 {
-    u32 value = 0;
+    uint32_t value = 0;
     int digits = 0, digit;
     char ch;
 
@@ -199,8 +199,12 @@ u32 num_after( const char *text, int hex, u32 none )
         } else {
             break;
         }
-        if ( digits++ > 8 ) return none;
-        value = value * ( hex ? 16 : 10 ) + digit;
+        if ( value > 0x0FFFFFFFUL ) {
+            value = 0xFFFFFFFFUL;               /* too long: stays too big */
+        } else {
+            value = value * ( hex ? 16 : 10 ) + digit;
+        }
+        digits++;
     }
     return digits ? value : none;
 }
@@ -209,9 +213,9 @@ u32 num_after( const char *text, int hex, u32 none )
    that counts in decibels: each step of 0.944 (half a decibel) down
    from 255 is one more.  Off (0) is 255; the most otherwise is 96
    (48 dB, the bottom of 255 to 1).  At CALL time only: it loops. */
-u32 aud_atten( u8 level )
+uint32_t aud_atten( uint8_t level )
 {
-    u32 at = 255UL << 16, want = (u32)level << 16, steps = 0;
+    uint32_t at = 255UL << 16, want = (uint32_t)level << 16, steps = 0;
 
     if ( level == 0 ) return 255;
     while ( at > want && steps < 120 ) {
@@ -226,14 +230,14 @@ void aud_print( const char *text )
     nds_print( text );
 }
 
-u32 aud_ticks( void )
+uint32_t aud_ticks( void )
 {
     return nds_ticks();
 }
 
-void aud_delay_ticks( u32 ticks )
+void aud_delay_ticks( unsigned int ticks )
 {
-    u32 start = nds_ticks();
+    uint32_t start = nds_ticks();
 
     while ( nds_ticks() - start < ticks ) ;
 }
@@ -285,16 +289,16 @@ void aud_say_card( const char *driver )
    an aligned window of a power of two up to 64K never crosses a 64K
    line.  The arena hands out the lowest memory first at INIT, so a
    driver loaded by DEVICE= gets memory well below 16MB. */
-int aud_alloc_dma( u32 bytes, u32 limit )
+int aud_alloc_dma( unsigned int bytes, uint32_t limit )
 {
     REGS r;
-    u32 lin, phys;
+    uint32_t lin, phys;
 
-    dma_block = (u8 *)nds_alloc( bytes * 2 );
+    dma_block = (uint8_t *)nds_alloc( bytes * 2 );
     if ( dma_block == 0 ) return 0;
-    lin = ( (u32)dma_block + bytes - 1 ) & ~( bytes - 1 );
+    lin = ( (uint32_t)dma_block + bytes - 1 ) & ~( bytes - 1 );
     mem_zero( &r, sizeof( r ) );
-    r.eax = (u32)BUS_PHYSOF << 8;
+    r.eax = (uint32_t)BUS_PHYSOF << 8;
     r.ebx = lin;
     r.ecx = bytes;
     if ( !nds_bus( &r ) || r.ecx < bytes ) {
@@ -309,7 +313,7 @@ int aud_alloc_dma( u32 bytes, u32 limit )
         dma_block = 0;
         return 0;
     }
-    dma_buf = (u8 *)lin;
+    dma_buf = (uint8_t *)lin;
     dma_phys = phys;
     dma_size = bytes;
     return 1;
@@ -329,10 +333,10 @@ int aud_core_init( void )
 /* the ring and the blocks (interrupts off for all of these)         */
 /* ---------------------------------------------------------------- */
 /* block "b" from the ring, silence after what there is */
-static void fill_block( u32 b )
+static void fill_block( unsigned int b )
 {
-    u8 *dst = dma_buf + b * blk_bytes;
-    u32 have = written - copied, take, at, first;
+    uint8_t *dst = dma_buf + b * blk_bytes;
+    unsigned int have = written - copied, take, at, first;
 
     take = have < blk_bytes ? have : blk_bytes;
     blk_src[b] = copied;
@@ -349,7 +353,7 @@ static void fill_block( u32 b )
 }
 
 /* block "b" all silence, its bytes to come from the ring later */
-static void blank_block( u32 b )
+static void blank_block( unsigned int b )
 {
     mem_fill( dma_buf + b * blk_bytes, silence, blk_bytes );
     blk_src[b] = copied;
@@ -366,8 +370,8 @@ static void blank_block( u32 b )
    only the last of them partly filled, so appending keeps the order. */
 static void top_up( void )
 {
-    u32 n, b, have, take, at, first, used;
-    u8 *dst;
+    unsigned int n, b, have, take, at, first, used;
+    uint8_t *dst;
 
     if ( state != AUDST_PLAYING && state != AUDST_DRY ) return;
     for ( n = 1; n < blk_count; n++ ) {
@@ -390,15 +394,15 @@ static void top_up( void )
 }
 
 /* the frames into the block the card is in, by its position */
-static u32 into_block( void )
+static unsigned int into_block( void )
 {
-    u32 pos = card_dma_pos(), start = play_blk * blk_bytes;
+    unsigned int pos = card_dma_pos(), start = play_blk * blk_bytes;
 
     if ( pos < start || pos >= start + blk_bytes ) return blk_bytes - frame_bytes;
     return ( pos - start ) / frame_bytes * frame_bytes;
 }
 
-static void send_events( u32 now );
+static void send_events( uint32_t now );
 
 /* every block the card has left since the last look, counted and
    made the last in line; the blocks ahead topped up from the ring;
@@ -407,7 +411,7 @@ static void send_events( u32 now );
    too, and the program knows to leave that one out */
 static void catch_up( void )
 {
-    u32 pos, start, guard;
+    unsigned int pos, start, guard;
 
     if ( state != AUDST_PLAYING && state != AUDST_DRY ) return;
     for ( guard = 0; guard < blk_count; guard++ ) {
@@ -436,7 +440,7 @@ static void catch_up( void )
 /* ---------------------------------------------------------------- */
 /* events                                                            */
 /* ---------------------------------------------------------------- */
-static void send_events( u32 now )
+static void send_events( uint32_t now )
 {
     AUDEV *ev;
 
@@ -457,7 +461,7 @@ static void send_events( u32 now )
 /* ---------------------------------------------------------------- */
 static void start_card( void )
 {
-    u32 b;
+    unsigned int b;
 
     copied = released;
     for ( b = 0; b < blk_count; b++ ) blank_block( b );
@@ -475,7 +479,7 @@ static void start_card( void )
    block it had moved on from would be measured as nearly all played */
 static void stop_exact( void )
 {
-    u32 into;
+    unsigned int into;
 
     catch_up();
     into = into_block();
@@ -494,8 +498,8 @@ static void stop_exact( void )
    memory come after */
 static void close_card( void )
 {
-    u32 flags;
-    u8 *old_ring;
+    uint32_t flags;
+    uint8_t *old_ring;
     AUDEV *old_evq;
     int was_stale;
 
@@ -533,7 +537,7 @@ static void close_card( void )
    Interrupts are off */
 static void give_back( void )
 {
-    resume_after = (u8)( state == AUDST_PLAYING || state == AUDST_DRY );
+    resume_after = (unsigned char)( state == AUDST_PLAYING || state == AUDST_DRY );
     if ( resume_after || ( state == AUDST_PAUSED && pause_kept ) ) {
         stop_exact();
         pause_kept = 0;
@@ -549,7 +553,8 @@ static void give_back( void )
 static int take_back( void )
 {
     AUD_OPENBLOCK fmt;
-    u32 old_bytes = blk_bytes, old_count = blk_count, flags;
+    unsigned int old_bytes = blk_bytes, old_count = blk_count;
+    uint32_t flags;
     int rc;
 
     mem_copy( &fmt, &open_fmt, sizeof( fmt ) );
@@ -568,9 +573,9 @@ static int take_back( void )
     return 1;
 }
 
-static u32 pow2_at_least( u32 want, u32 most )
+static unsigned int pow2_at_least( unsigned int want, unsigned int most )
 {
-    u32 size = 1;
+    unsigned int size = 1;
 
     while ( size < want && size < most ) size <<= 1;
     return size;
@@ -578,7 +583,8 @@ static u32 pow2_at_least( u32 want, u32 most )
 
 static int open_card( AUD_OPENBLOCK *fmt )
 {
-    u32 want_ring, want_ev, flags;
+    unsigned int want_ring, want_ev;
+    uint32_t flags;
     int rc;
 
     if ( opened ) close_card();              /* a program that ended without closing */
@@ -589,8 +595,8 @@ static int open_card( AUD_OPENBLOCK *fmt )
     want_ev = fmt->events;
     rc = card_open( fmt );                   /* the format given, and the blocks */
     if ( rc ) return rc;
-    frame_bytes = (u32)( fmt->bits / 8 ) * fmt->channels;
-    silence = (u8)( fmt->bits == 8 ? 0x80 : 0x00 );
+    frame_bytes = (unsigned int)( fmt->bits / 8 ) * fmt->channels;
+    silence = (uint8_t)( fmt->bits == 8 ? 0x80 : 0x00 );
     if ( blk_count < 2 || blk_count > AUD_MAXBLK || blk_bytes * blk_count > dma_size
          || blk_bytes % frame_bytes ) {
         card_close();
@@ -598,10 +604,10 @@ static int open_card( AUD_OPENBLOCK *fmt )
     }
     ring_size = pow2_at_least( want_ring, RING_MAX );
     if ( ring_size < blk_bytes * blk_count * 2 ) ring_size = pow2_at_least( blk_bytes * blk_count * 2, RING_MAX );
-    ring = (u8 *)nds_alloc( ring_size );
+    ring = (uint8_t *)nds_alloc( ring_size );
     while ( ring == 0 && ring_size > blk_bytes * blk_count * 2 && ring_size > 4096 ) {
         ring_size >>= 1;                     /* less, if that is all there is */
-        ring = (u8 *)nds_alloc( ring_size );
+        ring = (uint8_t *)nds_alloc( ring_size );
     }
     if ( ring == 0 ) {
         card_close();
@@ -646,7 +652,7 @@ static int open_card( AUD_OPENBLOCK *fmt )
 /* ---------------------------------------------------------------- */
 /* the entries                                                       */
 /* ---------------------------------------------------------------- */
-int __cdecl nd_irq( u32 line )
+int __cdecl nd_irq( uint32_t line )
 {
     int rc;
 
@@ -661,7 +667,7 @@ int __cdecl nd_irq( u32 line )
 
 void __cdecl nd_tick( void )
 {
-    u32 flags;
+    uint32_t flags;
 
     if ( !opened || stale ) return;
     flags = int_off();
@@ -679,10 +685,10 @@ void __cdecl nd_tick( void )
    and started again on the way back */
 void __cdecl nd_park( int back )
 {
-    u32 flags = int_off();
+    uint32_t flags = int_off();
 
     if ( !back && opened && !stale ) {
-        park_resume = (u8)( state == AUDST_PLAYING || state == AUDST_DRY );
+        park_resume = (unsigned char)( state == AUDST_PLAYING || state == AUDST_DRY );
         if ( park_resume || ( state == AUDST_PAUSED && pause_kept ) ) {
             stop_exact();
             pause_kept = 0;
@@ -701,17 +707,18 @@ void __cdecl nd_park( int back )
    stopped and given back, and that is all */
 void __cdecl nd_halt( void )
 {
-    u32 flags = int_off();
+    uint32_t flags = int_off();
 
     if ( opened && !stale ) give_back();
     int_back( flags );
 }
 
-int __cdecl nd_call( u32 fn, void *buf, u32 len, u32 *answer )
+int __cdecl nd_call( uint32_t fn, void *buf, uint32_t len, uint32_t *answer )
 {
     AUD_STATBLOCK *st;
     AUDEV *ev;
-    u32 flags, room, take, at, first, count, i;
+    uint32_t flags;
+    unsigned int room, take, at, first, count, i;
 
     last_call = nds_ticks();
     *answer = 0;
@@ -745,7 +752,7 @@ int __cdecl nd_call( u32 fn, void *buf, u32 len, u32 *answer )
             first = ring_size - at;
             if ( first > take ) first = take;
             mem_copy( ring + at, buf, first );
-            if ( take > first ) mem_copy( ring, (const u8 *)buf + first, take - first );
+            if ( take > first ) mem_copy( ring, (const uint8_t *)buf + first, take - first );
             written += take;                 /* after the copy: the interrupt reads it */
             flags = int_off();
             top_up();
@@ -824,8 +831,8 @@ int __cdecl nd_call( u32 fn, void *buf, u32 len, u32 *answer )
 
     case AUD_VOLUME:
         if ( len < 2 ) return ERR_BADLEN;
-        vol_left = ( (const u8 *)buf )[0];
-        vol_right = ( (const u8 *)buf )[1];
+        vol_left = ( (const uint8_t *)buf )[0];
+        vol_right = ( (const uint8_t *)buf )[1];
         if ( opened && !stale ) {
             flags = int_off();               /* the SB16's interrupt moves the mixer's index */
             card_volume( vol_left, vol_right );
@@ -857,11 +864,12 @@ int __cdecl nd_call( u32 fn, void *buf, u32 len, u32 *answer )
                 card_opl( ev[i].bank, ev[i].reg, ev[i].val );
                 int_back( flags );
             } else if ( ev[i].kind == AUDE_MPU && ( aud_info.flags & AUDF_MPU ) ) {
-                u32 start = nds_ticks(), sent;
+                uint32_t start = nds_ticks();
+                unsigned int sent;
 
                 for ( ;; ) {
                     flags = int_off();
-                    sent = (u32)card_mpu_put( ev[i].val );
+                    sent = (unsigned int)card_mpu_put( ev[i].val );
                     int_back( flags );
                     if ( sent ) break;
                     if ( nds_ticks() - start > 2 ) return ERR_GENERAL;  /* the port is stuck */

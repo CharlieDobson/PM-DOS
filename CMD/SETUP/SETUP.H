@@ -18,8 +18,8 @@
  * rule and the copying itself are this one source.
  *
  * WRITTEN FOR A 16-BIT INT.  An "int" here is only ever a small count,
- * a row, a key or a flag.  Sizes, sector numbers and offsets are u32,
- * and a product of two of them is cast first.  No u64 anywhere: the
+ * a row, a key or a flag.  Sizes, sector numbers and offsets are uint32_t,
+ * and a product of two of them is cast first.  No uint64_t anywhere: the
  * 16-bit half has no library helpers for it and a sector count fits in
  * 32 bits.  No object is larger than 32K.
  *
@@ -89,30 +89,30 @@
                                 /* CMD.EXE, for a bypassed start         */
 
 typedef struct {
-    u8   disk;                  /* 1..                                   */
-    u8   where;                 /* WH_*                                  */
-    u8   flags;                 /* FF_*                                  */
-    char src[13];               /* the name on the Setup disk            */
-    char dst[13];               /* the name it is installed under        */
-    u32  size;                  /* its size once expanded                */
+    uint8_t  disk;              /* 1..                                   */
+    uint8_t  where;             /* WH_*                                  */
+    uint8_t  flags;             /* FF_*                                  */
+    char     src[13];           /* the name on the Setup disk            */
+    char     dst[13];           /* the name it is installed under        */
+    uint32_t size;              /* its size once expanded                */
 } INFFILE;
 
 typedef struct {
-    char code[4];               /* "001"                                 */
-    char name[24];
-    u16  page[MAX_PAGES];       /* the first is what COUNTRY=code gets   */
-    u8   npages;
-    u8   date_order;            /* 0 = M D Y, 1 = D M Y, 2 = Y M D       */
-    char date_sep, time_sep;
-    u8   clock24;
+    char     code[4];           /* "001"                                 */
+    char     name[24];
+    uint16_t page[MAX_PAGES];   /* the first is what COUNTRY=code gets   */
+    uint8_t  npages;
+    uint8_t  date_order;        /* 0 = M D Y, 1 = D M Y, 2 = Y M D       */
+    char     date_sep, time_sep;
+    uint8_t  clock24;
 } COUNTRYDEF;
 
 typedef struct {
-    char code[3];               /* "GR"                                  */
-    char name[28];
-    u16  id;                    /* /ID: when the code has more than one  */
-    u16  page[MAX_PAGES];
-    u8   npages;
+    char     code[3];           /* "GR"                                  */
+    char     name[28];
+    uint16_t id;                /* /ID: when the code has more than one  */
+    uint16_t page[MAX_PAGES];
+    uint8_t  npages;
 } KEYBDEF;
 
 typedef struct {
@@ -142,7 +142,7 @@ extern INF inf;
 
 int  inf_load( const char *path );      /* 0 = read; else a TX_ message */
 const COUNTRYDEF *inf_country( const char *code );
-const KEYBDEF    *inf_keyboard( const char *code, u16 id );
+const KEYBDEF    *inf_keyboard( const char *code, uint16_t id );
 INFFILE          *inf_file( const char *dst );
 
 /* ------------------------------------------------------------------ */
@@ -164,27 +164,27 @@ INFFILE          *inf_file( const char *dst );
 
 typedef struct {
     /* the disk */
-    int  bios;                  /* its BIOS number, 80h or 81h           */
-    int  state;                 /* TG_*                                  */
-    u32  disk_secs;             /* its size                              */
-    u32  chs_secs;              /* as far as the BIOS's CHS reaches      */
-    u32  part_end;              /* where partitions may end (part_limit) */
-    u16  spt, heads;            /* its geometry                          */
-    u32  gap_lba, gap_secs;     /* the free area Setup would use         */
-    int  slot;                  /* the partition slot for it, 0..3       */
+    int      bios;                 /* its BIOS number, 80h or 81h        */
+    int      state;                /* TG_*                               */
+    uint32_t disk_secs;            /* its size                           */
+    uint32_t chs_secs;             /* as far as the BIOS's CHS reaches   */
+    uint32_t part_end;             /* where partitions may end (part_limit) */
+    uint16_t spt, heads;           /* its geometry                       */
+    uint32_t gap_lba, gap_secs;    /* the free area Setup would use      */
+    int      slot;                 /* the partition slot for it, 0..3    */
     /* the volume */
-    int  drive;                 /* its letter NOW, 0 = A: (-1 = none)    */
-    char final;                 /* its letter when PM-DOS starts: 'C'    */
-    u32  part_lba, part_secs;   /* where the partition is                */
-    int  part_type;             /* its type byte                         */
-    u32  free_kb;               /* free space, in KB                   */
-    u16  reserved;              /* reserved sectors in its BPB           */
-    int  fat;                   /* 12, 16, 32                            */
+    int      drive;                /* its letter NOW, 0 = A: (-1 = none) */
+    char     final;                /* its letter when PM-DOS starts: 'C' */
+    uint32_t part_lba, part_secs;  /* where the partition is             */
+    int      part_type;            /* its type byte                      */
+    uint32_t free_kb;              /* free space, in KB                */
+    uint16_t reserved;             /* reserved sectors in its BPB        */
+    int      fat;                  /* 12, 16, 32                         */
     /* the system on it */
-    char sysname[24];           /* "MS-DOS 6.22", for the screens        */
-    char sysfile[2][13];        /* IO.SYS / MSDOS.SYS, or IBM's names    */
-    char olddir[PATHLEN];       /* where its commands are                */
-    u16  pmver;                 /* TG_PMDOS: major*256+minor, 0 = before 0.70 */
+    char     sysname[24];          /* "MS-DOS 6.22", for the screens     */
+    char     sysfile[2][13];       /* IO.SYS / MSDOS.SYS, or IBM's names */
+    char     olddir[PATHLEN];      /* where its commands are             */
+    uint16_t pmver;                /* TG_PMDOS: major*256+minor, 0 = before 0.70 */
 } TARGET;
 
 extern TARGET tgt;
@@ -234,8 +234,8 @@ void scr_fill( int row, int col, int rows, int cols, int attr, int ch );
 void scr_attr( int row, int col, int cols, int attr );
 void scr_cursor( int row, int col );    /* an underline there            */
 void scr_nocursor( void );
-void scr_save( u16 *cells );            /* SCR_ROWS * SCR_COLS of them   */
-void scr_restore( const u16 *cells );
+void scr_save( uint16_t *cells );       /* SCR_ROWS * SCR_COLS of them   */
+void scr_restore( const uint16_t *cells );
 
 /* the parts every screen is made of */
 void scr_desk( const char *title );     /* blue, the title, the rule     */
@@ -248,7 +248,7 @@ int  scr_note( int row, const char *label, const char *para );
 void scr_center( int row, int left, int right, int attr, const char *text );
 void scr_box( int top, int left, int bottom, int right, int attr,
               const char *title );
-void scr_gauge( u32 done, u32 total );
+void scr_gauge( uint32_t done, uint32_t total );
 
 /* keys */
 int  key_get( void );                   /* waits                         */
@@ -309,39 +309,45 @@ int  disk_load_code( void );            /* the boot code, from the source */
 void disk_examine( void );              /* fills tgt                     */
 int  disk_marked( void );               /* Setup made this partition     */
 int  disk_partition( void );            /* 0 = the table is written      */
-int  disk_format( void (*progress)( u32 done, u32 total ) );
+int  disk_format( void (*progress)( uint32_t done, uint32_t total ) );
 int  disk_bootable( void );             /* the boot sector + stage 2     */
 int  disk_activate( int made );
-int  disk_space_ok( u32 need );
-extern u8 *code_floppy;
+int  disk_space_ok( uint32_t need );
+extern uint8_t *code_floppy;
 
 /* a file held in memory, in COPYBUF pieces (COPY.C) */
 #define HELD_PIECES     48
 typedef struct {
-    u8  *piece[HELD_PIECES];
-    u16  len[HELD_PIECES];
-    int  n;
-    u16  date, time;
+    uint8_t *piece[HELD_PIECES];
+    uint16_t len[HELD_PIECES];
+    int      n;
+    uint16_t date, time;
 } HELD;
 int  held_read( HELD *held, const char *path );
 int  held_copy( HELD *held, const INFFILE *file );
-int  held_write( HELD *held, const char *path, u16 attr );
+int  held_write( HELD *held, const char *path, uint16_t attr );
 void held_free( HELD *held );
-void gauge_start( u32 total );
+void gauge_start( uint32_t total );
 void gauge_finish( void );
 
 /* COPY.C */
-int  copy_all( void );                  /* 0 = done, else stopped        */
-int  copy_one( const INFFILE *file, const char *dest, int quiet );
-int  expand_file( u16 in, u16 out, u32 *written );
-int  source_find( void );               /* 0 = SETUP.INF was found       */
-void source_better( void );             /* a source with every disk      */
-int  disk_wanted( int disk );           /* 0 = the disk is in the drive  */
-u32  copy_total( int floppy );
-void copy_dest( const INFFILE *file, char *dest, int max );
-int  copy_rootdest( const INFFILE *file, char *dest, int max );  /* 1 = has one */
-int  copy_error_box( const char *fmt, const char *name );
-void disk_forget( void );
+int      copy_all( void );              /* 0 = done, else stopped        */
+int      copy_one( const INFFILE *file, const char *dest, int quiet );
+int      expand_file( uint16_t in, uint16_t out, uint32_t *written );
+int      source_find( void );           /* 0 = SETUP.INF was found       */
+void     source_better( void );         /* a source with every disk      */
+int      disk_wanted( int disk );       /* 0 = the disk is in the drive  */
+uint32_t copy_total( int floppy );
+void     copy_dest( const INFFILE *file, char *dest, int max );
+int      copy_rootdest( const INFFILE *file, char *dest, int max ); /* 1 = has one */
+int      copy_retry_box( const char *fmt, const char *name ); /* 1 = retry, 0 = skip */
+void     source_again( void );          /* a diskette source read afresh */
+void     disk_forget( void );
+
+/* BBOARD.C - what Setup shows above the gauge for each disk, from
+   SETUP.MSG (the file's format is at the top of BBOARD.C) */
+void billboard_load( void );            /* SETUP.MSG, if the source has one */
+int  billboard_draw( int disk );        /* 0 = drawn; 1 = the disk has none */
 
 /* CFG.C */
 int  cfg_write_new( void );
@@ -362,7 +368,7 @@ int  uninstall_main( void );
 
 /* FLOPPY.C */
 int  floppy_format( int drive, const char *label,
-                    void (*progress)( u32 done, u32 total ) );
+                    void (*progress)( uint32_t done, uint32_t total ) );
 int  floppy_has_tag( int drive, const char *tag );
 int  floppy_install( void );
 int  floppy_is_startup( int drive );
@@ -380,26 +386,26 @@ const char *setup_title( void );
 extern int test_mode;
 
 /* RT.C - the runtime both halves carry */
-void  mem_set( void *dst, int val, u16 len );
-void  mem_cpy( void *dst, const void *src, u16 len );
-int   mem_cmp( const void *lhs, const void *rhs, u16 len );
-int   str_len( const char *str );
-void  str_cpyn( char *dst, const char *src, int max );
-void  str_catn( char *dst, const char *src, int max );
-int   str_icmp( const char *lhs, const char *rhs );
-int   str_nicmp( const char *lhs, const char *rhs, int len );
-int   ch_upper( int ch );
-char *str_chr( const char *str, int ch );
-char *str_rchr( const char *str, int ch );
-char *str_dup( const char *str );
-void  str_upper( char *str );
-char *skip_blanks( const char *str );
-void  path_join( char *dst, const char *dir, const char *name, int max );
-void  path_name( char *dst, const char *path, int max ); /* the last part */
-int   path_valid( const char *path );
-void *xalloc( u32 size );               /* never NULL: exits instead     */
-void  xfree( void *ptr );
+void     mem_set( void *dst, int val, uint16_t len );
+void     mem_cpy( void *dst, const void *src, uint16_t len );
+int      mem_cmp( const void *lhs, const void *rhs, uint16_t len );
+int      str_len( const char *str );
+void     str_cpyn( char *dst, const char *src, int max );
+void     str_catn( char *dst, const char *src, int max );
+int      str_icmp( const char *lhs, const char *rhs );
+int      str_nicmp( const char *lhs, const char *rhs, int len );
+int      ch_upper( int ch );
+char    *str_chr( const char *str, int ch );
+char    *str_rchr( const char *str, int ch );
+char    *str_dup( const char *str );
+void     str_upper( char *str );
+char    *skip_blanks( const char *str );
+void     path_join( char *dst, const char *dir, const char *name, int max );
+void     path_name( char *dst, const char *path, int max ); /* the last part */
+int      path_valid( const char *path );
+void    *xalloc( uint32_t size );       /* never NULL: exits instead     */
+void     xfree( void *ptr );
 int   __cdecl sfmt( char *buf, int max, const char *fmt, ... );
-u32   parse_u32( const char *str, const char **end );
+uint32_t parse_u32( const char *str, const char **end );
 
 #endif

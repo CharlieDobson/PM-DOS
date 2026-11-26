@@ -102,6 +102,9 @@ svc_table:
         dd      tk_unhook       ; IOS_TICKUNHOOK
         dd      blk_bridge      ; IOS_BRGBLK
         dd      ahci_svc        ; IOS_AHCI
+        dd      exc_report      ; IOS_EXCREP
+        dd      v86_vmesvc      ; IOS_VME
+        dd      blk_medium      ; IOS_DRVMEDIUM
 
 ;=====================================================================
 ; pm_entry - first instruction executed in 32-bit protected mode.
@@ -164,6 +167,9 @@ ENDIF
                                         ; driven until PMDOS says so
         call    fpu_init                ; after irq_init: on a 386 the
                                         ; coprocessor's errors are a line
+        call    v86_vmeinit             ; after fpu_init, which asked CPUID:
+                                        ; VME, if the processor has it and
+                                        ; passes a box's worth of checks
         call    pnp_init                ; before blk_init: a sound card's
                                         ; IDE port is not there to be probed
                                         ; until it has been given an address
@@ -293,6 +299,23 @@ panic_hlt:
         jmp     panic_hlt
 
 ;=====================================================================
+; THE MONITOR'S FAST PATH (VM86.INC, v86_gpfast) is in every build but
+; the ones that watch a box's traps one at a time: those want every trap
+; to reach v86_fault, where they look.
+IFNDEF V86_TRACE
+IFNDEF V86_CALLS
+IFNDEF V86_WATCH
+IFNDEF V86_WATCHQ
+IFNDEF DBG_LPT
+IFNDEF HANG_E9
+V86_FAST        EQU     1
+ENDIF
+ENDIF
+ENDIF
+ENDIF
+ENDIF
+ENDIF
+
         INCLUDE EXCEPT.INC
         INCLUDE IRQ.INC          ; after EXCEPT.INC: whose interrupt it is
         INCLUDE VPIC.INC         ; ...and the box, which is last in line
@@ -361,7 +384,7 @@ msgPanic    db  13,10,'PMIO PANIC: ',0
 pm_end      LABEL BYTE
 .ERRE   ((pm_end - svc_table) + 10h + 400h + AHM_NEED) LE IO_PM_MAX, <PMIO leaves no room for the AHCI tables>
 IOPMEND_MAX     EQU     IO_PM_MAX - 400h - AHM_NEED
-.ERRE   IOPMEND_MAX EQ 177152, <BUILD.CMD's ceiling on IOPM.BIN is out of date>
+.ERRE   IOPMEND_MAX EQ 174080, <BUILD.CMD's ceiling on IOPM.BIN is out of date>
 
 _PM     ENDS
         END

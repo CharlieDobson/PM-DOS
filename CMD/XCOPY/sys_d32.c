@@ -23,28 +23,28 @@
 #include "xcopy.h"
 
 typedef struct {
-    u32 eax, ebx, ecx, edx, esi, edi;
-    u32 flags;                  /* in: bit 0 = CF before the INT */
+    uint32_t eax, ebx, ecx, edx, esi, edi;
+    uint32_t flags;             /* in: bit 0 = CF before the INT */
 } REGS;
 
 void __cdecl int21( REGS *regs );
 void __cdecl break_handler( void );
-extern u8 break_hit;
+extern uint8_t break_hit;
 
 #define CF( regs )  ((regs).flags & 1)
 #define AX( regs )  ((regs).eax & 0xFFFF)
 
-static u8   *psp;
-static char  tail[300];
-static int   lfn_ok = 1;
-static u8    find_rec[320];     /* 714Eh's record, or the DTA of 4Eh */
+static uint8_t *psp;
+static char     tail[300];
+static int      lfn_ok = 1;
+static uint8_t  find_rec[320];  /* 714Eh's record, or the DTA of 4Eh */
 
 void __cdecl dos_entry( void )
 {
     xcopy_main();
 }
 
-static void call21( REGS *regs, u32 eax )
+static void call21( REGS *regs, uint32_t eax )
 {
     regs->eax = eax;
     regs->flags = 0;
@@ -84,12 +84,12 @@ int sys_init( void )
 {
     REGS regs;
     const char *full;
-    u32 len;
+    unsigned int len;
     int quoted;
 
     clear( &regs );
     call21( &regs, 0x6200 );
-    psp = (u8 *)regs.ebx;
+    psp = (uint8_t *)regs.ebx;
     len = psp[0x80];
     if ( len > 126 ) {
         len = 126;
@@ -131,9 +131,9 @@ const char *sys_cmdline( void )
 const char *sys_getenv( const char *name )
 {
     const char *env;
-    u32 len = str_len( name );
+    unsigned int len = str_len( name );
 
-    env = (const char *)*(u32 *)(psp + 0x2C);
+    env = (const char *)*(uint32_t *)(psp + 0x2C);
     if ( env == NULL ) {
         return NULL;
     }
@@ -146,14 +146,14 @@ const char *sys_getenv( const char *name )
     return NULL;
 }
 
-void sys_write( int handle, const char *buf, u32 len )
+void sys_write( int handle, const char *buf, unsigned int len )
 {
     REGS regs;
 
     clear( &regs );
-    regs.ebx = (u32)handle;
+    regs.ebx = (uint32_t)handle;
     regs.ecx = len;
-    regs.edx = (u32)buf;
+    regs.edx = (uint32_t)buf;
     call21( &regs, 0x4000 );
 }
 
@@ -171,12 +171,12 @@ int sys_stdin_is_console( void )
 static int read_byte( void )
 {
     REGS regs;
-    u8 ch;
+    uint8_t ch;
 
     clear( &regs );
     regs.ebx = H_IN;
     regs.ecx = 1;
-    regs.edx = (u32)&ch;
+    regs.edx = (uint32_t)&ch;
     call21( &regs, 0x3F00 );
     if ( CF( regs ) || regs.eax == 0 ) {
         return -1;
@@ -214,7 +214,7 @@ void sys_exit( int code )
     REGS regs;
 
     clear( &regs );
-    call21( &regs, 0x4C00 | ((u32)code & 0xFF) );
+    call21( &regs, 0x4C00 | ((uint32_t)code & 0xFF) );
 }
 
 void sys_break_install( void )
@@ -222,7 +222,7 @@ void sys_break_install( void )
     REGS regs;
 
     clear( &regs );
-    regs.edx = (u32)break_handler;
+    regs.edx = (uint32_t)break_handler;
     call21( &regs, 0x2523 );
 }
 
@@ -262,7 +262,7 @@ int sys_drive_valid( int drv )
     REGS regs;
 
     clear( &regs );
-    regs.ebx = (u32)drv + 1;
+    regs.ebx = (uint32_t)drv + 1;
     call21( &regs, 0x4409 );
     return !(CF( regs ) && AX( regs ) == ERR_BADDRIVE);
 }
@@ -274,16 +274,16 @@ int sys_get_cwd( int drv, char *buf )
     buf[0] = 0;
     if ( lfn_ok ) {
         clear( &regs );
-        regs.edx = (u32)drv + 1;
-        regs.esi = (u32)buf;
+        regs.edx = (uint32_t)drv + 1;
+        regs.esi = (uint32_t)buf;
         call21( &regs, 0x7147 );
         if ( !lfn_missing( &regs ) ) {
             return result( &regs );
         }
     }
     clear( &regs );
-    regs.edx = (u32)drv + 1;
-    regs.esi = (u32)buf;
+    regs.edx = (uint32_t)drv + 1;
+    regs.esi = (uint32_t)buf;
     call21( &regs, 0x4700 );
     return result( &regs );
 }
@@ -295,43 +295,43 @@ int sys_truename( const char *path, char *out, int form )
     out[0] = 0;
     if ( lfn_ok ) {
         clear( &regs );
-        regs.ecx = (u32)form;
-        regs.esi = (u32)path;
-        regs.edi = (u32)out;
+        regs.ecx = (uint32_t)form;
+        regs.esi = (uint32_t)path;
+        regs.edi = (uint32_t)out;
         call21( &regs, 0x7160 );
         if ( !lfn_missing( &regs ) ) {
             return result( &regs );
         }
     }
     clear( &regs );
-    regs.esi = (u32)path;
-    regs.edi = (u32)out;
+    regs.esi = (uint32_t)path;
+    regs.edi = (uint32_t)out;
     call21( &regs, 0x6000 );
     return result( &regs );
 }
 
-int sys_get_attr( const char *path, u16 *attr )
+int sys_get_attr( const char *path, uint16_t *attr )
 {
     REGS regs;
 
     if ( lfn_ok ) {
         clear( &regs );
         regs.ebx = 0;
-        regs.edx = (u32)path;
+        regs.edx = (uint32_t)path;
         call21( &regs, 0x7143 );
         if ( !lfn_missing( &regs ) ) {
-            *attr = (u16)regs.ecx;
+            *attr = (uint16_t)regs.ecx;
             return result( &regs );
         }
     }
     clear( &regs );
-    regs.edx = (u32)path;
+    regs.edx = (uint32_t)path;
     call21( &regs, 0x4300 );
-    *attr = (u16)regs.ecx;
+    *attr = (uint16_t)regs.ecx;
     return result( &regs );
 }
 
-int sys_set_attr( const char *path, u16 attr )
+int sys_set_attr( const char *path, uint16_t attr )
 {
     REGS regs;
 
@@ -339,7 +339,7 @@ int sys_set_attr( const char *path, u16 attr )
         clear( &regs );
         regs.ebx = 1;
         regs.ecx = attr;
-        regs.edx = (u32)path;
+        regs.edx = (uint32_t)path;
         call21( &regs, 0x7143 );
         if ( !lfn_missing( &regs ) ) {
             return result( &regs );
@@ -347,7 +347,7 @@ int sys_set_attr( const char *path, u16 attr )
     }
     clear( &regs );
     regs.ecx = attr;
-    regs.edx = (u32)path;
+    regs.edx = (uint32_t)path;
     call21( &regs, 0x4301 );
     return result( &regs );
 }
@@ -358,14 +358,14 @@ int sys_mkdir( const char *path )
 
     if ( lfn_ok ) {
         clear( &regs );
-        regs.edx = (u32)path;
+        regs.edx = (uint32_t)path;
         call21( &regs, 0x7139 );
         if ( !lfn_missing( &regs ) ) {
             return result( &regs );
         }
     }
     clear( &regs );
-    regs.edx = (u32)path;
+    regs.edx = (uint32_t)path;
     call21( &regs, 0x3900 );
     return result( &regs );
 }
@@ -379,7 +379,7 @@ int sys_delete( const char *path )
        keeping; a kernel that has no such call says "invalid function"
        and the ordinary calls below are made instead. */
     clear( &regs );
-    regs.edx = (u32)path;
+    regs.edx = (uint32_t)path;
     call21( &regs, 0xF119 );
     if ( !CF( regs ) || AX( regs ) != 0x0001 ) {
         return result( &regs );
@@ -387,7 +387,7 @@ int sys_delete( const char *path )
 
     if ( lfn_ok ) {
         clear( &regs );
-        regs.edx = (u32)path;
+        regs.edx = (uint32_t)path;
         regs.esi = 0;                       /* the name, not a pattern */
         call21( &regs, 0x7141 );
         if ( !lfn_missing( &regs ) ) {
@@ -395,7 +395,7 @@ int sys_delete( const char *path )
         }
     }
     clear( &regs );
-    regs.edx = (u32)path;
+    regs.edx = (uint32_t)path;
     call21( &regs, 0x4100 );
     return result( &regs );
 }
@@ -404,7 +404,7 @@ int sys_delete( const char *path )
 int sys_is_device( const char *path )
 {
     REGS regs;
-    u32 handle;
+    uint32_t handle;
     int device;
 
     if ( sys_open_read( path, &handle ) != 0 ) {
@@ -425,9 +425,9 @@ int sys_is_device( const char *path )
 static void rec_from_lfn( FINDREC *rec )
 {
     rec->attr = find_rec[0];
-    rec->time = (u16)(find_rec[0x14] | (find_rec[0x15] << 8));
-    rec->date = (u16)(find_rec[0x16] | (find_rec[0x17] << 8));
-    rec->size = *(u32 *)(find_rec + 0x20);
+    rec->time = (uint16_t)(find_rec[0x14] | (find_rec[0x15] << 8));
+    rec->date = (uint16_t)(find_rec[0x16] | (find_rec[0x17] << 8));
+    rec->size = *(uint32_t *)(find_rec + 0x20);
     str_cpyn( rec->name, (const char *)find_rec + 0x2C, sizeof( rec->name ) );
     str_cpyn( rec->alias, (const char *)find_rec + 0x130, sizeof( rec->alias ) );
     if ( rec->alias[0] == 0 ) {             /* Windows: the name IS 8.3 */
@@ -438,31 +438,31 @@ static void rec_from_lfn( FINDREC *rec )
 static void rec_from_dta( FINDREC *rec )
 {
     rec->attr = find_rec[0x15];
-    rec->time = (u16)(find_rec[0x16] | (find_rec[0x17] << 8));
-    rec->date = (u16)(find_rec[0x18] | (find_rec[0x19] << 8));
-    rec->size = *(u32 *)(find_rec + 0x1A);
+    rec->time = (uint16_t)(find_rec[0x16] | (find_rec[0x17] << 8));
+    rec->date = (uint16_t)(find_rec[0x18] | (find_rec[0x19] << 8));
+    rec->size = *(uint32_t *)(find_rec + 0x1A);
     str_cpyn( rec->name, (const char *)find_rec + 0x1E, 13 );
     str_cpyn( rec->alias, rec->name, sizeof( rec->alias ) );
 }
 
 /* The classic search cannot ask for a REQUIRED attribute, so the
    directory-only searches filter here, as 714Eh would have. */
-static u8 dta_required;
+static uint8_t dta_required;
 
 static int dta_skip( void )
 {
     return (find_rec[0x15] & dta_required) != dta_required;
 }
 
-int sys_find_first( const char *pattern, u16 attrs, FINDREC *rec, u32 *handle )
+int sys_find_first( const char *pattern, uint16_t attrs, FINDREC *rec, uint32_t *handle )
 {
     REGS regs;
 
     if ( lfn_ok ) {
         clear( &regs );
         regs.ecx = attrs;                   /* CL allowed, CH required */
-        regs.edx = (u32)pattern;
-        regs.edi = (u32)find_rec;
+        regs.edx = (uint32_t)pattern;
+        regs.edi = (uint32_t)find_rec;
         regs.esi = 1;                       /* times in DOS form */
         call21( &regs, 0x714E );
         if ( !lfn_missing( &regs ) ) {
@@ -475,12 +475,12 @@ int sys_find_first( const char *pattern, u16 attrs, FINDREC *rec, u32 *handle )
         }
     }
     clear( &regs );
-    regs.edx = (u32)find_rec;
+    regs.edx = (uint32_t)find_rec;
     call21( &regs, 0x1A00 );
-    dta_required = (u8)(attrs >> 8);
+    dta_required = (uint8_t)(attrs >> 8);
     clear( &regs );
     regs.ecx = attrs & 0xFF;
-    regs.edx = (u32)pattern;
+    regs.edx = (uint32_t)pattern;
     call21( &regs, 0x4E00 );
     if ( CF( regs ) ) {
         return (int)AX( regs );
@@ -493,14 +493,14 @@ int sys_find_first( const char *pattern, u16 attrs, FINDREC *rec, u32 *handle )
     return 0;
 }
 
-int sys_find_next( u32 handle, FINDREC *rec )
+int sys_find_next( uint32_t handle, FINDREC *rec )
 {
     REGS regs;
 
     if ( lfn_ok ) {
         clear( &regs );
         regs.ebx = handle;
-        regs.edi = (u32)find_rec;
+        regs.edi = (uint32_t)find_rec;
         regs.esi = 1;
         call21( &regs, 0x714F );
         if ( CF( regs ) ) {
@@ -520,7 +520,7 @@ int sys_find_next( u32 handle, FINDREC *rec )
     return 0;
 }
 
-void sys_find_close( u32 handle )
+void sys_find_close( uint32_t handle )
 {
     REGS regs;
 
@@ -535,7 +535,7 @@ void sys_find_close( u32 handle )
 /* files                                                               */
 /* ------------------------------------------------------------------ */
 
-static int open_ext( const char *path, u32 mode, u32 action, u32 *handle )
+static int open_ext( const char *path, uint32_t mode, uint32_t action, uint32_t *handle )
 {
     REGS regs;
 
@@ -543,7 +543,7 @@ static int open_ext( const char *path, u32 mode, u32 action, u32 *handle )
     regs.ebx = mode;
     regs.ecx = 0;                           /* a new file is a plain one */
     regs.edx = action;
-    regs.esi = (u32)path;
+    regs.esi = (uint32_t)path;
     call21( &regs, 0x716C );
     if ( lfn_missing( &regs ) ) {
         return -1;
@@ -555,7 +555,7 @@ static int open_ext( const char *path, u32 mode, u32 action, u32 *handle )
     return 0;
 }
 
-int sys_open_read( const char *path, u32 *handle )
+int sys_open_read( const char *path, uint32_t *handle )
 {
     REGS regs;
     int rc;
@@ -567,13 +567,13 @@ int sys_open_read( const char *path, u32 *handle )
         }
     }
     clear( &regs );
-    regs.edx = (u32)path;
+    regs.edx = (uint32_t)path;
     call21( &regs, 0x3D00 );
     *handle = AX( regs );
     return result( &regs );
 }
 
-int sys_create( const char *path, u32 *handle )
+int sys_create( const char *path, uint32_t *handle )
 {
     REGS regs;
     int rc;
@@ -586,33 +586,33 @@ int sys_create( const char *path, u32 *handle )
     }
     clear( &regs );
     regs.ecx = 0;
-    regs.edx = (u32)path;
+    regs.edx = (uint32_t)path;
     call21( &regs, 0x3C00 );
     *handle = AX( regs );
     return result( &regs );
 }
 
-int sys_read( u32 handle, void *buf, u32 len, u32 *done )
+int sys_read( uint32_t handle, void *buf, unsigned int len, unsigned int *done )
 {
     REGS regs;
 
     clear( &regs );
     regs.ebx = handle;
     regs.ecx = len;
-    regs.edx = (u32)buf;
+    regs.edx = (uint32_t)buf;
     call21( &regs, 0x3F00 );
     *done = CF( regs ) ? 0 : regs.eax;
     return result( &regs );
 }
 
-int sys_write_file( u32 handle, const void *buf, u32 len, u32 *done )
+int sys_write_file( uint32_t handle, const void *buf, unsigned int len, unsigned int *done )
 {
     REGS regs;
 
     clear( &regs );
     regs.ebx = handle;
     regs.ecx = len;
-    regs.edx = (u32)buf;
+    regs.edx = (uint32_t)buf;
     call21( &regs, 0x4000 );
     if ( CF( regs ) ) {
         *done = 0;
@@ -622,7 +622,7 @@ int sys_write_file( u32 handle, const void *buf, u32 len, u32 *done )
     return regs.eax < len ? ERR_DISKFULL : 0;
 }
 
-int sys_close( u32 handle )
+int sys_close( uint32_t handle )
 {
     REGS regs;
 
@@ -632,19 +632,19 @@ int sys_close( u32 handle )
     return result( &regs );
 }
 
-int sys_get_ftime( u32 handle, u16 *date, u16 *time )
+int sys_get_ftime( uint32_t handle, uint16_t *date, uint16_t *time )
 {
     REGS regs;
 
     clear( &regs );
     regs.ebx = handle;
     call21( &regs, 0x5700 );
-    *time = (u16)regs.ecx;
-    *date = (u16)regs.edx;
+    *time = (uint16_t)regs.ecx;
+    *date = (uint16_t)regs.edx;
     return result( &regs );
 }
 
-int sys_set_ftime( u32 handle, u16 date, u16 time )
+int sys_set_ftime( uint32_t handle, uint16_t date, uint16_t time )
 {
     REGS regs;
 
@@ -680,11 +680,11 @@ void sys_set_verify( int on )
 void sys_date_format( int *order, char *sep )
 {
     REGS regs;
-    u8 info[64];
+    uint8_t info[64];
 
     mem_set( info, 0, sizeof( info ) );
     clear( &regs );
-    regs.edx = (u32)info;
+    regs.edx = (uint32_t)info;
     call21( &regs, 0x3800 );
     if ( CF( regs ) ) {
         *order = 0;
@@ -695,7 +695,7 @@ void sys_date_format( int *order, char *sep )
     *sep = info[0x0B] ? (char)info[0x0B] : '-';
 }
 
-void *sys_mem_alloc( u32 size )
+void *sys_mem_alloc( unsigned int size )
 {
     REGS regs;
 

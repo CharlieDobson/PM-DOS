@@ -7975,6 +7975,11 @@ f4C_next:
         mov     eax,[exec_depth]
         call    vbe_exit
 
+        ; ...and the keyboard makes keys again, if the program was
+        ; reading the scan codes itself (F0h AL=0Fh).
+        mov     eax,[exec_depth]
+        call    key_exit
+
         cmp     dword ptr [exec_depth],0
         je      f4C_shell
 
@@ -9766,6 +9771,7 @@ sw_done:
 ;       AL = 0Ah: 25 or 43/50 text lines - see fF0_lines
 ;       AL = 0Ch: a text mode, MODE's way - see fF0_mode
 ;       AL = 0Dh: the keyboard's repeat rate - see fF0_kbrate
+;       AL = 0Eh: a text screen for a shell's prompt - see fF0_text
 ;=====================================================================
 ;=====================================================================
 ; 73h - the FAT32 extended calls.  Only 7303h, get extended free
@@ -10409,7 +10415,83 @@ fnF0:
         je      fF0_mode
         cmp     al,0Dh
         je      fF0_kbrate
+        cmp     al,0Eh
+        je      fF0_text
+        cmp     al,0Fh
+        je      fF0_raw
+        cmp     al,10h
+        je      fF0_rawrd
         jmp     i21_unsup
+
+;---------------------------------------------------------------------
+; AL = 0Fh  BL = 1: the keyboard's scan codes for this program, from
+;           now on; BL = 0: keys again, as before.
+; AL = 10h  EDI -> ECX bytes of room -> EAX = the scan codes moved
+;           there, in the order the keyboard sent them; 0 for none.
+;
+; FOR A PROGRAM THAT HAS TO KNOW WHEN A KEY COMES UP AGAIN - a game.
+; Every other key call gives characters, and a character is made when
+; a key goes down and says nothing after.  While this is on the
+; keyboard driver keeps each byte the keyboard sends, E0h prefixes and
+; the codes with bit 7 set for a key let go included, and makes no key
+; of any of them (KLS_RAW, IO\KEYBD.INC): AL = 7 and 8 see nothing
+; typed meanwhile.  Ctrl-Alt-Del still restarts the machine and the
+; shift state is still counted.
+;
+; Native programs only: a DOS box hooks INT 09h for the same thing.
+; IT GOES OFF WHEN THE PROGRAM ENDS, however it ends (key_exit, from
+; 4Ch), so the shell behind it gets its keys.  A program that starts
+; another one while it is on leaves that one with no keyboard, and so
+; turns it off first.
+;---------------------------------------------------------------------
+fF0_raw:
+        cmp     word ptr [ebp+F_CS],SEL_PROG_CS
+        jne     i21_unsup
+        mov     dl,[ebp+F_EBX]
+        and     dl,1
+        mov     dword ptr [key_rawdepth],-1
+        or      dl,dl
+        jz      fF0_rawset
+        mov     eax,[exec_depth]
+        mov     [key_rawdepth],eax
+fF0_rawset:
+        mov     al,KLS_RAW
+        call    dword ptr ds:[IOS_KBLAYOUT]
+        jmp     i21_ok
+fF0_rawrd:
+        cmp     word ptr [ebp+F_CS],SEL_PROG_CS
+        jne     i21_unsup
+        mov     eax,[ebp+F_EDI]
+        mov     ecx,[ebp+F_ECX]
+        call    cbuf_ok
+        jc      buf_deny
+        mov     edi,[ebp+F_EDI]
+        mov     ecx,[ebp+F_ECX]
+        mov     al,KLS_RAWREAD
+        call    dword ptr ds:[IOS_KBLAYOUT]
+        mov     [ebp+F_EAX],ecx
+        jmp     i21_ok
+
+;--- key_exit - EAX = an EXEC depth.  If the program there had the
+;--- scan codes to itself, the keyboard makes keys again.  For 4Ch and
+;--- a debugger's kill.  Everything preserved.
+key_exit:
+        cmp     eax,[key_rawdepth]
+        jne     kxt_out
+        push    eax
+        push    edx
+        mov     dword ptr [key_rawdepth],-1
+        xor     dl,dl
+        mov     al,KLS_RAW
+        call    dword ptr ds:[IOS_KBLAYOUT]
+        pop     edx
+        pop     eax
+kxt_out:
+        ret
+
+key_rawdepth    dd      -1              ; the EXEC depth of the program
+                                        ; that has the scan codes, or -1
+
 fF0_cls:
         call    con_cls                 ; ESC[2J, to an ANSI.SYS
         jmp     i21_ok
@@ -10660,6 +10742,29 @@ fF0_kbrate:
         call    dword ptr ds:[IOS_KBRATE]
         jmp     i21_ok
 
+;---------------------------------------------------------------------
+; AL = 0Eh  a screen a prompt can be read on.  If the screen is in a
+;           graphics mode, the text mode the last DOS program started
+;           on is set again, with its rows (vdm_scrtext).
+;           -> AL = 1 if a mode was set, 0 if the screen was already
+;              text; DH = rows, DL = columns, as the screen now is.
+;
+; For the shells, before an interactive prompt (CMD.EXE's gl_console,
+; COMMAND.COM's gc_prompt).  A DOS program that ends in a graphics mode
+; leaves it on, as it does under MS-DOS, and the next line of a batch
+; file finds it there.  But this console writes characters into the
+; text page, which no graphics mode shows, so a prompt would be
+; invisible and so would everything typed at it.  Any program may ask;
+; one that is drawing in a graphics mode of its own should not.
+;---------------------------------------------------------------------
+fF0_text:
+        call    vdm_scrtext
+        setc    al
+        mov     [ebp+F_EAX],al
+        call    dword ptr ds:[IOS_SCRSIZE]
+        mov     [ebp+F_EDX],dx
+        jmp     i21_ok
+
 ;=====================================================================
 ; F1h - PM-DOS kernel information.
 ;
@@ -10683,8 +10788,15 @@ fF0_kbrate:
 ;       AL = 0Eh: the same registers, written back
 ;       AL = 0Fh: EDX -> path, BL = letter (FFh = next free), BH = 1
 ;                 for read-only -> mount that FILE as a drive letter,
-;                 AL = the letter it took.  See IMAGE.INC
-;       AL = 10h: BL = letter - unmount it again
+;                 AL = the letter it took.  See IMAGE.INC.  A file on
+;                 a network drive is read and written where it is,
+;                 through the redirector.  Error 50: the file's volume
+;                 has no clusters to map and is not a share, and the
+;                 file has to be loaded with AL = 2Bh instead
+;       AL = 10h: BL = letter - unmount it again.  For an image held
+;                 in memory BH says what happens to its changes: 0
+;                 refuse if there are any, 1 discard them, 2 they were
+;                 saved from the copy AL=2Bh IMEM_COPY took at count EDX
 ;       AL = 11h: BL = 0..7, EDI -> 100 bytes - describe mount BL
 ;       AL = 12h: bits 16-23 of EAX = a BUS_* function - the PCI bus,
 ;                 the interrupt lines and where memory physically
@@ -10768,6 +10880,17 @@ fF0_kbrate:
 ;                 held one level down for a debugger: loaded, run until
 ;                 it stops, read and written, ended.  Native programs
 ;                 only (DOS\DBGAPI.INC)
+;       AL = 2Bh: bits 16-23 of EAX = an IMEM_* function - an image
+;                 held in memory (IMAGE.INC), for a file AL=0Fh cannot
+;                 map.  Native programs only: every pointer is flat.
+;                   IMEM_LOAD  ESI -> the image, ECX = its length (a
+;                              2.88M diskette at most), EDX -> the
+;                              file it came from, BL = letter (FFh =
+;                              next free), BH = 1 read-only -> AL = the
+;                              letter it took
+;                   IMEM_COPY  BL = letter, EDI -> ECX bytes of room ->
+;                              ECX = the image's length, copied there,
+;                              EDX = its write count then
 ;
 ; 30h has to keep lying about being DOS 5 so that ordinary programs
 ; recognise us, which leaves nothing there to report what the kernel
@@ -10866,6 +10989,8 @@ fnF1:
         je      fF1_dbg
         cmp     al,2Ah
         je      fF1_ahci
+        cmp     al,2Bh
+        je      fF1_imem
         jmp     i21_unsup
 
 ;--- AL=2Ah: the SATA ports, and how far each got.  EDI -> AHR_LEN
@@ -11542,8 +11667,54 @@ fF1_imbad:
 
 fF1_iumount:
         mov     al,[ebp+F_EBX]
+        mov     ah,[ebp+F_EBX+1]        ; BH: a memory image's changes
+        mov     edx,[ebp+F_EDX]
         call    img_umount
         jc      fF1_imbad
+        jmp     i21_ok
+
+;--- AL=2Bh: an image held in memory.  Both buffers are the caller's
+;--- and both are checked whole before IMAGE.INC sees them: IMEM_LOAD
+;--- reads ECX bytes at ESI, IMEM_COPY writes up to ECX at EDI.
+fF1_imem:
+        mov     eax,[ebp+F_EAX]
+        shr     eax,16
+        cmp     al,IMEM_LOAD
+        je      fF1_imload
+        cmp     al,IMEM_COPY
+        je      fF1_imcopy
+        jmp     i21_unsup
+fF1_imload:
+        mov     eax,[ebp+F_ESI]
+        mov     ecx,[ebp+F_ECX]
+        call    cbuf_ok
+        jc      buf_deny
+        mov     esi,[ebp+F_ESI]
+        mov     ecx,[ebp+F_ECX]
+        mov     edx,[ebp+F_EDX]
+        mov     al,[ebp+F_EBX]
+        xor     ah,ah
+        cmp     byte ptr [ebp+F_EBX+1],0
+        je      fF1_imlro
+        mov     ah,IMF_RO
+fF1_imlro:
+        call    img_memload
+        jc      fF1_imbad
+        movzx   eax,al
+        mov     [ebp+F_EAX],eax
+        jmp     i21_ok
+fF1_imcopy:
+        mov     eax,[ebp+F_EDI]
+        mov     ecx,[ebp+F_ECX]
+        call    cbuf_ok
+        jc      buf_deny
+        mov     al,[ebp+F_EBX]
+        mov     edi,[ebp+F_EDI]
+        mov     ecx,[ebp+F_ECX]
+        call    img_memcopy
+        mov     [ebp+F_ECX],ecx         ; the length, or the room needed
+        jc      fF1_imbad
+        mov     [ebp+F_EDX],edx
         jmp     i21_ok
 
 fF1_ireport:
@@ -12060,8 +12231,13 @@ fF1_baddrv:
 
 ;=====================================================================
 ; AL=0Ch - one PHYSICAL DISK.  DL = a BIOS drive number, EDI -> a
-;          DSK_LEN record.  ECX comes back = how many fixed disks the
-;          block layer has room for, whether or not they are there.
+;          DSK_LEN record.  ECX comes back = how many disk numbers the
+;          block layer has room for from 80h, whether or not they are
+;          there: 12 since 2026-11-17, the eight hard disks 80h-87h and
+;          the four USB units 88h-8Bh (6 before, 80h-81h and 82h-85h).
+;          DSK_FLAGS says what the disk is as well: DSKF_SOLID or
+;          DSKF_SPINS when the disk has said.  A RAM disk's unit number
+;          (a letter's DRV_BIOS) fails, with DSK_FLAGS = DSKF_MEMORY.
 ;
 ; AL=0Dh - read raw sectors off one.  DL = the BIOS drive, EBX = the
 ;          first LBA, ECX = how many, EDI -> the buffer.
@@ -12094,8 +12270,8 @@ ABS_MAXSEC      EQU     128             ; 64K a call, which is both the
                                         ; cannot overflow
 
 fF1_disk:
-        mov     eax,MAX_PHYS + USB_MAXUNITS     ; the IDE slots and then the
-        mov     [ebp+F_ECX],eax                 ; USB units, 82h up
+        mov     eax,MAX_PHYS + USB_MAXUNITS     ; the hard disks, 80h to 87h,
+        mov     [ebp+F_ECX],eax                 ; and then the USB units, 88h up
 
         mov     al,[ebp+F_EDX]
         mov     [f1d_drive],al          ; EAX is scratch from here on
@@ -12117,6 +12293,16 @@ fF1_disk:
 
         mov     al,[f1d_drive]
         mov     [edi+DSK_BIOS],al
+
+        ; A RAM DISK IS NOT A PHYSICAL DISK, so the call fails for one
+        ; as it always has, and FORMAT and FDISK see no change.  The flag
+        ; is for a program asking what a letter is stored on
+        call    dl_unitmem
+        jc      fF1_dskreal
+        mov     byte ptr [edi+DSK_FLAGS],DSKF_MEMORY
+        jmp     fF1_nodisk
+fF1_dskreal:
+        mov     al,[f1d_drive]
         cmp     al,80h
         jb      fF1_nodisk
         cmp     al,USB_DRV0 + USB_MAXUNITS
@@ -12176,6 +12362,9 @@ fF1_nocyl:
         mov     [edi+DSK_TOTAL],ebx
 fF1_nototal:
         mov     byte ptr [edi+DSK_FLAGS],DSKF_PRESENT
+        mov     al,[f1d_drive]
+        call    dword ptr ds:[IOS_DRVMEDIUM]    ; DSKF_SOLID, DSKF_SPINS or 0
+        or      [edi+DSK_FLAGS],al
         cmp     byte ptr [f1d_drive],USB_DRV0
         jae     fF1_diskremov
         ; a BIOS drive a USB unit stands in for (usb_adopt) is the same

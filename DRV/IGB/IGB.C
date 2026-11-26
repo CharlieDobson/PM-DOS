@@ -144,8 +144,8 @@
 #define GROUP_IGC   2
 
 typedef struct {
-    u32 icr, ims, imc;          /* the interrupt registers */
-    u32 rxq, txq;               /* queue 0's blocks */
+    uint32_t icr, ims, imc;     /* the interrupt registers */
+    uint32_t rxq, txq;          /* queue 0's blocks */
 } GROUP;
 
 static const GROUP groups[3] = {
@@ -156,14 +156,14 @@ static const GROUP groups[3] = {
 
 /* both kinds are four dwords; the receive one is read as an address
    (word0/1) and comes back as status (word2) and length (word3) */
-typedef struct { u32 word0, word1, word2, word3; } DESC;
+typedef struct { uint32_t word0, word1, word2, word3; } DESC;
 
 /* COPPER: a PHY on the chip's MDIO, at PHY address 1 (igb) or 0 (igc,
    which Linux's igc leaves at 0).  The fiber, SerDes and SGMII parts
    have none there and are left to negotiate on their own */
 #define CU          1
 
-typedef struct { u16 device; u8 group; u8 copper; const char *name; } CHIP;
+typedef struct { uint16_t device; uint8_t group; uint8_t copper; const char *name; } CHIP;
 
 static const CHIP chips[] = {
     { 0x10A7, GROUP_82575, CU, "Intel 82575" }, { 0x10A9, GROUP_82575, 0, "Intel 82575" },
@@ -197,18 +197,18 @@ static const CHIP chips[] = {
     { 0, 0, 0, 0 }
 };
 
-static u32  membase;
+static uint32_t membase;
 static const GROUP *grp;
 static const CHIP *chip;
 static volatile DESC *rxd;
 static volatile DESC *txd;
-static u8  *rxbuf[RXN];
-static u8  *txbuf[TXN];
-static int  rx_cur, tx_cur;
+static uint8_t *rxbuf[RXN];
+static uint8_t *txbuf[TXN];
+static int      rx_cur, tx_cur;
 
-static u32 align128( u32 p ) { return ( p + 127 ) & ~127L; }
-static u32 reg_rd( u32 off ) { return MMIO32( membase, off ); }
-static void reg_wr( u32 off, u32 value ) { MMIO32( membase, off ) = value; }
+static uint32_t align128( uint32_t p ) { return ( p + 127 ) & ~127L; }
+static uint32_t reg_rd( uint32_t off ) { return MMIO32( membase, off ); }
+static void reg_wr( uint32_t off, uint32_t value ) { MMIO32( membase, off ) = value; }
 
 static void name_add( const char *text )
 {
@@ -222,7 +222,7 @@ static void name_add( const char *text )
 
 /* a queue switched on or off, and read back: the chip takes a moment
    to start fetching, and a queue used before then loses frames */
-static int queue_enable( u32 dctl, u32 thresh, int on )
+static int queue_enable( uint32_t dctl, uint32_t thresh, int on )
 {
     int i;
 
@@ -271,7 +271,7 @@ static void sem_put( void )
 /* port 0's PHY claimed from the firmware (SW_FW_SYNC), up to a second */
 static int phy_take( void )
 {
-    u32 sync;
+    uint32_t sync;
     int i;
 
     for ( i = 0; i < 200; i++ ) {
@@ -296,12 +296,12 @@ static void phy_give( void )
 }
 
 /* one PHY register through MDIC, read or written; 0 if it failed */
-static int mdic( u32 op, int reg, u16 *value )
+static int mdic( uint32_t op, int reg, uint16_t *value )
 {
-    u32 cmd, back;
+    uint32_t cmd, back;
     int i;
 
-    cmd = op | ( (u32)reg << MDIC_REG_SHIFT ) | ( (u32)( chip->group == GROUP_IGC ? 0 : 1 ) << MDIC_PHY_SHIFT );
+    cmd = op | ( (uint32_t)reg << MDIC_REG_SHIFT ) | ( (uint32_t)( chip->group == GROUP_IGC ? 0 : 1 ) << MDIC_PHY_SHIFT );
     if ( op == MDIC_WRITE ) cmd |= *value;
     reg_wr( REG_MDIC, cmd );
     for ( i = 0; i < 1000; i++ ) {
@@ -309,7 +309,7 @@ static int mdic( u32 op, int reg, u16 *value )
         back = reg_rd( REG_MDIC );
         if ( back & MDIC_READY ) {
             if ( back & MDIC_ERROR ) return 0;
-            if ( op == MDIC_READ ) *value = (u16)back;
+            if ( op == MDIC_READ ) *value = (uint16_t)back;
             return 1;
         }
     }
@@ -320,7 +320,7 @@ static int mdic( u32 op, int reg, u16 *value )
    the PHY may not have started by itself (QEMU's 82576 does not) */
 static void phy_renegotiate( void )
 {
-    u16 bmcr;
+    uint16_t bmcr;
 
     if ( !chip->copper ) return;
     if ( !phy_take() ) { net_print( "Intel: the firmware would not let go of the PHY\r\n" ); return; }
@@ -335,8 +335,9 @@ int card_find( void )
 {
     PCI_ID one[2];
     int isio, i;
-    u32 at, need, bar, ral, rah;
-    u8 *pool;
+    uint32_t at, bar, ral, rah;
+    unsigned int need;
+    uint8_t *pool;
 
     one[1].vendor = 0;
     one[1].device = 0;
@@ -354,7 +355,7 @@ int card_find( void )
     membase = net_pci_map( bar, 0x20000 );
     if ( membase == 0 ) return 1;
     net_mem = membase;
-    net_irq = (u8)net_pci_irqline( net_pciaddr );
+    net_irq = (uint8_t)net_pci_irqline( net_pciaddr );
     net_bus = NICB_PCI;
     net_flags = NICF_WORD;
 
@@ -376,20 +377,20 @@ int card_find( void )
     ral = reg_rd( REG_RAL );
     rah = reg_rd( REG_RAH );
     if ( !( rah & RAH_AV ) ) { net_print( "Intel: no station address loaded\r\n" ); return 1; }
-    net_mac[0] = (u8)ral;        net_mac[1] = (u8)( ral >> 8 );
-    net_mac[2] = (u8)( ral >> 16 ); net_mac[3] = (u8)( ral >> 24 );
-    net_mac[4] = (u8)rah;        net_mac[5] = (u8)( rah >> 8 );
+    net_mac[0] = (uint8_t)ral;        net_mac[1] = (uint8_t)( ral >> 8 );
+    net_mac[2] = (uint8_t)( ral >> 16 ); net_mac[3] = (uint8_t)( ral >> 24 );
+    net_mac[4] = (uint8_t)rah;        net_mac[5] = (uint8_t)( rah >> 8 );
     if ( !net_mac_ok( net_mac ) ) { net_print( "Intel: the station address is not usable\r\n" ); return 1; }
 
     if ( rxd == 0 ) {
         need = ( RXN + TXN ) * sizeof( DESC ) + 128 + ( RXN + TXN ) * BUFSZ;
         pool = net_alloc( need );
         if ( pool == 0 ) return 1;
-        at = align128( (u32)pool );
+        at = align128( (uint32_t)pool );
         rxd = (volatile DESC *)at;  at += RXN * sizeof( DESC );
         txd = (volatile DESC *)at;  at += TXN * sizeof( DESC );
-        for ( i = 0; i < RXN; i++ ) { rxbuf[i] = (u8 *)at; at += BUFSZ; }
-        for ( i = 0; i < TXN; i++ ) { txbuf[i] = (u8 *)at; at += BUFSZ; }
+        for ( i = 0; i < RXN; i++ ) { rxbuf[i] = (uint8_t *)at; at += BUFSZ; }
+        for ( i = 0; i < TXN; i++ ) { txbuf[i] = (uint8_t *)at; at += BUFSZ; }
     }
     return 0;
 }
@@ -398,7 +399,7 @@ int card_find( void )
    the chip wrote its status over the address */
 static void rx_give( int entry )
 {
-    rxd[entry].word0 = (u32)rxbuf[entry];
+    rxd[entry].word0 = (uint32_t)rxbuf[entry];
     rxd[entry].word1 = 0;
     rxd[entry].word2 = 0;
     rxd[entry].word3 = 0;
@@ -406,7 +407,7 @@ static void rx_give( int entry )
 
 int card_setup( void )
 {
-    u32 status;
+    uint32_t status;
     int i;
 
     quiet();
@@ -418,7 +419,7 @@ int card_setup( void )
     /* receive: the ring, the buffer size and kind, the queue on, then
        the unit, then the tail that hands the buffers over */
     for ( i = 0; i < RXN; i++ ) rx_give( i );
-    reg_wr( grp->rxq + Q_BAL, (u32)rxd );
+    reg_wr( grp->rxq + Q_BAL, (uint32_t)rxd );
     reg_wr( grp->rxq + Q_BAH, 0 );
     reg_wr( grp->rxq + Q_LEN, RXN * sizeof( DESC ) );
     reg_wr( grp->rxq + Q_HEAD, 0 );
@@ -436,12 +437,12 @@ int card_setup( void )
 
     /* transmit */
     for ( i = 0; i < TXN; i++ ) {
-        txd[i].word0 = (u32)txbuf[i];
+        txd[i].word0 = (uint32_t)txbuf[i];
         txd[i].word1 = 0;
         txd[i].word2 = 0;
         txd[i].word3 = XD_DD;                   /* free */
     }
-    reg_wr( grp->txq + Q_BAL, (u32)txd );
+    reg_wr( grp->txq + Q_BAL, (uint32_t)txd );
     reg_wr( grp->txq + Q_BAH, 0 );
     reg_wr( grp->txq + Q_LEN, TXN * sizeof( DESC ) );
     reg_wr( grp->txq + Q_HEAD, 0 );
@@ -486,10 +487,10 @@ void card_stop( void )
     queue_enable( grp->txq + Q_DCTL, TXDCTL_THRESH, 0 );
 }
 
-int card_send( const u8 *frame, u32 len )
+int card_send( const uint8_t *frame, unsigned int len )
 {
     int entry = tx_cur;
-    u32 n;
+    unsigned int n;
 
     if ( !( txd[entry].word3 & XD_DD ) ) {
         for ( n = 0; n < 400000L; n++ ) {
@@ -498,21 +499,22 @@ int card_send( const u8 *frame, u32 len )
         if ( !( txd[entry].word3 & XD_DD ) ) { net_stats.txerrors++; return 0; }
     }
     net_memcpy( txbuf[entry], frame, len );
-    txd[entry].word0 = (u32)txbuf[entry];
+    txd[entry].word0 = (uint32_t)txbuf[entry];
     txd[entry].word1 = 0;
     txd[entry].word2 = TXD_DATA | TXD_EOP | TXD_IFCS | TXD_RS | TXD_DEXT | len;
     txd[entry].word3 = len << TXD_PAYLEN_SHIFT;  /* and DD clear: not done */
     tx_cur = ( entry + 1 ) % TXN;
-    reg_wr( grp->txq + Q_TAIL, (u32)tx_cur );
+    reg_wr( grp->txq + Q_TAIL, (uint32_t)tx_cur );
     return 1;
 }
 
 /* the frames the chip has finished, handed over; how many */
 static int rx_drain( void )
 {
-    u32 status, len, n;
+    uint32_t status;
+    unsigned int len, n;
     int last = -1, got = 0;
-    u8 *slot;
+    uint8_t *slot;
 
     for ( n = 0; n < RXN; n++ ) {
         status = rxd[rx_cur].word2;
@@ -530,13 +532,13 @@ static int rx_drain( void )
         rx_cur = ( rx_cur + 1 ) % RXN;
         got++;
     }
-    if ( last >= 0 ) reg_wr( grp->rxq + Q_TAIL, (u32)last );
+    if ( last >= 0 ) reg_wr( grp->rxq + Q_TAIL, (uint32_t)last );
     return got;
 }
 
 int card_service( void )
 {
-    u32 icr;
+    uint32_t icr;
     int got;
 
     icr = reg_rd( grp->icr );                    /* reading it clears it */

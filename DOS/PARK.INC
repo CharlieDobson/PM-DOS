@@ -1412,6 +1412,26 @@ pfh_flags:
 pfh_notnet:
         test    byte ptr [esi+DRV_FLAGS],DRVF_DRIVER
         jnz     pfh_isdrv
+        ; A HARD DISK THE BIOS DID NOT COUNT is not there either.  The IDE
+        ; driver numbered it after the BIOS's disks (ATA.INC, ata_number),
+        ; and down there the BIOS is what RMDOS asks, which has no such
+        ; disk - nor has LRGDISK.386, which finds its disks by watching
+        ; the BIOS read them.  A BIOS that refuses the number leaves
+        ; RMDOS no boot sector, and RMDOS drops the letter itself (QEMU:
+        ; so it does); one that keeps only the low bit of the number
+        ; answers with 80h's sector, and RMDOS would mount C:'s volume a
+        ; second time under this letter.  So the BIOS is not asked, as
+        ; the block layer does not ask it (blk_getgeo): from 82h on, and
+        ; 80h and 81h go over as they always did.
+        push    eax
+        mov     al,[esi+DRV_BIOS]
+        cmp     al,82h
+        jb      pfh_counted                     ; CF set: not this case
+        sub     al,80h
+        cmp     al,byte ptr ds:[BDA_HDCOUNT]    ; CF set: one the BIOS has
+pfh_counted:
+        pop     eax                             ; (POP leaves the flags)
+        jae     pfh_absent
         ; NOT a loaded driver.  But is this BIOS drive actually a USB stick
         ; the kernel adopted and is keeping alive across the park (usb_park
         ; skipped its teardown)?  Then its sectors reach RMDOS only through

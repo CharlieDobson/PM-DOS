@@ -28,21 +28,21 @@ VM vm;
 
 extern void (*const rtf_table[RT_COUNT])( void );
 
-static JMPBUF vm_jmp;
-static int    vm_err_code;
-static u32    vm_err_stmt_override;
+static JMPBUF       vm_jmp;
+static int          vm_err_code;
+static unsigned int vm_err_stmt_override;
 static const DATAITEM *vm_err_data;
 
 void events_reset( void );
-int  events_check( u8 **handler, int *kind, int *which );
+int  events_check( uint8_t **handler, int *kind, int *which );
 void events_done( int kind, int which );
 void mem_reset_segs( void );
 void rnd_reset( void );
 void arr_free( ARR *arr );
 void arr_unpark( void );
-ARR *arr_make( QTYPE type, u32 esize, int ndims, const s32 *bounds, int flags );
+ARR *arr_make( QTYPE type, unsigned int esize, int ndims, const int32_t *bounds, int flags );
 
-void push_l( s32 val )
+void push_l( int32_t val )
 {
     vm.stag[vm.sp - vm.stack] = 0;
     (vm.sp++)->l = val;
@@ -83,7 +83,7 @@ void vm_error( int code )
 
 /* an error that belongs to another statement: READ's bad item is the
    DATA statement's */
-void vm_error_at( int code, u32 stmt )
+void vm_error_at( int code, unsigned int stmt )
 {
     vm_err_code = code;
     vm_err_stmt_override = stmt;
@@ -101,7 +101,7 @@ void vm_error_data( int code, const DATAITEM *item )
     rt_longjmp( &vm_jmp, 1 );
 }
 
-u32 vm_current_stmt( void )
+unsigned int vm_current_stmt( void )
 {
     return vm.stmt;
 }
@@ -110,9 +110,9 @@ u32 vm_current_stmt( void )
 /* frames                                                              */
 /* ------------------------------------------------------------------ */
 
-static void release_slots( u8 *base, const u32 *strs, u32 nstrs, const u32 *arrs, u32 narrs )
+static void release_slots( uint8_t *base, const unsigned int *strs, unsigned int nstrs, const unsigned int *arrs, unsigned int narrs )
 {
-    u32 i;
+    unsigned int i;
 
     for ( i = 0; i < nstrs; i++ ) {
         STR **slot = (STR **)(base + strs[i]);
@@ -147,20 +147,20 @@ static void frame_pop( void )
 }
 
 /* every frame above "depth" let go of */
-static void frames_unwind( u32 depth )
+static void frames_unwind( unsigned int depth )
 {
     while ( vm.nframes > depth ) {
         frame_pop();
     }
 }
 
-static void call_proc( int index, u8 *ret_pc )
+static void call_proc( int index, uint8_t *ret_pc )
 {
     PROGRAM *prog = vm.prog;
     PROC *proc = &prog->procs[index];
     FRAME *frame;
-    u32 size = (proc->frame_size + 7u) & ~7u, i;
-    u8 *mine;
+    unsigned int size = (proc->frame_size + 7u) & ~7u, i;
+    uint8_t *mine;
 
     /* each call leaves the caller's pending cells on the stack; keep room
        for the most one statement can push (a 4,095-byte line) */
@@ -168,7 +168,7 @@ static void call_proc( int index, u8 *ret_pc )
         vm_error( E_OUT_OF_STACK );
     }
     if ( vm.nframes == vm.frames_cap ) {
-        u32 cap = vm.frames_cap ? vm.frames_cap * 2 : 64;
+        unsigned int cap = vm.frames_cap ? vm.frames_cap * 2 : 64;
         FRAME *grown = (FRAME *)try_realloc( vm.frames, cap * sizeof( FRAME ) );
         if ( grown == NULL ) {
             vm_error( E_OUT_OF_STACK );
@@ -187,7 +187,7 @@ static void call_proc( int index, u8 *ret_pc )
     vm.ftop += size;
     /* the arguments' addresses, into the parameters' slots */
     vm.sp -= proc->nparams;
-    for ( i = 0; i < (u32)proc->nparams; i++ ) {
+    for ( i = 0; i < (unsigned int)proc->nparams; i++ ) {
         ((void **)mine)[i] = vm.sp[i].ptr;
     }
     frame = &vm.frames[vm.nframes++];
@@ -206,7 +206,7 @@ static void call_proc( int index, u8 *ret_pc )
     vm.stmt_sp = vm.sp;
     /* arrays it uses without a DIM: made now, 0 to 10 */
     for ( i = 0; i < proc->nimp_arr; i++ ) {
-        s32 bounds[MAX_DIMS * 2];
+        int32_t bounds[MAX_DIMS * 2];
         int d;
         for ( d = 0; d < proc->imp_dims[i]; d++ ) {
             bounds[d * 2] = prog->option_base;
@@ -226,7 +226,7 @@ static void call_proc( int index, u8 *ret_pc )
 /* the run                                                             */
 /* ------------------------------------------------------------------ */
 
-static void *zalloc( u32 size )
+static void *zalloc( unsigned int size )
 {
     void *mem = try_alloc( size ? size : 4 );
 
@@ -236,14 +236,14 @@ static void *zalloc( u32 size )
     return mem;
 }
 
-static int make_arrays( u32 first )
+static int make_arrays( unsigned int first )
 {
     PROGRAM *prog = vm.prog;
-    u32 i;
+    unsigned int i;
 
     for ( i = first; i < prog->narrinit; i++ ) {
         ARRINIT *init = &prog->arrinit[i];
-        u8 *base = init->scope == SC_GLOBAL ? vm.gdata : prog->procs[init->proc].static_data;
+        uint8_t *base = init->scope == SC_GLOBAL ? vm.gdata : prog->procs[init->proc].static_data;
         ARR *arr = arr_make( init->type, init->esize, init->ndims, init->bounds, init->flags );
         if ( arr == NULL ) {
             return 0;
@@ -286,13 +286,13 @@ static int fresh_data( void )
     free_data();
     /* with room for the names the Immediate window makes */
     vm.gcap = prog->gsize + IMM_DATA_SPARE;
-    vm.gdata = (u8 *)zalloc( vm.gcap );
+    vm.gdata = (uint8_t *)zalloc( vm.gcap );
     if ( vm.gdata == NULL ) {
         return 0;
     }
     for ( i = 0; i < prog->nprocs; i++ ) {
         PROC *proc = &prog->procs[i];
-        proc->static_data = (u8 *)zalloc( proc->static_size );
+        proc->static_data = (uint8_t *)zalloc( proc->static_size );
         if ( proc->static_data == NULL ) {
             return 0;
         }
@@ -305,17 +305,17 @@ static int fresh_data( void )
 /* next program                                                        */
 /* ------------------------------------------------------------------ */
 
-static COMMONVAR *carry_vars;           /* the old program's COMMON, its values in carry_data */
-static u8        *carry_data;
-static u32        carry_n;
-static int        keep_files;           /* the next vm_end and vm_begin leave the files open */
+static COMMONVAR   *carry_vars;         /* the old program's COMMON, its values in carry_data */
+static uint8_t     *carry_data;
+static unsigned int carry_n;
+static int          keep_files;         /* the next vm_end and vm_begin leave the files open */
 
 /* a string or an array changes owner: the old program's slot is emptied,
    so its end does not free what the next program is given */
 void vm_common_take( void )
 {
     PROGRAM *prog = vm.prog;
-    u32 i, total = 0, at = 0;
+    unsigned int i, total = 0, at = 0;
 
     vm_common_drop();
     keep_files = 1;
@@ -326,7 +326,7 @@ void vm_common_take( void )
         total += prog->common[i].size;
     }
     carry_vars = (COMMONVAR *)try_alloc( prog->ncommon * sizeof( COMMONVAR ) );
-    carry_data = (u8 *)try_alloc( total ? total : 1 );
+    carry_data = (uint8_t *)try_alloc( total ? total : 1 );
     if ( carry_vars == NULL || carry_data == NULL ) {
         xfree( carry_vars );
         xfree( carry_data );
@@ -337,7 +337,7 @@ void vm_common_take( void )
     mem_cpy( carry_vars, prog->common, prog->ncommon * sizeof( COMMONVAR ) );
     carry_n = prog->ncommon;
     for ( i = 0; i < carry_n; i++ ) {
-        u8 *slot = vm.gdata + carry_vars[i].offset;
+        uint8_t *slot = vm.gdata + carry_vars[i].offset;
         mem_cpy( carry_data + at, slot, carry_vars[i].size );
         if ( carry_vars[i].is_array || TKIND( carry_vars[i].type ) == TY_STR ) {
             *(void **)slot = NULL;
@@ -346,7 +346,7 @@ void vm_common_take( void )
     }
 }
 
-static void carry_release( COMMONVAR *cv, u8 *data )
+static void carry_release( COMMONVAR *cv, uint8_t *data )
 {
     if ( cv->is_array ) {
         arr_free( *(ARR **)data );
@@ -360,11 +360,11 @@ static void carry_release( COMMONVAR *cv, u8 *data )
 void vm_common_give( void )
 {
     PROGRAM *prog = vm.prog;
-    u32 i, at = 0;
+    unsigned int i, at = 0;
 
     for ( i = 0; i < carry_n; i++ ) {
         COMMONVAR *cv = &carry_vars[i], *to = prog != NULL && i < prog->ncommon ? &prog->common[i] : NULL;
-        u8 *data = carry_data + at;
+        uint8_t *data = carry_data + at;
         at += cv->size;
         if ( to == NULL || vm.gdata == NULL || to->is_array != cv->is_array || to->size != cv->size
           || TKIND( to->type ) != TKIND( cv->type ) ) {
@@ -387,7 +387,7 @@ void vm_common_give( void )
 
 void vm_common_drop( void )
 {
-    u32 i, at = 0;
+    unsigned int i, at = 0;
 
     for ( i = 0; i < carry_n; i++ ) {
         carry_release( &carry_vars[i], carry_data + at );
@@ -411,8 +411,8 @@ int vm_begin( PROGRAM *prog )
     vm.prog = prog;
     vm.code = prog->code;
     vm.stack = (CELL *)try_alloc( STACK_CELLS * sizeof( CELL ) );
-    vm.stag = (u8 *)try_alloc( STACK_CELLS );
-    vm.farena = (u8 *)try_alloc( FRAME_ARENA );
+    vm.stag = (uint8_t *)try_alloc( STACK_CELLS );
+    vm.farena = (uint8_t *)try_alloc( FRAME_ARENA );
     if ( vm.stack == NULL || vm.stag == NULL || vm.farena == NULL || !fresh_data() ) {
         vm_end();
         return 0;
@@ -506,18 +506,18 @@ void rtf_CLEAR( void )
 }
 
 /* Set Next Statement: only within the procedure that is running */
-void vm_set_next( u32 stmt )
+void vm_set_next( unsigned int stmt )
 {
     vm.pc = vm.code + vm.prog->locs[stmt].pc;
     vm.stmt = stmt;
 }
 
-static void gosub_push( u8 *ret, int event, int which )
+static void gosub_push( uint8_t *ret, int event, int which )
 {
     GOSUBREC *rec;
 
     if ( vm.ngosub == vm.gosub_cap ) {
-        u32 cap = vm.gosub_cap ? vm.gosub_cap * 2 : 64;
+        unsigned int cap = vm.gosub_cap ? vm.gosub_cap * 2 : 64;
         GOSUBREC *grown = (GOSUBREC *)try_realloc( vm.gosubs, cap * sizeof( GOSUBREC ) );
         if ( grown == NULL ) {
             vm_error( E_OUT_OF_STACK );
@@ -528,11 +528,11 @@ static void gosub_push( u8 *ret, int event, int which )
     rec = &vm.gosubs[vm.ngosub++];
     rec->pc = ret;
     rec->frame = vm.nframes;
-    rec->event = (u8)event;
-    rec->which = (u8)which;
+    rec->event = (uint8_t)event;
+    rec->which = (uint8_t)which;
 }
 
-static u8 *gosub_pop( void )
+static uint8_t *gosub_pop( void )
 {
     GOSUBREC *rec;
 
@@ -547,13 +547,13 @@ static u8 *gosub_pop( void )
 }
 
 /* Look round, between statements: -> RUN_* to stop with, or -1 */
-static int look_round( u32 stmt )
+static int look_round( unsigned int stmt )
 {
-    static u32 last_flush;
+    static uint32_t last_flush;
     PROGRAM *prog = vm.prog;
-    u8 *handler;
+    uint8_t *handler;
     int kind, which;
-    u32 now;
+    uint32_t now;
 
     vm.poll = POLL_EVERY;
     con_poll_keys();
@@ -599,16 +599,16 @@ static int look_round( u32 stmt )
 }
 
 #define FETCH8()    (*pc++)
-#define FETCH16()   (pc += 2, *(u16 *)(pc - 2))
-#define FETCH32()   (pc += 4, *(u32 *)(pc - 4))
+#define FETCH16()   (pc += 2, *(uint16_t *)(pc - 2))
+#define FETCH32()   (pc += 4, *(uint32_t *)(pc - 4))
 #define SYNC()      (vm.pc = pc, vm.sp = sp)
 #define RESYNC()    (pc = vm.pc, sp = vm.sp)
-#define TAG( c, t ) (vm.stag[(c) - vm.stack] = (u8)(t))
+#define TAG( c, t ) (vm.stag[(c) - vm.stack] = (uint8_t)(t))
 #define FAIL( e )   do { SYNC(); vm_error( e ); } while ( 0 )
-#define SNG_BAD( f ) ((*(volatile u32 *)&(f) & 0x7F800000UL) == 0x7F800000UL)
+#define SNG_BAD( f ) ((*(volatile uint32_t *)&(f) & 0x7F800000UL) == 0x7F800000UL)
 #define INT_RANGE( v ) ((v) >= -32768L && (v) <= 32767L)
 
-static void *ref_ptr( u8 scope, u32 off )
+static void *ref_ptr( uint8_t scope, unsigned int off )
 {
     switch ( scope ) {
     case SC_GLOBAL: return vm.gdata + off;
@@ -618,24 +618,24 @@ static void *ref_ptr( u8 scope, u32 off )
     return *(void **)(vm.fdata + off);
 }
 
-static s32 round_whole( double v, int to_int )
+static int32_t round_whole( double v, int to_int )
 {
     double r = fp_round( v );
 
     if ( to_int ? (r < -32768.0 || r > 32767.0) : (r < -2147483648.0 || r > 2147483647.0) ) {
         vm_error( E_OVERFLOW );
     }
-    return (s32)r;
+    return (int32_t)r;
 }
 
 /* x ^ y for the two floating types */
 static double power( double base, double expo )
 {
-    s32 n;
+    int32_t n;
 
     if ( expo == fp_trunc( expo ) && expo >= -1024.0 && expo <= 1024.0 ) {
         /* a whole power: multiplied out in the coprocessor */
-        n = (s32)expo;
+        n = (int32_t)expo;
         if ( base == 0 && n < 0 ) {
             vm_error( E_ILLEGAL_CALL );         /* 0 ^ -1 */
         }
@@ -655,12 +655,12 @@ static double power( double base, double expo )
 
 static int run_loop( void )
 {
-    u8 *pc = vm.pc;
+    uint8_t *pc = vm.pc;
     CELL *sp = vm.sp;
     PROGRAM *prog = vm.prog;
-    u8 *code = vm.code;
-    u32 off, a32;
-    s32 lv, rv, res;
+    uint8_t *code = vm.code;
+    uint32_t off, a32;
+    int32_t lv, rv, res;
     double dv;
     volatile float fv;                  /* through memory: a cast alone may not round */
     int op, why;
@@ -670,7 +670,7 @@ static int run_loop( void )
         switch ( op ) {
         case OP_CI:
             TAG( sp, 0 );
-            (sp++)->l = (s32)FETCH32();
+            (sp++)->l = (int32_t)FETCH32();
             break;
         case OP_CS:
             TAG( sp, 0 );
@@ -719,16 +719,16 @@ static int run_loop( void )
             (sp++)->ptr = *(void **)(vm.fdata + FETCH32());
             break;
         case OP_AOFS:
-            sp[-1].ptr = (u8 *)sp[-1].ptr + FETCH32();
+            sp[-1].ptr = (uint8_t *)sp[-1].ptr + FETCH32();
             break;
         case OP_AIDX1: {
             ARR *arr = *(ARR **)sp[-2].ptr;
-            u32 idx;
+            unsigned int idx;
             if ( arr == NULL ) {
                 FAIL( E_SUBSCRIPT );
             }
-            idx = (u32)(sp[-1].l - arr->lb[0]);
-            if ( idx >= (u32)arr->lb[1] || arr->ndims != 1 ) {
+            idx = (unsigned int)(sp[-1].l - arr->lb[0]);
+            if ( idx >= (unsigned int)arr->lb[1] || arr->ndims != 1 ) {
                 FAIL( E_SUBSCRIPT );
             }
             sp--;
@@ -738,17 +738,17 @@ static int run_loop( void )
         case OP_AIDX: {
             int n = FETCH8(), d;
             ARR *arr = *(ARR **)sp[-n - 1].ptr;
-            u32 lin = 0, mult = 1, idx;
+            unsigned int lin = 0, mult = 1, idx;
             if ( arr == NULL || arr->ndims != n ) {
                 FAIL( E_SUBSCRIPT );
             }
             for ( d = 0; d < n; d++ ) {
-                idx = (u32)(sp[-n + d].l - arr->lb[d]);
-                if ( idx >= (u32)arr->lb[n + d] ) {
+                idx = (unsigned int)(sp[-n + d].l - arr->lb[d]);
+                if ( idx >= (unsigned int)arr->lb[n + d] ) {
                     FAIL( E_SUBSCRIPT );
                 }
                 lin += idx * mult;
-                mult *= (u32)arr->lb[n + d];
+                mult *= (unsigned int)arr->lb[n + d];
             }
             sp -= n;
             sp[-1].ptr = arr->data + lin * arr->esize;
@@ -756,12 +756,12 @@ static int run_loop( void )
         }
         case OP_AIDXR1: {
             ARR *arr = *(ARR **)sp[-2].ptr;
-            u32 idx;
+            unsigned int idx;
             if ( arr == NULL ) {
                 FAIL( E_SUBSCRIPT );
             }
-            idx = (u32)(sp[-1].l - arr->lb[0]);
-            if ( idx >= (u32)arr->lb[1] || arr->ndims != 1 ) {
+            idx = (unsigned int)(sp[-1].l - arr->lb[0]);
+            if ( idx >= (unsigned int)arr->lb[1] || arr->ndims != 1 ) {
                 FAIL( E_SUBSCRIPT );
             }
             sp[-1].u = idx * arr->esize;        /* the slot stays under it */
@@ -770,17 +770,17 @@ static int run_loop( void )
         case OP_AIDXR: {
             int n = FETCH8(), d;
             ARR *arr = *(ARR **)sp[-n - 1].ptr;
-            u32 lin = 0, mult = 1, idx;
+            unsigned int lin = 0, mult = 1, idx;
             if ( arr == NULL || arr->ndims != n ) {
                 FAIL( E_SUBSCRIPT );
             }
             for ( d = 0; d < n; d++ ) {
-                idx = (u32)(sp[-n + d].l - arr->lb[d]);
-                if ( idx >= (u32)arr->lb[n + d] ) {
+                idx = (unsigned int)(sp[-n + d].l - arr->lb[d]);
+                if ( idx >= (unsigned int)arr->lb[n + d] ) {
                     FAIL( E_SUBSCRIPT );
                 }
                 lin += idx * mult;
-                mult *= (u32)arr->lb[n + d];
+                mult *= (unsigned int)arr->lb[n + d];
             }
             sp -= n - 1;
             sp[-1].u = lin * arr->esize;
@@ -789,14 +789,14 @@ static int run_loop( void )
         case OP_EREF: {
             /* slot, offset, the copy's address, the note's: the element
                into the copy, and the copy's address is the argument */
-            u32 size = FETCH32();
+            unsigned int size = FETCH32();
             int is_str = FETCH8();
             ARR **slot = (ARR **)sp[-4].ptr;
-            u32 at = sp[-3].u;
-            u8 *copy = (u8 *)sp[-2].ptr;
-            u8 *elem = (*slot)->data + at;
+            unsigned int at = sp[-3].u;
+            uint8_t *copy = (uint8_t *)sp[-2].ptr;
+            uint8_t *elem = (*slot)->data + at;
             ((void **)sp[-1].ptr)[0] = slot;
-            ((u32 *)sp[-1].ptr)[1] = at;
+            ((uint32_t *)sp[-1].ptr)[1] = at;
             if ( is_str ) {
                 STR *old = *(STR **)copy;
                 *(STR **)copy = qs_retain( *(STR **)elem );
@@ -812,13 +812,13 @@ static int run_loop( void )
         case OP_EBACK: {
             /* the copy's address, the note's: back into the element, if
                the array is still there and still that big */
-            u32 size = FETCH32();
+            unsigned int size = FETCH32();
             int is_str = FETCH8();
-            u8 *copy = (u8 *)sp[-2].ptr;
+            uint8_t *copy = (uint8_t *)sp[-2].ptr;
             ARR *arr = *(ARR **)((void **)sp[-1].ptr)[0];
-            u32 at = ((u32 *)sp[-1].ptr)[1];
+            unsigned int at = ((uint32_t *)sp[-1].ptr)[1];
             if ( arr != NULL && at <= arr->count * arr->esize && size <= arr->count * arr->esize - at ) {
-                u8 *elem = arr->data + at;
+                uint8_t *elem = arr->data + at;
                 if ( is_str ) {
                     qs_release( *(STR **)elem );
                     *(STR **)elem = *(STR **)copy;
@@ -836,7 +836,7 @@ static int run_loop( void )
         }
         case OP_EXCH: {
             CELL cell = sp[-1];
-            u8 tag = vm.stag[sp - 1 - vm.stack];
+            uint8_t tag = vm.stag[sp - 1 - vm.stack];
             sp[-1] = sp[-2];
             TAG( sp - 1, vm.stag[sp - 2 - vm.stack] );
             sp[-2] = cell;
@@ -846,10 +846,10 @@ static int run_loop( void )
 
         /* through an address */
         case OP_LDI:
-            sp[-1].l = *(s16 *)sp[-1].ptr;
+            sp[-1].l = *(int16_t *)sp[-1].ptr;
             break;
         case OP_LDL:
-            sp[-1].l = *(s32 *)sp[-1].ptr;
+            sp[-1].l = *(int32_t *)sp[-1].ptr;
             break;
         case OP_LDS:
             sp[-1].d = *(float *)sp[-1].ptr;
@@ -862,18 +862,18 @@ static int run_loop( void )
             TAG( sp - 1, 1 );
             break;
         case OP_LDFS: {
-            u32 len = FETCH16();
+            unsigned int len = FETCH16();
             SYNC();
             sp[-1].str = qs_make( (const char *)sp[-1].ptr, len );
             TAG( sp - 1, 1 );
             break;
         }
         case OP_STI:
-            *(s16 *)sp[-2].ptr = (s16)sp[-1].l;
+            *(int16_t *)sp[-2].ptr = (int16_t)sp[-1].l;
             sp -= 2;
             break;
         case OP_STL:
-            *(s32 *)sp[-2].ptr = sp[-1].l;
+            *(int32_t *)sp[-2].ptr = sp[-1].l;
             sp -= 2;
             break;
         case OP_STS:
@@ -897,7 +897,7 @@ static int run_loop( void )
             break;
         }
         case OP_STFS: {
-            u32 len = FETCH16(), have;
+            unsigned int len = FETCH16(), have;
             STR *s = sp[-1].str;
             char *field = (char *)sp[-2].ptr;
             have = QS_LEN( s );
@@ -919,11 +919,11 @@ static int run_loop( void )
         /* the module's data and the frame */
         case OP_GLDI:
             TAG( sp, 0 );
-            (sp++)->l = *(s16 *)(vm.gdata + FETCH32());
+            (sp++)->l = *(int16_t *)(vm.gdata + FETCH32());
             break;
         case OP_GLDL:
             TAG( sp, 0 );
-            (sp++)->l = *(s32 *)(vm.gdata + FETCH32());
+            (sp++)->l = *(int32_t *)(vm.gdata + FETCH32());
             break;
         case OP_GLDS:
             TAG( sp, 0 );
@@ -938,10 +938,10 @@ static int run_loop( void )
             (sp++)->str = qs_retain( *(STR **)(vm.gdata + FETCH32()) );
             break;
         case OP_GSTI:
-            *(s16 *)(vm.gdata + FETCH32()) = (s16)(--sp)->l;
+            *(int16_t *)(vm.gdata + FETCH32()) = (int16_t)(--sp)->l;
             break;
         case OP_GSTL:
-            *(s32 *)(vm.gdata + FETCH32()) = (--sp)->l;
+            *(int32_t *)(vm.gdata + FETCH32()) = (--sp)->l;
             break;
         case OP_GSTS:
             fv = (float)sp[-1].d;
@@ -963,11 +963,11 @@ static int run_loop( void )
         }
         case OP_FLDI:
             TAG( sp, 0 );
-            (sp++)->l = *(s16 *)(vm.fdata + FETCH32());
+            (sp++)->l = *(int16_t *)(vm.fdata + FETCH32());
             break;
         case OP_FLDL:
             TAG( sp, 0 );
-            (sp++)->l = *(s32 *)(vm.fdata + FETCH32());
+            (sp++)->l = *(int32_t *)(vm.fdata + FETCH32());
             break;
         case OP_FLDS:
             TAG( sp, 0 );
@@ -982,10 +982,10 @@ static int run_loop( void )
             (sp++)->str = qs_retain( *(STR **)(vm.fdata + FETCH32()) );
             break;
         case OP_FSTI:
-            *(s16 *)(vm.fdata + FETCH32()) = (s16)(--sp)->l;
+            *(int16_t *)(vm.fdata + FETCH32()) = (int16_t)(--sp)->l;
             break;
         case OP_FSTL:
-            *(s32 *)(vm.fdata + FETCH32()) = (--sp)->l;
+            *(int32_t *)(vm.fdata + FETCH32()) = (--sp)->l;
             break;
         case OP_FSTS:
             fv = (float)sp[-1].d;
@@ -1102,7 +1102,7 @@ static int run_loop( void )
                 if ( op == OP_IDIVI && lv == -32768L ) {
                     FAIL( E_OVERFLOW );
                 }
-                res = (s32)(0U - (u32)lv);
+                res = (int32_t)(0U - (uint32_t)lv);
             } else {
                 res = lv / rv;
             }
@@ -1122,7 +1122,7 @@ static int run_loop( void )
         case OP_ADDL:
             lv = sp[-2].l;
             rv = sp[-1].l;
-            res = (s32)((u32)lv + (u32)rv);
+            res = (int32_t)((uint32_t)lv + (uint32_t)rv);
             if ( ((lv ^ res) & (rv ^ res)) < 0 ) {
                 FAIL( E_OVERFLOW );
             }
@@ -1131,7 +1131,7 @@ static int run_loop( void )
         case OP_SUBL:
             lv = sp[-2].l;
             rv = sp[-1].l;
-            res = (s32)((u32)lv - (u32)rv);
+            res = (int32_t)((uint32_t)lv - (uint32_t)rv);
             if ( ((lv ^ rv) & (lv ^ res)) < 0 ) {
                 FAIL( E_OVERFLOW );
             }
@@ -1142,11 +1142,11 @@ static int run_loop( void )
             if ( dv < -2147483647.0 || dv > 2147483647.0 ) {       /* -2^31 too, as QBasic */
                 FAIL( E_OVERFLOW );
             }
-            res = (s32)((u32)sp[-2].l * (u32)sp[-1].l);
+            res = (int32_t)((uint32_t)sp[-2].l * (uint32_t)sp[-1].l);
             (--sp)[-1].l = res;
             break;
         case OP_NEGL:
-            if ( sp[-1].l == (s32)0x80000000UL ) {
+            if ( sp[-1].l == (int32_t)0x80000000UL ) {
                 FAIL( E_OVERFLOW );
             }
             sp[-1].l = -sp[-1].l;
@@ -1298,14 +1298,14 @@ static int run_loop( void )
             pc = code + a32;
             break;
         case OP_ONGO: {
-            u32 count = FETCH16();
+            unsigned int count = FETCH16();
             int gosub = FETCH8();
-            s32 n = (--sp)->l;
+            int32_t n = (--sp)->l;
             if ( n < 0 || n > 255 ) {
                 FAIL( E_ILLEGAL_CALL );
             }
-            if ( n >= 1 && (u32)n <= count ) {
-                a32 = *(u32 *)(pc + (n - 1) * 4);
+            if ( n >= 1 && (unsigned int)n <= count ) {
+                a32 = *(uint32_t *)(pc + (n - 1) * 4);
                 pc += count * 4;
                 if ( gosub ) {
                     SYNC();
@@ -1344,8 +1344,8 @@ static int run_loop( void )
             frame = &vm.frames[vm.nframes - 1];
             proc = frame->proc;
             switch ( TKIND( proc->rettype ) ) {
-            case TY_INT:    value.l = *(s16 *)(frame->mine + proc->ret_off); break;
-            case TY_LONG:   value.l = *(s32 *)(frame->mine + proc->ret_off); break;
+            case TY_INT:    value.l = *(int16_t *)(frame->mine + proc->ret_off); break;
+            case TY_LONG:   value.l = *(int32_t *)(frame->mine + proc->ret_off); break;
             case TY_SINGLE: value.d = *(float *)(frame->mine + proc->ret_off); break;
             case TY_DOUBLE: value.d = *(double *)(frame->mine + proc->ret_off); break;
             default:
@@ -1374,24 +1374,24 @@ static int run_loop( void )
         case OP_NEXTL:
         case OP_NEXTS:
         case OP_NEXTD: {
-            u8 vs = pc[0], ls = pc[5], ss = pc[10];
-            void *var = ref_ptr( vs, *(u32 *)(pc + 1) );
-            void *lim = ref_ptr( ls, *(u32 *)(pc + 6) );
-            void *stp = ref_ptr( ss, *(u32 *)(pc + 11) );
+            uint8_t vs = pc[0], ls = pc[5], ss = pc[10];
+            void *var = ref_ptr( vs, *(uint32_t *)(pc + 1) );
+            void *lim = ref_ptr( ls, *(uint32_t *)(pc + 6) );
+            void *stp = ref_ptr( ss, *(uint32_t *)(pc + 11) );
             int go_on;
-            a32 = *(u32 *)(pc + 15);
+            a32 = *(uint32_t *)(pc + 15);
             pc += 19;
             switch ( op ) {
             case OP_FORI:
-                lv = *(s16 *)var;
-                go_on = *(s16 *)stp >= 0 ? lv <= *(s16 *)lim : lv >= *(s16 *)lim;
+                lv = *(int16_t *)var;
+                go_on = *(int16_t *)stp >= 0 ? lv <= *(int16_t *)lim : lv >= *(int16_t *)lim;
                 if ( !go_on ) {
                     pc = code + a32;
                 }
                 break;
             case OP_FORL:
-                lv = *(s32 *)var;
-                go_on = *(s32 *)stp >= 0 ? lv <= *(s32 *)lim : lv >= *(s32 *)lim;
+                lv = *(int32_t *)var;
+                go_on = *(int32_t *)stp >= 0 ? lv <= *(int32_t *)lim : lv >= *(int32_t *)lim;
                 if ( !go_on ) {
                     pc = code + a32;
                 }
@@ -1411,30 +1411,30 @@ static int run_loop( void )
                 }
                 break;
             case OP_NEXTI:
-                res = *(s16 *)var + *(s16 *)stp;
+                res = *(int16_t *)var + *(int16_t *)stp;
                 if ( !INT_RANGE( res ) ) {
                     /* going down, QBasic has already stored the wrapped
                        value when it finds the overflow; going up it has not */
-                    if ( *(s16 *)stp < 0 ) {
-                        *(s16 *)var = (s16)res;
+                    if ( *(int16_t *)stp < 0 ) {
+                        *(int16_t *)var = (int16_t)res;
                     }
                     FAIL( E_OVERFLOW );
                 }
-                *(s16 *)var = (s16)res;
-                go_on = *(s16 *)stp >= 0 ? res <= *(s16 *)lim : res >= *(s16 *)lim;
+                *(int16_t *)var = (int16_t)res;
+                go_on = *(int16_t *)stp >= 0 ? res <= *(int16_t *)lim : res >= *(int16_t *)lim;
                 if ( go_on ) {
                     pc = code + a32;
                 }
                 break;
             case OP_NEXTL:
-                lv = *(s32 *)var;
-                rv = *(s32 *)stp;
-                res = (s32)((u32)lv + (u32)rv);
+                lv = *(int32_t *)var;
+                rv = *(int32_t *)stp;
+                res = (int32_t)((uint32_t)lv + (uint32_t)rv);
                 if ( ((lv ^ res) & (rv ^ res)) < 0 ) {
                     FAIL( E_OVERFLOW );
                 }
-                *(s32 *)var = res;
-                go_on = rv >= 0 ? res <= *(s32 *)lim : res >= *(s32 *)lim;
+                *(int32_t *)var = res;
+                go_on = rv >= 0 ? res <= *(int32_t *)lim : res >= *(int32_t *)lim;
                 if ( go_on ) {
                     pc = code + a32;
                 }
@@ -1468,7 +1468,7 @@ static int run_loop( void )
             break;
         }
         case OP_SWAP: {
-            u8 *lhs = (u8 *)sp[-2].ptr, *rhs = (u8 *)sp[-1].ptr, tmp;
+            uint8_t *lhs = (uint8_t *)sp[-2].ptr, *rhs = (uint8_t *)sp[-1].ptr, tmp;
             off = FETCH32();
             while ( off-- ) {
                 tmp = *lhs;
@@ -1652,14 +1652,14 @@ int vm_go( int how )
    program goes on), -1 for no memory, or how the run ended.  The
    program is left as it was, but for what the line changed - and an ON
    ERROR the line set stands. */
-int vm_immediate( u32 entry, u32 new_arrays )
+int vm_immediate( unsigned int entry, unsigned int new_arrays )
 {
-    u8 *pc = vm.pc, *on_error = vm.on_error, *fdata = vm.fdata, *sdata = vm.sdata, *goes_on;
+    uint8_t *pc = vm.pc, *on_error = vm.on_error, *fdata = vm.fdata, *sdata = vm.sdata, *goes_on;
     CELL *sp = vm.sp, *stmt_sp = vm.stmt_sp, *cell;
-    u32 stmt = vm.stmt, nframes = vm.nframes, ngosub = vm.ngosub;
+    unsigned int stmt = vm.stmt, nframes = vm.nframes, ngosub = vm.ngosub;
     int skip_stop = vm.skip_stop, in_handler = vm.in_handler, err = vm.err, in_event = vm.in_event;
-    s32 erl = vm.erl;
-    u32 clears = vm.clears;
+    int32_t erl = vm.erl;
+    unsigned int clears = vm.clears;
     int why;
 
     if ( !make_arrays( new_arrays ) ) {
@@ -1772,7 +1772,7 @@ void (*const rtf_table[RT_COUNT])( void ) = {
 /* ------------------------------------------------------------------ */
 
 static const struct {
-    u8 code;
+    uint8_t code;
     const char *text;
 } err_texts[] = {
     {  1, "NEXT without FOR" },         {  2, "Syntax error" },

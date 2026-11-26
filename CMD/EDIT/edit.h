@@ -101,26 +101,26 @@ void  mouse_where( int *row, int *col );    /* the pointer, now */
 /* the screen                                                          */
 /* ------------------------------------------------------------------ */
 typedef struct {
-    u8 text;            /* a window's text */
-    u8 select;          /* selected text */
-    u8 frame;           /* a window's frame and title */
-    u8 title;           /* the active window's title */
-    u8 scroll;          /* scroll bars */
-    u8 thumb;           /* the scroll box in them */
-    u8 menu;            /* the menu bar and menus */
-    u8 menu_hot;        /* an access key in them */
-    u8 menu_sel;        /* the highlighted item */
-    u8 menu_sel_hot;
-    u8 menu_off;        /* an item that cannot be chosen now */
-    u8 status;          /* the status bar */
-    u8 status_hot;
-    u8 dlg;             /* a dialog box */
-    u8 dlg_hot;
-    u8 field;           /* an entry field or list in it */
-    u8 field_sel;       /* the selected entry of a list */
-    u8 button;
-    u8 button_focus;
-    u8 shadow;
+    uint8_t text;       /* a window's text */
+    uint8_t select;     /* selected text */
+    uint8_t frame;      /* a window's frame and title */
+    uint8_t title;      /* the active window's title */
+    uint8_t scroll;     /* scroll bars */
+    uint8_t thumb;      /* the scroll box in them */
+    uint8_t menu;       /* the menu bar and menus */
+    uint8_t menu_hot;   /* an access key in them */
+    uint8_t menu_sel;   /* the highlighted item */
+    uint8_t menu_sel_hot;
+    uint8_t menu_off;   /* an item that cannot be chosen now */
+    uint8_t status;     /* the status bar */
+    uint8_t status_hot;
+    uint8_t dlg;        /* a dialog box */
+    uint8_t dlg_hot;
+    uint8_t field;      /* an entry field or list in it */
+    uint8_t field_sel;  /* the selected entry of a list */
+    uint8_t button;
+    uint8_t button_focus;
+    uint8_t shadow;
 } PALETTE;
 
 extern PALETTE pal;
@@ -129,15 +129,15 @@ extern int scr_rows, scr_cols;
 void  scr_init( int mono, int lines );
 void  scr_done( void );
 void  scr_palette( int mono );
-void  scr_ch( int row, int col, int ch, u8 attr );
-void  scr_putn( int row, int col, const char *text, int len, u8 attr );
-void  scr_put( int row, int col, const char *text, u8 attr );
-void  scr_hot( int row, int col, const char *text, u8 attr, u8 hot_attr );
+void  scr_ch( int row, int col, int ch, uint8_t attr );
+void  scr_putn( int row, int col, const char *text, int len, uint8_t attr );
+void  scr_put( int row, int col, const char *text, uint8_t attr );
+void  scr_hot( int row, int col, const char *text, uint8_t attr, uint8_t hot_attr );
 int   scr_hotlen( const char *text );
 int   scr_hotkey( const char *text );
-void  scr_fill( int row, int col, int len, int ch, u8 attr );
-void  scr_recolor( int row, int col, int len, u8 attr );
-void  scr_box( int top, int left, int bottom, int right, u8 attr );
+void  scr_fill( int row, int col, int len, int ch, uint8_t attr );
+void  scr_recolor( int row, int col, int len, uint8_t attr );
+void  scr_box( int top, int left, int bottom, int right, uint8_t attr );
 void  scr_shadow( int top, int left, int bottom, int right );
 void  scr_cursor( int row, int col, int kind );
 void  scr_flush( void );
@@ -150,58 +150,58 @@ void  scr_dump( void );             /* test mode */
 /* cap == 0 with text: the line lives in one of the document's pools,
    packed as it was loaded, until an edit needs it to grow */
 typedef struct {
-    char *text;
-    u16   len, cap;
+    char    *text;
+    uint16_t len, cap;
 } LINE;
 
 typedef struct {
-    LINE *lines;
-    u32   count, cap;
-    char **pools;           /* the blocks loaded lines are packed into */
-    u32   npools, pool_cap;
-    char  path[PATH_MAX];   /* full path; "" for a new file */
-    char  name[PATH_MAX];   /* what the title bar shows */
-    int   untitled;         /* UNTITLEDn's n */
-    int   modified;
-    int   readonly;         /* /R */
-    int   binary;           /* /nnn: the line width, 0 for text */
-    int   split;            /* a line longer than MAX_LINE was cut on loading */
-    u32   at_line, at_col;  /* where its cursor was, when no window shows it */
-    u32   at_top, at_left;
+    LINE        *lines;
+    unsigned int count, cap;
+    char       **pools;            /* the blocks loaded lines are packed into */
+    unsigned int npools, pool_cap;
+    char         path[PATH_MAX];   /* full path; "" for a new file */
+    char         name[PATH_MAX];   /* what the title bar shows */
+    int          untitled;         /* UNTITLEDn's n */
+    int          modified;
+    int          readonly;         /* /R */
+    int          binary;           /* /nnn: the line width, 0 for text */
+    int          split;            /* a line longer than MAX_LINE was cut on loading */
+    unsigned int at_line, at_col;  /* where its cursor was, when no window shows it */
+    unsigned int at_top, at_left;
 } DOC;
 
 typedef struct {
-    u32 line, col;          /* a byte position */
+    unsigned int line, col;     /* a byte position */
 } POS;
 
 extern int tab_size;
 
-DOC  *doc_new( void );
-void  doc_free( DOC *doc );
-int   doc_load( DOC *doc, const char *path );     /* DOS error, or -1 no memory */
-int   doc_save( DOC *doc, const char *path );
-void  doc_set_path( DOC *doc, const char *path );
-LINE *doc_line( DOC *doc, u32 line );
-int   doc_insert( DOC *doc, POS *at, const char *text, u32 len );   /* moves "at" */
-int   doc_delete( DOC *doc, POS from, POS to );
-char *doc_extract( DOC *doc, POS from, POS to, u32 *len );          /* xfree it */
-u32   doc_col_of( DOC *doc, LINE *line, u32 index );         /* byte -> screen column */
-u32   doc_index_of( DOC *doc, LINE *line, u32 col );         /* screen column -> byte */
-u32   doc_size( DOC *doc );
+DOC         *doc_new( void );
+void         doc_free( DOC *doc );
+int          doc_load( DOC *doc, const char *path );  /* DOS error, or -1 no memory */
+int          doc_save( DOC *doc, const char *path );
+void         doc_set_path( DOC *doc, const char *path );
+LINE        *doc_line( DOC *doc, unsigned int line );
+int          doc_insert( DOC *doc, POS *at, const char *text, unsigned int len );  /* moves "at" */
+int          doc_delete( DOC *doc, POS from, POS to );
+char        *doc_extract( DOC *doc, POS from, POS to, unsigned int *len );         /* xfree it */
+unsigned int doc_col_of( DOC *doc, LINE *line, unsigned int index );  /* byte -> screen column */
+unsigned int doc_index_of( DOC *doc, LINE *line, unsigned int col );  /* screen column -> byte */
+uint32_t     doc_size( DOC *doc );
 
 /* ------------------------------------------------------------------ */
 /* a window                                                            */
 /* ------------------------------------------------------------------ */
 typedef struct {
-    DOC *doc;
-    u32  top;               /* the first line shown */
-    u32  left;              /* the first column shown */
-    u32  line;              /* the cursor's line */
-    u32  col;               /* ...and screen column (may be past the end) */
-    u32  want;              /* the column up and down try to keep */
-    int  sel;               /* a selection is on */
-    u32  sel_line, sel_col; /* its other end */
-    int  row, height;       /* on the screen: the title row and how many rows */
+    DOC         *doc;
+    unsigned int top;               /* the first line shown */
+    unsigned int left;              /* the first column shown */
+    unsigned int line;              /* the cursor's line */
+    unsigned int col;               /* ...and screen column (may be past the end) */
+    unsigned int want;              /* the column up and down try to keep */
+    int          sel;               /* a selection is on */
+    unsigned int sel_line, sel_col; /* its other end */
+    int          row, height;       /* on the screen: the title row and how many rows */
 } VIEW;
 
 extern int insert_mode;
@@ -209,7 +209,7 @@ extern int insert_mode;
 void  view_draw( VIEW *view, int active );
 void  view_place_cursor( VIEW *view );
 int   view_key( VIEW *view, int key );             /* 1 = it was an editing key */
-void  view_goto( VIEW *view, u32 line, u32 col, int select );
+void  view_goto( VIEW *view, unsigned int line, unsigned int col, int select );
 void  view_sel_range( VIEW *view, POS *from, POS *to );   /* 0 if none */
 int   view_has_sel( VIEW *view );
 void  view_sel_clear( VIEW *view );
@@ -218,7 +218,7 @@ int   view_text_rows( VIEW *view );
 int   view_text_cols( void );
 POS   view_pos( VIEW *view );
 void  view_delete_sel( VIEW *view );
-int   view_insert_text( VIEW *view, const char *text, u32 len );
+int   view_insert_text( VIEW *view, const char *text, unsigned int len );
 void  view_fixup( DOC *doc );       /* after a document changes under other views */
 
 /* the parts of a window a mouse can press */
@@ -259,10 +259,10 @@ void  app_command( int cmd );
 int   app_can( int cmd );           /* can it be chosen right now? */
 DOC  *app_doc( void );
 VIEW *app_view( void );
-int   app_save( DOC *doc, int ask_name );   /* 1 = saved */
-int   app_open_file( const char *path );    /* 1 = opened */
+int   app_save( DOC *doc, int ask_name );    /* 1 = saved */
+int   app_open_file( const char *path );     /* 1 = opened */
 int   clip_has( void );
-void  clip_set( char *text, u32 len );      /* takes the block over */
+void  clip_set( char *text, unsigned int len );  /* takes the block over */
 void  edit_main( void );
 void  out_of_memory( void );        /* says so, and goes on */
 void  app_abandon( void );          /* test mode's end: out, saving nothing */

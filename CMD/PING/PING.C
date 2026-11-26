@@ -24,7 +24,7 @@ static void finish( int code )
 
     sl_flush();
     sl_memzero( &regs, sizeof( regs ) );
-    regs.eax = 0x4C00 | (u32)( code & 0xFF );
+    regs.eax = 0x4C00 | (uint32_t)( code & 0xFF );
     int21( &regs );
 }
 
@@ -35,7 +35,7 @@ static int is_switch( const char *arg, char letter )
 }
 
 /* the number after a switch: "-n 5", "/N:5" */
-static int switch_value( char **argv, int argc, int *i, u32 *value )
+static int switch_value( char **argv, int argc, int *i, unsigned int *value )
 {
     const char *p = argv[*i] + 2;
 
@@ -54,7 +54,8 @@ void __cdecl dos_entry( void )
     char **argv;
     int argc, i;
     const char *host = NULL;
-    u32 count = 4, wait = 1000, ip, rtt, seq, sent = 0, got = 0, start;
+    unsigned int count = 4, wait = 1000, rtt, seq, sent = 0, got = 0;
+    uint32_t ip, start;
 
     argc = sl_args( &argv );
     for ( i = 0; i < argc; i++ ) {
@@ -128,7 +129,7 @@ void __cdecl dos_entry( void )
     for ( seq = 1; seq <= count; seq++ ) {
         start = sl_now();
         sent++;
-        if ( sl_ping( ip, (u16)seq, &rtt, wait / 10 ) ) {
+        if ( sl_ping( ip, (uint16_t)seq, &rtt, wait / 10 ) ) {
             got++;
             sl_puts( "Reply from " );
             sl_putip( ip );

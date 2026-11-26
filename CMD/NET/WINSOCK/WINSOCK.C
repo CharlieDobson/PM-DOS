@@ -25,6 +25,7 @@
 #define NOCOMM
 #include <windows.h>
 #include <winsock.h>
+#include <stdint.h>
 
 /* Every exported function is defined __loadds: a Win16 DLL is entered
    with DS = the CALLER's data segment, so without loading DS = the DLL's
@@ -33,12 +34,12 @@
    automatic data segment. */
 
 /* ---- the bridge glue (WSKGLUE.ASM) ---- */
-extern unsigned long wsk_getapi( void );
+extern uint32_t wsk_getapi( void );
 #pragma aux wsk_getapi "wsk_getapi_" far value [dx ax] \
                        modify [ax bx cx dx si di es];
-extern unsigned long wsk_call( unsigned fn, unsigned len,
-                               unsigned long buflin,
-                               unsigned apiseg, unsigned apioff );
+extern uint32_t wsk_call( unsigned fn, unsigned len,
+                          uint32_t buflin,
+                          unsigned apiseg, unsigned apioff );
 #pragma aux wsk_call "wsk_call_" far parm [bx] [cx] [dx ax] [si] [di] \
                      value [dx ax] modify [ax bx cx dx si di es];
 extern void wsk_yield( void );
@@ -93,17 +94,17 @@ extern unsigned FAR PASCAL GlobalDosFree( unsigned );
 #define KBUF_MAX   512         /* data bytes per bridge send/recv */
 
 /* the kernel request blocks, laid out as in INC\SOCKET.H */
-typedef struct { unsigned long type; } KOPEN;
-typedef struct { unsigned long handle; } KHANDLE;
-typedef struct { unsigned long handle, ip; unsigned short port, spare; } KCONN;
-typedef struct { unsigned long handle; unsigned short port, spare; } KLISTEN;
-typedef struct { unsigned long handle, newh, ip; unsigned short port, spare; } KACCEPT;
-typedef struct { unsigned long handle, ip; unsigned short port, spare;
-                 unsigned long len; } KIO;
-typedef struct { unsigned long handle, state, rxready, txfree, err, why; } KSTAT;
-typedef struct { unsigned long ip, state; char name[128]; } KRES;
-typedef struct { unsigned long handle; char name[128]; } KTLSHOST;
-typedef struct { unsigned long offset, total, len; } KCA;   /* then the bytes */
+typedef struct { uint32_t type; } KOPEN;
+typedef struct { uint32_t handle; } KHANDLE;
+typedef struct { uint32_t handle, ip; uint16_t port, spare; } KCONN;
+typedef struct { uint32_t handle; uint16_t port, spare; } KLISTEN;
+typedef struct { uint32_t handle, newh, ip; uint16_t port, spare; } KACCEPT;
+typedef struct { uint32_t handle, ip; uint16_t port, spare;
+                 uint32_t len; } KIO;
+typedef struct { uint32_t handle, state, rxready, txfree, err, why; } KSTAT;
+typedef struct { uint32_t ip, state; char name[128]; } KRES;
+typedef struct { uint32_t handle; char name[128]; } KTLSHOST;
+typedef struct { uint32_t offset, total, len; } KCA;   /* then the bytes */
 
 /* ---- per-socket state ---- */
 #define MAXSOCK  32
@@ -111,7 +112,7 @@ typedef struct {
     int      used;
     int      type;            /* K_STREAM / K_DGRAM */
     int      nonblock;        /* FIONBIO */
-    unsigned short lport;      /* a bound local port (host order) */
+    uint16_t lport;           /* a bound local port (host order) */
     HWND     awnd;            /* WSAAsyncSelect window */
     unsigned amsg;            /* WSAAsyncSelect message */
     long     aevent;          /* WSAAsyncSelect event mask (requested) */
@@ -122,11 +123,11 @@ static SKENT g_sk[ MAXSOCK + 1 ];      /* indexed by kernel handle 1..MAXSOCK */
 
 /* ---- DLL-wide state ---- */
 static int   g_started = 0;            /* WSAStartup reference count */
-static DWORD g_api = 0;                /* the VxD PM API entry (sel:off) */
-static WORD  g_apiseg, g_apioff;
-static WORD  g_dossel = 0;             /* conventional-memory buffer selector */
+static uint32_t g_api = 0;             /* the VxD PM API entry (sel:off) */
+static uint16_t g_apiseg, g_apioff;
+static uint16_t g_dossel = 0;          /* conventional-memory buffer selector */
 static char FAR *g_buf = 0;            /* the request buffer */
-static DWORD g_buflin = 0;             /* its flat linear address */
+static uint32_t g_buflin = 0;          /* its flat linear address */
 static int   g_lasterr = 0;            /* WSAGetLastError */
 static FARPROC g_blkhook = 0;          /* the blocking hook */
 static int   g_inblock = 0;            /* a blocking call is running */
@@ -137,15 +138,15 @@ static UINT  g_timer = 0;              /* the async-event poll timer, 0 = none *
 /* the HTTPS port map: a stream connect() to one of these ports is opened as
    TLS transparently, so an ordinary winsock program speaks HTTPS without
    knowing.  443 is the default; the rest are spare for the future. */
-static WORD  g_tlsport[ 8 ] = { 443, 0, 0, 0, 0, 0, 0, 0 };
+static uint16_t g_tlsport[ 8 ] = { 443, 0, 0, 0, 0, 0, 0, 0 };
 static int   g_cadone = 0;             /* the trust bundle has been handed down (or tried) */
 
 /* the last name gethostbyname resolved and its address (network order),
    reused as the server name (SNI, certificate) when connect opens TLS */
-static unsigned long g_headdr;
+static uint32_t      g_headdr;
 static char          g_hename[ 128 ];
 
-static int is_tls_port( WORD port )
+static int is_tls_port( uint16_t port )
 {
     int i;
     for ( i = 0; i < 8; i++ ) if ( g_tlsport[ i ] == port ) return 1;
@@ -169,9 +170,9 @@ static int sk_strlen( const char FAR *s )
 }
 
 /* one bridge socket op on g_buf; returns the answer, sets *cf to carry */
-static WORD sk_op( WORD fn, WORD len, WORD *cf )
+static uint16_t sk_op( uint16_t fn, uint16_t len, uint16_t *cf )
 {
-    DWORD r = wsk_call( fn, len, g_buflin, g_apiseg, g_apioff );
+    uint32_t r = wsk_call( fn, len, g_buflin, g_apiseg, g_apioff );
     *cf = HIWORD( r );
     return LOWORD( r );
 }
@@ -221,7 +222,7 @@ static int sk_valid( SOCKET s )
 static int sk_state( SOCKET s, KSTAT FAR *out )
 {
     KSTAT FAR *st = (KSTAT FAR *)g_buf;
-    WORD cf;
+    uint16_t cf;
     st->handle = s;
     st->state = st->rxready = st->txfree = st->err = st->why = 0;
     sk_op( K_STATE, sizeof( KSTAT ), &cf );
@@ -235,7 +236,7 @@ static int sk_state( SOCKET s, KSTAT FAR *out )
    can at least tell it from a server that said no or never answered */
 static int sk_failerr( KSTAT FAR *st )
 {
-    switch ( (WORD)st->err ) {
+    switch ( (uint16_t)st->err ) {
     case KE_TIMEOUT: return WSAETIMEDOUT;
     case KE_NOROUTE: return WSAEHOSTUNREACH;
     case KE_RESET:   return WSAECONNRESET;
@@ -279,8 +280,8 @@ int __loadds PASCAL FAR WSAStartup( WORD wVersionRequired, LPWSADATA lpWSAData )
     blk = GlobalDosAlloc( 1024L );
     if ( !blk ) return WSASYSNOTREADY;
     g_dossel = LOWORD( blk );               /* low word = selector (PM access) */
-    g_buf = (char FAR *)( (DWORD)g_dossel << 16 );
-    g_buflin = (DWORD)HIWORD( blk ) << 4;   /* high word = segment; <<4 = linear */
+    g_buf = (char FAR *)( (uint32_t)g_dossel << 16 );
+    g_buflin = (uint32_t)HIWORD( blk ) << 4;    /* high word = segment; <<4 = linear */
 
     for ( i = 0; i <= MAXSOCK; i++ ) g_sk[ i ].used = 0;
     g_blkhook = 0;
@@ -300,7 +301,7 @@ int __loadds PASCAL FAR WSACleanup( void )
     {
         /* close what the program left open, so the stack gets them back */
         KHANDLE FAR *hc = (KHANDLE FAR *)g_buf;
-        WORD cf;
+        uint16_t cf;
         SOCKET s;
         for ( s = 1; s <= MAXSOCK; s++ ) {
             if ( g_sk[ s ].used ) {
@@ -322,7 +323,7 @@ int __loadds PASCAL FAR WSACleanup( void )
 SOCKET __loadds PASCAL FAR socket( int af, int type, int protocol )
 {
     KOPEN FAR *op = (KOPEN FAR *)g_buf;
-    WORD h, cf;
+    uint16_t h, cf;
     (void)protocol;
 
     if ( !g_started ) { g_lasterr = WSANOTINITIALISED; return INVALID_SOCKET; }
@@ -346,7 +347,7 @@ SOCKET __loadds PASCAL FAR socket( int af, int type, int protocol )
 int __loadds PASCAL FAR closesocket( SOCKET s )
 {
     KHANDLE FAR *hc = (KHANDLE FAR *)g_buf;
-    WORD cf;
+    uint16_t cf;
     if ( !sk_valid( s ) ) return SOCKET_ERROR;
     hc->handle = s;
     sk_op( K_CLOSE, sizeof( KHANDLE ), &cf );
@@ -365,7 +366,7 @@ static void push_ca( void )
     HFILE fh;
     long total, off;
     KCA FAR *ca = (KCA FAR *)g_buf;
-    WORD cf;
+    uint16_t cf;
     int i, n;
 
     if ( g_cadone ) return;
@@ -373,7 +374,7 @@ static void push_ca( void )
 
     for ( i = 0; i < K_IFLEN3; i++ ) g_buf[ i ] = 0;
     if ( sk_op( K_IFSTAT, K_IFLEN3, &cf ) >= K_IFLEN3 && !cf &&
-         *(unsigned long FAR *)( g_buf + K_IF_CABYTES ) != 0 ) return;
+         *(uint32_t FAR *)( g_buf + K_IF_CABYTES ) != 0 ) return;
 
     n = GetModuleFileName( g_hinst, path, sizeof( path ) - 16 );
     while ( n > 0 && path[ n - 1 ] != '\\' && path[ n - 1 ] != '/' && path[ n - 1 ] != ':' ) n--;
@@ -395,10 +396,10 @@ static void push_ca( void )
         if ( want > 500 ) want = 500;
         n = _lread( fh, g_buf + sizeof( KCA ), (WORD)want );
         if ( n <= 0 ) break;
-        ca->offset = (unsigned long)off;
-        ca->total = (unsigned long)total;
-        ca->len = (unsigned long)n;
-        sk_op( K_SETCA, (WORD)( sizeof( KCA ) + n ), &cf );
+        ca->offset = (uint32_t)off;
+        ca->total = (uint32_t)total;
+        ca->len = (uint32_t)n;
+        sk_op( K_SETCA, (uint16_t)( sizeof( KCA ) + n ), &cf );
         if ( cf ) break;
         off += n;
     }
@@ -410,7 +411,7 @@ int __loadds PASCAL FAR connect( SOCKET s, const struct sockaddr FAR *name, int 
     const struct sockaddr_in FAR *sin = (const struct sockaddr_in FAR *)name;
     KCONN FAR *cn = (KCONN FAR *)g_buf;
     KSTAT kst;
-    WORD cf;
+    uint16_t cf;
 
     if ( !sk_valid( s ) ) return SOCKET_ERROR;
     if ( name == 0 || namelen < (int)sizeof( struct sockaddr_in ) ) {
@@ -423,7 +424,7 @@ int __loadds PASCAL FAR connect( SOCKET s, const struct sockaddr FAR *name, int 
        with the trust bundle already in the stack. */
     if ( g_sk[ s ].type == K_STREAM && is_tls_port( ntohs( sin->sin_port ) ) ) {
         KTLSHOST FAR *th = (KTLSHOST FAR *)g_buf;
-        WORD tcf;
+        uint16_t tcf;
         int i;
         push_ca();
         th->handle = s;
@@ -433,7 +434,7 @@ int __loadds PASCAL FAR connect( SOCKET s, const struct sockaddr FAR *name, int 
         } else {
             th->name[ 0 ] = 0;
         }
-        sk_op( K_TLSHOST, (WORD)sizeof( KTLSHOST ), &tcf );
+        sk_op( K_TLSHOST, (uint16_t)sizeof( KTLSHOST ), &tcf );
     }
 
     cn = (KCONN FAR *)g_buf;                     /* g_buf may have held K_TLSHOST */
@@ -452,11 +453,11 @@ int __loadds PASCAL FAR connect( SOCKET s, const struct sockaddr FAR *name, int 
         if ( sk_state( s, &kst ) == 0 ) {
             /* KS_CLOSING too: a server that accepts and ends at once was
                connected to; recv then returns 0 */
-            if ( (WORD)kst.state == KS_ESTABLISHED || (WORD)kst.state == KS_CLOSING ) {
+            if ( (uint16_t)kst.state == KS_ESTABLISHED || (uint16_t)kst.state == KS_CLOSING ) {
                 g_inblock = 0;
                 return 0;
             }
-            if ( (WORD)kst.state == KS_ERROR ) {
+            if ( (uint16_t)kst.state == KS_ERROR ) {
                 g_inblock = 0; g_lasterr = sk_failerr( &kst ); return SOCKET_ERROR;
             }
         }
@@ -471,7 +472,7 @@ int __loadds PASCAL FAR send( SOCKET s, const char FAR *buf, int len, int flags 
 {
     KIO FAR *io = (KIO FAR *)g_buf;
     int done = 0, chunk, took;
-    WORD cf;
+    uint16_t cf;
     (void)flags;
 
     if ( !sk_valid( s ) ) return SOCKET_ERROR;
@@ -483,7 +484,7 @@ int __loadds PASCAL FAR send( SOCKET s, const char FAR *buf, int len, int flags 
         io->handle = s; io->ip = 0; io->port = 0; io->spare = 0;
         io->len = chunk;
         sk_memcpy( g_buf + K_IO_HDR, buf + done, chunk );
-        took = (int)sk_op( K_SEND, (WORD)( K_IO_HDR + chunk ), &cf );
+        took = (int)sk_op( K_SEND, (uint16_t)( K_IO_HDR + chunk ), &cf );
         if ( cf ) { g_inblock = 0; g_lasterr = WSAECONNRESET; return SOCKET_ERROR; }
         if ( took > 0 ) { done += took; continue; }
         /* no room right now */
@@ -504,7 +505,7 @@ int __loadds PASCAL FAR recv( SOCKET s, char FAR *buf, int len, int flags )
     KIO FAR *io = (KIO FAR *)g_buf;
     KSTAT kst;
     int want, got;
-    WORD cf;
+    uint16_t cf;
     (void)flags;
 
     if ( !sk_valid( s ) ) return SOCKET_ERROR;
@@ -515,7 +516,7 @@ int __loadds PASCAL FAR recv( SOCKET s, char FAR *buf, int len, int flags )
     for ( ;; ) {
         io->handle = s; io->ip = 0; io->port = 0; io->spare = 0;
         io->len = want;
-        got = (int)sk_op( K_RECV, (WORD)( K_IO_HDR + want ), &cf );
+        got = (int)sk_op( K_RECV, (uint16_t)( K_IO_HDR + want ), &cf );
         if ( cf ) { g_inblock = 0; g_lasterr = WSAECONNRESET; return SOCKET_ERROR; }
         if ( got > 0 ) {
             sk_memcpy( buf, g_buf + K_IO_HDR, got );
@@ -524,7 +525,7 @@ int __loadds PASCAL FAR recv( SOCKET s, char FAR *buf, int len, int flags )
             return got;
         }
         /* nothing yet: closed (orderly) gives 0, else keep waiting */
-        if ( sk_state( s, &kst ) == 0 && (WORD)kst.state > KS_ESTABLISHED
+        if ( sk_state( s, &kst ) == 0 && (uint16_t)kst.state > KS_ESTABLISHED
              && kst.rxready == 0 ) {
             g_inblock = 0;
             return 0;                   /* connection closed, no data left */
@@ -558,7 +559,7 @@ int __loadds PASCAL FAR bind( SOCKET s, const struct sockaddr FAR *name, int nam
 int __loadds PASCAL FAR listen( SOCKET s, int backlog )
 {
     KLISTEN FAR *ls = (KLISTEN FAR *)g_buf;
-    WORD cf;
+    uint16_t cf;
     (void)backlog;
     if ( !sk_valid( s ) ) return SOCKET_ERROR;
     ls->handle = s;
@@ -572,7 +573,7 @@ int __loadds PASCAL FAR listen( SOCKET s, int backlog )
 SOCKET __loadds PASCAL FAR accept( SOCKET s, struct sockaddr FAR *addr, int FAR *addrlen )
 {
     KACCEPT FAR *ac = (KACCEPT FAR *)g_buf;
-    WORD cf, nh;
+    uint16_t cf, nh;
 
     if ( !sk_valid( s ) ) return INVALID_SOCKET;
     g_inblock = 1; g_cancel = 0;
@@ -580,7 +581,7 @@ SOCKET __loadds PASCAL FAR accept( SOCKET s, struct sockaddr FAR *addr, int FAR 
         ac->handle = s; ac->newh = 0; ac->ip = 0; ac->port = 0; ac->spare = 0;
         sk_op( K_ACCEPT, sizeof( KACCEPT ), &cf );
         if ( cf ) { g_inblock = 0; g_lasterr = WSAEINVAL; return INVALID_SOCKET; }
-        nh = (WORD)ac->newh;
+        nh = (uint16_t)ac->newh;
         if ( nh >= 1 && nh <= MAXSOCK ) {
             g_sk[ nh ].used = 1;
             g_sk[ nh ].type = K_STREAM;
@@ -646,8 +647,8 @@ int __loadds PASCAL FAR select( int nfds, fd_set FAR *rd, fd_set FAR *wr,
             KSTAT kst;
             if ( s < 1 || s > MAXSOCK || !g_sk[ s ].used ) continue;
             if ( sk_state( s, &kst ) == 0 &&
-                 ( kst.rxready > 0 || (WORD)kst.state > KS_ESTABLISHED
-                   || (WORD)kst.state == KS_LISTEN ) ) {
+                 ( kst.rxready > 0 || (uint16_t)kst.state > KS_ESTABLISHED
+                   || (uint16_t)kst.state == KS_LISTEN ) ) {
                 fd_add( rd, s ); count++;
             }
         }
@@ -656,7 +657,7 @@ int __loadds PASCAL FAR select( int nfds, fd_set FAR *rd, fd_set FAR *wr,
             KSTAT kst;
             if ( s < 1 || s > MAXSOCK || !g_sk[ s ].used ) continue;
             if ( sk_state( s, &kst ) == 0 &&
-                 ( (WORD)kst.state == KS_ESTABLISHED && kst.txfree > 0 ) ) {
+                 ( (uint16_t)kst.state == KS_ESTABLISHED && kst.txfree > 0 ) ) {
                 fd_add( wr, s ); count++;
             }
         }
@@ -798,7 +799,7 @@ struct hostent FAR * __loadds PASCAL FAR gethostbyname( const char FAR *name )
 {
     KRES FAR *rs = (KRES FAR *)g_buf;
     unsigned long ip;
-    WORD cf;
+    uint16_t cf;
     int i;
 
     if ( !g_started || name == 0 ) { g_lasterr = WSANOTINITIALISED; return 0; }
@@ -814,13 +815,13 @@ struct hostent FAR * __loadds PASCAL FAR gethostbyname( const char FAR *name )
         for ( ;; ) {
             rs->ip = 0; rs->state = 0;
             for ( i = 0; i < 128; i++ ) rs->name[ i ] = g_hename[ i ];
-            sk_op( K_RESOLVE, (WORD)sizeof( KRES ), &cf );
+            sk_op( K_RESOLVE, (uint16_t)sizeof( KRES ), &cf );
             if ( cf ) { g_inblock = 0; g_lasterr = WSAHOST_NOT_FOUND; return 0; }
-            if ( (WORD)rs->state == K_NET_DONE ) {
+            if ( (uint16_t)rs->state == K_NET_DONE ) {
                 g_headdr = htonl( rs->ip );   /* kernel gives host order */
                 break;
             }
-            if ( (WORD)rs->state == K_NET_FAIL ) {
+            if ( (uint16_t)rs->state == K_NET_FAIL ) {
                 g_inblock = 0; g_lasterr = WSAHOST_NOT_FOUND; return 0;
             }
             if ( sk_wait() ) { g_inblock = 0; return 0; }
@@ -845,7 +846,7 @@ struct hostent FAR * __loadds PASCAL FAR gethostbyaddr( const char FAR *addr, in
 {
     if ( !g_started || addr == 0 || type != AF_INET ) { g_lasterr = WSAHOST_NOT_FOUND; return 0; }
     if ( len < 4 ) { g_lasterr = WSAEFAULT; return 0; }
-    g_headdr = *(const unsigned long FAR *)addr;      /* network order in */
+    g_headdr = *(const uint32_t FAR *)addr;           /* network order in */
     {
         struct in_addr ia; char FAR *txt; int i;
         ia.s_addr = g_headdr;
@@ -868,7 +869,7 @@ int __loadds PASCAL FAR gethostname( char FAR *name, int namelen )
 {
     static const char fallback[] = "pmdos";
     const char FAR *hn = fallback;
-    WORD cf;
+    uint16_t cf;
     int i;
     if ( name == 0 || namelen <= 0 ) { g_lasterr = WSAEFAULT; return SOCKET_ERROR; }
     if ( g_buf ) {
@@ -887,7 +888,7 @@ static char            g_sename[ 16 ];
 static char            g_seproto[ 8 ];
 static char FAR       *g_sealias[ 1 ] = { 0 };
 
-static struct servent FAR *fill_serv( const char FAR *nm, unsigned short port,
+static struct servent FAR *fill_serv( const char FAR *nm, uint16_t port,
                                       const char FAR *proto )
 {
     int i;
@@ -981,7 +982,7 @@ int __loadds PASCAL FAR sendto( SOCKET s, const char FAR *buf, int len, int flag
     const struct sockaddr_in FAR *sin = (const struct sockaddr_in FAR *)to;
     KIO FAR *io = (KIO FAR *)g_buf;
     int chunk;
-    WORD cf, took;
+    uint16_t cf, took;
     (void)flags;
 
     if ( !sk_valid( s ) ) return SOCKET_ERROR;
@@ -996,7 +997,7 @@ int __loadds PASCAL FAR sendto( SOCKET s, const char FAR *buf, int len, int flag
     io->spare = 0;
     io->len = chunk;
     sk_memcpy( g_buf + K_IO_HDR, buf, chunk );
-    took = sk_op( K_SEND, (WORD)( K_IO_HDR + chunk ), &cf );
+    took = sk_op( K_SEND, (uint16_t)( K_IO_HDR + chunk ), &cf );
     if ( cf ) { g_lasterr = WSAECONNRESET; return SOCKET_ERROR; }
     return took;
 }
@@ -1006,7 +1007,7 @@ int __loadds PASCAL FAR recvfrom( SOCKET s, char FAR *buf, int len, int flags,
 {
     KIO FAR *io = (KIO FAR *)g_buf;
     int want, got;
-    WORD cf;
+    uint16_t cf;
     (void)flags;
 
     if ( !sk_valid( s ) ) return SOCKET_ERROR;
@@ -1017,7 +1018,7 @@ int __loadds PASCAL FAR recvfrom( SOCKET s, char FAR *buf, int len, int flags,
     for ( ;; ) {
         io->handle = s; io->ip = 0; io->port = 0; io->spare = 0;
         io->len = want;
-        got = (int)sk_op( K_RECV, (WORD)( K_IO_HDR + want ), &cf );
+        got = (int)sk_op( K_RECV, (uint16_t)( K_IO_HDR + want ), &cf );
         if ( cf ) { g_inblock = 0; g_lasterr = WSAECONNRESET; return SOCKET_ERROR; }
         if ( got > 0 ) {
             sk_memcpy( buf, g_buf + K_IO_HDR, got );
@@ -1086,18 +1087,18 @@ void __loadds FAR PASCAL ws_ontimer( HWND hw, UINT msg, UINT id, DWORD t )
         if ( sk_state( s, &kst ) != 0 ) continue;
 
         if ( ( want & FD_CONNECT ) && !( g_sk[ s ].afired & FD_CONNECT ) ) {
-            if ( (WORD)kst.state == KS_ESTABLISHED || (WORD)kst.state == KS_CLOSING ) {
+            if ( (uint16_t)kst.state == KS_ESTABLISHED || (uint16_t)kst.state == KS_CLOSING ) {
                 PostMessage( g_sk[ s ].awnd, g_sk[ s ].amsg, s,
                              WSAMAKESELECTREPLY( FD_CONNECT, 0 ) );
                 g_sk[ s ].afired |= FD_CONNECT;
-            } else if ( (WORD)kst.state == KS_ERROR ) {
+            } else if ( (uint16_t)kst.state == KS_ERROR ) {
                 PostMessage( g_sk[ s ].awnd, g_sk[ s ].amsg, s,
                              WSAMAKESELECTREPLY( FD_CONNECT, sk_failerr( &kst ) ) );
                 g_sk[ s ].afired |= FD_CONNECT;
             }
         }
         if ( ( want & FD_WRITE ) && !( g_sk[ s ].afired & FD_WRITE ) &&
-             (WORD)kst.state == KS_ESTABLISHED && kst.txfree > 0 ) {
+             (uint16_t)kst.state == KS_ESTABLISHED && kst.txfree > 0 ) {
             PostMessage( g_sk[ s ].awnd, g_sk[ s ].amsg, s,
                          WSAMAKESELECTREPLY( FD_WRITE, 0 ) );
             g_sk[ s ].afired |= FD_WRITE;
@@ -1109,13 +1110,13 @@ void __loadds FAR PASCAL ws_ontimer( HWND hw, UINT msg, UINT id, DWORD t )
             g_sk[ s ].afired |= FD_READ;
         }
         if ( ( want & FD_ACCEPT ) && !( g_sk[ s ].afired & FD_ACCEPT ) &&
-             (WORD)kst.state == KS_LISTEN && kst.rxready > 0 ) {
+             (uint16_t)kst.state == KS_LISTEN && kst.rxready > 0 ) {
             PostMessage( g_sk[ s ].awnd, g_sk[ s ].amsg, s,
                          WSAMAKESELECTREPLY( FD_ACCEPT, 0 ) );
             g_sk[ s ].afired |= FD_ACCEPT;
         }
         if ( ( want & FD_CLOSE ) && !( g_sk[ s ].afired & FD_CLOSE ) &&
-             (WORD)kst.state > KS_ESTABLISHED ) {
+             (uint16_t)kst.state > KS_ESTABLISHED ) {
             PostMessage( g_sk[ s ].awnd, g_sk[ s ].amsg, s,
                          WSAMAKESELECTREPLY( FD_CLOSE, 0 ) );
             g_sk[ s ].afired |= FD_CLOSE;

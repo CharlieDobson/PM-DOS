@@ -24,12 +24,13 @@
  *=====================================================================*/
 #include <stdio.h>
 #include <string.h>
+#include <stdint.h>
 
 #define PERLINE 16
 
 static int emit(FILE *out, const char *label, const char *path)
 {
-    unsigned char buf[PERLINE];
+    uint8_t buf[PERLINE];
     unsigned long total = 0;
     size_t n, i;
     FILE *f = fopen(path, "rb");

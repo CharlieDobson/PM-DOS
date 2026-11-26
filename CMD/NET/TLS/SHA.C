@@ -1,6 +1,6 @@
 /* ==========================================================================
  * SHA.C - SHA-1 (FIPS-180) + SHA-256 (FIPS-180-4) + HMAC (RFC 2104).
- * Portable C89.  u32 is exactly 32 bits on the Win32 targets, so shifts
+ * Portable C89 with <stdint.h>.  uint32_t is exactly 32 bits, so shifts
  * wrap mod 2^32 naturally and no masking is needed.
  * ========================================================================== */
 #include "sha.h"
@@ -10,26 +10,26 @@
 #define ROTR(x,n)  (((x) >> (n)) | ((x) << (32 - (n))))
 
 /* Common: fold 'len' bytes into the running 64-bit bit-count. */
-static void add_bits(u32 count[2], unsigned int len)
+static void add_bits(uint32_t count[2], unsigned int len)
 {
-    u32 add = (u32)len << 3;
+    uint32_t add = (uint32_t)len << 3;
     count[0] += add;
     if (count[0] < add)
         count[1]++;
-    count[1] += (u32)len >> 29;
+    count[1] += (uint32_t)len >> 29;
 }
 
 /* ==========================================================================
  * SHA-1
  * ========================================================================== */
-static void sha1_transform(SHA1_CTX *c, const unsigned char *p)
+static void sha1_transform(SHA1_CTX *c, const uint8_t *p)
 {
-    u32 w[80], a, b, cc, d, e, f, k, t;
+    uint32_t w[80], a, b, cc, d, e, f, k, t;
     int i;
 
     for (i = 0; i < 16; i++)
-        w[i] = ((u32)p[4*i] << 24) | ((u32)p[4*i+1] << 16) |
-               ((u32)p[4*i+2] << 8) | (u32)p[4*i+3];
+        w[i] = ((uint32_t)p[4*i] << 24) | ((uint32_t)p[4*i+1] << 16) |
+               ((uint32_t)p[4*i+2] << 8) | (uint32_t)p[4*i+3];
     for (i = 16; i < 80; i++)
         w[i] = ROTL(w[i-3] ^ w[i-8] ^ w[i-14] ^ w[i-16], 1);
 
@@ -55,7 +55,7 @@ void sha1_init(SHA1_CTX *c)
 
 void sha1_update(SHA1_CTX *c, const void *data, unsigned int len)
 {
-    const unsigned char *p = (const unsigned char *)data;
+    const uint8_t *p = (const uint8_t *)data;
     add_bits(c->count, len);
     while (len > 0) {
         unsigned int n = 64 - c->nbuf;
@@ -66,16 +66,16 @@ void sha1_update(SHA1_CTX *c, const void *data, unsigned int len)
     }
 }
 
-void sha1_final(SHA1_CTX *c, unsigned char out[20])
+void sha1_final(SHA1_CTX *c, uint8_t out[20])
 {
-    unsigned char lenb[8], pad = 0x80, zero = 0x00;
-    u32 hi = c->count[1], lo = c->count[0];
+    uint8_t lenb[8], pad = 0x80, zero = 0x00;
+    uint32_t hi = c->count[1], lo = c->count[0];
     int i;
 
-    lenb[0] = (unsigned char)(hi >> 24); lenb[1] = (unsigned char)(hi >> 16);
-    lenb[2] = (unsigned char)(hi >> 8);  lenb[3] = (unsigned char)hi;
-    lenb[4] = (unsigned char)(lo >> 24); lenb[5] = (unsigned char)(lo >> 16);
-    lenb[6] = (unsigned char)(lo >> 8);  lenb[7] = (unsigned char)lo;
+    lenb[0] = (uint8_t)(hi >> 24); lenb[1] = (uint8_t)(hi >> 16);
+    lenb[2] = (uint8_t)(hi >> 8);  lenb[3] = (uint8_t)hi;
+    lenb[4] = (uint8_t)(lo >> 24); lenb[5] = (uint8_t)(lo >> 16);
+    lenb[6] = (uint8_t)(lo >> 8);  lenb[7] = (uint8_t)lo;
 
     sha1_update(c, &pad, 1);
     while (c->nbuf != 56)
@@ -83,14 +83,14 @@ void sha1_final(SHA1_CTX *c, unsigned char out[20])
     sha1_update(c, lenb, 8);
 
     for (i = 0; i < 5; i++) {
-        out[4*i]   = (unsigned char)(c->h[i] >> 24);
-        out[4*i+1] = (unsigned char)(c->h[i] >> 16);
-        out[4*i+2] = (unsigned char)(c->h[i] >> 8);
-        out[4*i+3] = (unsigned char)(c->h[i]);
+        out[4*i]   = (uint8_t)(c->h[i] >> 24);
+        out[4*i+1] = (uint8_t)(c->h[i] >> 16);
+        out[4*i+2] = (uint8_t)(c->h[i] >> 8);
+        out[4*i+3] = (uint8_t)(c->h[i]);
     }
 }
 
-void sha1(const void *data, unsigned int len, unsigned char out[20])
+void sha1(const void *data, unsigned int len, uint8_t out[20])
 {
     SHA1_CTX c;
     sha1_init(&c);
@@ -101,7 +101,7 @@ void sha1(const void *data, unsigned int len, unsigned char out[20])
 /* ==========================================================================
  * SHA-256
  * ========================================================================== */
-static const u32 K256[64] = {
+static const uint32_t K256[64] = {
 0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
 0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
 0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,
@@ -119,14 +119,14 @@ static const u32 K256[64] = {
 #define SSIG0(x)    (ROTR(x,7) ^ ROTR(x,18) ^ ((x) >> 3))
 #define SSIG1(x)    (ROTR(x,17) ^ ROTR(x,19) ^ ((x) >> 10))
 
-static void sha256_transform(SHA256_CTX *c, const unsigned char *p)
+static void sha256_transform(SHA256_CTX *c, const uint8_t *p)
 {
-    u32 w[64], a, b, cc, d, e, f, g, h, t1, t2;
+    uint32_t w[64], a, b, cc, d, e, f, g, h, t1, t2;
     int i;
 
     for (i = 0; i < 16; i++)
-        w[i] = ((u32)p[4*i] << 24) | ((u32)p[4*i+1] << 16) |
-               ((u32)p[4*i+2] << 8) | (u32)p[4*i+3];
+        w[i] = ((uint32_t)p[4*i] << 24) | ((uint32_t)p[4*i+1] << 16) |
+               ((uint32_t)p[4*i+2] << 8) | (uint32_t)p[4*i+3];
     for (i = 16; i < 64; i++)
         w[i] = SSIG1(w[i-2]) + w[i-7] + SSIG0(w[i-15]) + w[i-16];
 
@@ -153,7 +153,7 @@ void sha256_init(SHA256_CTX *c)
 
 void sha256_update(SHA256_CTX *c, const void *data, unsigned int len)
 {
-    const unsigned char *p = (const unsigned char *)data;
+    const uint8_t *p = (const uint8_t *)data;
     add_bits(c->count, len);
     while (len > 0) {
         unsigned int n = 64 - c->nbuf;
@@ -164,16 +164,16 @@ void sha256_update(SHA256_CTX *c, const void *data, unsigned int len)
     }
 }
 
-void sha256_final(SHA256_CTX *c, unsigned char out[32])
+void sha256_final(SHA256_CTX *c, uint8_t out[32])
 {
-    unsigned char lenb[8], pad = 0x80, zero = 0x00;
-    u32 hi = c->count[1], lo = c->count[0];
+    uint8_t lenb[8], pad = 0x80, zero = 0x00;
+    uint32_t hi = c->count[1], lo = c->count[0];
     int i;
 
-    lenb[0] = (unsigned char)(hi >> 24); lenb[1] = (unsigned char)(hi >> 16);
-    lenb[2] = (unsigned char)(hi >> 8);  lenb[3] = (unsigned char)hi;
-    lenb[4] = (unsigned char)(lo >> 24); lenb[5] = (unsigned char)(lo >> 16);
-    lenb[6] = (unsigned char)(lo >> 8);  lenb[7] = (unsigned char)lo;
+    lenb[0] = (uint8_t)(hi >> 24); lenb[1] = (uint8_t)(hi >> 16);
+    lenb[2] = (uint8_t)(hi >> 8);  lenb[3] = (uint8_t)hi;
+    lenb[4] = (uint8_t)(lo >> 24); lenb[5] = (uint8_t)(lo >> 16);
+    lenb[6] = (uint8_t)(lo >> 8);  lenb[7] = (uint8_t)lo;
 
     sha256_update(c, &pad, 1);
     while (c->nbuf != 56)
@@ -181,14 +181,14 @@ void sha256_final(SHA256_CTX *c, unsigned char out[32])
     sha256_update(c, lenb, 8);
 
     for (i = 0; i < 8; i++) {
-        out[4*i]   = (unsigned char)(c->h[i] >> 24);
-        out[4*i+1] = (unsigned char)(c->h[i] >> 16);
-        out[4*i+2] = (unsigned char)(c->h[i] >> 8);
-        out[4*i+3] = (unsigned char)(c->h[i]);
+        out[4*i]   = (uint8_t)(c->h[i] >> 24);
+        out[4*i+1] = (uint8_t)(c->h[i] >> 16);
+        out[4*i+2] = (uint8_t)(c->h[i] >> 8);
+        out[4*i+3] = (uint8_t)(c->h[i]);
     }
 }
 
-void sha256(const void *data, unsigned int len, unsigned char out[32])
+void sha256(const void *data, unsigned int len, uint8_t out[32])
 {
     SHA256_CTX c;
     sha256_init(&c);
@@ -199,10 +199,10 @@ void sha256(const void *data, unsigned int len, unsigned char out[32])
 /* ==========================================================================
  * HMAC (RFC 2104)
  * ========================================================================== */
-void hmac_sha1(const unsigned char *key, int keylen,
-               const unsigned char *msg, int msglen, unsigned char out[20])
+void hmac_sha1(const uint8_t *key, int keylen,
+               const uint8_t *msg, int msglen, uint8_t out[20])
 {
-    unsigned char k[64], ipad[64], opad[64], inner[20];
+    uint8_t k[64], ipad[64], opad[64], inner[20];
     SHA1_CTX c;
     int i;
 
@@ -213,8 +213,8 @@ void hmac_sha1(const unsigned char *key, int keylen,
         memcpy(k, key, keylen);
 
     for (i = 0; i < 64; i++) {
-        ipad[i] = (unsigned char)(k[i] ^ 0x36);
-        opad[i] = (unsigned char)(k[i] ^ 0x5c);
+        ipad[i] = (uint8_t)(k[i] ^ 0x36);
+        opad[i] = (uint8_t)(k[i] ^ 0x5c);
     }
 
     sha1_init(&c);
@@ -228,10 +228,10 @@ void hmac_sha1(const unsigned char *key, int keylen,
     sha1_final(&c, out);
 }
 
-void hmac_sha256(const unsigned char *key, int keylen,
-                 const unsigned char *msg, int msglen, unsigned char out[32])
+void hmac_sha256(const uint8_t *key, int keylen,
+                 const uint8_t *msg, int msglen, uint8_t out[32])
 {
-    unsigned char k[64], ipad[64], opad[64], inner[32];
+    uint8_t k[64], ipad[64], opad[64], inner[32];
     SHA256_CTX c;
     int i;
 
@@ -242,8 +242,8 @@ void hmac_sha256(const unsigned char *key, int keylen,
         memcpy(k, key, keylen);
 
     for (i = 0; i < 64; i++) {
-        ipad[i] = (unsigned char)(k[i] ^ 0x36);
-        opad[i] = (unsigned char)(k[i] ^ 0x5c);
+        ipad[i] = (uint8_t)(k[i] ^ 0x36);
+        opad[i] = (uint8_t)(k[i] ^ 0x5c);
     }
 
     sha256_init(&c);

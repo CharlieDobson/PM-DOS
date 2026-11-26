@@ -28,8 +28,8 @@
 #include "mode.h"
 
 typedef struct {
-    const char *word;
-    u32         baud;
+    const char  *word;
+    unsigned int baud;
 } BAUD;
 
 static const BAUD bauds[] = {
@@ -46,12 +46,12 @@ static const BAUD bauds[] = {
     { NULL, 0 }
 };
 
-static int text_is( const char *text, u32 len, const char *word )
+static int text_is( const char *text, unsigned int len, const char *word )
 {
     return str_len( word ) == len && str_nicmp( text, word, len ) == 0;
 }
 
-static u32 baud_of( const char *text, u32 len )
+static unsigned int baud_of( const char *text, unsigned int len )
 {
     const BAUD *row;
 
@@ -63,7 +63,7 @@ static u32 baud_of( const char *text, u32 len )
     return 0;
 }
 
-static int parity_of( const char *text, u32 len )
+static int parity_of( const char *text, unsigned int len )
 {
     if ( text_is( text, len, "N" ) || text_is( text, len, "NONE" ) )  return 'n';
     if ( text_is( text, len, "E" ) || text_is( text, len, "EVEN" ) )  return 'e';
@@ -73,7 +73,7 @@ static int parity_of( const char *text, u32 len )
     return 0;
 }
 
-static int data_of( const char *text, u32 len )
+static int data_of( const char *text, unsigned int len )
 {
     if ( len == 1 && text[0] >= '5' && text[0] <= '8' ) {
         return text[0] - '0';
@@ -81,7 +81,7 @@ static int data_of( const char *text, u32 len )
     return 0;
 }
 
-static int stop_of( const char *text, u32 len )
+static int stop_of( const char *text, unsigned int len )
 {
     if ( text_is( text, len, "1" ) )   return 1;
     if ( text_is( text, len, "1.5" ) ) return 15;
@@ -90,7 +90,7 @@ static int stop_of( const char *text, u32 len )
 }
 
 /* RETRY_*, or -1 for a word that is none of them */
-static int retry_of( const char *text, u32 len )
+static int retry_of( const char *text, unsigned int len )
 {
     if ( text_is( text, len, "E" ) )    return RETRY_E;
     if ( text_is( text, len, "B" ) )    return RETRY_B;
@@ -296,7 +296,7 @@ static char retry_letter( int retry, int shown_p )
     return '-';
 }
 
-static void put_num( char **out, u32 num )
+static void put_num( char **out, unsigned int num )
 {
     *out += num_str( *out, num );
 }
@@ -304,7 +304,7 @@ static void put_num( char **out, u32 num )
 void com_set( const REQ *rq )
 {
     char dev[6], line[40], *out;
-    u32 base, divisor;
+    uint32_t base, divisor;
     int parity, data, stop, retry, shown_p, lcr;
     PORTSET set;
 
@@ -341,10 +341,10 @@ void com_set( const REQ *rq )
     case 's': lcr |= 0x38; break;
     }
     divisor = 115200UL / rq->baud;
-    port_out( base + 3, 0x80 | (u32)lcr );
+    port_out( base + 3, 0x80 | (uint32_t)lcr );
     port_out( base + 0, divisor & 0xFF );
     port_out( base + 1, (divisor >> 8) & 0xFF );
-    port_out( base + 3, (u32)lcr );
+    port_out( base + 3, (uint32_t)lcr );
 
     /* RETRY=: given, it is set; left out, the positional form clears it
        and the keyword form keeps it */

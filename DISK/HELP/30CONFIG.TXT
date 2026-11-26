@@ -38,8 +38,8 @@ they are in the kernel, so those programs are not loaded:
 {i}[[Dpmi|DPMI=]]                     [[Share|SHARE=]]{p}
 {i}[[Ems|EMS=]]                      [[Undelete|UNDELETE=]]{p}
 {i}[[Ide32|IDE32=]]                    [[Usb|USB=]]{p}
-{i}[[Idecable|IDECABLE=]]                 [[Wincache|WINCACHE=]]{p}
-{i}[[Idedma|IDEDMA=]]{p}
+{i}[[Idecable|IDECABLE=]]                 [[Vme|VME=]]{p}
+{i}[[Idedma|IDEDMA=]]                   [[Wincache|WINCACHE=]]{p}
 
 CONFIG.SYS can also hold several configurations, with a menu at
 startup to choose one.  See [[Multiple Configurations|Multi-config]].
@@ -210,9 +210,8 @@ PM-DOS.
 
 {b}Which disks{p}
 
-Only the first AHCI controller is used, and only for the BIOS's first
-and second hard disks.  Each disk keeps the drive number the BIOS gave
-it.
+Only the first AHCI controller is used, for up to eight hard disks.
+Each disk keeps the drive number the BIOS gave it.
 
 {b}CD-ROM drives{p}
 
@@ -1252,13 +1251,35 @@ ON
     This is the default setting.
 
 OFF
-    Disables delete protection.
+    Disables delete protection.  UNDELETE.386 does nothing under
+    Windows as well.
 
 {b}Related Commands{p}
 
 See [[UNDELETE]] and [[DEL]].
 #examples
     UNDELETE=OFF
+#topic VME=|Vme
+#title VME=
+Lets the processor handle a DOS program's interrupt flag instructions.
+
+{b}Syntax{p}
+
+    VME=ON | OFF
+
+{b}Parameters{p}
+
+ON
+    Uses the Virtual-8086 Mode Extensions of a Pentium or later
+    processor, which makes DOS programs faster.  The extensions are
+    used only if a check at startup passes.
+    This is the default setting.
+
+OFF
+    PM-DOS handles the instructions itself.  For checking whether a
+    problem with a DOS program comes from VME.
+#examples
+    VME=OFF
 #topic WINCACHE=|Wincache
 #title WINCACHE=
 Sets the cache used while Windows runs.

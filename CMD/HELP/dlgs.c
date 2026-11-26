@@ -30,8 +30,8 @@ static int match_in( const char *line, int at )
     int len = (int)str_len( line ), need = (int)str_len( find_text ), col;
 
     for ( col = at; col + need <= len; col++ ) {
-        if ( match_case ? mem_cmp( line + col, find_text, (u32)need ) != 0
-                        : str_nicmp( line + col, find_text, (u32)need ) != 0 ) {
+        if ( match_case ? mem_cmp( line + col, find_text, (unsigned int)need ) != 0
+                        : str_nicmp( line + col, find_text, (unsigned int)need ) != 0 ) {
             continue;
         }
         if ( whole_word ) {
@@ -48,18 +48,18 @@ static int match_in( const char *line, int at )
 }
 
 /* from just after the cursor, through every topic and round: where */
-static int search( int *topic, u32 *line, int *col )
+static int search( int *topic, unsigned int *line, int *col )
 {
     static char text[RL_MAX + 1];
     int at_topic = view.topic < 0 ? 0 : view.topic, first = 1, found;
-    u32 at_line = view.topic < 0 ? 0 : view.line, start_topic, start_line, count;
+    unsigned int at_line = view.topic < 0 ? 0 : view.line, start_topic, start_line, count;
     int start_col = view.topic < 0 ? -1 : (int)view.col, begin;
-    u32 visited = 0;
+    unsigned int visited = 0;
 
     if ( ntopics == 0 || find_text[0] == 0 ) {
         return 0;
     }
-    start_topic = (u32)at_topic;
+    start_topic = (unsigned int)at_topic;
     start_line = at_line;
     for ( ;; ) {
         count = topics[at_topic].count;
@@ -74,14 +74,14 @@ static int search( int *topic, u32 *line, int *col )
                 *col = found;
                 return 1;
             }
-            if ( (u32)at_topic == start_topic && at_line == start_line && visited ) {
+            if ( (unsigned int)at_topic == start_topic && at_line == start_line && visited ) {
                 return 0;                       /* all the way round */
             }
             visited++;
         }
         at_topic = (at_topic + 1) % ntopics;
         at_line = 0;
-        if ( (u32)at_topic == start_topic && visited > nhlines ) {
+        if ( (unsigned int)at_topic == start_topic && visited > nhlines ) {
             return 0;
         }
         if ( visited > nhlines + 1 ) {
@@ -93,7 +93,7 @@ static int search( int *topic, u32 *line, int *col )
 static void find_and_show( void )
 {
     int topic, col;
-    u32 line;
+    unsigned int line;
 
     app_status( "Searching - press Esc to cancel" );
     app_draw();
@@ -103,7 +103,7 @@ static void find_and_show( void )
         if ( topic != view.topic ) {
             app_show( topic );
         }
-        view_goto( line, (u32)col );
+        view_goto( line, (unsigned int)col );
         return;
     }
     app_status( NULL );
@@ -111,7 +111,7 @@ static void find_and_show( void )
 }
 
 /* the word the cursor is on, or the one to its left */
-static void word_at_cursor( char *out, u32 max )
+static void word_at_cursor( char *out, unsigned int max )
 {
     static char text[RL_MAX + 1];
     int at, start, end;
@@ -142,10 +142,10 @@ static void word_at_cursor( char *out, u32 max )
     while ( text[end] && word_ch( text[end] ) ) {
         end++;
     }
-    if ( (u32)(end - start) >= max ) {
+    if ( (unsigned int)(end - start) >= max ) {
         end = start + (int)max - 1;
     }
-    mem_cpy( out, text + start, (u32)(end - start) );
+    mem_cpy( out, text + start, (unsigned int)(end - start) );
     out[end - start] = 0;
 }
 
@@ -305,7 +305,8 @@ static int print_press( DLG *dlg, int ctl )
 static int print_topic( const char *where, int is_file )
 {
     static char text[RL_MAX + 3];
-    u32 handle, done, line, count, len;
+    uint32_t handle;
+    unsigned int done, line, count, len;
     int rc;
 
     rc = is_file ? sys_create( where, &handle ) : sys_open_write( where, &handle );

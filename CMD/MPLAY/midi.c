@@ -65,18 +65,18 @@
 enum { JOB_NONE, JOB_START };           /* MDSTATE.job */
 
 /* (a * b) >> 32, unsigned */
-u32 md_umulhi( u32 a, u32 b );
+uint32_t md_umulhi( uint32_t a, uint32_t b );
 #pragma aux md_umulhi = \
     "mul edx" \
     parm [eax] [edx] value [edx] modify exact [eax edx] nomemory;
 
 /* (hi:lo) / div, and the remainder; hi must be less than div */
-u32 md_div64( u32 lo, u32 hi, u32 div );
+uint32_t md_div64( uint32_t lo, uint32_t hi, uint32_t div );
 #pragma aux md_div64 = \
     "div ecx" \
     parm [eax] [edx] [ecx] value [eax] modify exact [eax edx] nomemory;
 
-u32 md_mod64( u32 lo, u32 hi, u32 div );
+uint32_t md_mod64( uint32_t lo, uint32_t hi, uint32_t div );
 #pragma aux md_mod64 = \
     "div ecx" \
     parm [eax] [edx] [ecx] value [edx] modify exact [eax edx] nomemory;
@@ -86,7 +86,7 @@ u32 md_mod64( u32 lo, u32 hi, u32 div );
 /* ------------------------------------------------------------------ */
 /* 40 log10( 127 / v ) dB as attenuation units (0.0235 dB): the General
    MIDI curve for volume and expression */
-const u16 md_vol_att[128] = {
+const uint16_t md_vol_att[128] = {
     4095, 3578, 3066, 2767, 2554, 2389, 2255, 2141, 2042, 1955, 1877, 1807,
     1743, 1684, 1629, 1578, 1530, 1485, 1443, 1403, 1365, 1329, 1295, 1262,
     1231, 1201, 1172, 1144, 1117, 1091, 1066, 1042, 1018,  995,  973,  952,
@@ -101,7 +101,7 @@ const u16 md_vol_att[128] = {
 };
 
 /* 30 log10( 127 / v ) dB: velocity, a little gentler than volume */
-const u16 md_vel_att[128] = {
+const uint16_t md_vel_att[128] = {
     4095, 2684, 2300, 2075, 1916, 1792, 1691, 1606, 1532, 1466, 1408, 1355,
     1307, 1263, 1222, 1183, 1148, 1114, 1082, 1052, 1024,  997,  971,  947,
      923,  900,  879,  858,  838,  818,  799,  781,  764,  747,  730,  714,
@@ -118,7 +118,7 @@ const u16 md_vel_att[128] = {
 /* the left side's loss for a pan setting: -log2( cos( theta ) ) * 256,
    theta = (pan - 1) / 126 * 90 degrees, 0 counted as 1, so that 64 is
    the middle (3 dB down each side).  The right side's is [128 - pan]. */
-const u16 md_pan_att[128] = {
+const uint16_t md_pan_att[128] = {
        0,    0,    0,    0,    0,    0,    1,    1,    1,    2,    2,    3,
        3,    4,    5,    6,    6,    7,    8,    9,   10,   12,   13,   14,
       15,   17,   18,   20,   21,   23,   25,   26,   28,   30,   32,   34,
@@ -134,14 +134,14 @@ const u16 md_pan_att[128] = {
 
 /* MIDI notes 120..131 in Hz with 16 bits of fraction; a lower octave
    is a shift */
-static const u32 md_semi[12] = {
+static const uint32_t md_semi[12] = {
      548668578UL,  581294109UL,  615859655UL,  652480576UL,
      691279090UL,  732384684UL,  775934544UL,  822074013UL,
      870957077UL,  922746880UL,  977616265UL, 1035748353UL
 };
 
 /* 2 ^ (k / 768), Q30: the 64 steps inside a semitone */
-static const u32 md_fine[64] = {
+static const uint32_t md_fine[64] = {
     1073741824UL, 1074711351UL, 1075681754UL, 1076653033UL, 1077625190UL, 1078598223UL,
     1079572136UL, 1080546928UL, 1081522600UL, 1082499153UL, 1083476588UL, 1084454905UL,
     1085434106UL, 1086414191UL, 1087395161UL, 1088377016UL, 1089359758UL, 1090343388UL,
@@ -156,13 +156,13 @@ static const u32 md_fine[64] = {
 };
 
 /* the analyzer's band for each drum, 35..81 (0 = 31 Hz, 31 = 16 kHz) */
-static const u8 md_drum_band[MD_DRUMS] = {
+static const uint8_t md_drum_band[MD_DRUMS] = {
      1,  1, 14, 11, 16, 12,  4, 28,  5, 27,  6, 28,  7,  8, 29,  9,
     27, 29, 24, 27, 30, 18, 29, 20, 27, 15, 13, 13, 12, 11, 14, 12,
     19, 18, 28, 29, 22, 21, 23, 22, 21, 19, 18, 15, 14, 26, 26
 };
 
-static const u8 gm_on[6] = { 0xF0, 0x7E, 0x7F, 0x09, 0x01, 0xF7 };
+static const uint8_t gm_on[6] = { 0xF0, 0x7E, 0x7F, 0x09, 0x01, 0xF7 };
 
 /* ------------------------------------------------------------------ */
 /* time                                                                */
@@ -173,9 +173,9 @@ static const u8 gm_on[6] = { 0xF0, 0x7E, 0x7F, 0x09, 0x01, 0xF7 };
    it is rounded up, by 2^-32 of a frame: a tick that falls exactly on a
    frame (they often do) then lands on it and not one before, and the
    error over a whole piece stays under a frame. */
-static void md_set_k( MDSTATE *md, u32 mul, u32 div1, u32 div2 )
+static void md_set_k( MDSTATE *md, uint32_t mul, uint32_t div1, uint32_t div2 )
 {
-    u32 lo, hi, whole, rem, frac, inexact;
+    uint32_t lo, hi, whole, rem, frac, inexact;
 
     lo = md->rate * mul;
     hi = md_umulhi( md->rate, mul );
@@ -214,9 +214,9 @@ static void md_tempo_k( MDSTATE *md )
 /* The frame tick "tick" falls on (it is not before the last tempo
    change), and its fraction in *frac.  A piece longer than MD_MAXFRAME
    stops there. */
-static u32 md_tick_frame( const MDSTATE *md, u32 tick, u32 *frac )
+static uint32_t md_tick_frame( const MDSTATE *md, uint32_t tick, uint32_t *frac )
 {
-    u32 dt = tick - md->seg_tick, lo, hi, fr, whole;
+    uint32_t dt = tick - md->seg_tick, lo, hi, fr, whole;
 
     lo = dt * md->k_frac;
     hi = md_umulhi( dt, md->k_frac );
@@ -238,9 +238,9 @@ static u32 md_tick_frame( const MDSTATE *md, u32 tick, u32 *frac )
     return whole + md->seg_int;
 }
 
-static void md_new_tempo( MDSTATE *md, u32 tick, u32 uspq )
+static void md_new_tempo( MDSTATE *md, uint32_t tick, uint32_t uspq )
 {
-    u32 frac;
+    uint32_t frac;
 
     md->seg_int = md_tick_frame( md, tick, &frac );
     md->seg_frac = frac;
@@ -254,10 +254,10 @@ static void md_new_tempo( MDSTATE *md, u32 tick, u32 uspq )
 /* ------------------------------------------------------------------ */
 /* A variable-length number: at most four bytes; a fifth is not looked
    for, the number is cut there.  0 if the chunk ended first. */
-static int md_vlq( const u8 **pos, const u8 *end, u32 *val )
+static int md_vlq( const uint8_t **pos, const uint8_t *end, uint32_t *val )
 {
-    const u8 *at = *pos;
-    u32 num = 0;
+    const uint8_t *at = *pos;
+    uint32_t num = 0;
     int i;
 
     for ( i = 0; i < 4; i++ ) {
@@ -278,7 +278,7 @@ static int md_vlq( const u8 **pos, const u8 *end, u32 *val )
 /* The wait before a track's next event */
 static void md_next_delta( MDTRACK *trk )
 {
-    u32 delta;
+    uint32_t delta;
 
     if ( trk->done ) {
         return;
@@ -295,7 +295,8 @@ static void md_next_delta( MDTRACK *trk )
 static MDTRACK *md_next_track( MDSTATE *md )
 {
     MDTRACK *best = NULL, *trk;
-    u32 i, at;
+    unsigned int i;
+    uint32_t at;
 
     if ( md->format == 2 ) {
         while ( md->cur_track < md->tracks ) {
@@ -327,13 +328,13 @@ static MDTRACK *md_next_track( MDSTATE *md )
 /* ------------------------------------------------------------------ */
 static void md_chan_derive( MDCHAN *ch )
 {
-    s32 range;
-    u32 att;
+    int32_t range;
+    uint32_t att;
 
-    range = (s32)ch->bend_semis * 64 + (s32)ch->bend_cents * 64 / 100;
-    ch->bend64 = ((s32)ch->bend - 8192) * range / 8192;
-    ch->tune64 = ((s32)ch->coarse - 64) * 64 + ((s32)ch->fine - 8192) / 128;
-    att = (u32)md_vol_att[ch->volume] + md_vol_att[ch->expression];
+    range = (int32_t)ch->bend_semis * 64 + (int32_t)ch->bend_cents * 64 / 100;
+    ch->bend64 = ((int32_t)ch->bend - 8192) * range / 8192;
+    ch->tune64 = ((int32_t)ch->coarse - 64) * 64 + ((int32_t)ch->fine - 8192) / 128;
+    att = (uint32_t)md_vol_att[ch->volume] + md_vol_att[ch->expression];
     ch->vol_att = att > 4095 ? 4095 : att;
 }
 
@@ -369,7 +370,7 @@ static void md_reset_channels( MDSTATE *md )
 /* ------------------------------------------------------------------ */
 /* what the outputs share                                              */
 /* ------------------------------------------------------------------ */
-void md_stage( MDSTATE *md, u8 kind, u8 bank, u8 reg, u8 val )
+void md_stage( MDSTATE *md, uint8_t kind, uint8_t bank, uint8_t reg, uint8_t val )
 {
     DECEV *ev;
 
@@ -384,15 +385,15 @@ void md_stage( MDSTATE *md, u8 kind, u8 bank, u8 reg, u8 val )
     ev->bank = bank;
 }
 
-static void md_mpu( MDSTATE *md, u8 byte )
+static void md_mpu( MDSTATE *md, uint8_t byte )
 {
     md_stage( md, EV_MPU, 0, 0, byte );
 }
 
-s32 md_voice_pitch( const MDSTATE *md, const MDVOICE *vc )
+int32_t md_voice_pitch( const MDSTATE *md, const MDVOICE *vc )
 {
     const MDCHAN *ch = &md->chan[vc->chan];
-    s32 pitch = vc->pitch;
+    int32_t pitch = vc->pitch;
 
     if ( !vc->drum ) {
         pitch += ch->bend64 + ch->tune64;
@@ -405,25 +406,25 @@ s32 md_voice_pitch( const MDSTATE *md, const MDVOICE *vc )
     return pitch;
 }
 
-u32 md_pitch_hz( s32 pitch )
+uint32_t md_pitch_hz( int32_t pitch )
 {
-    u32 oct, idx;
+    uint32_t oct, idx;
 
     if ( pitch < 0 ) {
         pitch = 0;
     } else if ( pitch > 132 * 64 - 1 ) {
         pitch = 132 * 64 - 1;
     }
-    oct = (u32)pitch / 768;
-    idx = (u32)pitch % 768;
-    return (u32)fx_mul30( (s32)md_semi[idx / 64], (s32)md_fine[idx % 64] ) >> (10 - oct);
+    oct = (uint32_t)pitch / 768;
+    idx = (uint32_t)pitch % 768;
+    return (uint32_t)fx_mul30( (int32_t)md_semi[idx / 64], (int32_t)md_fine[idx % 64] ) >> (10 - oct);
 }
 
 /* The OPL's frequency is fnum * 49716 / 2^(20 - block) Hz: the smallest
    block that keeps the F-number under 1024 keeps the most of it. */
-void md_fnum( u32 hz, u32 *fnum, u32 *block )
+void md_fnum( uint32_t hz, uint32_t *fnum, uint32_t *block )
 {
-    u32 num = fx_umuldiv( hz, 16, 49716 ), blk = 0;
+    uint32_t num = fx_umuldiv( hz, 16, 49716 ), blk = 0;
 
     while ( num >= 1024 && blk < 7 ) {
         num = (num + 1) >> 1;
@@ -433,9 +434,9 @@ void md_fnum( u32 hz, u32 *fnum, u32 *block )
     *block = blk;
 }
 
-u32 md_voice_att( const MDSTATE *md, const MDVOICE *vc )
+uint32_t md_voice_att( const MDSTATE *md, const MDVOICE *vc )
 {
-    u32 att = (u32)md_vel_att[vc->vel & 0x7F] + md->chan[vc->chan].vol_att;
+    uint32_t att = (uint32_t)md_vel_att[vc->vel & 0x7F] + md->chan[vc->chan].vol_att;
 
     return att > 4095 ? 4095 : att;
 }
@@ -478,7 +479,7 @@ static void out_kill( MDSTATE *md, int v )
 /* what = 0 pitch, 1 level, 2 pan, 3 vibrato, for every voice of a channel */
 static void out_channel( MDSTATE *md, int chan, int what )
 {
-    u32 i;
+    unsigned int i;
 
     if ( md->mode != MM_PLAY ) {
         return;
@@ -524,7 +525,7 @@ static void out_channel( MDSTATE *md, int chan, int what )
 static int md_find_voice( MDSTATE *md )
 {
     int best = -1;
-    u32 i;
+    unsigned int i;
     MDVOICE *vc;
 
     for ( i = 0; i < md->voices; i++ ) {
@@ -566,19 +567,19 @@ static void md_note_on( MDSTATE *md, int chan, int note, int vel )
 {
     const MDPATCH *patch;
     MDVOICE *vc;
-    s32 pitch;
+    int32_t pitch;
     int v = -1;
-    u32 i;
+    unsigned int i;
 
     if ( chan == MD_DRUMCHAN ) {
         if ( note < MD_DRUM_FIRST || note > MD_DRUM_LAST ) {
             return;
         }
         patch = &md_drums[note - MD_DRUM_FIRST];
-        pitch = (s32)patch->note * 64;
+        pitch = (int32_t)patch->note * 64;
     } else {
         patch = &md_melodic[md->chan[chan].program & 0x7F];
-        pitch = ((s32)note + patch->note) * 64;
+        pitch = ((int32_t)note + patch->note) * 64;
     }
     /* the same note again on the same channel takes the voice it had */
     for ( i = 0; i < md->voices; i++ ) {
@@ -593,11 +594,11 @@ static void md_note_on( MDSTATE *md, int chan, int note, int vel )
     }
     vc = &md->voice[v];
     vc->state = VS_ON;
-    vc->chan = (u8)chan;
-    vc->note = (u8)note;
-    vc->vel = (u8)vel;
+    vc->chan = (uint8_t)chan;
+    vc->note = (uint8_t)note;
+    vc->vel = (uint8_t)vel;
     vc->held = 0;
-    vc->drum = (u8)(chan == MD_DRUMCHAN);
+    vc->drum = (uint8_t)(chan == MD_DRUMCHAN);
     vc->patch = patch;
     vc->pitch = pitch;
     vc->age = ++md->age;
@@ -608,7 +609,7 @@ static void md_note_on( MDSTATE *md, int chan, int note, int vel )
 static void md_note_off( MDSTATE *md, int chan, int note )
 {
     MDVOICE *vc;
-    u32 i;
+    unsigned int i;
 
     for ( i = 0; i < md->voices; i++ ) {
         vc = &md->voice[i];
@@ -626,7 +627,7 @@ static void md_note_off( MDSTATE *md, int chan, int note )
 static void md_all_off( MDSTATE *md, int chan )
 {
     MDVOICE *vc;
-    u32 i;
+    unsigned int i;
 
     for ( i = 0; i < md->voices; i++ ) {
         vc = &md->voice[i];
@@ -643,7 +644,7 @@ static void md_all_off( MDSTATE *md, int chan )
 /* all sound off: silent at once */
 static void md_kill_channel( MDSTATE *md, int chan )
 {
-    u32 i;
+    unsigned int i;
 
     for ( i = 0; i < md->voices; i++ ) {
         if ( md->voice[i].state != VS_FREE && (chan < 0 || md->voice[i].chan == chan) ) {
@@ -660,18 +661,18 @@ static void md_kill_channel( MDSTATE *md, int chan )
 static void md_rpn_data( MDSTATE *md, int chan )
 {
     MDCHAN *ch = &md->chan[chan];
-    u8 msb = ch->cc[6], lsb = ch->cc[38];
+    uint8_t msb = ch->cc[6], lsb = ch->cc[38];
 
     if ( ch->rpn_msb != 0 ) {
         return;
     }
     switch ( ch->rpn_lsb ) {
     case 0:                             /* the bend range */
-        ch->bend_semis = (u8)(msb > 24 ? 24 : msb);
-        ch->bend_cents = (u8)(lsb > 99 ? 99 : lsb);
+        ch->bend_semis = (uint8_t)(msb > 24 ? 24 : msb);
+        ch->bend_cents = (uint8_t)(lsb > 99 ? 99 : lsb);
         break;
     case 1:                             /* fine tuning */
-        ch->fine = (u16)(((u16)msb << 7) | lsb);
+        ch->fine = (uint16_t)(((uint16_t)msb << 7) | lsb);
         break;
     case 2:                             /* coarse tuning */
         ch->coarse = msb;
@@ -687,7 +688,7 @@ static void md_rpn_data( MDSTATE *md, int chan )
 static void md_release_held( MDSTATE *md, int chan )
 {
     MDVOICE *vc;
-    u32 i;
+    unsigned int i;
 
     if ( md->mode != MM_PLAY ) {
         return;
@@ -704,11 +705,11 @@ static void md_controller( MDSTATE *md, int chan, int num, int val )
 {
     MDCHAN *ch = &md->chan[chan];
 
-    ch->cc[num] = (u8)val;
-    ch->cc_set[num >> 3] |= (u8)(1 << (num & 7));
+    ch->cc[num] = (uint8_t)val;
+    ch->cc_set[num >> 3] |= (uint8_t)(1 << (num & 7));
     switch ( num ) {
     case 1:
-        ch->modulation = (u8)val;
+        ch->modulation = (uint8_t)val;
         out_channel( md, chan, 3 );
         break;
     case 6:
@@ -719,21 +720,21 @@ static void md_controller( MDSTATE *md, int chan, int num, int val )
         md_rpn_data( md, chan );
         break;
     case 7:
-        ch->volume = (u8)val;
+        ch->volume = (uint8_t)val;
         md_chan_derive( ch );
         out_channel( md, chan, 1 );
         break;
     case 10:
-        ch->pan = (u8)val;
+        ch->pan = (uint8_t)val;
         out_channel( md, chan, 2 );
         break;
     case 11:
-        ch->expression = (u8)val;
+        ch->expression = (uint8_t)val;
         md_chan_derive( ch );
         out_channel( md, chan, 1 );
         break;
     case 64:
-        ch->sustain = (u8)(val >= 64);
+        ch->sustain = (uint8_t)(val >= 64);
         if ( !ch->sustain ) {
             md_release_held( md, chan );
         }
@@ -743,10 +744,10 @@ static void md_controller( MDSTATE *md, int chan, int num, int val )
         ch->rpn_msb = ch->rpn_lsb = 127;
         break;
     case 100:
-        ch->rpn_lsb = (u8)val;
+        ch->rpn_lsb = (uint8_t)val;
         break;
     case 101:
-        ch->rpn_msb = (u8)val;
+        ch->rpn_msb = (uint8_t)val;
         break;
     case 120:
         if ( md->mode == MM_PLAY ) {
@@ -772,7 +773,7 @@ static void md_controller( MDSTATE *md, int chan, int num, int val )
     }
 }
 
-static void md_channel_msg( MDSTATE *md, u8 status, u8 d1, u8 d2 )
+static void md_channel_msg( MDSTATE *md, uint8_t status, uint8_t d1, uint8_t d2 )
 {
     int chan = status & 0x0F;
     MDCHAN *ch = &md->chan[chan];
@@ -813,7 +814,7 @@ static void md_channel_msg( MDSTATE *md, u8 status, u8 d1, u8 d2 )
         ch->pressure = d1;
         break;
     case 0xE0:
-        ch->bend = (u16)(d1 | ((u16)d2 << 7));
+        ch->bend = (uint16_t)(d1 | ((uint16_t)d2 << 7));
         md_chan_derive( ch );
         out_channel( md, chan, 0 );
         break;
@@ -822,7 +823,7 @@ static void md_channel_msg( MDSTATE *md, u8 status, u8 d1, u8 d2 )
 
 /* GM System On, GM2 On, the GS reset and XG System On: everything back
    to its default.  "msg" is what follows the F0. */
-static int md_is_reset( const u8 *msg, u32 len )
+static int md_is_reset( const uint8_t *msg, uint32_t len )
 {
     if ( len >= 4 && msg[0] == 0x7E && msg[2] == 0x09 && (msg[3] == 0x01 || msg[3] == 0x03) ) {
         return 1;
@@ -841,7 +842,7 @@ static int md_is_reset( const u8 *msg, u32 len )
 /* The rest of a SysEx message being sent: as much as the stage holds */
 static void md_sysex_more( MDSTATE *md )
 {
-    u32 room;
+    unsigned int room;
 
     md->stage_count = md->stage_used = 0;
     md->stage_frame = md->sx_frame;
@@ -857,7 +858,7 @@ static void md_sysex_more( MDSTATE *md )
     }
 }
 
-static void md_sysex( MDSTATE *md, const u8 *msg, u32 len, int escape )
+static void md_sysex( MDSTATE *md, const uint8_t *msg, uint32_t len, int escape )
 {
     int reset;
 
@@ -879,9 +880,9 @@ static void md_sysex( MDSTATE *md, const u8 *msg, u32 len, int escape )
             md->sysrecs = 0;            /* a reset undoes what came before it */
         }
         if ( md->sysrecs < MD_SYSREC ) {
-            md->sysrec[md->sysrecs].offset = (u32)(msg - md->file);
+            md->sysrec[md->sysrecs].offset = (uint32_t)(msg - md->file);
             md->sysrec[md->sysrecs].len = len;
-            md->sysrec[md->sysrecs].escape = (u8)escape;
+            md->sysrec[md->sysrecs].escape = (uint8_t)escape;
             md->sysrecs++;
         }
         return;
@@ -892,7 +893,7 @@ static void md_sysex( MDSTATE *md, const u8 *msg, u32 len, int escape )
     md->sx_pos = msg;
     md->sx_left = len;
     md->sx_frame = md->stage_frame;
-    md->sx_reset = (u8)reset;
+    md->sx_reset = (uint8_t)reset;
     /* what fits now goes now; the rest after the stage has gone out */
     while ( md->sx_left > 0 && md->stage_count < MD_STAGE ) {
         md_mpu( md, *md->sx_pos++ );
@@ -905,9 +906,9 @@ static void md_sysex( MDSTATE *md, const u8 *msg, u32 len, int escape )
 }
 
 /* The text of an event as a tag: UTF-8 if it is that, else Latin-1 */
-static void md_text( char *dst, const u8 *src, u32 len )
+static void md_text( char *dst, const uint8_t *src, unsigned int len )
 {
-    u32 i, k, need;
+    unsigned int i, k, need;
     int multi = 0;
 
     for ( i = 0; i < len; i++ ) {
@@ -944,14 +945,14 @@ static void md_text( char *dst, const u8 *src, u32 len )
     }
 }
 
-static void md_meta( MDSTATE *md, MDTRACK *trk, u8 type, const u8 *data, u32 len )
+static void md_meta( MDSTATE *md, MDTRACK *trk, uint8_t type, const uint8_t *data, uint32_t len )
 {
-    u32 uspq;
+    uint32_t uspq;
 
     switch ( type ) {
     case 0x51:                          /* tempo; SMPTE time has none */
         if ( len >= 3 && md->tpq != 0 ) {
-            uspq = ((u32)data[0] << 16) | ((u32)data[1] << 8) | data[2];
+            uspq = ((uint32_t)data[0] << 16) | ((uint32_t)data[1] << 8) | data[2];
             if ( uspq != 0 ) {
                 md_new_tempo( md, trk->tick, uspq );
             }
@@ -995,9 +996,9 @@ static void md_meta( MDSTATE *md, MDTRACK *trk, u8 type, const u8 *data, u32 len
 /* One event of a track, at frame md->now */
 static void md_event( MDSTATE *md, MDTRACK *trk )
 {
-    const u8 *at = trk->pos, *end = trk->end;
-    u8 status, type, d1 = 0, d2 = 0;
-    u32 len;
+    const uint8_t *at = trk->pos, *end = trk->end;
+    uint8_t status, type, d1 = 0, d2 = 0;
+    uint32_t len;
 
     if ( at >= end ) {
         trk->done = 1;
@@ -1038,8 +1039,8 @@ static void md_event( MDSTATE *md, MDTRACK *trk )
             trk->done = 1;
             return;
         }
-        if ( len > (u32)(end - at) ) {
-            len = (u32)(end - at);
+        if ( len > (uint32_t)(end - at) ) {
+            len = (uint32_t)(end - at);
         }
         md_sysex( md, at, len, status == 0xF7 );
         trk->pos = at + len;
@@ -1055,8 +1056,8 @@ static void md_event( MDSTATE *md, MDTRACK *trk )
             trk->done = 1;
             return;
         }
-        if ( len > (u32)(end - at) ) {
-            len = (u32)(end - at);
+        if ( len > (uint32_t)(end - at) ) {
+            len = (uint32_t)(end - at);
         }
         md_meta( md, trk, type, at, len );
         trk->pos = at + len;
@@ -1076,7 +1077,7 @@ static void md_event( MDSTATE *md, MDTRACK *trk )
 static void md_rewind( MDSTATE *md )
 {
     MDTRACK *trk;
-    u32 i;
+    unsigned int i;
 
     for ( i = 0; i < md->tracks; i++ ) {
         trk = &md->track[i];
@@ -1111,7 +1112,7 @@ static void md_rewind( MDSTATE *md )
 }
 
 /* the stage emptied and placed for an event at "frame" */
-static void md_begin( MDSTATE *md, u32 frame )
+static void md_begin( MDSTATE *md, uint32_t frame )
 {
     md->now = frame;
     md->stage_count = md->stage_used = 0;
@@ -1123,7 +1124,7 @@ static void md_begin( MDSTATE *md, u32 frame )
 static void md_mpu_state( MDSTATE *md, int chan )
 {
     MDCHAN *ch = &md->chan[chan];
-    u8 status = (u8)(0xB0 | chan);
+    uint8_t status = (uint8_t)(0xB0 | chan);
     int num;
 
     if ( ch->cc_set[0] & 1 ) {
@@ -1137,7 +1138,7 @@ static void md_mpu_state( MDSTATE *md, int chan )
         md_mpu( md, ch->cc[32] );
     }
     if ( ch->program != 0 || (ch->cc_set[0] & 1) || (ch->cc_set[4] & 1) ) {
-        md_mpu( md, (u8)(0xC0 | chan) );
+        md_mpu( md, (uint8_t)(0xC0 | chan) );
         md_mpu( md, ch->program );
     }
     for ( num = 1; num < 120; num++ ) {
@@ -1146,21 +1147,21 @@ static void md_mpu_state( MDSTATE *md, int chan )
             continue;
         }
         md_mpu( md, status );
-        md_mpu( md, (u8)num );
+        md_mpu( md, (uint8_t)num );
         md_mpu( md, ch->cc[num] );
     }
     if ( ch->bend_semis != 2 || ch->bend_cents != 0 || ch->fine != 8192 || ch->coarse != 64 ) {
-        static const u8 rpn_lsb[3] = { 0, 1, 2 };
+        static const uint8_t rpn_lsb[3] = { 0, 1, 2 };
         int k;
-        u8 msb, lsb;
+        uint8_t msb, lsb;
 
         for ( k = 0; k < 3; k++ ) {
             if ( k == 0 ) {
                 msb = ch->bend_semis;
                 lsb = ch->bend_cents;
             } else if ( k == 1 ) {
-                msb = (u8)(ch->fine >> 7);
-                lsb = (u8)(ch->fine & 0x7F);
+                msb = (uint8_t)(ch->fine >> 7);
+                lsb = (uint8_t)(ch->fine & 0x7F);
             } else {
                 msb = ch->coarse;
                 lsb = 0;
@@ -1186,12 +1187,12 @@ static void md_mpu_state( MDSTATE *md, int chan )
         md_mpu( md, 127 );
     }
     if ( ch->bend != 8192 ) {
-        md_mpu( md, (u8)(0xE0 | chan) );
-        md_mpu( md, (u8)(ch->bend & 0x7F) );
-        md_mpu( md, (u8)(ch->bend >> 7) );
+        md_mpu( md, (uint8_t)(0xE0 | chan) );
+        md_mpu( md, (uint8_t)(ch->bend & 0x7F) );
+        md_mpu( md, (uint8_t)(ch->bend >> 7) );
     }
     if ( ch->pressure != 0 ) {
-        md_mpu( md, (u8)(0xD0 | chan) );
+        md_mpu( md, (uint8_t)(0xD0 | chan) );
         md_mpu( md, ch->pressure );
     }
 }
@@ -1202,14 +1203,14 @@ static void md_mpu_quiet( MDSTATE *md, int reset )
     int chan;
 
     for ( chan = 0; chan < MD_CHANNELS; chan++ ) {
-        md_mpu( md, (u8)(0xB0 | chan) );
+        md_mpu( md, (uint8_t)(0xB0 | chan) );
         md_mpu( md, 120 );
         md_mpu( md, 0 );
-        md_mpu( md, (u8)(0xB0 | chan) );
+        md_mpu( md, (uint8_t)(0xB0 | chan) );
         md_mpu( md, 123 );
         md_mpu( md, 0 );
         if ( reset ) {
-            md_mpu( md, (u8)(0xB0 | chan) );
+            md_mpu( md, (uint8_t)(0xB0 | chan) );
             md_mpu( md, 121 );
             md_mpu( md, 0 );
         }
@@ -1221,7 +1222,7 @@ static void md_mpu_quiet( MDSTATE *md, int reset )
    given the state the file had reached */
 static void md_job_step( MDSTATE *md )
 {
-    u32 step = md->job_step++, k;
+    unsigned int step = md->job_step++, k;
     const MDSYSEX *rec;
 
     md_begin( md, md->job_frame );
@@ -1254,7 +1255,7 @@ static void md_job_step( MDSTATE *md )
         md->sx_pos = md->file + rec->offset;
         md->sx_left = rec->len;
         md->sx_frame = md->stage_frame;
-        md->sx_reset = (u8)(!rec->escape && md_is_reset( md->sx_pos, rec->len ));
+        md->sx_reset = (uint8_t)(!rec->escape && md_is_reset( md->sx_pos, rec->len ));
         while ( md->sx_left > 0 && md->stage_count < MD_STAGE ) {
             md_mpu( md, *md->sx_pos++ );
             md->sx_left--;
@@ -1280,7 +1281,8 @@ static void md_job_step( MDSTATE *md )
    are given to die away worked out */
 static void md_song_over( MDSTATE *md )
 {
-    u32 i, at = md->out_at, end, tail;
+    unsigned int i;
+    uint32_t at = md->out_at, end, tail;
     MDVOICE *vc;
     int chan;
 
@@ -1292,7 +1294,7 @@ static void md_song_over( MDSTATE *md )
     }
     if ( md->synth == SYN_MPU ) {
         for ( chan = 0; chan < MD_CHANNELS; chan++ ) {
-            md_mpu( md, (u8)(0xB0 | chan) );
+            md_mpu( md, (uint8_t)(0xB0 | chan) );
             md_mpu( md, 123 );
             md_mpu( md, 0 );
         }
@@ -1332,10 +1334,10 @@ static void md_end_silence( MDSTATE *md )
 /* decoding                                                            */
 /* ------------------------------------------------------------------ */
 /* the output (silence, or the synthesizer) up to frame "to" */
-static void md_output_to( MDSTATE *md, u32 to )
+static void md_output_to( MDSTATE *md, uint32_t to )
 {
-    u32 count;
-    s16 *at;
+    unsigned int count;
+    int16_t *at;
 
     if ( to <= md->out_at ) {
         return;
@@ -1345,7 +1347,7 @@ static void md_output_to( MDSTATE *md, u32 to )
     if ( md->synth == SYN_SOFT ) {
         syn_render( md, at, count );
     } else {
-        mem_set( at, 0, count * md->out_ch * sizeof( s16 ) );
+        mem_set( at, 0, count * md->out_ch * sizeof( int16_t ) );
     }
     md->out_at = to;
 }
@@ -1374,13 +1376,14 @@ static int md_flush( MDSTATE *md, DECBUF *buf )
 /* What is sounding, for the analyzer: each note at its frequency's band
    (and a little at its harmonics'), as loud as its velocity, volume
    and expression, less what time has taken off since it began */
-static void md_levels( MDSTATE *md, DECBUF *buf, u32 at )
+static void md_levels( MDSTATE *md, DECBUF *buf, uint32_t at )
 {
-    static const u8 harm_band[3] = { 0, 4, 6 };
-    static const u8 harm_drop[3] = { 0, 40, 72 };
+    static const uint8_t harm_band[3] = { 0, 4, 6 };
+    static const uint8_t harm_drop[3] = { 0, 40, 72 };
     const MDVOICE *vc;
-    u32 i, k, att, ms, decay;
-    s32 band, height, note;
+    unsigned int i, k;
+    uint32_t att, ms, decay;
+    int32_t band, height, note;
 
     mem_set( buf->levels, 0, LEVEL_BANDS );
     for ( i = 0; i < md->voices; i++ ) {
@@ -1404,7 +1407,7 @@ static void md_levels( MDSTATE *md, DECBUF *buf, u32 at )
             ms = at > vc->off_frame ? fx_umuldiv( at - vc->off_frame, 1000, md->rate ) : 0;
             decay += ms > 2000 ? 5120 : ms * 256 / 100;    /* then 6 dB a 0.1 s */
         }
-        height = 255 - (s32)((att + decay) >> 3);
+        height = 255 - (int32_t)((att + decay) >> 3);
         if ( height <= 0 ) {
             continue;
         }
@@ -1415,7 +1418,7 @@ static void md_levels( MDSTATE *md, DECBUF *buf, u32 at )
             band = (note - 23) * 32 / 108;
         }
         for ( k = 0; k < 3; k++ ) {
-            s32 bk = band + harm_band[k], hk = height - harm_drop[k];
+            int32_t bk = band + harm_band[k], hk = height - harm_drop[k];
 
             if ( vc->drum && k > 0 ) {
                 break;
@@ -1427,7 +1430,7 @@ static void md_levels( MDSTATE *md, DECBUF *buf, u32 at )
                 continue;
             }
             if ( hk > buf->levels[bk] ) {
-                buf->levels[bk] = (u8)hk;
+                buf->levels[bk] = (uint8_t)hk;
             }
         }
     }
@@ -1437,7 +1440,7 @@ static int md_decode( void *state, DECBUF *buf )
 {
     MDSTATE *md = (MDSTATE *)state;
     MDTRACK *trk;
-    u32 start = md->frame, end, at, frac, step;
+    uint32_t start = md->frame, end, at, frac, step;
 
     buf->frames = 0;
     buf->ev_count = 0;
@@ -1523,11 +1526,11 @@ static int md_decode( void *state, DECBUF *buf )
     return DE_OK;
 }
 
-static int md_seek( void *state, u32 ms, u32 *at_ms )
+static int md_seek( void *state, uint32_t ms, uint32_t *at_ms )
 {
     MDSTATE *md = (MDSTATE *)state;
     MDTRACK *trk;
-    u32 target, at, frac;
+    uint32_t target, at, frac;
 
     if ( ms >= md->length_ms ) {
         target = md->song_end;
@@ -1563,7 +1566,7 @@ static int md_seek( void *state, u32 ms, u32 *at_ms )
 /* ------------------------------------------------------------------ */
 /* opening                                                             */
 /* ------------------------------------------------------------------ */
-static int md_detect( SRC *src, const u8 *head, u32 len, const char *ext )
+static int md_detect( SRC *src, const uint8_t *head, unsigned int len, const char *ext )
 {
     (void)src;
     if ( len >= 4 && mem_cmp( head, "MThd", 4 ) == 0 ) {
@@ -1600,10 +1603,12 @@ static void md_close( void *state )
 
 /* A RIFF RMID file: the SMF's place in the "data" chunk, and the name
    and artist from an INFO list.  0 if there is no data chunk. */
-static int md_riff( MDSTATE *md, u32 *smf, u32 *smf_len )
+static int md_riff( MDSTATE *md, uint32_t *smf, uint32_t *smf_len )
 {
-    const u8 *file = md->file;
-    u32 pos = 12, size, body, chunks, sub, sub_end, sub_size;
+    const uint8_t *file = md->file;
+    uint32_t pos = 12, size, body;
+    unsigned int chunks;
+    uint32_t sub, sub_end, sub_size;
     int found = 0;
 
     for ( chunks = 0; chunks < 1000 && pos + 8 <= md->file_len; chunks++ ) {
@@ -1646,19 +1651,21 @@ static int md_riff( MDSTATE *md, u32 *smf, u32 *smf_len )
 /* The track chunks after the header, as far as the file goes, at most
    "max" of them.  With md->track NULL they are only counted.  Bytes
    that are not a chunk are stepped over to the next "MTrk". */
-static u32 md_find_tracks( MDSTATE *md, const u8 *pos, const u8 *end, u32 max )
+static unsigned int md_find_tracks( MDSTATE *md, const uint8_t *pos, const uint8_t *end, unsigned int max )
 {
-    u32 count = 0, size, i;
+    unsigned int count = 0;
+    uint32_t size;
+    unsigned int i;
     int at;
 
-    while ( count < max && (u32)(end - pos) >= 8 ) {
+    while ( count < max && (uint32_t)(end - pos) >= 8 ) {
         for ( i = 0; i < 4; i++ ) {
             if ( pos[i] < 0x20 || pos[i] > 0x7E ) {
                 break;
             }
         }
         if ( i < 4 ) {
-            at = mem_find( pos + 1, (u32)(end - pos - 1), "MTrk" );
+            at = mem_find( pos + 1, (unsigned int)(end - pos - 1), "MTrk" );
             if ( at < 0 ) {
                 break;
             }
@@ -1666,8 +1673,8 @@ static u32 md_find_tracks( MDSTATE *md, const u8 *pos, const u8 *end, u32 max )
             continue;
         }
         size = BE32( pos + 4 );
-        if ( size > (u32)(end - pos) - 8 ) {
-            size = (u32)(end - pos) - 8;    /* a chunk longer than the file is cut to it */
+        if ( size > (uint32_t)(end - pos) - 8 ) {
+            size = (uint32_t)(end - pos) - 8; /* a chunk longer than the file is cut to it */
         }
         if ( mem_cmp( pos, "MTrk", 4 ) == 0 ) {
             if ( md->track != NULL ) {
@@ -1685,8 +1692,9 @@ static int md_open( SRC *src, const DECOPT *opt, DECINFO *info, void **state )
 {
     MDSTATE *md;
     MDTRACK *trk;
-    u32 len, smf = 0, smf_len, hlen, division, fps, tpf, rate, at, frac, count, i;
-    const u8 *hdr;
+    uint32_t len, smf = 0, smf_len, hlen, division, fps, tpf, rate, at, frac;
+    unsigned int count, i;
+    const uint8_t *hdr;
     int riff = 0, pos, rc;
 
     *state = NULL;
@@ -1703,7 +1711,7 @@ static int md_open( SRC *src, const DECOPT *opt, DECINFO *info, void **state )
         md_close( md );
         return DE_FORMAT;
     }
-    md->file = (u8 *)try_alloc( len );
+    md->file = (uint8_t *)try_alloc( len );
     if ( md->file == NULL ) {
         md_close( md );
         return DE_NOMEM;
@@ -1732,7 +1740,7 @@ static int md_open( SRC *src, const DECOPT *opt, DECINFO *info, void **state )
             md_close( md );
             return DE_FORMAT;
         }
-        smf = (u32)pos;
+        smf = (uint32_t)pos;
         smf_len = md->file_len - smf;
     }
     hdr = md->file + smf;
@@ -1816,7 +1824,7 @@ static int md_open( SRC *src, const DECOPT *opt, DECINFO *info, void **state )
         break;
     default:
         md->voices = opt->fast ? 12 : 24;
-        md->out_ch = (u8)(opt->mono ? 1 : 2);
+        md->out_ch = (uint8_t)(opt->mono ? 1 : 2);
         rc = syn_open( md );
         if ( rc != DE_OK ) {
             md_close( md );
@@ -1856,7 +1864,7 @@ static int md_open( SRC *src, const DECOPT *opt, DECINFO *info, void **state )
             count++;
         }
     }
-    info->file_channels = (u8)(count ? count : 1);
+    info->file_channels = (uint8_t)(count ? count : 1);
     info->bits = 0;
     info->flags = DIF_SEEK;
     if ( md->synth != SYN_SOFT ) {

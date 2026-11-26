@@ -86,7 +86,7 @@
 
 #define ETH_HDR      14
 
-static const u8 nb_group[6] = { 0x03, 0x00, 0x00, 0x00, 0x00, 0x01 };
+static const uint8_t nb_group[6] = { 0x03, 0x00, 0x00, 0x00, 0x00, 0x01 };
 
 /* times, in ticks (18.2 a second) */
 #define T1           18                 /* an I-frame or SABME unanswered */
@@ -107,23 +107,23 @@ static const u8 nb_group[6] = { 0x03, 0x00, 0x00, 0x00, 0x00, 0x01 };
 #define LS_UP        2
 
 typedef struct {
-    u8   used;
-    u8   state;                         /* LS_* */
-    u8   mac[6];
-    u8   vs, vr;                        /* next N(S) to send, next expected */
-    u8   unacked;                       /* an I-frame is out */
-    u8   busy;                          /* they said RNR */
-    u8   we_busy;                       /* we said RNR */
-    u8   ackowed;                       /* an RR is owed for what came in */
-    u8   tries;
-    u32  t1_at;
-    u8   ctl[CTLQ][NB_IHDR];            /* session control frames to send */
-    u8   ctl_head, ctl_n;
-    u8   rr;                            /* round robin over the sessions */
-    u8   frame[ETH_HDR + 4 + NB_IHDR + DATA_MAX];   /* the I-frame out */
-    u32  flen;
-    u8   lastsess;                      /* the session whose piece it carries */
-    u8   lastend;                       /* ...and it was a DATA_ONLY_LAST */
+    unsigned char used;
+    unsigned char state;                /* LS_* */
+    uint8_t  mac[6];
+    uint8_t  vs, vr;                    /* next N(S) to send, next expected */
+    unsigned char unacked;              /* an I-frame is out */
+    unsigned char busy;                 /* they said RNR */
+    unsigned char we_busy;              /* we said RNR */
+    unsigned char ackowed;              /* an RR is owed for what came in */
+    unsigned char tries;
+    uint32_t t1_at;
+    uint8_t  ctl[CTLQ][NB_IHDR];        /* session control frames to send */
+    unsigned char ctl_head, ctl_n;
+    unsigned char rr;                   /* round robin over the sessions */
+    uint8_t  frame[ETH_HDR + 4 + NB_IHDR + DATA_MAX]; /* the I-frame out */
+    unsigned int flen;
+    unsigned char lastsess;             /* the session whose piece it carries */
+    unsigned char lastend;              /* ...and it was a DATA_ONLY_LAST */
 } LINK;
 
 /* a session's step while it is NBX_CALLING or NBX_LISTEN */
@@ -136,112 +136,112 @@ typedef struct {
 #define SESS_MAX     4
 
 typedef struct {
-    u8   state;                         /* NBX_* */
-    u8   step;                          /* SS_* */
-    u8   err;                           /* NBE_* */
-    u8   lsn, rsn;                      /* our session number and theirs */
-    u8   suffix;                        /* LISTEN: which of our names */
-    u8   link;                          /* links[] */
-    u8   mac[6];
-    u8   rname[16];                     /* the other end's name, as sent */
-    u16  qcorr;                         /* our NAME_QUERY's correlator */
-    u16  icorr;                         /* NAME_RECOGNIZED's: SESSION_INIT's xmit */
-    u16  dcorr;                         /* the DATA_ONLY_LAST out */
-    u16  peer_max;                      /* the most data in one piece they take */
-    u8   tries;
-    u8   sent_si;                       /* our SESSION_INITIALIZE has gone */
-    u32  at;                            /* the next retry / when to give up */
-    u32  started;
-    u8  *rx;                            /* a message arriving, or arrived */
-    u32  rxlen, rxoff;
-    u8   rxdone;                        /* rx holds a whole message */
-    u8  *tx;                            /* the message going */
-    u32  txlen, txoff;
-    u8   txbusy;
-    u8   txlastout;                     /* its last piece is on the link */
-    u8   txhold;                        /* NO_RECEIVE: wait for them */
-    u8   txresync;
-    u32  txbuilt;                       /* NB_SENDP parts so far */
+    unsigned char state;                /* NBX_* */
+    unsigned char step;                 /* SS_* */
+    unsigned char err;                  /* NBE_* */
+    uint8_t  lsn, rsn;                  /* our session number and theirs */
+    uint8_t  suffix;                    /* LISTEN: which of our names */
+    unsigned char link;                 /* links[] */
+    uint8_t  mac[6];
+    uint8_t  rname[16];                 /* the other end's name, as sent */
+    uint16_t qcorr;                     /* our NAME_QUERY's correlator */
+    uint16_t icorr;                     /* NAME_RECOGNIZED's: SESSION_INIT's xmit */
+    uint16_t dcorr;                     /* the DATA_ONLY_LAST out */
+    uint16_t peer_max;                  /* the most data in one piece they take */
+    unsigned char tries;
+    unsigned char sent_si;              /* our SESSION_INITIALIZE has gone */
+    uint32_t at;                        /* the next retry / when to give up */
+    uint32_t started;
+    uint8_t *rx;                        /* a message arriving, or arrived */
+    unsigned int rxlen, rxoff;
+    unsigned char rxdone;               /* rx holds a whole message */
+    uint8_t *tx;                        /* the message going */
+    unsigned int txlen, txoff;
+    unsigned char txbusy;
+    unsigned char txlastout;            /* its last piece is on the link */
+    unsigned char txhold;               /* NO_RECEIVE: wait for them */
+    unsigned char txresync;
+    unsigned int txbuilt;               /* NB_SENDP parts so far */
 } SESS;
 
 static LINK links[LINK_MAX];
 static SESS sess[SESS_MAX];
 
-static u8   my_mac[6];
-static u8   my_names[2][16];            /* NAME<00>, NAME<20>, as on the wire */
-static char my_name[16];                /* ASCIIZ */
-static char card_name[32];
-static u8   name_up;
-static u8   name_conflict;
-static u16  add_corr;
-static u32  bindno;                     /* the card's NIC_BIND for SAP F0 */
-static u16  corr_next = 1;
-static u8   lsn_next = 1;
-static u8   running;
-static volatile u8 pumping;
+static uint8_t  my_mac[6];
+static uint8_t  my_names[2][16];        /* NAME<00>, NAME<20>, as on the wire */
+static char     my_name[16];            /* ASCIIZ */
+static char     card_name[32];
+static unsigned char name_up;
+static unsigned char name_conflict;
+static uint16_t add_corr;
+static uint32_t bindno;                 /* the card's NIC_BIND for SAP F0 */
+static uint16_t corr_next = 1;
+static uint8_t  lsn_next = 1;
+static unsigned char running;
+static volatile unsigned char pumping;
 
-static u8   tx_frame[ETH_HDR + 1500];
-static u8   rx_buf[4 + 1536];
+static uint8_t tx_frame[ETH_HDR + 1500];
+static uint8_t rx_buf[4 + 1536];
 
 /* the one FIND.NAME going */
 static struct {
-    u8   active;
-    u8   tries;
-    u16  corr;
-    u8   name[16];
-    u32  at;
-    u32  state;
-    u8   mac[6];
+    unsigned char active;
+    unsigned char tries;
+    uint16_t corr;
+    uint8_t  name[16];
+    uint32_t at;
+    unsigned int state;
+    uint8_t  mac[6];
 } find;
 
 /* ---------------------------------------------------------------- */
 /* what a library would have supplied                                */
 /* ---------------------------------------------------------------- */
 
-static void mem_copy( void *to, const void *from, u32 len )
+static void mem_copy( void *to, const void *from, unsigned int len )
 {
-    u8 *dst = (u8 *)to;
-    const u8 *src = (const u8 *)from;
+    uint8_t *dst = (uint8_t *)to;
+    const uint8_t *src = (const uint8_t *)from;
     while ( len-- ) *dst++ = *src++;
 }
 
-static void mem_zero( void *to, u32 len )
+static void mem_zero( void *to, unsigned int len )
 {
-    u8 *dst = (u8 *)to;
+    uint8_t *dst = (uint8_t *)to;
     while ( len-- ) *dst++ = 0;
 }
 
-static int mem_same( const void *one, const void *two, u32 len )
+static int mem_same( const void *one, const void *two, unsigned int len )
 {
-    const u8 *a = (const u8 *)one, *b = (const u8 *)two;
+    const uint8_t *a = (const uint8_t *)one, *b = (const uint8_t *)two;
     while ( len-- ) if ( *a++ != *b++ ) return 0;
     return 1;
 }
 
-static void str_copy( char *to, const char *from, u32 max )
+static void str_copy( char *to, const char *from, unsigned int max )
 {
-    u32 i;
+    unsigned int i;
     for ( i = 0; i + 1 < max && from[i]; i++ ) to[i] = from[i];
     to[i] = 0;
 }
 
-static u8 upper( u8 ch )
+static uint8_t upper( uint8_t ch )
 {
-    return ( ch >= 'a' && ch <= 'z' ) ? (u8)( ch - 32 ) : ch;
+    return ( ch >= 'a' && ch <= 'z' ) ? (uint8_t)( ch - 32 ) : ch;
 }
 
-static void put16le( u8 *buf, u16 value )
+static void put16le( uint8_t *buf, uint16_t value )
 {
-    buf[0] = (u8)value;
-    buf[1] = (u8)( value >> 8 );
+    buf[0] = (uint8_t)value;
+    buf[1] = (uint8_t)( value >> 8 );
 }
 
-static u16 get16le( const u8 *buf )
+static uint16_t get16le( const uint8_t *buf )
 {
-    return (u16)( buf[0] | ( (u16)buf[1] << 8 ) );
+    return (uint16_t)( buf[0] | ( (uint16_t)buf[1] << 8 ) );
 }
 
-static u16 new_corr( void )
+static uint16_t new_corr( void )
 {
     if ( ++corr_next == 0 ) corr_next = 1;
     return corr_next;
@@ -249,20 +249,20 @@ static u16 new_corr( void )
 
 /* a NetBIOS name as it goes on the wire: 15 characters, upper case,
    padded with spaces, and the service in the 16th byte */
-static void nb_raw( u8 *out, const char *name, u8 suffix )
+static void nb_raw( uint8_t *out, const char *name, uint8_t suffix )
 {
-    u32 i;
+    unsigned int i;
     int ended = 0;
 
     for ( i = 0; i < 15; i++ ) {
         if ( !ended && name[i] == 0 ) ended = 1;
-        out[i] = ended ? (u8)' ' : upper( (u8)name[i] );
+        out[i] = ended ? (uint8_t)' ' : upper( (uint8_t)name[i] );
     }
     out[15] = suffix;
 }
 
 /* is the name on the wire one of ours?  -1 if not, else which */
-static int nb_ours( const u8 *raw )
+static int nb_ours( const uint8_t *raw )
 {
     int n, i;
 
@@ -278,25 +278,25 @@ static int nb_ours( const u8 *raw )
 /* the card                                                          */
 /* ---------------------------------------------------------------- */
 
-static void nic_send( const u8 *frame, u32 len )
+static void nic_send( const uint8_t *frame, unsigned int len )
 {
-    u32 answer;
+    uint32_t answer;
     nds_niccall( 0, NIC_SEND, (void *)frame, len, &answer );
 }
 
 /* an 802.3 frame with an LLC header: DSAP F0, the SSAP given, the
    control bytes, then the information */
-static void llc_send( const u8 *dst, u8 ssap, const u8 *ctl, u32 ctlen,
-                      const u8 *info, u32 ilen )
+static void llc_send( const uint8_t *dst, uint8_t ssap, const uint8_t *ctl, unsigned int ctlen,
+                      const uint8_t *info, unsigned int ilen )
 {
-    u8 *f = tx_frame;
-    u32 llen = 2 + ctlen + ilen;
+    uint8_t *f = tx_frame;
+    unsigned int llen = 2 + ctlen + ilen;
 
     if ( ETH_HDR + llen > sizeof( tx_frame ) ) return;
     mem_copy( f, dst, 6 );
     mem_copy( f + 6, my_mac, 6 );
-    f[12] = (u8)( llen >> 8 );
-    f[13] = (u8)llen;
+    f[12] = (uint8_t)( llen >> 8 );
+    f[13] = (uint8_t)llen;
     f[14] = SAP_NB;
     f[15] = ssap;
     mem_copy( f + 16, ctl, ctlen );
@@ -304,24 +304,24 @@ static void llc_send( const u8 *dst, u8 ssap, const u8 *ctl, u32 ctlen,
     nic_send( f, ETH_HDR + llen );
 }
 
-static void u_send( const u8 *dst, u8 ssap, u8 ctl, const u8 *info, u32 ilen )
+static void u_send( const uint8_t *dst, uint8_t ssap, uint8_t ctl, const uint8_t *info, unsigned int ilen )
 {
     llc_send( dst, ssap, &ctl, 1, info, ilen );
 }
 
-static void s_send( const u8 *dst, u8 ssap, u8 type, u8 nr, u8 pf )
+static void s_send( const uint8_t *dst, uint8_t ssap, uint8_t type, uint8_t nr, uint8_t pf )
 {
-    u8 ctl[2];
+    uint8_t ctl[2];
     ctl[0] = type;
-    ctl[1] = (u8)( ( nr << 1 ) | ( pf ? 1 : 0 ) );
+    ctl[1] = (uint8_t)( ( nr << 1 ) | ( pf ? 1 : 0 ) );
     llc_send( dst, ssap, ctl, 2, NULL, 0 );
 }
 
 /* a UI frame: the 44-byte NetBIOS header and the names */
-static void ui_send( const u8 *dst, u8 cmd, u8 d1, u16 d2, u16 xc, u16 rc,
-                     const u8 *dname, const u8 *sname )
+static void ui_send( const uint8_t *dst, uint8_t cmd, uint8_t d1, uint16_t d2, uint16_t xc, uint16_t rc,
+                     const uint8_t *dname, const uint8_t *sname )
 {
-    u8 h[NB_UIHDR];
+    uint8_t h[NB_UIHDR];
 
     put16le( h, NB_UIHDR );
     h[2] = 0xFF;
@@ -337,7 +337,7 @@ static void ui_send( const u8 *dst, u8 cmd, u8 d1, u16 d2, u16 xc, u16 rc,
 }
 
 /* a session frame's 14-byte header */
-static void ihdr( u8 *h, u8 cmd, u8 d1, u16 d2, u16 xc, u16 rc, u8 dnum, u8 snum )
+static void ihdr( uint8_t *h, uint8_t cmd, uint8_t d1, uint16_t d2, uint16_t xc, uint16_t rc, uint8_t dnum, uint8_t snum )
 {
     put16le( h, NB_IHDR );
     h[2] = 0xFF;
@@ -355,7 +355,7 @@ static void ihdr( u8 *h, u8 cmd, u8 d1, u16 d2, u16 xc, u16 rc, u8 dnum, u8 snum
 /* the links (LLC type 2)                                            */
 /* ---------------------------------------------------------------- */
 
-static LINK *link_find( const u8 *mac )
+static LINK *link_find( const uint8_t *mac )
 {
     int i;
     for ( i = 0; i < LINK_MAX; i++ ) {
@@ -364,7 +364,7 @@ static LINK *link_find( const u8 *mac )
     return NULL;
 }
 
-static LINK *link_new( const u8 *mac )
+static LINK *link_new( const uint8_t *mac )
 {
     int i;
     for ( i = 0; i < LINK_MAX; i++ ) {
@@ -378,9 +378,9 @@ static LINK *link_new( const u8 *mac )
     return NULL;
 }
 
-static u8 link_index( LINK *l )
+static unsigned char link_index( LINK *l )
 {
-    return (u8)( l - links );
+    return (unsigned char)( l - links );
 }
 
 static void sess_buffers_free( SESS *s );
@@ -389,7 +389,7 @@ static void sess_buffers_free( SESS *s );
 static void link_down( LINK *l )
 {
     int i;
-    u8 idx = link_index( l );
+    unsigned char idx = link_index( l );
 
     for ( i = 0; i < SESS_MAX; i++ ) {
         SESS *s = &sess[i];
@@ -419,47 +419,47 @@ static void link_reset( LINK *l )
 }
 
 /* a session control frame, to go when the link is free */
-static void ctl_queue( LINK *l, const u8 *h )
+static void ctl_queue( LINK *l, const uint8_t *h )
 {
-    u8 slot;
+    unsigned char slot;
     if ( l->ctl_n == CTLQ ) return;     /* full: the frame is lost, as on a wire */
-    slot = (u8)( ( l->ctl_head + l->ctl_n ) % CTLQ );
+    slot = (unsigned char)( ( l->ctl_head + l->ctl_n ) % CTLQ );
     mem_copy( l->ctl[slot], h, NB_IHDR );
     l->ctl_n++;
 }
 
 /* send the I-frame built in l->frame (its N(S) and N(R) set now) */
-static void link_put_i( LINK *l, u8 pf )
+static void link_put_i( LINK *l, uint8_t pf )
 {
-    l->frame[16] = (u8)( l->vs << 1 );
-    l->frame[17] = (u8)( ( l->vr << 1 ) | ( pf ? 1 : 0 ) );
+    l->frame[16] = (uint8_t)( l->vs << 1 );
+    l->frame[17] = (uint8_t)( ( l->vr << 1 ) | ( pf ? 1 : 0 ) );
     nic_send( l->frame, l->flen );
     l->ackowed = 0;                     /* N(R) went with it */
 }
 
-static void link_send_i( LINK *l, const u8 *h, const u8 *data, u32 dlen )
+static void link_send_i( LINK *l, const uint8_t *h, const uint8_t *data, unsigned int dlen )
 {
-    u8 *f = l->frame;
-    u32 llen = 4 + NB_IHDR + dlen;
+    uint8_t *f = l->frame;
+    unsigned int llen = 4 + NB_IHDR + dlen;
 
     mem_copy( f, l->mac, 6 );
     mem_copy( f + 6, my_mac, 6 );
-    f[12] = (u8)( llen >> 8 );
-    f[13] = (u8)llen;
+    f[12] = (uint8_t)( llen >> 8 );
+    f[13] = (uint8_t)llen;
     f[14] = SAP_NB;
     f[15] = SAP_NB;                     /* a command */
     mem_copy( f + 18, h, NB_IHDR );
     if ( dlen ) mem_copy( f + 18 + NB_IHDR, data, dlen );
     l->flen = ETH_HDR + llen;
     link_put_i( l, 0 );
-    l->vs = (u8)( ( l->vs + 1 ) & 0x7F );
+    l->vs = (uint8_t)( ( l->vs + 1 ) & 0x7F );
     l->unacked = 1;
     l->tries = 0;
     l->t1_at = nds_ticks() + T1;
 }
 
 /* N(R) came: with one frame out, it is acknowledged when N(R) is V(S) */
-static void link_ack( LINK *l, u8 nr )
+static void link_ack( LINK *l, uint8_t nr )
 {
     if ( !l->unacked || nr != l->vs ) return;
     l->unacked = 0;
@@ -478,15 +478,15 @@ static void link_ack( LINK *l, u8 nr )
    then the next piece of a session's message, the sessions in turn */
 static void link_kick( LINK *l )
 {
-    u8 h[NB_IHDR];
+    uint8_t h[NB_IHDR];
     int n, i;
-    u8 idx = link_index( l );
+    unsigned char idx = link_index( l );
 
     if ( l->state != LS_UP || l->unacked || l->busy ) return;
 
     if ( l->ctl_n ) {
         mem_copy( h, l->ctl[l->ctl_head], NB_IHDR );
-        l->ctl_head = (u8)( ( l->ctl_head + 1 ) % CTLQ );
+        l->ctl_head = (unsigned char)( ( l->ctl_head + 1 ) % CTLQ );
         l->ctl_n--;
         l->lastend = 0;
         link_send_i( l, h, NULL, 0 );
@@ -494,7 +494,7 @@ static void link_kick( LINK *l )
     }
     for ( n = 0; n < SESS_MAX; n++ ) {
         SESS *s;
-        u32 chunk;
+        unsigned int chunk;
         int last;
 
         i = ( l->rr + n ) % SESS_MAX;
@@ -505,14 +505,14 @@ static void link_kick( LINK *l )
         last = ( s->txoff + chunk == s->txlen );
         if ( last ) s->dcorr = new_corr();
         ihdr( h, last ? NB_DATA_ONLY_LAST : NB_DATA_FIRST_MIDDLE, 0,
-              (u16)( s->txresync ? 1 : 0 ), 0, last ? s->dcorr : 0, s->rsn, s->lsn );
+              (uint16_t)( s->txresync ? 1 : 0 ), 0, last ? s->dcorr : 0, s->rsn, s->lsn );
         s->txresync = 0;
-        l->lastsess = (u8)i;
-        l->lastend = (u8)last;
+        l->lastsess = (unsigned char)i;
+        l->lastend = (unsigned char)last;
         link_send_i( l, h, s->tx + s->txoff, chunk );
         s->txoff += chunk;
         if ( last ) s->txlastout = 1;
-        l->rr = (u8)( ( i + 1 ) % SESS_MAX );
+        l->rr = (unsigned char)( ( i + 1 ) % SESS_MAX );
         return;
     }
 }
@@ -521,7 +521,7 @@ static void link_kick( LINK *l )
    one that comes straight after the link, and ignores one a second late */
 static void caller_si( LINK *l, SESS *s )
 {
-    u8 h[NB_IHDR];
+    uint8_t h[NB_IHDR];
 
     s->step = SS_INIT;
     if ( s->sent_si ) return;
@@ -535,7 +535,7 @@ static void caller_si( LINK *l, SESS *s )
 static void link_is_up( LINK *l )
 {
     int i;
-    u8 idx = link_index( l );
+    unsigned char idx = link_index( l );
 
     for ( i = 0; i < SESS_MAX; i++ ) {
         SESS *s = &sess[i];
@@ -547,7 +547,7 @@ static void link_is_up( LINK *l )
 /* the sessions                                                      */
 /* ---------------------------------------------------------------- */
 
-static SESS *sess_by_lsn( u8 lsn )
+static SESS *sess_by_lsn( uint8_t lsn )
 {
     int i;
     for ( i = 0; i < SESS_MAX; i++ ) {
@@ -556,12 +556,12 @@ static SESS *sess_by_lsn( u8 lsn )
     return NULL;
 }
 
-static u8 lsn_alloc( void )
+static uint8_t lsn_alloc( void )
 {
     int tries;
     for ( tries = 0; tries < 254; tries++ ) {
-        u8 n = lsn_next;
-        lsn_next = (u8)( lsn_next == 254 ? 1 : lsn_next + 1 );
+        uint8_t n = lsn_next;
+        lsn_next = (uint8_t)( lsn_next == 254 ? 1 : lsn_next + 1 );
         if ( sess_by_lsn( n ) == NULL ) return n;
     }
     return 1;
@@ -574,14 +574,14 @@ static void sess_buffers_free( SESS *s )
 }
 
 /* a session frame inside an I-frame.  0: no room for it now (RNR) */
-static int sess_frame( LINK *l, const u8 *p, u32 plen )
+static int sess_frame( LINK *l, const uint8_t *p, unsigned int plen )
 {
-    u8 cmd, d1, dnum, snum;
-    u16 d2, xc, rc;
-    const u8 *data;
-    u32 dlen;
+    uint8_t cmd, d1, dnum, snum;
+    uint16_t d2, xc, rc;
+    const uint8_t *data;
+    unsigned int dlen;
     SESS *s;
-    u8 h[NB_IHDR];
+    uint8_t h[NB_IHDR];
 
     if ( plen < NB_IHDR || p[2] != 0xFF || p[3] != 0xEF ) return 1;
     cmd = p[4];
@@ -683,10 +683,10 @@ static int sess_frame( LINK *l, const u8 *p, u32 plen )
 /* frames in                                                         */
 /* ---------------------------------------------------------------- */
 
-static void ui_in( const u8 *src, const u8 *p, u32 plen )
+static void ui_in( const uint8_t *src, const uint8_t *p, unsigned int plen )
 {
-    u8 cmd, lsn;
-    u16 d2, xc, rc;
+    uint8_t cmd, lsn;
+    uint16_t d2, xc, rc;
     int n, i;
     SESS *s;
 
@@ -710,7 +710,7 @@ static void ui_in( const u8 *src, const u8 *p, u32 plen )
         if ( !name_up ) break;
         n = nb_ours( p + 12 );
         if ( n < 0 ) break;
-        lsn = (u8)d2;
+        lsn = (uint8_t)d2;
         if ( lsn == 0 ) {               /* FIND.NAME: just say it is here */
             ui_send( src, NB_NAME_RECOGNIZED, 0, 0, rc, 0, p + 28, my_names[n] );
             break;
@@ -756,12 +756,12 @@ static void ui_in( const u8 *src, const u8 *p, u32 plen )
 
             s = &sess[i];
             if ( s->state != NBX_CALLING || s->step != SS_QUERY || xc != s->qcorr ) continue;
-            if ( (u8)d2 == 0x00 || (u8)d2 == 0xFF ) {
+            if ( (uint8_t)d2 == 0x00 || (uint8_t)d2 == 0xFF ) {
                 s->state = NBX_FAIL;
                 s->err = NBE_NOLISTEN;
                 break;
             }
-            s->rsn = (u8)d2;
+            s->rsn = (uint8_t)d2;
             s->icorr = rc;
             mem_copy( s->mac, src, 6 );
             l = link_find( src );
@@ -785,26 +785,26 @@ static void ui_in( const u8 *src, const u8 *p, u32 plen )
     }
 }
 
-static void frame_in( const u8 *f, u32 len )
+static void frame_in( const uint8_t *f, unsigned int len )
 {
-    const u8 *llc, *src = f + 6;
-    u32 llen;
-    u8 ssap, ctl, pf, nr, cr;
+    const uint8_t *llc, *src = f + 6;
+    unsigned int llen;
+    uint8_t ssap, ctl, pf, nr, cr;
     LINK *l;
 
     if ( len < ETH_HDR + 3 ) return;
-    llen = ( (u32)f[12] << 8 ) | f[13];
+    llen = ( (unsigned int)f[12] << 8 ) | f[13];
     if ( llen > 1500 ) return;          /* not 802.3 */
     if ( llen > len - ETH_HDR ) llen = len - ETH_HDR;
     if ( llen < 3 ) return;
     llc = f + ETH_HDR;
     if ( llc[0] != SAP_NB ) return;
     ssap = llc[1];
-    cr = (u8)( ssap & SAP_RESP );
+    cr = (uint8_t)( ssap & SAP_RESP );
     ctl = llc[2];
 
     if ( ( ctl & 3 ) == 3 ) {           /* U frame */
-        pf = (u8)( ctl & U_PF );
+        pf = (uint8_t)( ctl & U_PF );
         switch ( ctl & ~U_PF ) {
         case U_UI:
             ui_in( src, llc + 3, llen - 3 );
@@ -814,10 +814,10 @@ static void frame_in( const u8 *f, u32 len )
             l = link_find( src );
             if ( l ) link_down( l );    /* a restart: the old sessions are gone */
             l = link_new( src );
-            if ( l == NULL ) { u_send( src, SAP_NB | SAP_RESP, (u8)( U_DM | pf ), NULL, 0 ); return; }
+            if ( l == NULL ) { u_send( src, SAP_NB | SAP_RESP, (uint8_t)( U_DM | pf ), NULL, 0 ); return; }
             link_reset( l );
             l->state = LS_UP;
-            u_send( src, SAP_NB | SAP_RESP, (u8)( U_UA | pf ), NULL, 0 );
+            u_send( src, SAP_NB | SAP_RESP, (uint8_t)( U_UA | pf ), NULL, 0 );
             link_is_up( l );
             return;
         case U_UA:
@@ -830,7 +830,7 @@ static void frame_in( const u8 *f, u32 len )
             return;
         case U_DISC:
             if ( cr ) return;
-            u_send( src, SAP_NB | SAP_RESP, (u8)( ( link_find( src ) ? U_UA : U_DM ) | pf ), NULL, 0 );
+            u_send( src, SAP_NB | SAP_RESP, (uint8_t)( ( link_find( src ) ? U_UA : U_DM ) | pf ), NULL, 0 );
             l = link_find( src );
             if ( l ) link_down( l );
             return;
@@ -841,26 +841,26 @@ static void frame_in( const u8 *f, u32 len )
             return;
         case U_XID:
             if ( !cr ) {
-                static const u8 xid[3] = { 0x81, 0x03, 0x02 };   /* types 1 and 2, window 1 */
-                u_send( src, SAP_NB | SAP_RESP, (u8)( U_XID | pf ), xid, 3 );
+                static const uint8_t xid[3] = { 0x81, 0x03, 0x02 }; /* types 1 and 2, window 1 */
+                u_send( src, SAP_NB | SAP_RESP, (uint8_t)( U_XID | pf ), xid, 3 );
             }
             return;
         case U_TEST:
-            if ( !cr ) u_send( src, SAP_NB | SAP_RESP, (u8)( U_TEST | pf ), llc + 3, llen - 3 );
+            if ( !cr ) u_send( src, SAP_NB | SAP_RESP, (uint8_t)( U_TEST | pf ), llc + 3, llen - 3 );
             return;
         }
         return;
     }
 
     if ( llen < 4 ) return;
-    nr = (u8)( llc[3] >> 1 );
-    pf = (u8)( llc[3] & 1 );
+    nr = (uint8_t)( llc[3] >> 1 );
+    pf = (uint8_t)( llc[3] & 1 );
     l = link_find( src );
 
     if ( ( ctl & 1 ) == 0 ) {           /* I frame */
-        u8 ns = (u8)( ctl >> 1 );
+        uint8_t ns = (uint8_t)( ctl >> 1 );
         if ( l == NULL || l->state != LS_UP ) {
-            u_send( src, SAP_NB | SAP_RESP, (u8)( U_DM | ( pf ? U_PF : 0 ) ), NULL, 0 );
+            u_send( src, SAP_NB | SAP_RESP, (uint8_t)( U_DM | ( pf ? U_PF : 0 ) ), NULL, 0 );
             return;
         }
         link_ack( l, nr );
@@ -873,7 +873,7 @@ static void frame_in( const u8 *f, u32 len )
             s_send( src, SAP_NB | SAP_RESP, S_RNR, l->vr, pf );
             return;
         }
-        l->vr = (u8)( ( l->vr + 1 ) & 0x7F );
+        l->vr = (uint8_t)( ( l->vr + 1 ) & 0x7F );
         if ( pf ) s_send( src, SAP_NB | SAP_RESP, S_RR, l->vr, 1 );
         else l->ackowed = 1;
         return;
@@ -909,11 +909,11 @@ static void frame_in( const u8 *f, u32 len )
 
 static void pump( void )
 {
-    u32 answer;
+    uint32_t answer;
     int budget = 32, i;
 
     while ( budget-- > 0 ) {
-        *(u32 *)rx_buf = bindno;
+        *(uint32_t *)rx_buf = bindno;
         if ( nds_niccall( 0, NIC_RECVB, rx_buf, sizeof( rx_buf ), &answer ) != 0 || answer == 0 ) break;
         if ( answer > sizeof( rx_buf ) - 4 ) answer = sizeof( rx_buf ) - 4;
         frame_in( rx_buf + 4, answer );
@@ -931,7 +931,7 @@ static void pump( void )
 
 static void timers( void )
 {
-    u32 now = nds_ticks();
+    uint32_t now = nds_ticks();
     int i;
 
     for ( i = 0; i < LINK_MAX; i++ ) {
@@ -979,7 +979,7 @@ static void timers( void )
 /* the calls (nd_call)                                               */
 /* ---------------------------------------------------------------- */
 
-static SESS *sess_by_handle( u32 handle )
+static SESS *sess_by_handle( uint32_t handle )
 {
     if ( handle < 1 || handle > SESS_MAX ) return NULL;
     if ( sess[handle - 1].state == NBX_FREE ) return NULL;
@@ -994,8 +994,8 @@ static SESS *sess_open( void )
         SESS *s = &sess[i];
         if ( s->state != NBX_FREE ) continue;
         mem_zero( s, sizeof( SESS ) );
-        s->rx = (u8 *)nds_alloc( NB_MSGMAX );
-        s->tx = (u8 *)nds_alloc( NB_MSGMAX );
+        s->rx = (uint8_t *)nds_alloc( NB_MSGMAX );
+        s->tx = (uint8_t *)nds_alloc( NB_MSGMAX );
         if ( s->rx == NULL || s->tx == NULL ) { sess_buffers_free( s ); return NULL; }
         s->lsn = lsn_alloc();
         s->started = nds_ticks();
@@ -1006,12 +1006,12 @@ static SESS *sess_open( void )
 
 static int name_ok( const char *name )
 {
-    u32 n;
+    unsigned int n;
     for ( n = 0; name[n]; n++ ) if ( n >= 15 ) return 0;
     return n > 0;
 }
 
-static int do_ifstat( void *buf, u32 len, u32 *answer )
+static int do_ifstat( void *buf, uint32_t len, uint32_t *answer )
 {
     NB_IF *info = (NB_IF *)buf;
     int i;
@@ -1027,10 +1027,10 @@ static int do_ifstat( void *buf, u32 len, u32 *answer )
     return 0;
 }
 
-static int do_find( void *buf, u32 len, u32 *answer )
+static int do_find( void *buf, uint32_t len, uint32_t *answer )
 {
     NB_FINDREQ *req = (NB_FINDREQ *)buf;
-    u8 raw[16];
+    uint8_t raw[16];
 
     if ( len < NBFIND_LEN ) return ERR_BADLEN;
     req->name[15] = 0;
@@ -1058,7 +1058,7 @@ static int do_find( void *buf, u32 len, u32 *answer )
     return 0;
 }
 
-static int do_call( void *buf, u32 len, u32 *answer )
+static int do_call( void *buf, uint32_t len, uint32_t *answer )
 {
     NB_NAMEREQ *req = (NB_NAMEREQ *)buf;
     SESS *s;
@@ -1075,11 +1075,11 @@ static int do_call( void *buf, u32 len, u32 *answer )
     s->qcorr = new_corr();
     s->at = nds_ticks() + T_QUERY;
     ui_send( nb_group, NB_NAME_QUERY, 0, s->lsn, 0, s->qcorr, s->rname, my_names[0] );
-    *answer = (u32)( s - sess ) + 1;
+    *answer = (uint32_t)( s - sess ) + 1;
     return 0;
 }
 
-static int do_listen( void *buf, u32 len, u32 *answer )
+static int do_listen( void *buf, uint32_t len, uint32_t *answer )
 {
     NB_NAMEREQ *req = (NB_NAMEREQ *)buf;
     SESS *s;
@@ -1092,12 +1092,12 @@ static int do_listen( void *buf, u32 len, u32 *answer )
     s->state = NBX_LISTEN;
     s->step = SS_NONE;
     s->suffix = req->suffix;
-    *answer = (u32)( s - sess ) + 1;
+    *answer = (uint32_t)( s - sess ) + 1;
     return 0;
 }
 
 /* NB_SENDP (part) and NB_SEND (the last part, and go) */
-static int do_send( void *buf, u32 len, u32 *answer, int part )
+static int do_send( void *buf, uint32_t len, uint32_t *answer, int part )
 {
     NB_IO *io = (NB_IO *)buf;
     SESS *s;
@@ -1109,7 +1109,7 @@ static int do_send( void *buf, u32 len, u32 *answer, int part )
     if ( s->state != NBX_UP ) return ERR_GENERAL;
     if ( s->txbusy ) { *answer = 0; return 0; }
     if ( s->txbuilt + io->len > NB_MSGMAX ) { s->txbuilt = 0; return ERR_BADLEN; }
-    mem_copy( s->tx + s->txbuilt, (u8 *)buf + NBIO_HDR, io->len );
+    mem_copy( s->tx + s->txbuilt, (uint8_t *)buf + NBIO_HDR, io->len );
     s->txbuilt += io->len;
     if ( part ) { *answer = io->len; return 0; }
     s->txlen = s->txbuilt;
@@ -1123,11 +1123,11 @@ static int do_send( void *buf, u32 len, u32 *answer, int part )
     return 0;
 }
 
-static int do_recv( void *buf, u32 len, u32 *answer )
+static int do_recv( void *buf, uint32_t len, uint32_t *answer )
 {
     NB_IO *io = (NB_IO *)buf;
     SESS *s;
-    u32 n;
+    unsigned int n;
 
     if ( len < NBIO_HDR ) return ERR_BADLEN;
     s = sess_by_handle( io->handle );
@@ -1135,7 +1135,7 @@ static int do_recv( void *buf, u32 len, u32 *answer )
     if ( !s->rxdone ) { io->len = 0; *answer = 0; return 0; }
     n = s->rxlen - s->rxoff;
     if ( n > len - NBIO_HDR ) n = len - NBIO_HDR;
-    mem_copy( (u8 *)buf + NBIO_HDR, s->rx + s->rxoff, n );
+    mem_copy( (uint8_t *)buf + NBIO_HDR, s->rx + s->rxoff, n );
     s->rxoff += n;
     if ( s->rxoff == s->rxlen ) {       /* all of it read: room for the next */
         s->rxdone = 0;
@@ -1152,7 +1152,7 @@ static int do_recv( void *buf, u32 len, u32 *answer )
     return 0;
 }
 
-static int do_state( void *buf, u32 len, u32 *answer )
+static int do_state( void *buf, uint32_t len, uint32_t *answer )
 {
     NB_STAT *st = (NB_STAT *)buf;
     SESS *s;
@@ -1173,13 +1173,13 @@ static int do_state( void *buf, u32 len, u32 *answer )
     return 0;
 }
 
-static int do_hangup( void *buf, u32 len )
+static int do_hangup( void *buf, uint32_t len )
 {
     SESS *s;
-    u8 h[NB_IHDR];
+    uint8_t h[NB_IHDR];
 
     if ( len < 4 ) return ERR_BADLEN;
-    s = sess_by_handle( *(u32 *)buf );
+    s = sess_by_handle( *(uint32_t *)buf );
     if ( s == NULL ) return ERR_BADDATA;
     if ( s->state == NBX_UP && links[s->link].used ) {
         ihdr( h, NB_SESSION_END, 0, 0, 0, 0, s->rsn, s->lsn );
@@ -1191,7 +1191,7 @@ static int do_hangup( void *buf, u32 len )
     return 0;
 }
 
-int __cdecl nd_call( u32 fn, void *buf, u32 len, u32 *answer )
+int __cdecl nd_call( uint32_t fn, void *buf, uint32_t len, uint32_t *answer )
 {
     int result;
 
@@ -1224,7 +1224,7 @@ int __cdecl nd_call( u32 fn, void *buf, u32 len, u32 *answer )
 static int parse_line( const char *line, int *bad )
 {
     const char *p = line;
-    u32 n;
+    unsigned int n;
 
     *bad = 0;
     while ( *p && *p != ' ' && *p != '\t' && *p != '\r' && *p != '\n' ) p++;
@@ -1234,7 +1234,7 @@ static int parse_line( const char *line, int *bad )
              ( p[4] | 0x20 ) == 'e' && ( p[5] == '=' || p[5] == ':' ) ) {
             p += 6;
             for ( n = 0; *p && *p != ' ' && *p != '\t' && *p != '\r' && *p != '\n' && *p != '/'; p++ ) {
-                u8 ch = (u8)*p;
+                uint8_t ch = (uint8_t)*p;
                 if ( !( ( ch >= 'A' && ch <= 'Z' ) || ( ch >= 'a' && ch <= 'z' ) || ( ch >= '0' && ch <= '9' ) ||
                         ch == '-' || ch == '_' || ch == '!' || ch == '#' || ch == '$' || ch == '%' ||
                         ch == '&' || ch == '\'' || ch == '(' || ch == ')' || ch == '^' || ch == '{' ||
@@ -1255,7 +1255,7 @@ static int parse_line( const char *line, int *bad )
 static void name_default( void )
 {
     SOCK_IF info;
-    u32 answer;
+    uint32_t answer;
     static const char hex[] = "0123456789ABCDEF";
     int i;
 
@@ -1276,8 +1276,8 @@ static void name_default( void )
 int __cdecl nd_init( const char *line )
 {
     NIC_INFOBLOCK info;
-    u8 req[NICB_LEN];
-    u32 answer, start;
+    uint8_t req[NICB_LEN];
+    uint32_t answer, start;
     int bad, n, round;
     char text[64];
 
@@ -1345,7 +1345,7 @@ int __cdecl nd_init( const char *line )
 
 void __cdecl nd_park( int back )
 {
-    running = (u8)( back ? 1 : 0 );
+    running = (unsigned char)( back ? 1 : 0 );
 }
 
 void __cdecl nd_halt( void )
@@ -1353,7 +1353,7 @@ void __cdecl nd_halt( void )
     running = 0;
 }
 
-int __cdecl nd_irq( u32 line )
+int __cdecl nd_irq( uint32_t line )
 {
     (void)line;
     return 0;

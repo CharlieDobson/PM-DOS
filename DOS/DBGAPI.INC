@@ -653,6 +653,8 @@ dxl_next:
         call    dword ptr ds:[IOS_MSEXIT]
         mov     eax,[dbx_depth]                 ; its video mode
         call    vbe_exit
+        mov     eax,[dbx_depth]                 ; its hold on the keyboard
+        call    key_exit
 
         xor     ebx,ebx
 dxl_hook:

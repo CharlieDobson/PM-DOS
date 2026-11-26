@@ -71,22 +71,78 @@ F_CS        EQU 16h
 F_FL        EQU 18h
 F_LEN       EQU 1Ah                     ; 13 words, and all of them travel
 
-; ...and the two words pushed UNDER it, which say where the caller's
-; own copy is so the answers can be written back into it.
+; ...and the words pushed UNDER it: where the caller's own copy is, so
+; the answers can be written back into it, and which stack slot this
+; call took - an address inside it, or 0 for none (stk_free).
 F_OWNOFF    EQU F_LEN + 00h
 F_OWNSEG    EQU F_LEN + 02h
+F_SLOT      EQU F_LEN + 04h
 
 FL_CF       EQU 0001h
 FL_ZF       EQU 0040h
 
+;--- INT 24h, the critical error (RMDISK.INC rd_crit).  The kernel's
+;--- names and numbers (INC\PMDOS.INC), which this DOS does not include.
+CEA_WRITE   EQU 01h                     ; AH: a write
+CEA_FAIL    EQU 08h                     ; ...the handler may answer Fail
+CEA_RETRY   EQU 10h                     ; ...or Retry
+CRA_IGNORE   EQU 0                       ; the answers, in AL
+CRA_RETRY    EQU 1
+CRA_ABORT    EQU 2
+CRA_FAIL     EQU 3
+CERR_WRPROT EQU 00h                     ; DI: write-protected
+CERR_NOTREADY EQU 02h                   ; ...not ready
+CERR_CMD    EQU 03h                     ; ...unknown command
+CERR_DATA   EQU 04h                     ; ...data error (CRC)
+CERR_SEEK   EQU 06h                     ; ...seek error
+CERR_SECTOR EQU 08h                     ; ...sector not found
+CERR_GENERAL EQU 0Ch                    ; ...general failure
+RC_FRAME    EQU 24                      ; MS-DOS's frame: nine registers and
+                                        ; the caller's INT 21h return
+RCE_FAILED  EQU 01h                     ; [rd_cerr]: the user said Fail -
+RCE_ABORT   EQU 02h                     ; or Abort - so this call fails,
+RCE_QUIET   EQU 04h                     ; and nothing more is asked
+ERR_FAIL24  EQU 83                      ; 59h's code after a Fail
+
 RD_STKSIZE  EQU 1024
 RD_STKLVL   EQU 3                       ; nesting levels rd_stkpsp remembers
 RD_STKSLOTS EQU 6                       ; stacks there are - see stk_take
-RD_KEEPSLOTS EQU (RD_KEEPLEN + RD_STKSIZE - 1) / RD_STKSIZE
-RD_KEEPMAP  EQU (1 SHL RD_KEEPSLOTS) - 1 ; the slots rd_lowkeep is in -
-                                        ; see rd_stks, at the end
+RD_LINEMIN  EQU 256                     ; the least room the stray stack is
+                                        ; given in one slot - see rd_stks
+RD_INITLEN  EQU 832                     ; the start-up code assembled in the
+                                        ; slots, above rd_lowkeep (RMSTK.INC)
+RD_KEEPSLOTS EQU (RD_KEEPLEN + RD_INITLEN + RD_STKSIZE - 1) / RD_STKSIZE
+RD_KEEPMAP  EQU (1 SHL RD_KEEPSLOTS) - 1 ; the slots rd_lowkeep and that
+                                        ; code are in - see rd_stks
 IF RD_KEEPSLOTS GE RD_STKSLOTS
-        .ERR    <RMDOS.ASM: rd_lowkeep reaches the slot the start-up runs on>
+        .ERR    <RMDOS.ASM: rd_lowkeep and the start-up code reach the slot the start-up runs on>
+ENDIF
+RD_STKORG   EQU 81D2h                   ; where rd_stks is, whatever the code
+                                        ; in front of it weighs (RMSTK.INC).
+                                        ; A trace build has more in front
+                                        ; than that, and its slots float:
+IFDEF RMDOS_E9
+RD_STKFLOAT EQU 1
+ENDIF
+IFDEF DBG_LPT
+IFNDEF RD_STKFLOAT
+RD_STKFLOAT EQU 1
+ENDIF
+ENDIF
+IFDEF RMDOS_MARK
+IFNDEF RD_STKFLOAT
+RD_STKFLOAT EQU 1
+ENDIF
+ENDIF
+IFDEF RMDOS_EDBG
+IFNDEF RD_STKFLOAT
+RD_STKFLOAT EQU 1
+ENDIF
+ENDIF
+IFDEF EXIT_TRACE
+IFNDEF RD_STKFLOAT
+RD_STKFLOAT EQU 1
+ENDIF
 ENDIF
 I21_MAX     EQU 6Dh
 
@@ -238,8 +294,9 @@ ENDIF
         ; The block below 64K, kept so that it can be put back; no
         ; block, or one of a size this image cannot keep, is a header
         ; this image was not built for.  See RMDOS.INC, RMH_LOWSEG.
-        ; What it keeps is in the bottom stack slots, so no call may be
-        ; given one of those until rd_sysinit has read it - see rd_stks.
+        ; What it keeps is in the bottom stack slots, and rd_sysinit's own
+        ; code is above it there, so no call may be given one of those
+        ; until rd_sysinit has read it and returned - see rd_stks.
         mov     byte ptr [rd_stkmap],RD_KEEPMAP
         call    rd_lowsave
         jnc     rd_lowok
@@ -272,7 +329,53 @@ IFDEF DBG_LPT
         call    rdbg_mark
 ENDIF
         call    rd_sysinit              ; SDA, list of lists, CDS
-        mov     byte ptr [rd_stkmap],0  ; ...and rd_lowkeep is spent
+
+        ; rd_sysinit AND rd_cdletter HAVE RUN, AND ARE WRITTEN OVER WITH
+        ; NOUGHTS - what the slot they are assembled in held before they
+        ; were put there.  Not for tidiness: an emulator that translates
+        ; code makes every write to a page slow while code it has run is
+        ; still standing in that page, and this page is the stacks
+        ; Windows' calls run on (RMSTK.INC, NEXT TO THE SLOTS).
+        push    es
+        mov     ax,cs
+        mov     es,ax
+        mov     di,OFFSET rd_sysinit
+        mov     cx,OFFSET rd_initend - OFFSET rd_sysinit
+        xor     al,al
+        cld
+        rep     stosb
+        pop     es
+        mov     byte ptr [rd_stkmap],0  ; ...and rd_lowkeep is spent, and
+                                        ; rd_sysinit with it: NOT CALLED AGAIN
+
+        ; WHICH SLOT IS UNDER LINEAR 10000h, if any is (rd_stks).  The
+        ; byte below the line is at 10000h less sixteen times this
+        ; segment; in the HMA, or parked at 1000h or above, the line is
+        ; not in this segment at all.  Less than RD_LINEMIN bytes up
+        ; from the slot's foot, the slot under it goes with it.
+        mov     ax,cs
+        cmp     ax,1000h
+        jae     rd_noline
+        shl     ax,4
+        neg     ax
+        sub     ax,OFFSET rd_stks + 1
+        jb      rd_noline
+        mov     bx,ax
+        mov     cl,ah
+        shr     cl,2                    ; the slot the byte is in
+        cmp     cl,RD_STKSLOTS
+        jae     rd_noline
+        mov     al,1
+        shl     al,cl
+        and     bx,RD_STKSIZE - 1
+        cmp     bx,RD_LINEMIN - 1
+        jae     rd_lineset
+        mov     ah,al
+        shr     ah,1
+        or      al,ah
+rd_lineset:
+        mov     [rd_linemap],al
+rd_noline:
 IFDEF RMDOS_MARK
         mov     al,'6'
         call    rd_vmark
@@ -1258,6 +1361,28 @@ ENDIF                                   ; can make it wait (RME9.INC)
         inc     byte ptr [rd_indos]
         call    sda_sync
 
+        ; AN INT 24h HANDLER IS RUNNING, OR DID NOT COME BACK.  While one
+        ; runs it may use the console calls and 59h; any other call means
+        ; it went straight back to its program instead, and the call it
+        ; was asked about is never going to end.  MS-DOS's dispatcher
+        ; draws the same line (DOS6SRC dos/msdisp.asm, DskROut) and puts
+        ; DOS back together there; crit_abandon does it here.  BP is the
+        ; caller's frame, on the caller's stack, which SS still is.
+        cmp     byte ptr [rd_errmode],0
+        je      i21_newcall
+        mov     al,byte ptr [bp+F_AX+1]
+        cmp     al,59h
+        je      i21_cerrkeep
+        or      al,al
+        jz      i21_abandon
+        cmp     al,0Ch
+        jbe     i21_cerrkeep
+i21_abandon:
+        call    crit_abandon
+i21_newcall:
+        mov     byte ptr [rd_cerr],0    ; one question per call: a new call
+i21_cerrkeep:                           ; may be asked one of its own
+
         ; THE CALLER'S STACK, IN THE CALLER'S OWN PSP.  DOS writes
         ; SS:SP into PSP+2Eh on every single call - msdisp.asm does it
         ; three instructions after raising InDOS - and the only code
@@ -1302,12 +1427,22 @@ i21_nopsp:
         ; back by looking at where SP is; the depth counter stays, for
         ; rd_stkpsp and nothing else.  No slot free: stay on the
         ; caller's stack, which is what DOS did too.
+        or      cx,cx                   ; a caller on 0000:xxxx is Windows 3.1
+        jnz     i21_noline              ; leaving: the slot under linear
+        mov     al,[rd_linemap]         ; 10000h is that stack's from now on
+        or      [rd_stkmap],al          ; (see rd_stks)
+i21_noline:
         call    stk_take                ; -> AX = the top of one, CF if none
         jc      i21_stacked
         mov     bx,cs
         mov     ss,bx
         mov     sp,ax
+        dec     ax                      ; an address inside it
+        jmp     short i21_slotted
 i21_stacked:
+        xor     ax,ax                   ; none
+i21_slotted:
+        push    ax                      ; F_SLOT
         push    cx                      ; F_OWNSEG
         push    dx                      ; F_OWNOFF
 
@@ -1320,6 +1455,15 @@ i21_cpy:
         push    word ptr es:[si]
         loop    i21_cpy
         mov     bp,sp
+
+        ; WHERE THIS CALL'S FRAME IS, for rd_crit, which is reached from
+        ; deep inside the call with BP long gone.  The one it is nested
+        ; in - a critical-error handler's console call, inside the call it
+        ; was asked about - is kept under it and put back by i21_out.
+        push    word ptr [rd_frame]
+        push    word ptr [rd_frss]
+        mov     [rd_frame],bp
+        mov     [rd_frss],ss
 
 
         mov     ax,cs
@@ -1345,9 +1489,14 @@ ENDIF
         mov     bl,byte ptr [bp+F_AX+1]
         movzx   bx,bl
         cmp     bx,I21_MAX
-        jae     i21_bad
+        jae     i21_past
         shl     bx,1
         call    word ptr [i21_tab + bx]
+        jmp     short i21_out
+i21_past:
+        cmp     bx,0F1h                 ; PM-DOS's own (RMNAME.INC)
+        jne     i21_bad
+        call    fnF1
         jmp     short i21_out
 i21_bad:
         ; A FUNCTION NUMBER PAST THE TABLE IS ANSWERED AS MS-DOS ANSWERS
@@ -1362,6 +1511,33 @@ i21_bad:
         call    i21_ok
 
 i21_out:
+        ; A DISK THE USER ANSWERED FAIL ABOUT: the call fails, whatever
+        ; its handler went on to say - see i21_cfail.  And an Abort ends
+        ; the program, there and then, and does not come back here.
+        test    byte ptr [rd_cerr],RCE_FAILED
+        jz      i21_cdone
+        call    i21_cfail
+i21_cdone:
+        ; A DISK THAT WINDOWS' OWN FILE SYSTEM HAS TAKEN (2026-11-21).
+        ; With 32-bit file access VFAT writes the FAT and the directories
+        ; of a hard disk itself, and this DOS still reads that disk for
+        ; the calls Windows leaves to it - an EXEC, for one.  A FAT window
+        ; or a directory sector kept from one call to the next is then
+        ; older than the disk, with nothing to say so.  So while any drive
+        ; is in that state (rd_shared, counted by cma_drive in RMCACHE.INC
+        ; when IFSMGR turns the cache's reads of a drive off and on again)
+        ; a call ends with everything written and NOTHING KEPT: the next
+        ; one reads the disk as it is.
+        cmp     byte ptr [rd_shared],0
+        je      i21_alone
+        call    rd_flush
+        call    rd_bufdrop
+        mov     word ptr [rd_growsft],0
+i21_alone:
+        mov     ax,[bp-2]               ; the frame this one was nested in
+        mov     [rd_frame],ax
+        mov     ax,[bp-4]
+        mov     [rd_frss],ax
         cli
 IFDEF RMDOS_E9
         call    e9_i21out               ; the answer, on the same line
@@ -1426,11 +1602,105 @@ crit_out:
         ret
 
 ;=====================================================================
+; crit_abandon - an INT 24h handler went back to its program and not to
+;                DOS (see rd_crit), so the call it was asked about will
+;                never end.  It is put away as if it had: its stack
+;                slot, its depth, its critical section - InDOS it gave
+;                back itself before the INT - and the directory and FAT
+;                windows, which may hold what it never wrote, are
+;                forgotten.  Only the machine that was asked can be here:
+;                that call still holds the critical section.
+;=====================================================================
+crit_abandon:
+        push    bx
+        mov     byte ptr [rd_errmode],0
+        mov     bx,[rd_c24slot]
+        call    stk_freeat
+        dec     byte ptr [rd_stkdep]
+        call    crit_out
+        call    rd_bufdrop
+        pop     bx
+        ret
+
+;=====================================================================
+; i21_cfail - the call is over and a disk write in it was answered Fail
+;             or Abort (rd_crit).  It fails as MS-DOS fails it: with its
+;             own error if it already has one and "access denied" if it
+;             thought it had worked, an FCB call with AL = FFh, and 59h
+;             saying 83, "fail on INT 24h", either way.  Abort then ends
+;             the program, as 4Ch would with the critical-error exit
+;             type (4Dh's AH = 2), and does not come back.
+;=====================================================================
+i21_cfail:
+        push    es
+        push    di
+        mov     es,[bp+F_OWNSEG]
+        mov     di,[bp+F_OWNOFF]
+        mov     al,es:[di+F_AX+1]       ; the function, as it was asked
+        pop     di
+        pop     es
+        mov     word ptr [rd_lasterr],ERR_FAIL24
+        call    i21_isfcb
+        jne     icf_handle
+        mov     byte ptr [bp+F_AX],0FFh
+        jmp     short icf_abort
+icf_handle:
+        test    word ptr [bp+F_FL],FL_CF
+        jnz     icf_abort               ; it failed already, in its own words
+        mov     word ptr [bp+F_AX],ERR_ACCESS
+        or      word ptr [bp+F_FL],FL_CF
+icf_abort:
+        test    byte ptr [rd_cerr],RCE_ABORT
+        jz      icf_out
+        mov     byte ptr [rd_cerr],RCE_QUIET    ; the ending asks nothing
+        mov     word ptr [rd_exitcode],0200h
+        mov     byte ptr [rd_exitway],2
+        pop     ax                      ; i21_out's return: no going back
+        jmp     term_common
+icf_out:
+        ret
+
+;--- i21_isfcb - ZF if the function in AL is one of the FCB calls, which
+;--- answer in AL rather than with the carry
+i21_isfcb:
+        cmp     al,0Fh
+        jb      iif_no
+        cmp     al,17h
+        jbe     iif_yes
+        cmp     al,21h
+        jb      iif_no
+        cmp     al,24h
+        jbe     iif_yes
+        cmp     al,27h
+        je      iif_out
+        cmp     al,28h
+iif_out:
+        ret
+iif_yes:
+        cmp     al,al
+        ret
+iif_no:
+        test    sp,sp                   ; never zero: NZ
+        ret
+
+;=====================================================================
 ; stk_take - the first free stack slot: AX = its top, CF if there is
-;            none.  stk_free gives back the slot SS:SP is standing in,
-;            or does nothing if that is not one of ours.
+;            none.  stk_free gives back the slot this call took, which
+;            i21 wrote into its frame (BP) as F_SLOT, or does nothing
+;            if it took none.
 ;
 ; Both preserve every register but AX (stk_take) and the flags.
+;
+; THE SLOT IS WRITTEN DOWN, NOT WORKED OUT FROM SP.  Until 2026-11-19
+; stk_free freed whichever slot SP's offset fell in.  A call that found
+; every slot taken runs on its caller's stack, and two kinds of caller
+; made that wrong.  A program's own stack has offsets like anybody's,
+; and one inside rd_stks' range freed a slot by number.  And a call made
+; from an INT 28h handler - which the console wait issues on the slot
+; it is standing on (con_idle) - runs on THAT slot when it gets none of
+; its own, and at its end freed it from under the call still waiting
+; there.  Either way the next call in was given a slot somebody was
+; standing on.  Both need every slot taken: six machines inside DOS.
 ;=====================================================================
 stk_take:
         push    bx
@@ -1461,11 +1731,22 @@ stt_got:
         ret
 
 stk_free:
+        push    bx
+        mov     bx,[bp+F_SLOT]
+        call    stk_freeat
+        pop     bx
+        ret
+
+;--- stk_freeat - the same for BX = an F_SLOT: an INT 24h handler that
+;--- never came back left its call's slot taken, and crit_abandon frees
+;--- it by the F_SLOT rd_crit kept (rd_c24slot).  0, no slot, is below
+;--- rd_stks and frees nothing.
+stk_freeat:
         push    ax
         push    bx
         push    cx
         push    dx
-        mov     ax,sp
+        mov     ax,bx
         sub     ax,OFFSET rd_stks
         jb      stf_out                 ; below the slots: not ours
         cmp     ax,RD_STKSLOTS * RD_STKSIZE
@@ -1513,7 +1794,7 @@ i21_tab:
         dw  i21_unsup, i21_unsup, fn06,      fn07        ; 04-07
         dw  fn08,      fn09,      fn0A,      fn0B        ; 08-0B
         dw  fn0C,      fn0D,      fn0E,      i21_unsup   ; 0C-0F
-        dw  i21_unsup, i21_unsup, i21_unsup, i21_unsup   ; 10-13
+        dw  i21_unsup, i21_unsup, i21_unsup, fn13        ; 10-13
         dw  i21_unsup, i21_unsup, i21_unsup, i21_unsup   ; 14-17
         dw  i21_unsup, fn19,      fn1A,      fn1B        ; 18-1B
         dw  fn1C,      i21_unsup, i21_unsup, fn1F        ; 1C-1F
@@ -1577,19 +1858,37 @@ rs_done:
         INCLUDE RMNAME.INC              ; MD, RD, rename, TRUENAME, 29h
         INCLUDE RMMEM.INC               ; the arena, EXEC and terminate
         INCLUDE RMINFO.INC              ; everything that only answers
+        INCLUDE RMXMS.INC               ; extended memory, first part: A20,
+                                        ; INT 15h, the handle table - HERE,
+                                        ; in the room rd_sysinit left, so that
+                                        ; the code next to the stacks is what
+                                        ; was next to them before (RMSTK.INC,
+                                        ; NEXT TO THE SLOTS)
         INCLUDE RMNET2.INC              ; ...and the SERVER for the kernel's
                                         ; own net drives, answered through the
                                         ; WfW bridge (BA2b) - i2F_net jumps to
                                         ; n2_serve; needs RMINFO's SDA offsets
+
         INCLUDE RMNET.INC               ; a redirector's drives and files -
                                         ; after RMINFO, whose SDA equates
                                         ; it uses
         INCLUDE RMUSB.INC               ; a USB disk's sectors, served through
                                         ; the bridge (BC2) - rd_raw forks here
                                         ; for a VF_DRIVER unit marked 0FFh
-        INCLUDE RMXMS.INC               ; extended memory, A20 and INT 15h
+        INCLUDE RMSTK.INC               ; the stack slots, pinned where linear
+                                        ; 10000h falls, and the start-up code
+                                        ; assembled in the bottom of them
+
+        INCLUDE RMXMS2.INC              ; extended memory, second part: the
+                                        ; entry, the calls, the block move
         INCLUDE RMCACHE.INC             ; after it: the sector cache lives in
                                         ; that memory and moves through it
+        INCLUDE RMBRG.INC               ; the way into the parked kernel from
+                                        ; real mode - the net letters under
+                                        ; Windows in standard mode (RMNET2's
+                                        ; n2_pdapi); behind the slots, and
+                                        ; after rx_gdt, whose descriptors it
+                                        ; uses
 IFDEF RMDOS_E9
         INCLUDE RME9.INC                ; the port E9h trace - build "rme9"
 ENDIF
@@ -1604,7 +1903,16 @@ ENDIF
 ; Data
 ;=====================================================================
 rd_indos    db  0                       ; published through 34h and the SDA
-rd_errmode  db  0
+rd_errmode  db  0                       ; an INT 24h handler is running - the
+                                        ; SDA's ErrorMode, as MS-DOS keeps it
+rd_cerr     db  0                       ; RCE_*: this call's disk refusals
+rd_noi24    db  0                       ; INT 26h: errors go to the caller
+rd_xcode    db  0                       ; the INT 24h code of a failed transfer
+rd_c24ss    dw  0                       ; RMDOS's stack while a handler runs
+rd_c24sp    dw  0
+rd_c24slot  dw  0                       ; ...and the asking call's F_SLOT
+rd_frame    dw  0                       ; the frame of the call in progress,
+rd_frss     dw  0                       ; for rd_crit
 rd_stkdep   db  0
 rd_psp      dw  0
 rd_drive    db  0
@@ -1631,6 +1939,8 @@ msg_hello   db  13,10,'RMDOS is the DOS in this machine now.',13,10,0
 
 rd_stkmap   db  0                       ; a bit per slot, set while a call
                                         ; is standing on it
+rd_linemap  db  0                       ; the slots linear 10000h falls on,
+                                        ; a bit each; 0 for none (rd_stks)
 
 ;--- WHO IS WAITING IN WHICH CALL.  One PSP per nesting level, written
 ;--- at i21 entry and read by term_common: a process that ends has to
@@ -1640,22 +1950,8 @@ rd_stkmap   db  0                       ; a bit per slot, set while a call
 ;--- and there is no other way to tell them apart.  See RMMEM.INC.
 rd_stkpsp   dw  RD_STKLVL dup (0)
 
-;--- THE STACKS, AND rd_lowkeep IN THE BOTTOM OF THEM.  rd_lowkeep is
-;--- the kernel's current directories for our volumes and NUL's link,
-;--- copied out of the block below 64K by rd_lowsave before rd_sysinit
-;--- writes over it - and rd_sysinit and rd_chain are the only readers
-;--- it has, both before the handover is finished.  No call can be
-;--- standing on a slot by then, so its 2K are the slots' 2K: it was a
-;--- buffer of its own until 2026-10-23, and the 2K it took are the
-;--- segment's room for code now (SETVER took the first of it).  The
-;--- start-up runs on rd_stktop, the top of the LAST slot, and the
-;--- slots under rd_lowkeep are marked taken in rd_stkmap until
-;--- rd_sysinit is done, so that not even a call made from an
-;--- interrupt can be given one (rd_entry, RD_KEEPMAP).
-rd_stks:                                ; slot 0 ends at rd_stks + RD_STKSIZE
-rd_lowkeep  db  RD_KEEPLEN dup(0)
-            db  RD_STKSLOTS * RD_STKSIZE - RD_KEEPLEN dup(0)
-rd_stktop:                              ; ...and the last at rd_stktop
+;--- THE STACKS ARE NOT HERE ANY MORE: rd_stks is in RMSTK.INC, which is
+;--- included where linear 10000h falls - see the note there.
 
 ;--- THE END OF THE IMAGE, and the start of the room rd_layout lays the
 ;--- file table out in, with the sector cache's tables after it.  It has
@@ -1663,8 +1959,20 @@ rd_stktop:                              ; ...and the last at rd_stktop
 ;--- tables, because that is what RMDOS.INC promises the kernel:
 ;--- park_cmparas reserves no block of their own below it.
 rd_imgend:
+IFDEF RD_STKFLOAT
+;--- A TRACE BUILD (2026-11-21) is bigger than the room for a 4M cache's
+;--- tables allows, and the big ones had stopped assembling.  What
+;--- one has to have room for is a file table of DOS's floor: rd_layout
+;--- gives a trace build as many entries as there is room for, if that
+;--- is fewer than FILES= says, and cm_place gives the cache as many as
+;--- are left - none, with the LPT trace's sixteen kilobytes aboard.
+IF (rd_imgend - h_sig) + RMH_BASE + 15 + 12 + (SFT_MIN + 1) * SFT_LEN GT RD_TAILEND
+        .ERR    <RMDOS.ASM: no room after a trace build's image for a file table of SFT_MIN entries>
+ENDIF
+ELSE
 IF (rd_imgend - h_sig) + RMH_BASE + 15 + 12 + (SFT_MAX + 1) * SFT_LEN + RMC_HEAD + (RMC_TAILKB / 4) * RMC_ENTLEN GT RD_TAILEND
         .ERR    <RMDOS.ASM: the room after the image is too small for FILES= and a 4M cache>
+ENDIF
 ENDIF
 
 _RD     ENDS

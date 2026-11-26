@@ -8,19 +8,19 @@
 
 #include "types.h"
 
-void  mem_set( void *dst, int val, u32 len );
-void  mem_cpy( void *dst, const void *src, u32 len );
+void  mem_set( void *dst, int val, unsigned int len );
+void  mem_cpy( void *dst, const void *src, unsigned int len );
 
-u32   str_len( const char *str );
-int   str_cpyn( char *dst, const char *src, u32 max );    /* 0 = it did not fit */
-int   str_catn( char *dst, const char *src, u32 max );    /* 0 = it did not fit */
-int   str_nicmp( const char *lhs, const char *rhs, u32 len );
-int   ch_upper( int ch );
+unsigned int str_len( const char *str );
+int          str_cpyn( char *dst, const char *src, unsigned int max );  /* 0 = it did not fit */
+int          str_catn( char *dst, const char *src, unsigned int max );  /* 0 = it did not fit */
+int          str_nicmp( const char *lhs, const char *rhs, unsigned int len );
+int          ch_upper( int ch );
 
-void *try_alloc( u32 size );     /* NULL when out of memory */
+void *try_alloc( unsigned int size ); /* NULL when out of memory */
 void  xfree( void *ptr );
 
 /* decimal, right-aligned in at least "width" characters */
-char *fmt_dec( u32 val, int width, char *buf );
+char *fmt_dec( unsigned int val, int width, char *buf );
 
 #endif

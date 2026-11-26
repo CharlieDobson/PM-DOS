@@ -85,15 +85,15 @@ typedef struct {
    memory has them, and in bits 16-23 what a graphics screen draws
    instead of the character - an icon, or a part of the picture.  A
    text screen never sees bits 16 and up. */
-typedef u32 CELL;
+typedef uint32_t CELL;
 
-#define CELL_CHAR( c )      ((u8)((c) & 0xFF))
-#define CELL_ATTR( c )      ((u8)(((c) >> 8) & 0xFF))
-#define CELL_EXTRA( c )     ((u8)(((c) >> 16) & 0xFF))
-#define CELL_MAKE( ch, at ) ((CELL)(u8)(ch) | ((CELL)(u8)(at) << 8))
-#define CELL_WITH( c, ex )  (((c) & 0xFFFFUL) | ((CELL)(u8)(ex) << 16))
+#define CELL_CHAR( c )      ((uint8_t)((c) & 0xFF))
+#define CELL_ATTR( c )      ((uint8_t)(((c) >> 8) & 0xFF))
+#define CELL_EXTRA( c )     ((uint8_t)(((c) >> 16) & 0xFF))
+#define CELL_MAKE( ch, at ) ((CELL)(uint8_t)(ch) | ((CELL)(uint8_t)(at) << 8))
+#define CELL_WITH( c, ex )  (((c) & 0xFFFFUL) | ((CELL)(uint8_t)(ex) << 16))
 
-#define EXTRA_ICON( id )        ((u8)((id) + 1))
+#define EXTRA_ICON( id )        ((uint8_t)((id) + 1))
 #define EXTRA_IS_ICON( e )      ((e) >= 1 && (e) <= ICON_MAX)
 #define EXTRA_PICTURE           0x80    /* the character is the drawing's number */
 
@@ -135,15 +135,15 @@ int   df_cell_h( void );
 
 /* input.  ev_wait sends the screen first and waits; ev_poll looks and
    comes back - in test mode with nothing, unless TVPOLL is set. */
-int   ev_wait( EVENT *ev );
-int   ev_poll( EVENT *ev );
-int   ev_mouse_on( void );
-int   ev_buttons( void );               /* the buttons down now */
-void  ev_mouse_cell( int *x, int *y );  /* where the pointer is, as a cell */
-u32   ev_clock( void );                 /* hundredths, for the scroll arrows */
-int   ev_testing( void );
-void  ev_init( void );
-void  ev_break_off( void );             /* ^C is a key, not the end */
+int      ev_wait( EVENT *ev );
+int      ev_poll( EVENT *ev );
+int      ev_mouse_on( void );
+int      ev_buttons( void );               /* the buttons down now */
+void     ev_mouse_cell( int *x, int *y );  /* where the pointer is, as a cell */
+uint32_t ev_clock( void );                 /* hundredths, for the scroll arrows */
+int      ev_testing( void );
+void     ev_init( void );
+void     ev_break_off( void );             /* ^C is a key, not the end */
 
 /* test mode, from the key file: the screen as text into the log */
 void  scr_dump( const char *why );
@@ -173,16 +173,16 @@ typedef struct {
 
 /* a box that puts back what it covered */
 typedef struct {
-    RECT  at;
-    int   fg, bg;
-    int   border;                       /* BORDER_* */
-    char  title[35];
-    int   just;                         /* where the title goes: JUST_* */
-    int   shadow;
-    CELL *save;
-    u32   save_cells;
-    int   saved;
-    RECT  saved_at;
+    RECT     at;
+    int      fg, bg;
+    int      border;                    /* BORDER_* */
+    char     title[35];
+    int      just;                      /* where the title goes: JUST_* */
+    int      shadow;
+    CELL    *save;
+    unsigned save_cells;
+    int      saved;
+    RECT     saved_at;
 } POPUP;
 
 void  popup_init( POPUP *pop, int fg, int bg, const char *title );
@@ -242,20 +242,20 @@ int   menu_event( const EVENT *ev );   /* 1 = the menu took it */
 #define NODE_EXPANDED       0x02
 
 typedef struct {
-    char *name;                 /* the folder's name, long if it has one */
-    u64   total_size;           /* bytes in the files of its whole subtree */
-    u8    depth;                /* nesting level (0 = a child of the root) */
-    u8    flags;                /* NODE_HAS_CHILDREN | NODE_EXPANDED */
+    char    *name;              /* the folder's name, long if it has one */
+    uint64_t total_size;        /* bytes in the files of its whole subtree */
+    uint8_t  depth;             /* nesting level (0 = a child of the root) */
+    uint8_t  flags;             /* NODE_HAS_CHILDREN | NODE_EXPANDED */
 } NODE;
 
-extern int   current_drive;     /* 1 = A:, 2 = B:, 3 = C:, ... */
-extern u64   total_disk_space;
-extern u64   free_disk_space;
-extern u64   used_disk_space;
-extern NODE *tree_nodes;
-extern int   tree_count;
-extern int   selected_node;     /* -1 = none, else the cursor's row */
-extern int   data_valid;
+extern int      current_drive;  /* 1 = A:, 2 = B:, 3 = C:, ... */
+extern uint64_t total_disk_space;
+extern uint64_t free_disk_space;
+extern uint64_t used_disk_space;
+extern NODE    *tree_nodes;
+extern int      tree_count;
+extern int      selected_node;  /* -1 = none, else the cursor's row */
+extern int      data_valid;
 
 int   detect_drives( int *drives, int max );    /* C: and up */
 int   drive_ready( int drive );                 /* 0 = Cancel */
@@ -266,10 +266,10 @@ void  clear_scan( void );
 
 /* "1,234.5 MB": a size as the panes show it, digits grouped by the
    country; and "12.3%" of the disk */
-void  format_size( u64 bytes, char *buf );
-void  format_pct( u64 part, u64 whole, char *buf );
-u32   per_whole( u64 part, u64 whole, u32 scale );  /* part * scale / whole */
-void  shorten_name( char *dst, int room, const char *name );
+void     format_size( uint64_t bytes, char *buf );
+void     format_pct( uint64_t part, uint64_t whole, char *buf );
+uint32_t per_whole( uint64_t part, uint64_t whole, uint32_t scale ); /* part * scale / whole */
+void     shorten_name( char *dst, int room, const char *name );
 
 /* ------------------------------------------------------------------ */
 /* USAGEBAR.C, FOLDTREE.C                                              */

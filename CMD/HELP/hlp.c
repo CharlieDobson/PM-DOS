@@ -37,15 +37,15 @@
  */
 #include "help.h"
 
-TOPIC   *topics;
-int      ntopics;
-CONTEXT *contexts;
-int      ncontexts;
-HLINE   *hlines;
-u32      nhlines;
+TOPIC       *topics;
+int          ntopics;
+CONTEXT     *contexts;
+int          ncontexts;
+HLINE       *hlines;
+unsigned int nhlines;
 
-static char *file;              /* the whole file */
-static u32   file_len;
+static char        *file;           /* the whole file */
+static unsigned int file_len;
 
 /* ------------------------------------------------------------------ */
 /* loading                                                             */
@@ -53,7 +53,8 @@ static u32   file_len;
 
 static int read_whole( const char *path )
 {
-    u32 handle, size, done, got = 0;
+    uint32_t handle, size;
+    unsigned int done, got = 0;
     int rc;
 
     rc = sys_open_read( path, &handle );
@@ -93,7 +94,7 @@ static int read_whole( const char *path )
 /* a directive at the start of a line: which, and where its text is */
 enum { D_NONE, D_CONTEXT, D_TOPIC, D_FREEZE, D_IGNORE };
 
-static int directive( const char *text, u16 len, const char **arg, int *arg_len )
+static int directive( const char *text, uint16_t len, const char **arg, int *arg_len )
 {
     static const char *const names[] = {
         "context", "topic", "freeze", "comment", "list", "category", "next",
@@ -112,7 +113,7 @@ static int directive( const char *text, u16 len, const char **arg, int *arg_len 
     }
     for ( index = 0; names[index]; index++ ) {
         if ( (int)str_len( names[index] ) == wlen - 1
-             && str_nicmp( text + 1, names[index], (u32)(wlen - 1) ) == 0 ) {
+             && str_nicmp( text + 1, names[index], (unsigned int)(wlen - 1) ) == 0 ) {
             while ( wlen < len && (text[wlen] == ' ' || text[wlen] == '\t') ) {
                 wlen++;
             }
@@ -134,9 +135,9 @@ static int walk( int fill )
 {
     char *at = file, *end = file + file_len, *line;
     const char *arg;
-    u16 len;
+    unsigned int len;
     int kind, arg_len, in_head = 0, ok;
-    u32 lines = 0, topic_count = 0, ctx_count = 0;
+    unsigned int lines = 0, topic_count = 0, ctx_count = 0;
     TOPIC *topic = NULL;
 
     while ( at < end ) {
@@ -144,7 +145,7 @@ static int walk( int fill )
         while ( at < end && *at != '\n' ) {
             at++;
         }
-        len = (u16)(at - line);
+        len = (unsigned int)(at - line);
         if ( at < end ) {
             at++;
         }
@@ -154,7 +155,7 @@ static int walk( int fill )
         if ( len > 1000 ) {
             len = 1000;
         }
-        kind = directive( line, len, &arg, &arg_len );
+        kind = directive( line, (uint16_t)len, &arg, &arg_len );
         if ( kind == D_CONTEXT ) {
             if ( !in_head ) {
                 in_head = 1;
@@ -191,7 +192,7 @@ static int walk( int fill )
                 /* the number alone: dec_parse wants nothing after the digits */
                 char num[8];
                 int ndigits = arg_len < 7 ? arg_len : 7;
-                mem_cpy( num, arg, (u32)ndigits );
+                mem_cpy( num, arg, (unsigned int)ndigits );
                 num[ndigits] = 0;
                 topic->freeze = (int)dec_parse( num, &ok );
                 if ( !ok || topic->freeze > 20 ) {
@@ -210,7 +211,7 @@ static int walk( int fill )
         in_head = 0;
         if ( fill ) {
             hlines[lines].text = line;
-            hlines[lines].len = len;
+            hlines[lines].len = (uint16_t)len;
             topic->count++;
         }
         lines++;
@@ -233,8 +234,8 @@ int hlp_load( const char *path )
     if ( !walk( 0 ) ) {
         return -2;
     }
-    topics = (TOPIC *)try_alloc( (u32)ntopics * sizeof( TOPIC ) );
-    contexts = (CONTEXT *)try_alloc( (u32)ncontexts * sizeof( CONTEXT ) );
+    topics = (TOPIC *)try_alloc( (unsigned int)ntopics * sizeof( TOPIC ) );
+    contexts = (CONTEXT *)try_alloc( (unsigned int)ncontexts * sizeof( CONTEXT ) );
     hlines = (HLINE *)try_alloc( (nhlines + 1) * sizeof( HLINE ) );
     if ( topics == NULL || contexts == NULL || hlines == NULL ) {
         return -1;
@@ -263,7 +264,7 @@ int hlp_find_n( const char *context, int len )
     }
     for ( index = 0; index < ncontexts; index++ ) {
         if ( (int)str_len( contexts[index].name ) == len
-             && str_nicmp( contexts[index].name, context, (u32)len ) == 0 ) {
+             && str_nicmp( contexts[index].name, context, (unsigned int)len ) == 0 ) {
             return contexts[index].topic;
         }
     }
@@ -275,7 +276,7 @@ int hlp_find( const char *context )
     return hlp_find_n( context, (int)str_len( context ) );
 }
 
-const HLINE *hlp_line( int topic, u32 line )
+const HLINE *hlp_line( int topic, unsigned int line )
 {
     static const HLINE none = { "", 0 };
 
@@ -294,21 +295,21 @@ static int is_bracket( int ch )
     return ch == '<' || ch == '>' || ch == 0x11 || ch == 0x10;
 }
 
-void hlp_render( u32 line, RLINE *out )
+void hlp_render( unsigned int line, RLINE *out )
 {
     const HLINE *src = &hlines[line];
     const char *text = src->text, *end = src->text + src->len;
     int bold = 0, italic = 0, under = 0, anchor = 0, index;
     HLINK *link = NULL;
-    u8 attr;
+    uint8_t attr;
     int ch;
 
     out->len = 0;
     out->nlinks = 0;
     while ( text < end ) {
-        ch = (u8)*text++;
+        ch = (uint8_t)*text++;
         if ( ch == '\\' && text < end ) {
-            ch = (u8)*text++;
+            ch = (uint8_t)*text++;
             switch ( ch_lower( ch ) ) {
             case 'b': bold = !bold;     continue;
             case 'i': italic = !italic; continue;
@@ -352,7 +353,7 @@ void hlp_render( u32 line, RLINE *out )
         if ( out->len < RL_MAX ) {
             attr = anchor ? pal.text : bold ? pal.bold : italic ? pal.italic
                    : under ? pal.under : pal.text;
-            out->ch[out->len] = (u8)ch;
+            out->ch[out->len] = (uint8_t)ch;
             out->attr[out->len] = attr;
             out->len++;
             if ( anchor && link ) {
@@ -370,14 +371,14 @@ void hlp_render( u32 line, RLINE *out )
 }
 
 /* the line as text alone, trailing blanks dropped */
-void hlp_plain( u32 line, char *out, int max )
+void hlp_plain( unsigned int line, char *out, int max )
 {
     static RLINE rl;
     int len;
 
     hlp_render( line, &rl );
     len = rl.len < max - 1 ? rl.len : max - 1;
-    mem_cpy( out, rl.ch, (u32)len );
+    mem_cpy( out, rl.ch, (unsigned int)len );
     while ( len > 0 && out[len - 1] == ' ' ) {
         len--;
     }

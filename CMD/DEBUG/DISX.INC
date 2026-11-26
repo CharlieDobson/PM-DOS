@@ -19,7 +19,7 @@ static const char *st_i( int i )
 }
 
 /* the memory-form mnemonic and operand size for each D8-DF /reg */
-static void fpu_mem( DEC *d, u8 op, MODRM *m, char *rmbuf )
+static void fpu_mem( DEC *d, uint8_t op, MODRM *m, char *rmbuf )
 {
     static const char *d8[] = { "FADD","FMUL","FCOM","FCOMP","FSUB","FSUBR","FDIV","FDIVR" };
     static const char *d9[] = { "FLD","???","FST","FSTP","FLDENV","FLDCW","FSTENV","FSTCW" };
@@ -49,7 +49,7 @@ static void fpu_mem( DEC *d, u8 op, MODRM *m, char *rmbuf )
 }
 
 /* "ESC nn,operand": nn is the opcode's low three bits and the reg field */
-static void esc_form( u8 op, int reg, const char *opnd )
+static void esc_form( uint8_t op, int reg, const char *opnd )
 {
     set_mnem( "ESC" );
     op_hex( ( ( op & 7 ) << 3 ) | reg, 2 );
@@ -63,20 +63,20 @@ static void esc_form( u8 op, int reg, const char *opnd )
    which takes in everything the 287 and 387 added.  A reserved memory
    form is ESC nn,[mem]; 6.22 read two bytes past those, which is not
    copied. */
-static void decode_8087( DEC *d, u8 op )
+static void decode_8087( DEC *d, uint8_t op )
 {
     static const char *d8[] = { "FADD","FMUL","FCOM","FCOMP","FSUB","FSUBR","FDIV","FDIVR" };
     static const char *dc[] = { "FADD","FMUL","FCOM","FCOMP","FSUBR","FSUB","FDIVR","FDIV" };
     static const char *dd[] = { "FFREE","FXCH","FST","FSTP",NULL,NULL,NULL,NULL };
     static const char *de[] = { "FADDP","FMULP","FCOMP","FCOMPP","FSUBRP","FSUBP","FDIVRP","FDIVP" };
-    MODRM m;
-    char  rmbuf[40];
-    int   save = oplen;
-    u8    modrm = d->p[d->pos];
-    int   reg = ( modrm >> 3 ) & 7;
-    int   rm = modrm & 7;
+    MODRM   m;
+    char    rmbuf[40];
+    int     save = oplen;
+    uint8_t modrm = d->p[d->pos];
+    int     reg = ( modrm >> 3 ) & 7;
+    int     rm = modrm & 7;
     const char *name = NULL;
-    int   form = 0;                 /* 0 none, 1 ST(i), 2 ST,ST(i), 3 ST(i),ST */
+    int     form = 0;               /* 0 none, 1 ST(i), 2 ST,ST(i), 3 ST(i),ST */
 
     decode_modrm( d, &m, 32 );
     mem_cpy( rmbuf, ops + save, oplen - save + 1 );
@@ -172,14 +172,14 @@ static void decode_8087( DEC *d, u8 op )
     }
 }
 
-static void decode_fpu( DEC *d, u8 op )
+static void decode_fpu( DEC *d, uint8_t op )
 {
-    MODRM m;
-    char  rmbuf[40];
-    int   save = oplen;
-    u8    modrm = d->p[d->pos];
-    int   reg = ( modrm >> 3 ) & 7;
-    int   rm = modrm & 7;
+    MODRM   m;
+    char    rmbuf[40];
+    int     save = oplen;
+    uint8_t modrm = d->p[d->pos];
+    int     reg = ( modrm >> 3 ) & 7;
+    int     rm = modrm & 7;
 
     if ( !d->use32 ) {
         decode_8087( d, op );
@@ -269,14 +269,14 @@ static const char *cc_name[] = {
 
 static void decode_0f( DEC *d )
 {
-    u8  op = fetch( d );
+    uint8_t op = fetch( d );
     int sz = d->opsize;
     MODRM m;
     char  rmbuf[40];
     int   save;
 
     if ( op >= 0x80 && op <= 0x8F ) {       /* long conditional jumps */
-        s32 disp = sz == 32 ? (s32)fetch32( d ) : (s32)(s16)fetch16( d );
+        int32_t disp = sz == 32 ? (int32_t)fetch32( d ) : (int32_t)(int16_t)fetch16( d );
         char nm[6];
         nm[0] = 'J';
         str_cpy( nm + 1, cc_name[op - 0x80] );

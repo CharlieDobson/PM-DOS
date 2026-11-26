@@ -17,25 +17,25 @@
 #define RESBITS         70      /* a quotient or root bound for a register:
                                    64 bits, two to round by, and more */
 
-static const u32 sizes[7] = { 4, 8, 10, 2, 4, 8, 10 };     /* by FMT_* */
+static const unsigned int sizes[7] = { 4, 8, 10, 2, 4, 8, 10 }; /* by FMT_* */
 
-static u32 rd16( const u8 *ptr )
+static uint32_t rd16( const uint8_t *ptr )
 {
-    return (u32)ptr[0] | ( (u32)ptr[1] << 8 );
+    return (uint32_t)ptr[0] | ( (uint32_t)ptr[1] << 8 );
 }
 
-static u32 rd32( const u8 *ptr )
+static uint32_t rd32( const uint8_t *ptr )
 {
     return rd16( ptr ) | ( rd16( ptr + 2 ) << 16 );
 }
 
-static void wr16( u8 *ptr, u32 value )
+static void wr16( uint8_t *ptr, uint32_t value )
 {
-    ptr[0] = (u8)value;
-    ptr[1] = (u8)( value >> 8 );
+    ptr[0] = (uint8_t)value;
+    ptr[1] = (uint8_t)( value >> 8 );
 }
 
-static void wr32( u8 *ptr, u32 value )
+static void wr32( uint8_t *ptr, uint32_t value )
 {
     wr16( ptr, value );
     wr16( ptr + 2, value >> 16 );
@@ -67,8 +67,8 @@ static int nan_in( x87ctx *c, wide *r, const wide *a, const wide *b )
     }
     if ( anan && bnan ) {
         /* the one with the larger significand */
-        u32 ahi = a->m[3] | 0x40000000;
-        u32 bhi = b->m[3] | 0x40000000;
+        uint32_t ahi = a->m[3] | 0x40000000;
+        uint32_t bhi = b->m[3] | 0x40000000;
 
         *r = ( bhi > ahi || ( bhi == ahi && b->m[2] > a->m[2] ) ) ? *b : *a;
     } else {
@@ -89,8 +89,8 @@ static int is_one( const wide *w )
 static void signed_kind( wide *w, int kind, int sign )
 {
     w_zero( w );
-    w->kind = (u8)kind;
-    w->sign = (u8)sign;
+    w->kind = (unsigned char)kind;
+    w->sign = (unsigned char)sign;
     if ( kind == K_INF ) {
         w->m[3] = 0x80000000;
     }
@@ -129,12 +129,12 @@ static int arith( x87ctx *c, int op, wide *r, wide *a, wide *b )
         } else if ( a->kind == K_ZERO && b->kind == K_ZERO ) {
             *r = *a;
             if ( a->sign != b->sign ) {
-                r->sign = (u8)( rc == RC_DOWN );
+                r->sign = (unsigned char)( rc == RC_DOWN );
             }
         } else {
             w_add( r, a, b );
             if ( r->kind == K_ZERO ) {
-                r->sign = (u8)( rc == RC_DOWN );
+                r->sign = (unsigned char)( rc == RC_DOWN );
             }
         }
         break;
@@ -216,7 +216,7 @@ void op_math( x87ctx *c, int op, int dst, int src, int pops )
 
 /* Eighteen digits, two to a byte from the lowest, and the sign in the
    tenth byte.  Built a byte at a time; under 2^60, so it is exact. */
-static void bcd_in( wide *w, const u8 *ptr )
+static void bcd_in( wide *w, const uint8_t *ptr )
 {
     wide part;
     int i;
@@ -229,15 +229,15 @@ static void bcd_in( wide *w, const u8 *ptr )
         w_int( &part, ( ptr[i] >> 4 ) * 10 + ( ptr[i] & 0x0F ) );
         w_add( w, w, &part );
     }
-    w->sign = (u8)( ptr[9] >> 7 );
+    w->sign = (unsigned char)( ptr[9] >> 7 );
 }
 
 /* The memory operand, as a number.  -> 0 if it could not be reached. */
 static int read_mem( x87ctx *c, int fmt, wide *w )
 {
-    u8 *ptr = xs_mem( c, sizes[fmt] );
+    uint8_t *ptr = xs_mem( c, sizes[fmt] );
     xreg x;
-    u32 lo;
+    uint32_t lo;
 
     if ( !ptr ) {
         return 0;
@@ -252,7 +252,7 @@ static int read_mem( x87ctx *c, int fmt, wide *w )
     case FMT_F80:
         x.lo = rd32( ptr );
         x.hi = rd32( ptr + 4 );
-        x.se = (u16)rd16( ptr + 8 );
+        x.se = (uint16_t)rd16( ptr + 8 );
         x.pad = 0;
         x_unpack( w, &x );
         break;
@@ -308,7 +308,7 @@ void op_mathmem( x87ctx *c, int op, int fmt )
 
 void op_load( x87ctx *c, int fmt )
 {
-    u8 *ptr;
+    uint8_t *ptr;
     xreg x;
     wide w;
 
@@ -320,7 +320,7 @@ void op_load( x87ctx *c, int fmt )
         }
         x.lo = rd32( ptr );
         x.hi = rd32( ptr + 4 );
-        x.se = (u16)rd16( ptr + 8 );
+        x.se = (uint16_t)rd16( ptr + 8 );
         x.pad = 0;
         if ( xs_push( c ) ) {
             xs_putraw( c, 0, &x );
@@ -350,9 +350,9 @@ void op_load( x87ctx *c, int fmt )
 
 /* ST(0), rounded to a whole number and stored as BCD; 0 if it has more
    than eighteen digits */
-static int bcd_out( u8 *ptr, const wide *w )
+static int bcd_out( uint8_t *ptr, const wide *w )
 {
-    u32 lo, hi, top9, low9;
+    uint32_t lo, hi, top9, low9;
     int i;
 
     if ( !i_pack( w, &lo, &hi ) ) {
@@ -368,31 +368,31 @@ static int bcd_out( u8 *ptr, const wide *w )
     }
     top9 = div32( lo, hi, 1000000000, &low9 );
     for ( i = 0; i < 9; i++ ) {
-        u32 *from = i < 4 ? &low9 : &top9;
-        u32 pair;
+        uint32_t *from = i < 4 ? &low9 : &top9;
+        uint32_t pair;
 
         if ( i == 4 ) {
             /* byte 4 is digit 9 of the top half and digit 8 of the low */
             pair = ( ( top9 % 10 ) << 4 ) | ( low9 % 10 );
             top9 /= 10;
             low9 /= 10;
-            ptr[i] = (u8)pair;
+            ptr[i] = (uint8_t)pair;
             continue;
         }
         pair = *from % 10;
         *from /= 10;
         pair |= ( *from % 10 ) << 4;
         *from /= 10;
-        ptr[i] = (u8)pair;
+        ptr[i] = (uint8_t)pair;
     }
-    ptr[9] = (u8)( w->sign << 7 );
+    ptr[9] = (uint8_t)( w->sign << 7 );
     return 1;
 }
 
 void op_store( x87ctx *c, int fmt, int pops )
 {
-    u8 *ptr = xs_mem( c, sizes[fmt] );
-    u32 flags = 0, round = 0, lo = 0, hi = 0;
+    uint8_t *ptr = xs_mem( c, sizes[fmt] );
+    uint32_t flags = 0, round = 0, lo = 0, hi = 0;
     int fits;
     xreg x;
     wide w;
@@ -451,7 +451,7 @@ void op_store( x87ctx *c, int fmt, int pops )
                 return;
             }
             c->exc |= flags & SW_PE;
-            c->st->sw |= (u16)( flags & SW_C1 );
+            c->st->sw |= (uint16_t)( flags & SW_C1 );
         }
         if ( fmt == FMT_F32 ) {
             wr32( ptr, f_pack( &w ) );
@@ -555,7 +555,7 @@ void op_compare( x87ctx *c, int src, const wide *b, int mode, int pops )
 {
     wide a, other;
     int order = 2;                      /* 2: unordered */
-    u32 *flags = &c->frame->eflags;
+    uint32_t *flags = &c->frame->eflags;
 
     if ( xs_empty( c, 0 ) || ( !b && xs_empty( c, src ) ) ) {
         if ( !xs_under( c ) ) {
@@ -647,7 +647,7 @@ static void op_fxam( x87ctx *c )
 {
     xreg x;
     wide w;
-    u32 cc;
+    uint32_t cc;
 
     xs_getraw( c, 0, &x );
     if ( xs_empty( c, 0 ) ) {
@@ -726,7 +726,7 @@ static void op_sqrt( x87ctx *c )
 static void op_rndint( x87ctx *c )
 {
     wide x;
-    u32 round = 0;
+    uint32_t round = 0;
 
     if ( !one_in( c, &x ) ) {
         return;
@@ -756,7 +756,7 @@ static void op_rndint( x87ctx *c )
 static void op_scale( x87ctx *c )
 {
     wide x, s, r, t;
-    s32 count = 0;
+    int32_t count = 0;
 
     if ( !xs_empty( c, 0 ) && !xs_empty( c, 1 ) ) {
         xs_get( c, 0, &x );
@@ -784,7 +784,7 @@ static void op_scale( x87ctx *c )
             t = s;
             w_rint( &t, RC_CHOP );
             if ( t.kind == K_FIN ) {
-                count = t.e > 20 ? 0x200000 : (s32)( t.m[3] >> ( 31 - t.e ) );
+                count = t.e > 20 ? 0x200000 : (int32_t)( t.m[3] >> ( 31 - t.e ) );
                 if ( t.sign ) {
                     count = -count;
                 }
@@ -820,7 +820,7 @@ static void op_xtract( x87ctx *c )
         } else if ( x.kind == K_INF ) {
             signed_kind( &expo, K_INF, 0 );
         } else {
-            w_int( &expo, (u32)( x.e < 0 ? -x.e : x.e ) );
+            w_int( &expo, (uint32_t)( x.e < 0 ? -x.e : x.e ) );
             if ( x.e < 0 ) {
                 expo.sign = 1;
             }
@@ -839,8 +839,8 @@ static void op_xtract( x87ctx *c )
 static void op_prem( x87ctx *c, int ieee )
 {
     wide x, y, r, t, ymag;
-    u32 quot = 0, cc = 0;
-    s32 diff;
+    uint32_t quot = 0, cc = 0;
+    int32_t diff;
 
     if ( !xs_empty( c, 0 ) && !xs_empty( c, 1 ) ) {
         xs_get( c, 0, &x );
@@ -894,7 +894,7 @@ static void op_prem( x87ctx *c, int ieee )
                     t = r;
                     t.sign = 0;
                     w_sub( &r, &ymag, &t );
-                    r.sign = (u8)( x.sign ^ 1 );
+                    r.sign = (unsigned char)( x.sign ^ 1 );
                     quot++;
                 }
             }

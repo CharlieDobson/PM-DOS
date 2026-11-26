@@ -27,13 +27,13 @@ typedef struct {
 
 typedef struct {
     const char *title;
-    u32   first;
-    u32   count;
+    unsigned int first;
+    unsigned int count;
 } TOPIC;
 
 typedef struct {
     const char *text;
-    u16   len;
+    uint16_t len;
 } HLINE;
 
 #define RL_MAX      256
@@ -46,22 +46,22 @@ typedef struct {
 } HLINK;
 
 typedef struct {
-    u8    ch[RL_MAX];
-    u8    attr[RL_MAX];
-    int   len;
-    HLINK links[RL_LINKS];
-    int   nlinks;
+    uint8_t ch[RL_MAX];
+    uint8_t attr[RL_MAX];
+    int     len;
+    HLINK   links[RL_LINKS];
+    int     nlinks;
 } RLINE;
 
-static TOPIC   *topics;
-static int      ntopics;
-static CONTEXT *contexts;
-static int      ncontexts;
-static HLINE   *hlines;
-static u32      nhlines;
-static char    *file;
-static u32      file_len;
-static int      loaded;             /* 1 read, -1 not there */
+static TOPIC       *topics;
+static int          ntopics;
+static CONTEXT     *contexts;
+static int          ncontexts;
+static HLINE       *hlines;
+static unsigned int nhlines;
+static char        *file;
+static unsigned int file_len;
+static int          loaded;         /* 1 read, -1 not there */
 
 /* ------------------------------------------------------------------ */
 /* loading                                                             */
@@ -69,7 +69,8 @@ static int      loaded;             /* 1 read, -1 not there */
 
 static int read_whole( const char *path )
 {
-    u32 handle, size, done, got = 0;
+    uint32_t handle, size;
+    unsigned int done, got = 0;
     int rc;
 
     rc = sys_open_read( path, &handle );
@@ -101,7 +102,7 @@ static int read_whole( const char *path )
 
 enum { D_NONE, D_CONTEXT, D_TOPIC, D_IGNORE };
 
-static int directive( const char *text, u16 len, const char **arg, int *arg_len )
+static int directive( const char *text, uint16_t len, const char **arg, int *arg_len )
 {
     static const char *const names[] = {
         "context", "topic", "freeze", "comment", "list", "category", "next",
@@ -116,7 +117,7 @@ static int directive( const char *text, u16 len, const char **arg, int *arg_len 
     }
     for ( index = 0; names[index]; index++ ) {
         if ( (int)str_len( names[index] ) == wlen - 1
-             && str_nicmp( text + 1, names[index], (u32)(wlen - 1) ) == 0 ) {
+             && str_nicmp( text + 1, names[index], (unsigned int)(wlen - 1) ) == 0 ) {
             while ( wlen < len && (text[wlen] == ' ' || text[wlen] == '\t') ) {
                 wlen++;
             }
@@ -136,9 +137,9 @@ static int walk( int fill )
 {
     char *at = file, *end = file + file_len, *line;
     const char *arg;
-    u16 len;
+    uint16_t len;
     int kind, arg_len, in_head = 0;
-    u32 lines = 0, topic_count = 0, ctx_count = 0;
+    unsigned int lines = 0, topic_count = 0, ctx_count = 0;
     TOPIC *topic = NULL;
 
     while ( at < end ) {
@@ -146,7 +147,7 @@ static int walk( int fill )
         while ( at < end && *at != '\n' ) {
             at++;
         }
-        len = (u16)(at - line);
+        len = (uint16_t)(at - line);
         if ( at < end ) {
             at++;
         }
@@ -209,7 +210,7 @@ static int walk( int fill )
     return ntopics > 0;
 }
 
-static int load_from( const char *dir, u32 dlen )
+static int load_from( const char *dir, unsigned int dlen )
 {
     char path[PATH_MAX];
 
@@ -230,8 +231,8 @@ static int load_from( const char *dir, u32 dlen )
         file = NULL;
         return 0;
     }
-    topics = (TOPIC *)try_alloc( (u32)ntopics * sizeof( TOPIC ) );
-    contexts = (CONTEXT *)try_alloc( (u32)ncontexts * sizeof( CONTEXT ) );
+    topics = (TOPIC *)try_alloc( (unsigned int)ntopics * sizeof( TOPIC ) );
+    contexts = (CONTEXT *)try_alloc( (unsigned int)ncontexts * sizeof( CONTEXT ) );
     hlines = (HLINE *)try_alloc( (nhlines + 1) * sizeof( HLINE ) );
     if ( topics == NULL || contexts == NULL || hlines == NULL ) {
         xfree( topics );
@@ -279,7 +280,7 @@ void help_init( void )
                 last = scan;
             }
         }
-        if ( last != NULL && load_from( shell, (u32)(last - shell + 1) ) ) {
+        if ( last != NULL && load_from( shell, (unsigned int)(last - shell + 1) ) ) {
             loaded = 1;
             return;
         }
@@ -292,7 +293,7 @@ void help_init( void )
     while ( path && *path ) {
         for ( end = path; *end && *end != ';'; end++ ) {
         }
-        if ( end > path && load_from( path, (u32)(end - path) ) ) {
+        if ( end > path && load_from( path, (unsigned int)(end - path) ) ) {
             loaded = 1;
             return;
         }
@@ -316,7 +317,7 @@ static int find_n( const char *context, int len )
     }
     for ( index = 0; index < ncontexts; index++ ) {
         if ( (int)str_len( contexts[index].name ) == len
-             && str_nicmp( contexts[index].name, context, (u32)len ) == 0 ) {
+             && str_nicmp( contexts[index].name, context, (unsigned int)len ) == 0 ) {
             return contexts[index].topic;
         }
     }
@@ -339,7 +340,7 @@ static int is_bracket( int ch )
     return ch == 0x11 || ch == 0x10;
 }
 
-static void render_line( u32 line, RLINE *out, u8 text_attr )
+static void render_line( unsigned int line, RLINE *out, uint8_t text_attr )
 {
     const HLINE *src = &hlines[line];
     const char *text = src->text, *end = src->text + src->len;
@@ -349,9 +350,9 @@ static void render_line( u32 line, RLINE *out, u8 text_attr )
     out->len = 0;
     out->nlinks = 0;
     while ( text < end ) {
-        ch = (u8)*text++;
+        ch = (uint8_t)*text++;
         if ( ch == '\\' && text < end ) {
-            ch = (u8)*text++;
+            ch = (uint8_t)*text++;
             switch ( ch_lower( ch ) ) {
             case 'b': bold = !bold;  continue;
             case 'i': case 'u':      continue;
@@ -391,7 +392,7 @@ static void render_line( u32 line, RLINE *out, u8 text_attr )
             ch = ' ';
         }
         if ( out->len < RL_MAX ) {
-            out->ch[out->len] = (u8)ch;
+            out->ch[out->len] = (uint8_t)ch;
             out->attr[out->len] = bold ? pal.help_bold : text_attr;
             out->len++;
             if ( anchor && link ) {
@@ -401,7 +402,7 @@ static void render_line( u32 line, RLINE *out, u8 text_attr )
     }
     for ( index = 0; index < out->len; index++ ) {
         if ( is_bracket( out->ch[index] ) ) {
-            out->attr[index] = (u8)((text_attr & 0xF0) | (pal.help_link & 0x0F));
+            out->attr[index] = (uint8_t)((text_attr & 0xF0) | (pal.help_link & 0x0F));
         }
     }
     /* a link with no \v leads where its own text says */
@@ -419,9 +420,9 @@ static void render_line( u32 line, RLINE *out, u8 text_attr )
 
 #define HISTORY     20
 
-static int  shown_topic = -1;       /* -1: the window is shut */
-static u32  h_top, h_line, h_col, h_want;
-static int  history[HISTORY], nhistory;
+static int          shown_topic = -1;   /* -1: the window is shut */
+static unsigned int h_top, h_line, h_col, h_want;
+static int          history[HISTORY], nhistory;
 static const char nav_line[] = "  \x11\\aContents\\vcontents\\v\x10  \x11\\aIndex\\vindex\\v\x10  \x11\\aBack\\vback\\v\x10";
 
 int help_shown( void )
@@ -463,16 +464,16 @@ static int text_rows( void )
 static void keep_visible( void )
 {
     int rows = text_rows();
-    u32 count = (u32)topic_lines();
+    unsigned int count = (unsigned int)topic_lines();
 
     if ( h_line < h_top ) {
         h_top = h_line;
     }
-    if ( h_line >= h_top + (u32)rows ) {
-        h_top = h_line - (u32)rows + 1;
+    if ( h_line >= h_top + (unsigned int)rows ) {
+        h_top = h_line - (unsigned int)rows + 1;
     }
-    if ( count > (u32)rows && h_top > count - (u32)rows ) {
-        h_top = count - (u32)rows;
+    if ( count > (unsigned int)rows && h_top > count - (unsigned int)rows ) {
+        h_top = count - (unsigned int)rows;
     }
 }
 
@@ -484,24 +485,24 @@ static void render( int line )
 
     if ( line < 0 ) {
         nav.text = nav_line;
-        nav.len = (u16)str_len( nav_line );
+        nav.len = (uint16_t)str_len( nav_line );
         save = hlines;
         hlines = &nav;
         render_line( 0, &rl, pal.help );
         hlines = save;
         return;
     }
-    if ( shown_topic < 0 || (u32)line >= topics[shown_topic].count ) {
+    if ( shown_topic < 0 || (unsigned int)line >= topics[shown_topic].count ) {
         rl.len = 0;
         rl.nlinks = 0;
         return;
     }
-    render_line( topics[shown_topic].first + (u32)line, &rl, pal.help );
+    render_line( topics[shown_topic].first + (unsigned int)line, &rl, pal.help );
 }
 
 static int next_link( int step )
 {
-    u32 count = (u32)topic_lines(), line = h_line, tries;
+    unsigned int count = (unsigned int)topic_lines(), line = h_line, tries;
     int index, found = -1;
 
     if ( count == 0 ) {
@@ -534,7 +535,7 @@ static int next_link( int step )
         return 0;
     }
     h_line = line;
-    h_col = (u32)rl.links[found].start;
+    h_col = (unsigned int)rl.links[found].start;
     h_want = h_col;
     keep_visible();
     return 1;
@@ -607,7 +608,7 @@ void help_draw( int active )
 {
     char title[90];
     int rows = help_rows(), row, len, col, index;
-    u8 frame = pal.help;
+    uint8_t frame = pal.help;
 
     if ( shown_topic < 0 ) {
         return;
@@ -639,7 +640,7 @@ void help_draw( int active )
         int at = 4 + row;
         scr_ch( at, 0, 0xB3, frame );
         scr_fill( at, 1, scr_cols - 2, ' ', frame );
-        render( (int)(h_top + (u32)row) );
+        render( (int)(h_top + (unsigned int)row) );
         for ( col = 0; col < rl.len && col < scr_cols - 2; col++ ) {
             scr_ch( at, 1 + col, rl.ch[col], rl.attr[col] );
         }
@@ -648,13 +649,13 @@ void help_draw( int active )
     if ( active && rows - 3 >= 3 ) {
         /* the scroll bar, from the links' row down */
         int first = 2, last = rows, track = last - first - 1, thumb;
-        u32 count = (u32)topic_lines();
+        unsigned int count = (unsigned int)topic_lines();
         scr_ch( first, scr_cols - 1, 0x18, pal.scroll );
         for ( index = first + 1; index < last; index++ ) {
             scr_ch( index, scr_cols - 1, 0xB0, pal.scroll );
         }
         scr_ch( last, scr_cols - 1, 0x19, pal.scroll );
-        thumb = count > 1 ? (int)(h_line * (u32)(track - 1) / (count - 1)) : 0;
+        thumb = count > 1 ? (int)(h_line * (unsigned int)(track - 1) / (count - 1)) : 0;
         scr_ch( first + 1 + thumb, scr_cols - 1, ' ', pal.thumb );
     }
     if ( active ) {
@@ -674,7 +675,7 @@ static void follow( const char *ctx, int len )
     if ( len >= (int)sizeof( name ) ) {
         len = sizeof( name ) - 1;
     }
-    mem_cpy( name, ctx, (u32)len );
+    mem_cpy( name, ctx, (unsigned int)len );
     name[len] = 0;
     if ( str_icmp( name, "back" ) == 0 ) {
         if ( nhistory > 0 ) {
@@ -688,7 +689,7 @@ static void follow( const char *ctx, int len )
     }
 }
 
-static int link_under( u32 line, u32 col, HLINK *out )
+static int link_under( unsigned int line, unsigned int col, HLINK *out )
 {
     int index;
 
@@ -705,15 +706,15 @@ static int link_under( u32 line, u32 col, HLINK *out )
 /* a letter in the Index: to that letter's list (the line with its box) */
 static int jump_letter( int letter )
 {
-    u32 line, count = (u32)topic_lines(), first = topics[shown_topic].first;
+    unsigned int line, count = (unsigned int)topic_lines(), first = topics[shown_topic].first;
     const HLINE *src;
-    u16 at;
+    unsigned int at;
 
     letter = ch_upper( letter );
     for ( line = 0; line < count; line++ ) {
         src = &hlines[first + line];
         for ( at = 0; at + 3 < src->len; at++ ) {
-            if ( (u8)src->text[at] == 0xB9 && src->text[at + 1] == ' '
+            if ( (uint8_t)src->text[at] == 0xB9 && src->text[at + 1] == ' '
                  && ch_upper( src->text[at + 2] ) == letter && src->text[at + 3] == ' ' ) {
                 h_top = line;
                 h_line = line + 2 < count ? line + 2 : line;
@@ -727,7 +728,7 @@ static int jump_letter( int letter )
 
 int help_key( int key )
 {
-    u32 count = (u32)topic_lines();
+    unsigned int count = (unsigned int)topic_lines();
     int rows = text_rows();
     HLINK link;
 
@@ -774,7 +775,7 @@ int help_key( int key )
         h_want = h_col;
         break;
     case K_RIGHT:
-        if ( h_col < (u32)scr_cols - 3 ) {
+        if ( h_col < (unsigned int)scr_cols - 3 ) {
             h_col++;
         }
         h_want = h_col;
@@ -784,18 +785,18 @@ int help_key( int key )
         break;
     case K_END:
         render( (int)h_line );
-        h_col = h_want = rl.len ? (u32)rl.len - 1 : 0;
+        h_col = h_want = rl.len ? (unsigned int)rl.len - 1 : 0;
         break;
     case K_PGUP:
-        h_line = h_line > (u32)(rows - 1) ? h_line - (u32)(rows - 1) : 0;
-        h_top = h_top > (u32)(rows - 1) ? h_top - (u32)(rows - 1) : 0;
+        h_line = h_line > (unsigned int)(rows - 1) ? h_line - (unsigned int)(rows - 1) : 0;
+        h_top = h_top > (unsigned int)(rows - 1) ? h_top - (unsigned int)(rows - 1) : 0;
         break;
     case K_PGDN:
-        h_line += (u32)(rows - 1);
+        h_line += (unsigned int)(rows - 1);
         if ( h_line >= count ) {
             h_line = count ? count - 1 : 0;
         }
-        h_top += (u32)(rows - 1);
+        h_top += (unsigned int)(rows - 1);
         break;
     case K_CHOME:
         h_line = h_col = h_want = 0;
@@ -836,11 +837,11 @@ void help_mouse( void )
         return;
     }
     if ( row >= 4 && row < help_rows() + 1 && col >= 1 && col < scr_cols - 1 ) {
-        h_line = h_top + (u32)(row - 4);
-        if ( h_line >= (u32)topic_lines() ) {
-            h_line = topic_lines() ? (u32)topic_lines() - 1 : 0;
+        h_line = h_top + (unsigned int)(row - 4);
+        if ( h_line >= (unsigned int)topic_lines() ) {
+            h_line = topic_lines() ? (unsigned int)topic_lines() - 1 : 0;
         }
-        h_col = h_want = (u32)(col - 1);
+        h_col = h_want = (unsigned int)(col - 1);
         if ( mouse.kind == ME_DOUBLE && link_under( h_line, h_col, &link ) ) {
             follow( link.ctx, link.ctx_len );
         }
@@ -870,7 +871,7 @@ int help_has_keyword( VIEW *view )
 void help_keyword( VIEW *view )
 {
     char word[40];
-    u32 len;
+    unsigned int len;
 
     view_word_at( view, word, sizeof( word ) );
     if ( word[0] == 0 ) {
@@ -901,7 +902,7 @@ void help_keyword( VIEW *view )
 void help_box( const char *name )
 {
     int topic = topic_or_missing( name ), rows, top, count, key, row, col, inner;
-    u32 first = 0;
+    unsigned int first = 0;
     char title[80];
 
     if ( topic < 0 ) {
@@ -921,8 +922,8 @@ void help_box( const char *name )
         scr_putn( top, (80 - (int)str_len( title )) / 2, title, (int)str_len( title ), pal.menu );
         scr_box( top + 1, 8, top + 2 + inner, 71, pal.menu );
         for ( row = 0; row < inner; row++ ) {
-            if ( first + (u32)row < (u32)count ) {
-                render_line( topics[topic].first + first + (u32)row, &rl, pal.menu );
+            if ( first + (unsigned int)row < (unsigned int)count ) {
+                render_line( topics[topic].first + first + (unsigned int)row, &rl, pal.menu );
                 for ( col = 0; col < rl.len && col < 62; col++ ) {
                     scr_ch( top + 2 + row, 9 + col, rl.ch[col],
                             rl.attr[col] == pal.help_bold ? pal.menu_hot : rl.attr[col] );
@@ -930,7 +931,7 @@ void help_box( const char *name )
             }
         }
         if ( count > inner ) {
-            int thumb = (int)(first * (u32)(inner - 3) / (u32)(count - inner));
+            int thumb = (int)(first * (unsigned int)(inner - 3) / (unsigned int)(count - inner));
             scr_ch( top + 2, 71, 0x18, pal.scroll );
             for ( row = 1; row < inner - 1; row++ ) {
                 scr_ch( top + 2 + row, 71, 0xB0, pal.scroll );
@@ -968,15 +969,15 @@ void help_box( const char *name )
                 continue;
             }
         }
-        if ( (key == K_DOWN || key == K_PGDN) && first + (u32)inner < (u32)count ) {
-            first += key == K_DOWN ? 1 : (u32)inner;
-            if ( first + (u32)inner > (u32)count ) {
-                first = (u32)(count - inner);
+        if ( (key == K_DOWN || key == K_PGDN) && first + (unsigned int)inner < (unsigned int)count ) {
+            first += key == K_DOWN ? 1 : (unsigned int)inner;
+            if ( first + (unsigned int)inner > (unsigned int)count ) {
+                first = (unsigned int)(count - inner);
             }
         } else if ( key == K_UP && first > 0 ) {
             first--;
         } else if ( key == K_PGUP ) {
-            first = first > (u32)inner ? first - (u32)inner : 0;
+            first = first > (unsigned int)inner ? first - (unsigned int)inner : 0;
         }
     }
     app_status( NULL );

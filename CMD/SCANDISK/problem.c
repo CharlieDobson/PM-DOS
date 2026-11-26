@@ -85,7 +85,8 @@ void log_para( const char *text )
 /* SCANDISK.LOG in the root of the drive the system started from */
 int log_save( int append, char *where )
 {
-    u32 handle, done;
+    uint32_t handle;
+    unsigned int done;
     const char *line;
     int index, rc;
 

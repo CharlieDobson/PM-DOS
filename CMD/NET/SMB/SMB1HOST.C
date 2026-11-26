@@ -13,12 +13,12 @@
 
 static SOCKET g_sock;
 
-static int io_send( void *ctx, const unsigned char *buf, int len )
+static int io_send( void *ctx, const uint8_t *buf, int len )
 {
     (void)ctx;
     return send( g_sock, (const char *)buf, len, 0 );
 }
-static int io_recv( void *ctx, unsigned char *buf, int len )
+static int io_recv( void *ctx, uint8_t *buf, int len )
 {
     (void)ctx;
     return recv( g_sock, (char *)buf, len, 0 );
@@ -57,7 +57,7 @@ int main( int argc, char **argv )
     }
     printf( "connected to %s:%d; user=%s domain=%s share=%s\n", ip, port, user, domain, share );
 
-    rc = smb1_connect( &cl, io_send, io_recv, (void *)0, (unsigned long)time( (time_t *)0 ),
+    rc = smb1_connect( &cl, io_send, io_recv, (void *)0, (uint32_t)time( (time_t *)0 ),
                        ip, share, user, pass, domain );
     if ( rc != 0 ) {
         printf( "FAIL at stage '%s', NTSTATUS 0x%08lX\n", smb1_stage( &cl ), smb1_status( &cl ) );
@@ -77,7 +77,7 @@ int main( int argc, char **argv )
     /* read HELLO.TXT */
     {
         smb2_fh fh;
-        unsigned char data[512];
+        uint8_t data[512];
         int n;
         if ( smb1_open_disp( &cl, "HELLO.TXT", 0, 1, &fh ) == 0 ) {
             n = smb1_read( &cl, &fh, 0, 0, data, sizeof( data ) - 1 );
@@ -88,7 +88,7 @@ int main( int argc, char **argv )
         /* write + read back a temp file */
         if ( smb1_open_disp( &cl, "PMSMB1.TMP", 1, 5, &fh ) == 0 ) {
             const char *msg = "written by PM-DOS SMB1\r\n";
-            int wn = smb1_write( &cl, &fh, 0, 0, (const unsigned char *)msg, (int)strlen( msg ) );
+            int wn = smb1_write( &cl, &fh, 0, 0, (const uint8_t *)msg, (int)strlen( msg ) );
             printf( "wrote PMSMB1.TMP: %d bytes\n", wn );
             smb1_close_file( &cl, &fh );
             if ( smb1_open_disp( &cl, "PMSMB1.TMP", 0, 1, &fh ) == 0 ) {

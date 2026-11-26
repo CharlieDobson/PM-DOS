@@ -8,45 +8,44 @@
  * the TLS clients link this.
  */
 #include "ndrv.h"
+#include <stddef.h>
 
 void __cdecl int21( REGS *regs );
 
-typedef unsigned u_size;
-
 /* ---- memory and string primitives ---- */
 
-void *memcpy( void *to, const void *from, u_size len )
+void *memcpy( void *to, const void *from, size_t len )
 {
-    u8 *d = (u8 *)to; const u8 *s = (const u8 *)from;
+    uint8_t *d = (uint8_t *)to; const uint8_t *s = (const uint8_t *)from;
     while ( len-- ) *d++ = *s++;
     return to;
 }
 
-void *memmove( void *to, const void *from, u_size len )
+void *memmove( void *to, const void *from, size_t len )
 {
-    u8 *d = (u8 *)to; const u8 *s = (const u8 *)from;
+    uint8_t *d = (uint8_t *)to; const uint8_t *s = (const uint8_t *)from;
     if ( d < s ) { while ( len-- ) *d++ = *s++; }
     else { d += len; s += len; while ( len-- ) *--d = *--s; }
     return to;
 }
 
-void *memset( void *to, int value, u_size len )
+void *memset( void *to, int value, size_t len )
 {
-    u8 *d = (u8 *)to;
-    while ( len-- ) *d++ = (u8)value;
+    uint8_t *d = (uint8_t *)to;
+    while ( len-- ) *d++ = (uint8_t)value;
     return to;
 }
 
-int memcmp( const void *a, const void *b, u_size len )
+int memcmp( const void *a, const void *b, size_t len )
 {
-    const u8 *p = (const u8 *)a, *q = (const u8 *)b;
+    const uint8_t *p = (const uint8_t *)a, *q = (const uint8_t *)b;
     while ( len-- ) { if ( *p != *q ) return (int)*p - (int)*q; p++; q++; }
     return 0;
 }
 
-u_size strlen( const char *s )
+size_t strlen( const char *s )
 {
-    u_size n = 0;
+    size_t n = 0;
     while ( s[n] ) n++;
     return n;
 }
@@ -54,12 +53,12 @@ u_size strlen( const char *s )
 int strcmp( const char *a, const char *b )
 {
     while ( *a && *a == *b ) { a++; b++; }
-    return (int)(u8)*a - (int)(u8)*b;
+    return (int)(unsigned char)*a - (int)(unsigned char)*b;
 }
 
-char *strncpy( char *to, const char *from, u_size max )
+char *strncpy( char *to, const char *from, size_t max )
 {
-    u_size i = 0;
+    size_t i = 0;
     while ( i < max && from[i] ) { to[i] = from[i]; i++; }
     while ( i < max ) to[i++] = 0;
     return to;
@@ -74,20 +73,20 @@ char *strchr( const char *s, int ch )
 /* ---- the heap: one DOS block, first fit ---- */
 
 typedef struct hblk {
-    u_size size;                /* payload bytes */
-    u_size used;
+    size_t size;                /* payload bytes */
+    size_t used;
     struct hblk *next;
 } HBLK;
 
-#define HDR ( ( u_size )sizeof( HBLK ) )
+#define HDR ( ( size_t )sizeof( HBLK ) )
 
-static u8   *pool;
-static HBLK *head;
+static uint8_t *pool;
+static HBLK    *head;
 
 static int pool_grab( void )
 {
     REGS regs;
-    static const u32 sizes[] = { 0x180000UL, 0x100000UL, 0x80000UL, 0x40000UL, 0 };
+    static const unsigned int sizes[] = { 0x180000UL, 0x100000UL, 0x80000UL, 0x40000UL, 0 };
     int i;
 
     for ( i = 0; sizes[i]; i++ ) {
@@ -96,7 +95,7 @@ static int pool_grab( void )
         regs.ebx = sizes[i];
         int21( &regs );
         if ( !CF( regs ) ) {
-            pool = (u8 *)regs.eax;
+            pool = (uint8_t *)regs.eax;
             head = (HBLK *)pool;
             head->size = sizes[i] - HDR;
             head->used = 0;
@@ -107,17 +106,17 @@ static int pool_grab( void )
     return 0;
 }
 
-void *malloc( u_size want )
+void *malloc( size_t want )
 {
     HBLK *b;
 
-    if ( pool == (u8 *)0 && !pool_grab() ) return (void *)0;
+    if ( pool == (uint8_t *)0 && !pool_grab() ) return (void *)0;
     want = ( want + 7 ) & ~7U;          /* 8-byte align */
 
     for ( b = head; b; b = b->next ) {
         if ( b->used || b->size < want ) continue;
         if ( b->size >= want + HDR + 8 ) {     /* split */
-            HBLK *rest = (HBLK *)( (u8 *)b + HDR + want );
+            HBLK *rest = (HBLK *)( (uint8_t *)b + HDR + want );
             rest->size = b->size - want - HDR;
             rest->used = 0;
             rest->next = b->next;
@@ -125,7 +124,7 @@ void *malloc( u_size want )
             b->next = rest;
         }
         b->used = 1;
-        return (u8 *)b + HDR;
+        return (uint8_t *)b + HDR;
     }
     return (void *)0;
 }
@@ -147,19 +146,19 @@ void free( void *ptr )
 {
     HBLK *b;
     if ( ptr == (void *)0 ) return;
-    b = (HBLK *)( (u8 *)ptr - HDR );
+    b = (HBLK *)( (uint8_t *)ptr - HDR );
     b->used = 0;
     coalesce();
 }
 
-void *realloc( void *ptr, u_size want )
+void *realloc( void *ptr, size_t want )
 {
     HBLK *b;
     void *nu;
-    u_size old;
+    size_t old;
 
     if ( ptr == (void *)0 ) return malloc( want );
-    b = (HBLK *)( (u8 *)ptr - HDR );
+    b = (HBLK *)( (uint8_t *)ptr - HDR );
     old = b->size;
     if ( old >= want ) return ptr;      /* the block already fits */
     nu = malloc( want );

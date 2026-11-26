@@ -42,10 +42,10 @@ int    nitems;                  /* slots in use or once used */
 int    prog_group;
 int    prog_cur, prog_top;
 
-static u8    used[MAX_ITEMS + 1];     /* one past the end: a scratch item, for */
-static int   order[MAX_ITEMS + 1];    /* reading a file with too many */
-static ASSOC assoc[MAX_ASSOC];
-static int   nassoc;
+static uint8_t used[MAX_ITEMS + 1];   /* one past the end: a scratch item, for */
+static int     order[MAX_ITEMS + 1];  /* reading a file with too many */
+static ASSOC   assoc[MAX_ASSOC];
+static int     nassoc;
 
 /* ------------------------------------------------------------------ */
 /* the items                                                           */
@@ -199,7 +199,7 @@ int run_command( const char *cmds, const char *dir, int pause )
     while ( *cur ) {
         for ( len = 0; cur[len] && cur[len] != ';'; len++ ) {
         }
-        str_fit( one, cur, (u32)len + 1 < sizeof( one ) ? (u32)len + 1 : sizeof( one ) );
+        str_fit( one, cur, (unsigned int)len + 1 < sizeof( one ) ? (unsigned int)len + 1 : sizeof( one ) );
         cur += len + (cur[len] == ';');
         for ( len = 0; one[len] == ' '; len++ ) {
         }
@@ -253,7 +253,7 @@ static int is_program( const char *name )
 }
 
 /* a name on a command line: in quotes when it has a blank in it */
-static void quote_onto( char *line, const char *name, u32 max )
+static void quote_onto( char *line, const char *name, unsigned int max )
 {
     int quoted = str_chr( name, ' ' ) != NULL;
 
@@ -293,13 +293,13 @@ void run_file( const char *path )
 
 /* %1 to %3 in a program's commands: each one asked for, once, and put
    in wherever it stands.  0 = a box was cancelled. */
-static int fill_parameters( const PITEM *item, char *out, u32 max )
+static int fill_parameters( const PITEM *item, char *out, unsigned int max )
 {
     char value[MAX_PROMPTS][64];
     int asked[MAX_PROMPTS], which;
     const char *src;
     const PPROMPT *prompt;
-    u32 len = 0, add;
+    unsigned int len = 0, add;
 
     mem_set( asked, 0, sizeof( asked ) );
     for ( src = item->cmds; *src; src++ ) {
@@ -738,8 +738,8 @@ const char *assoc_prog_at( int index )
 /* DOSSHELL.INI: reading                                               */
 /* ------------------------------------------------------------------ */
 
-static char *ini_buf;
-static u32   ini_len, ini_pos;
+static char        *ini_buf;
+static unsigned int ini_len, ini_pos;
 
 /* The next line that says something: a key and its value, with "[" for
    a section (its name the value), "{" and "}" for themselves.  0 at
@@ -752,7 +752,7 @@ static int ini_next( char **key, char **value )
         line = ini_buf + ini_pos;
         for ( end = line; end < ini_buf + ini_len && *end != '\n'; end++ ) {
         }
-        ini_pos = (u32)(end - ini_buf) + 1;
+        ini_pos = (unsigned int)(end - ini_buf) + 1;
         while ( end > line && (end[-1] == '\r' || end[-1] == ' ' || end[-1] == '\t') ) {
             end--;
         }
@@ -805,7 +805,7 @@ static int is_on( const char *value )
 static int ini_open( const char *value )
 {
     char *key, *more;
-    u32 at = ini_pos;
+    unsigned int at = ini_pos;
 
     if ( value[0] == '{' ) {
         return 1;
@@ -1034,7 +1034,7 @@ static void default_items( void )
    starts from the same place and the user's own settings are left
    alone; DSINI names a file for a test, or for anybody, to use
    instead. */
-static int ini_path( char *path, u32 max )
+static int ini_path( char *path, unsigned int max )
 {
     const char *named = sys_getenv( "DSINI" );
     const char *test = sys_getenv( "DSTEST" );
@@ -1054,11 +1054,12 @@ static int ini_path( char *path, u32 max )
 void ini_load( void )
 {
     char path[PATH_MAX], *key, *value;
-    u32 handle, size = 0, done = 0;
+    uint32_t handle, size = 0;
+    unsigned int done = 0;
     int section = 0, have_groups = 0;
 
-    items = (PITEM *)xalloc( (u32)(MAX_ITEMS + 1) * sizeof( PITEM ) );
-    mem_set( items, 0, (u32)(MAX_ITEMS + 1) * sizeof( PITEM ) );
+    items = (PITEM *)xalloc( (unsigned int)(MAX_ITEMS + 1) * sizeof( PITEM ) );
+    mem_set( items, 0, (unsigned int)(MAX_ITEMS + 1) * sizeof( PITEM ) );
     nitems = 1;
     used[0] = 1;
     items[0].is_group = 1;
@@ -1103,19 +1104,19 @@ void ini_load( void )
 /* DOSSHELL.INI: writing                                               */
 /* ------------------------------------------------------------------ */
 
-static u32 out_handle;
+static uint32_t out_handle;
 static int out_failed;
 
 /* The file is gathered here and written 2K at a time.  Every piece of
    it - an indent, a key, " = ", a value, a line end - was a write call
    of its own, some 700 for an ordinary file, and on the 5x86 leaving
    the shell took over two minutes (2026-11-01). */
-static char out_buf[2048];
-static u32  out_used;
+static char         out_buf[2048];
+static unsigned int out_used;
 
 static void out_flush( void )
 {
-    u32 done;
+    unsigned int done;
 
     if ( !out_failed && out_used ) {
         if ( sys_write( out_handle, out_buf, out_used, &done ) != 0 || done != out_used ) {
@@ -1127,7 +1128,7 @@ static void out_flush( void )
 
 static void out( const char *text )
 {
-    u32 len = str_len( text ), part;
+    unsigned int len = str_len( text ), part;
 
     while ( len ) {
         if ( out_used == sizeof( out_buf ) ) {

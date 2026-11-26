@@ -20,51 +20,53 @@
 #include "gfx.h"
 
 typedef struct {
-    u8  *data;
-    u32  len;
-    u32  glyf, loca, head, maxp, cmap;
-    u32  glyf_len, loca_len, cmap_len;
-    u32  cff, cff_len;
-    int  units, glyphs, loca_long;
+    uint8_t *data;
+    uint32_t len;
+    uint32_t glyf, loca, head, maxp, cmap;
+    uint32_t glyf_len, loca_len, cmap_len;
+    uint32_t cff, cff_len;
+    int      units, glyphs, loca_long;
     /* what a font of the user's is asked as well */
-    u32  base;                              /* where its table directory is */
-    u32  hmtx, hmtx_len, nhm;
-    u32  uni;                               /* the map that takes Unicode, or 0... */
-    int  uni_symbol;                        /* ...which is a symbol font's: F020h to F0FFh */
+    uint32_t base;                          /* where its table directory is */
+    uint32_t hmtx, hmtx_len, nhm;
+    uint32_t uni;                           /* the map that takes Unicode, or 0... */
+    int      uni_symbol;                    /* ...which is a symbol font's: F020h to F0FFh */
 } TTF;
 
 typedef struct {
-    s16 x, y;
-    u8  on;
+    int16_t x, y;
+    uint8_t on;
 } TPOINT;
 
-static TPOINT *points;
-static u32     point_cap;
-static u32     parts;                   /* glyphs drawn as parts of this one, against a loop */
+static TPOINT      *points;
+static unsigned int point_cap;
+static unsigned int parts;              /* glyphs drawn as parts of this one, against a loop */
 
-static u32 rd16( const TTF *ttf, u32 off )
+static uint32_t rd16( const TTF *ttf, uint32_t off )
 {
     if ( off > ttf->len || ttf->len - off < 2 ) {
         return 0;
     }
-    return ((u32)ttf->data[off] << 8) | ttf->data[off + 1];
+    return ((uint32_t)ttf->data[off] << 8) | ttf->data[off + 1];
 }
 
-static s32 rds16( const TTF *ttf, u32 off )
+static int32_t rds16( const TTF *ttf, uint32_t off )
 {
-    return (s16)rd16( ttf, off );
+    return (int16_t)rd16( ttf, off );
 }
 
-static u32 rd32( const TTF *ttf, u32 off )
+static uint32_t rd32( const TTF *ttf, uint32_t off )
 {
     return (rd16( ttf, off ) << 16) | rd16( ttf, off + 2 );
 }
 
 /* what the file says of itself, into a TTF that is all zeros: 0 if it
    has no outlines of either kind */
-static int ttf_fill( TTF *ttf, u8 *data, u32 len )
+static int ttf_fill( TTF *ttf, uint8_t *data, uint32_t len )
 {
-    u32 base = 0, tables, index, rec, tag, off, size;
+    uint32_t base = 0, tables;
+    unsigned int index;
+    uint32_t rec, tag, off, size;
 
     ttf->data = data;
     ttf->len = len;
@@ -102,14 +104,14 @@ static int ttf_fill( TTF *ttf, u8 *data, u32 len )
     if ( ttf->loca ) {
         /* what the table has room for, whatever maxp says */
         index = ttf->loca_len / (ttf->loca_long ? 4 : 2);
-        if ( index && (ttf->glyphs == 0 || (u32)ttf->glyphs > index - 1) ) {
+        if ( index && (ttf->glyphs == 0 || (uint32_t)ttf->glyphs > index - 1) ) {
             ttf->glyphs = (int)index - 1;
         }
     }
     return ttf->cff != 0 || (ttf->glyf != 0 && ttf->loca != 0);
 }
 
-void *ttf_open( POOL *pool, u8 *data, u32 len )
+void *ttf_open( POOL *pool, uint8_t *data, uint32_t len )
 {
     TTF *ttf = (TTF *)pool_alloc( pool, sizeof( TTF ) );
 
@@ -121,7 +123,7 @@ int ttf_units( void *prog )
     return ((TTF *)prog)->units;
 }
 
-int ttf_cff( void *prog, u8 **data, u32 *len )
+int ttf_cff( void *prog, uint8_t **data, uint32_t *len )
 {
     TTF *ttf = (TTF *)prog;
 
@@ -137,9 +139,11 @@ int ttf_cff( void *prog, u8 **data, u32 *len )
 /* character maps                                                      */
 /* ------------------------------------------------------------------ */
 
-static u32 cmap_sub( const TTF *ttf, int platform, int encoding )
+static uint32_t cmap_sub( const TTF *ttf, int platform, int encoding )
 {
-    u32 count, index, rec;
+    uint32_t count;
+    unsigned int index;
+    uint32_t rec;
 
     if ( ttf->cmap == 0 ) {
         return 0;
@@ -159,9 +163,9 @@ int ttf_has_cmap( void *prog, int platform, int encoding )
     return cmap_sub( (TTF *)prog, platform, encoding ) != 0;
 }
 
-static u32 cmap_lookup( const TTF *ttf, u32 sub, u32 code )
+static uint32_t cmap_lookup( const TTF *ttf, uint32_t sub, uint32_t code )
 {
-    u32 format = rd16( ttf, sub ), segs, lo, hi, mid, start, end, range, first, count, at;
+    uint32_t format = rd16( ttf, sub ), segs, lo, hi, mid, start, end, range, first, count, at;
 
     switch ( format ) {
     case 0:
@@ -216,10 +220,10 @@ static u32 cmap_lookup( const TTF *ttf, u32 sub, u32 code )
     return 0;
 }
 
-int ttf_cmap( void *prog, int platform, int encoding, u32 code )
+int ttf_cmap( void *prog, int platform, int encoding, uint32_t code )
 {
     TTF *ttf = (TTF *)prog;
-    u32 sub = cmap_sub( ttf, platform, encoding );
+    uint32_t sub = cmap_sub( ttf, platform, encoding );
 
     return sub ? (int)cmap_lookup( ttf, sub, code ) : 0;
 }
@@ -227,10 +231,10 @@ int ttf_cmap( void *prog, int platform, int encoding, u32 code )
 /* The character a glyph is, by the font's own Unicode map read
    backwards: for the text of a font that came with no ToUnicode.  Slow -
    every code in the map is tried - so only the text view asks. */
-u16 ttf_unicode_of( void *prog, u32 gid )
+uint16_t ttf_unicode_of( void *prog, uint32_t gid )
 {
     TTF *ttf = (TTF *)prog;
-    u32 sub = cmap_sub( ttf, 3, 1 ), segs, seg, start, end, code, tried = 0;
+    uint32_t sub = cmap_sub( ttf, 3, 1 ), segs, seg, start, end, code, tried = 0;
 
     if ( sub == 0 ) {
         sub = cmap_sub( ttf, 0, 3 );
@@ -250,7 +254,7 @@ u16 ttf_unicode_of( void *prog, u32 gid )
                 return 0;                           /* more than a whole map's worth */
             }
             if ( cmap_lookup( ttf, sub, code ) == gid ) {
-                return (u16)code;
+                return (uint16_t)code;
             }
         }
     }
@@ -261,7 +265,7 @@ u16 ttf_unicode_of( void *prog, u32 gid )
 /* outlines                                                            */
 /* ------------------------------------------------------------------ */
 
-static void emit_point( const FMAT *xf, s32 px, s32 py, fx *ox, fx *oy )
+static void emit_point( const FMAT *xf, int32_t px, int32_t py, fx *ox, fx *oy )
 {
     *ox = xf->a * px + xf->c * py + xf->e;
     *oy = xf->b * px + xf->d * py + xf->f;
@@ -332,16 +336,18 @@ static void emit_contour( const FMAT *xf, const TPOINT *pts, int count )
     gl_close();
 }
 
-static int glyph_emit( const TTF *ttf, u32 gid, const FMAT *xf, int depth )
+static int glyph_emit( const TTF *ttf, uint32_t gid, const FMAT *xf, int depth )
 {
     FMAT sub;
     TPOINT *grown;
-    u32 at, next, off, flags_at, total, index, comp, arg;
-    s32 contours, dx, dy, val;
+    uint32_t at, next, off, flags_at, total;
+    unsigned int index;
+    uint32_t comp, arg;
+    int32_t contours, dx, dy, val;
     fx ma, mb, mc, md;
     int flag = 0, repeat, first;
 
-    if ( gid >= (u32)ttf->glyphs || depth > 6 ) {
+    if ( gid >= (uint32_t)ttf->glyphs || depth > 6 ) {
         return 0;
     }
     if ( ttf->loca_long ) {
@@ -369,8 +375,8 @@ static int glyph_emit( const TTF *ttf, u32 gid, const FMAT *xf, int depth )
                 dy = rds16( ttf, off + 2 );
                 off += 4;
             } else {
-                dx = (s8)ttf->data[off < ttf->len ? off : 0];
-                dy = (s8)ttf->data[off + 1 < ttf->len ? off + 1 : 0];
+                dx = (int8_t)ttf->data[off < ttf->len ? off : 0];
+                dy = (int8_t)ttf->data[off + 1 < ttf->len ? off + 1 : 0];
                 off += 2;
             }
             if ( !(flags_at & 2) ) {                /* points to line up, not an offset */
@@ -412,7 +418,7 @@ static int glyph_emit( const TTF *ttf, u32 gid, const FMAT *xf, int depth )
     if ( contours == 0 ) {
         return 1;
     }
-    total = rd16( ttf, off + (u32)(contours - 1) * 2 ) + 1;
+    total = rd16( ttf, off + (uint32_t)(contours - 1) * 2 ) + 1;
     if ( total > 20000 ) {
         return 0;
     }
@@ -424,7 +430,7 @@ static int glyph_emit( const TTF *ttf, u32 gid, const FMAT *xf, int depth )
         points = grown;
         point_cap = total + 64;
     }
-    flags_at = off + (u32)contours * 2;
+    flags_at = off + (uint32_t)contours * 2;
     flags_at += 2 + rd16( ttf, flags_at );          /* past the instructions */
     /* the flags, a byte a point with runs; then the x's; then the y's */
     repeat = 0;
@@ -440,7 +446,7 @@ static int glyph_emit( const TTF *ttf, u32 gid, const FMAT *xf, int depth )
                 repeat = flags_at < ttf->len ? ttf->data[flags_at++] : 0;
             }
         }
-        points[index].on = (u8)flag;
+        points[index].on = (uint8_t)flag;
     }
     val = 0;
     for ( index = 0; index < total; index++ ) {
@@ -448,12 +454,12 @@ static int glyph_emit( const TTF *ttf, u32 gid, const FMAT *xf, int depth )
         if ( flag & 2 ) {
             arg = flags_at < ttf->len ? ttf->data[flags_at] : 0;
             flags_at++;
-            val += (flag & 0x10) ? (s32)arg : -(s32)arg;
+            val += (flag & 0x10) ? (int32_t)arg : -(int32_t)arg;
         } else if ( !(flag & 0x10) ) {
             val += rds16( ttf, flags_at );
             flags_at += 2;
         }
-        points[index].x = (s16)val;
+        points[index].x = (int16_t)val;
     }
     val = 0;
     for ( index = 0; index < total; index++ ) {
@@ -461,16 +467,16 @@ static int glyph_emit( const TTF *ttf, u32 gid, const FMAT *xf, int depth )
         if ( flag & 4 ) {
             arg = flags_at < ttf->len ? ttf->data[flags_at] : 0;
             flags_at++;
-            val += (flag & 0x20) ? (s32)arg : -(s32)arg;
+            val += (flag & 0x20) ? (int32_t)arg : -(int32_t)arg;
         } else if ( !(flag & 0x20) ) {
             val += rds16( ttf, flags_at );
             flags_at += 2;
         }
-        points[index].y = (s16)val;
-        points[index].on = (u8)(flag & 1);
+        points[index].y = (int16_t)val;
+        points[index].on = (uint8_t)(flag & 1);
     }
     first = 0;
-    for ( index = 0; index < (u32)contours; index++ ) {
+    for ( index = 0; index < (unsigned int)contours; index++ ) {
         next = rd16( ttf, off + index * 2 );
         if ( next >= total || (int)next < first ) {
             break;
@@ -489,7 +495,7 @@ void ttf_done( void )
     point_cap = 0;
 }
 
-int ttf_outline( void *prog, u32 gid )
+int ttf_outline( void *prog, uint32_t gid )
 {
     FMAT unit;
 
@@ -503,14 +509,16 @@ int ttf_outline( void *prog, u32 gid )
 /* a font of the user's                                                */
 /* ------------------------------------------------------------------ */
 
-#define TAG( c1, c2, c3, c4 )   (((u32)(c1) << 24) | ((u32)(c2) << 16) | ((u32)(c3) << 8) | (u32)(c4))
+#define TAG( c1, c2, c3, c4 )   (((uint32_t)(c1) << 24) | ((uint32_t)(c2) << 16) | ((uint32_t)(c3) << 8) | (uint32_t)(c4))
 
 #define SUBSET_FILE     0x4000000UL         /* a file larger than this is not made a subset of */
 
 /* a table by its tag: where it is, and how much of it the file has */
-static int table_find( const TTF *ttf, u32 tag, u32 *off, u32 *size )
+static int table_find( const TTF *ttf, uint32_t tag, uint32_t *off, uint32_t *size )
 {
-    u32 tables = rd16( ttf, ttf->base + 4 ), index, rec;
+    uint32_t tables = rd16( ttf, ttf->base + 4 );
+    unsigned int index;
+    uint32_t rec;
 
     for ( index = 0; index < tables; index++ ) {
         rec = ttf->base + 12 + index * 16;
@@ -536,13 +544,15 @@ static int table_find( const TTF *ttf, u32 tag, u32 *off, u32 *size )
  * there is no memory for that, or the file has no TrueType outlines
  * (an OpenType font whose outlines are CFF is one such).
  */
-void *ttf_open_heap( u8 *data, u32 len )
+void *ttf_open_heap( uint8_t *data, uint32_t len )
 {
-    static const u8 maps[8][2] = {
+    static const uint8_t maps[8][2] = {
         { 3, 10 }, { 3, 1 }, { 0, 4 }, { 0, 3 }, { 0, 2 }, { 0, 1 }, { 0, 0 }, { 3, 0 }
     };
     TTF *ttf = (TTF *)try_alloc( sizeof( TTF ) );
-    u32 hhea, size, index, sub, format;
+    uint32_t hhea, size;
+    unsigned int index;
+    uint32_t sub, format;
 
     if ( ttf == NULL ) {
         return NULL;
@@ -581,10 +591,10 @@ int ttf_glyph_count( void *prog )
 /* The glyph of a Unicode character, or 0.  A symbol font keeps its
    characters at F020h to F0FFh, and is asked for a plain byte there;
    a font that is not one is asked for such a code as the plain byte. */
-u32 ttf_glyph_of( void *prog, u32 code )
+uint32_t ttf_glyph_of( void *prog, uint32_t code )
 {
     TTF *ttf = (TTF *)prog;
-    u32 gid = 0;
+    uint32_t gid = 0;
 
     if ( ttf->uni == 0 ) {
         return 0;
@@ -598,11 +608,11 @@ u32 ttf_glyph_of( void *prog, u32 code )
     if ( gid == 0 && !ttf->uni_symbol && code >= 0xF020 && code <= 0xF0FF ) {
         gid = cmap_lookup( ttf, ttf->uni, code - 0xF000 );
     }
-    return gid < (u32)ttf->glyphs ? gid : 0;
+    return gid < (uint32_t)ttf->glyphs ? gid : 0;
 }
 
 /* how far a glyph moves the pen, in the font's units */
-int ttf_advance( void *prog, u32 gid )
+int ttf_advance( void *prog, uint32_t gid )
 {
     TTF *ttf = (TTF *)prog;
 
@@ -618,9 +628,9 @@ int ttf_advance( void *prog, u32 gid )
     return (int)rd16( ttf, ttf->hmtx + gid * 4 );
 }
 
-static u32 raw16( const u8 *at )
+static uint32_t raw16( const uint8_t *at )
 {
-    return ((u32)at[0] << 8) | at[1];
+    return ((uint32_t)at[0] << 8) | at[1];
 }
 
 /*
@@ -630,9 +640,9 @@ static u32 raw16( const u8 *at )
  * and that before a Macintosh one.  ASCII comes out, a question mark
  * for anything else; the result is how long it is, 0 if there is none.
  */
-int ttf_name( const u8 *table, u32 len, int id, char *out, u32 max )
+int ttf_name( const uint8_t *table, uint32_t len, int id, char *out, unsigned int max )
 {
-    u32 count, strings, index, rec, size, off, at, code, used = 0, best_at = 0, best_size = 0;
+    uint32_t count, strings, index, rec, size, off, at, code, used = 0, best_at = 0, best_size = 0;
     int score, best = 0, wide = 0;
 
     out[0] = 0;
@@ -684,8 +694,8 @@ int ttf_name( const u8 *table, u32 len, int id, char *out, u32 max )
 void ttf_facts( void *prog, TTFACTS *facts )
 {
     TTF *ttf = (TTF *)prog;
-    u32 off, size;
-    s32 rise = 0, fall = 0, lead = 0, extra;
+    uint32_t off, size;
+    int32_t rise = 0, fall = 0, lead = 0, extra;
     int have_hhea = 0;
 
     mem_set( facts, 0, sizeof( *facts ) );
@@ -718,13 +728,13 @@ void ttf_facts( void *prog, TTFACTS *facts )
     facts->cap = ttf->units * 7 / 10;
     if ( table_find( ttf, TAG( 'O', 'S', '/', '2' ), &off, &size ) ) {
         if ( size >= 10 ) {
-            facts->fstype = (u16)rd16( ttf, off + 8 );
+            facts->fstype = (uint16_t)rd16( ttf, off + 8 );
         }
         /* lines as Windows spaces them: its own two heights, and of the
            space the other table asks between lines what they leave over */
         if ( size >= 78 && rd16( ttf, off + 74 ) + rd16( ttf, off + 76 ) != 0 ) {
-            facts->ascent = (s32)rd16( ttf, off + 74 );
-            facts->descent = (s32)rd16( ttf, off + 76 );
+            facts->ascent = (int32_t)rd16( ttf, off + 74 );
+            facts->descent = (int32_t)rd16( ttf, off + 76 );
             extra = have_hhea ? lead - ((facts->ascent + facts->descent) - (rise + fall)) : 0;
             facts->gap = extra > 0 ? extra : 0;
         }
@@ -734,7 +744,7 @@ void ttf_facts( void *prog, TTFACTS *facts )
     }
     if ( table_find( ttf, TAG( 'p', 'o', 's', 't' ), &off, &size ) && size >= 16 ) {
         facts->angle = rds16( ttf, off + 4 );           /* whole degrees: the fraction is let go */
-        facts->fixed = (u8)(rd32( ttf, off + 12 ) != 0);
+        facts->fixed = (uint8_t)(rd32( ttf, off + 12 ) != 0);
     }
     if ( table_find( ttf, TAG( 'n', 'a', 'm', 'e' ), &off, &size ) ) {
         ttf_name( ttf->data + off, size, 6, facts->name, sizeof( facts->name ) );
@@ -745,13 +755,13 @@ void ttf_facts( void *prog, TTFACTS *facts )
 /* a subset                                                            */
 /* ------------------------------------------------------------------ */
 
-static void wr16( u8 *at, u32 val )
+static void wr16( uint8_t *at, uint32_t val )
 {
-    at[0] = (u8)(val >> 8);
-    at[1] = (u8)val;
+    at[0] = (uint8_t)(val >> 8);
+    at[1] = (uint8_t)val;
 }
 
-static void wr32( u8 *at, u32 val )
+static void wr32( uint8_t *at, uint32_t val )
 {
     wr16( at, val >> 16 );
     wr16( at + 2, val & 0xFFFF );
@@ -759,24 +769,24 @@ static void wr32( u8 *at, u32 val )
 
 /* a table's checksum: its bytes as words, the high byte first, added
    up.  "len" is a multiple of four. */
-static u32 sum_words( const u8 *data, u32 len )
+static uint32_t sum_words( const uint8_t *data, uint32_t len )
 {
-    u32 sum = 0, at;
+    uint32_t sum = 0, at;
 
     for ( at = 0; at + 4 <= len; at += 4 ) {
-        sum += ((u32)data[at] << 24) | ((u32)data[at + 1] << 16) | ((u32)data[at + 2] << 8) | data[at + 3];
+        sum += ((uint32_t)data[at] << 24) | ((uint32_t)data[at + 1] << 16) | ((uint32_t)data[at + 2] << 8) | data[at + 3];
     }
     return sum;
 }
 
 /* where a glyph's outline is in the table of them, and how long: 0
    long for a glyph that has none */
-static void glyph_span( const TTF *ttf, u32 gid, u32 *at, u32 *size )
+static void glyph_span( const TTF *ttf, uint32_t gid, uint32_t *at, uint32_t *size )
 {
-    u32 from, to;
+    uint32_t from, to;
 
     *at = *size = 0;
-    if ( gid >= (u32)ttf->glyphs ) {
+    if ( gid >= (uint32_t)ttf->glyphs ) {
         return;
     }
     if ( ttf->loca_long ) {
@@ -794,9 +804,9 @@ static void glyph_span( const TTF *ttf, u32 gid, u32 *at, u32 *size )
 }
 
 /* the glyphs a glyph is made of are wanted as it is */
-static void mark_parts( const TTF *ttf, u32 gid, u8 *want )
+static void mark_parts( const TTF *ttf, uint32_t gid, uint8_t *want )
 {
-    u32 at, size, off, end, flags, part;
+    uint32_t at, size, off, end, flags, part;
 
     glyph_span( ttf, gid, &at, &size );
     if ( size < 10 || rds16( ttf, ttf->glyf + at ) >= 0 ) {
@@ -815,7 +825,7 @@ static void mark_parts( const TTF *ttf, u32 gid, u8 *want )
         } else if ( flags & 0x80 ) {
             off += 8;
         }
-        if ( part < (u32)ttf->glyphs && want[part] == 0 ) {
+        if ( part < (uint32_t)ttf->glyphs && want[part] == 0 ) {
             want[part] = 1;
         }
         if ( !(flags & 0x20) ) {
@@ -835,19 +845,21 @@ static void mark_parts( const TTF *ttf, u32 gid, u8 *want )
  * block from the heap, *out_len long; NULL if there is no memory or the
  * file has not all of those tables.
  */
-u8 *ttf_subset( void *prog, const u8 *keep, u32 count, u32 *out_len )
+uint8_t *ttf_subset( void *prog, const uint8_t *keep, unsigned int count, uint32_t *out_len )
 {
     /* in the order a table directory is to be in */
-    static const u32 tags[SUB_TABLES] = {
+    static const uint32_t tags[SUB_TABLES] = {
         TAG( 'c', 'v', 't', ' ' ), TAG( 'f', 'p', 'g', 'm' ), TAG( 'g', 'l', 'y', 'f' ),
         TAG( 'h', 'e', 'a', 'd' ), TAG( 'h', 'h', 'e', 'a' ), TAG( 'h', 'm', 't', 'x' ),
         TAG( 'l', 'o', 'c', 'a' ), TAG( 'm', 'a', 'x', 'p' ), TAG( 'p', 'r', 'e', 'p' )
     };
     enum { SUB_CVT, SUB_FPGM, SUB_GLYF, SUB_HEAD, SUB_HHEA, SUB_HMTX, SUB_LOCA, SUB_MAXP, SUB_PREP };
     TTF *ttf = (TTF *)prog;
-    u8 *want, *out, *rec, *glyf_out = NULL, *loca_out = NULL, *head_out = NULL;
-    u32 from[SUB_TABLES], size[SUB_TABLES], glyphs = (u32)ttf->glyphs, total, gid, at, len, outlines = 0;
-    u32 index, tables = 0, bytes, pos, power, pass;
+    uint8_t *want, *out, *rec, *glyf_out = NULL, *loca_out = NULL, *head_out = NULL;
+    uint32_t from[SUB_TABLES], size[SUB_TABLES], glyphs = (uint32_t)ttf->glyphs, total, gid, at, len, outlines = 0;
+    unsigned int index;
+    uint32_t tables = 0, bytes, pos, power;
+    unsigned int pass;
     int again;
 
     *out_len = 0;
@@ -870,7 +882,7 @@ u8 *ttf_subset( void *prog, const u8 *keep, u32 count, u32 *out_len )
     if ( glyphs > total ) {
         glyphs = total;
     }
-    want = (u8 *)try_alloc( glyphs + 1 );
+    want = (uint8_t *)try_alloc( glyphs + 1 );
     if ( want == NULL ) {
         return NULL;
     }
@@ -923,7 +935,7 @@ u8 *ttf_subset( void *prog, const u8 *keep, u32 count, u32 *out_len )
         }
     }
     bytes += 12 + tables * 16;
-    out = (u8 *)try_alloc( bytes );
+    out = (uint8_t *)try_alloc( bytes );
     if ( out == NULL ) {
         xfree( want );
         return NULL;

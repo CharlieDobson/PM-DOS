@@ -269,29 +269,29 @@
 /* what the driver keeps                                             */
 /* ---------------------------------------------------------------- */
 
-static u8  ee_called;           /* card_find has run once: the DEVICE= load */
-static u8  ee_started;          /* card_setup has run once */
-static u8  ee_dead;             /* the 82586 stopped taking commands */
-static u8  ee_fails;            /* ...how many times in a row */
-static u8  ee_xc;               /* XC_*: the connector used */
-static u8  ee_xc_rom;           /* ...and the EEPROM's */
-static u8  ee_wide;             /* 16-bit operation */
-static u8  ee_code;             /* the EEPROM's line code */
-static u8  ee_irqcode;          /* the code card_setup gave the card */
-static u16 ee_kb;               /* card memory, kilobytes */
-static u32 ee_bytes;            /* ...bytes */
+static unsigned char ee_called;   /* card_find has run once: the DEVICE= load */
+static unsigned char ee_started;  /* card_setup has run once */
+static unsigned char ee_dead;     /* the 82586 stopped taking commands */
+static unsigned char ee_fails;    /* ...how many times in a row */
+static unsigned char ee_xc;       /* XC_*: the connector used */
+static unsigned char ee_xc_rom;   /* ...and the EEPROM's */
+static unsigned char ee_wide;     /* 16-bit operation */
+static uint8_t  ee_code;          /* the EEPROM's line code */
+static uint8_t  ee_irqcode;       /* the code card_setup gave the card */
+static uint16_t ee_kb;            /* card memory, kilobytes */
+static unsigned int ee_bytes;     /* ...bytes */
 
-static int rx_n;                /* receive slots */
-static int rx_head;             /* the next slot to be filled */
-static int rx_tail;             /* the slot with EL */
-static int tx_cur;              /* the transmit block to fill next */
-static u16 tx_prev;             /* the block started last, 0 none */
+static int      rx_n;           /* receive slots */
+static int      rx_head;        /* the next slot to be filled */
+static int      rx_tail;        /* the slot with EL */
+static int      tx_cur;         /* the transmit block to fill next */
+static uint16_t tx_prev;        /* the block started last, 0 none */
 
-static u8  mc_list[MC_MAX * 6];
-static int mc_n;
+static uint8_t mc_list[MC_MAX * 6];
+static int     mc_n;
 
 /* the 82586's configuration (Linux's eexpress.c; see the top) */
-static const u8 ee_config[12] = {
+static const uint8_t ee_config[12] = {
     0x0C,       /* 12 bytes */
     0x08,       /* FIFO limit 8 */
     0x40,       /* SRDY/ARDY; bad frames not kept */
@@ -306,8 +306,8 @@ static const u8 ee_config[12] = {
 };
 
 /* the line each EEPROM code means, and the bases the card can have */
-static const u8  code_line[8] = { NIC_NOIRQ, 9, 3, 4, 5, 10, 11, NIC_NOIRQ };
-static const u16 ee_bases[] = {
+static const uint8_t  code_line[8] = { NIC_NOIRQ, 9, 3, 4, 5, 10, 11, NIC_NOIRQ };
+static const uint16_t ee_bases[] = {
     0x300, 0x310, 0x320, 0x330, 0x340, 0x350, 0x360, 0x370,
     0x200, 0x210, 0x220, 0x230, 0x240, 0x250, 0x260, 0x270, 0
 };
@@ -332,7 +332,7 @@ static void say_begin( const char *text )
     say_text( text );
 }
 
-static void say_hex( u32 value, int digits )
+static void say_hex( uint32_t value, int digits )
 {
     static const char hexdig[] = "0123456789ABCDEF";
     int shift;
@@ -342,7 +342,7 @@ static void say_hex( u32 value, int digits )
     }
 }
 
-static void say_dec( u32 value )
+static void say_dec( unsigned int value )
 {
     char digits[12];
     int  count = 0;
@@ -363,10 +363,10 @@ static void say_end( void )
 /* card memory, through the pointers                                 */
 /* ---------------------------------------------------------------- */
 
-static u16 mem_rd( u16 off )
+static uint16_t mem_rd( uint16_t off )
 {
-    u32 flags = int_off();
-    u16 value;
+    uint32_t flags = int_off();
+    uint16_t value;
 
     outw( net_port + EE_RDPTR, off );
     value = inw( net_port + EE_DATA );
@@ -374,9 +374,9 @@ static u16 mem_rd( u16 off )
     return value;
 }
 
-static void mem_wr( u16 off, u16 value )
+static void mem_wr( uint16_t off, uint16_t value )
 {
-    u32 flags = int_off();
+    uint32_t flags = int_off();
 
     outw( net_port + EE_WRPTR, off );
     outw( net_port + EE_DATA, value );
@@ -384,9 +384,9 @@ static void mem_wr( u16 off, u16 value )
 }
 
 /* COUNT words from WORDS, in order, from OFF */
-static void mem_put( u16 off, const u16 *words, u32 count )
+static void mem_put( uint16_t off, const uint16_t *words, unsigned int count )
 {
-    u32 flags = int_off();
+    uint32_t flags = int_off();
 
     outw( net_port + EE_WRPTR, off );
     outsw( net_port + EE_DATA, words, count );
@@ -394,10 +394,10 @@ static void mem_put( u16 off, const u16 *words, u32 count )
 }
 
 /* COUNT words of zero from OFF; past FFFFh the pointer wraps to 0 */
-static void mem_zero( u16 off, u32 count )
+static void mem_zero( uint16_t off, unsigned int count )
 {
-    u32 flags = int_off();
-    u32 i;
+    uint32_t flags = int_off();
+    unsigned int i;
 
     outw( net_port + EE_WRPTR, off );
     for ( i = 0; i < count; i++ ) outw( net_port + EE_DATA, 0 );
@@ -408,7 +408,7 @@ static void mem_zero( u16 off, u32 count )
 /* the SCB                                                           */
 /* ---------------------------------------------------------------- */
 
-static u16 scb_status( void )
+static uint16_t scb_status( void )
 {
     return mem_rd( SCB_STATUS );
 }
@@ -430,9 +430,9 @@ static int scb_idle( void )
 /* A command (and/or acknowledgements) through the SCB, taken.  With
    interrupts off from the wait to the CA: card_service, finding a command
    written and no CA yet, would wait out its own scb_idle for nothing. */
-static int scb_cmd( u16 cmd )
+static int scb_cmd( uint16_t cmd )
 {
-    u32 flags = int_off();
+    uint32_t flags = int_off();
     int ok = 0;
 
     if ( scb_idle() ) {
@@ -445,9 +445,9 @@ static int scb_cmd( u16 cmd )
 }
 
 /* the command unit started on the list at OFF; the same */
-static int cu_start( u16 off )
+static int cu_start( uint16_t off )
 {
-    u32 flags = int_off();
+    uint32_t flags = int_off();
     int ok = 0;
 
     if ( scb_idle() ) {
@@ -461,11 +461,11 @@ static int cu_start( u16 off )
 /* every cause the 82586 has, acknowledged */
 static void scb_ack_all( void )
 {
-    u16 cause;
+    uint16_t cause;
     int i;
 
     for ( i = 0; i < 4; i++ ) {
-        cause = (u16)( scb_status() & ST_CAUSE );
+        cause = (uint16_t)( scb_status() & ST_CAUSE );
         if ( cause == 0 ) break;
         if ( !scb_cmd( cause ) ) break;
     }
@@ -474,9 +474,9 @@ static void scb_ack_all( void )
 /* Run the one command block at OFF, WORDS long, the end of its own list:
    its final status, or 0 if it did not complete.  .37 seconds is the
    bound the Clarkson packet driver gives (FreeBSD and NetBSD quote it). */
-static u16 run_cmd( u16 off, const u16 *words, u32 count )
+static uint16_t run_cmd( uint16_t off, const uint16_t *words, unsigned int count )
 {
-    u16 status = 0;
+    uint16_t status = 0;
     int i;
 
     mem_put( off, words, count );
@@ -496,7 +496,7 @@ static u16 run_cmd( u16 off, const u16 *words, u32 count )
 /* the EEPROM                                                        */
 /* ---------------------------------------------------------------- */
 
-static void ec_out( u8 value )
+static void ec_out( uint8_t value )
 {
     outb( net_port + EE_ECTRL, value );
 }
@@ -505,22 +505,22 @@ static void ec_out( u8 value )
    Linux and FreeBSD keep it.  The read command is a start bit, 10 and
    six address bits; sixteen data bits follow, each after a rising
    clock.  FreeBSD wants the clock steady for 8.38us: 10 is given. */
-static u16 ee_eeprom( int addr )
+static uint16_t ee_eeprom( int addr )
 {
-    u16 cmd = (u16)( 0x180 | ( addr & 0x3F ) );
-    u16 value = 0;
-    u8  line;
-    int i;
+    uint16_t cmd = (uint16_t)( 0x180 | ( addr & 0x3F ) );
+    uint16_t value = 0;
+    uint8_t  line;
+    int      i;
 
     ec_out( EC_586 );
     net_delay_us( 2 );
     ec_out( EC_586 | EC_CS );
     net_delay_us( 2 );
     for ( i = 8; i >= 0; i-- ) {
-        line = (u8)( EC_586 | EC_CS | ( ( ( cmd >> i ) & 1 ) ? EC_DI : 0 ) );
+        line = (uint8_t)( EC_586 | EC_CS | ( ( ( cmd >> i ) & 1 ) ? EC_DI : 0 ) );
         ec_out( line );
         net_delay_us( 2 );
-        ec_out( (u8)( line | EC_SK ) );
+        ec_out( (uint8_t)( line | EC_SK ) );
         net_delay_us( 10 );
         ec_out( line );
         net_delay_us( 10 );
@@ -528,7 +528,7 @@ static u16 ee_eeprom( int addr )
     for ( i = 0; i < 16; i++ ) {
         ec_out( EC_586 | EC_CS | EC_SK );
         net_delay_us( 10 );
-        value = (u16)( ( value << 1 ) | ( ( inb( net_port + EE_ECTRL ) & EC_DO ) ? 1 : 0 ) );
+        value = (uint16_t)( ( value << 1 ) | ( ( inb( net_port + EE_ECTRL ) & EC_DO ) ? 1 : 0 ) );
         ec_out( EC_586 | EC_CS );
         net_delay_us( 10 );
     }
@@ -547,31 +547,31 @@ static u16 ee_eeprom( int addr )
 
 /* The four nibbles at base+0Fh put together; *WHICH gets a bit for each
    nibble number seen.  An empty port reads FFh four times: F000h. */
-static u16 ee_id( u16 base, u8 *which )
+static uint16_t ee_id( uint16_t base, uint8_t *which )
 {
-    u16 sum = 0;
-    u8  value, seen = 0;
-    int i;
+    uint16_t sum = 0;
+    uint8_t  value, seen = 0;
+    int      i;
 
     for ( i = 0; i < 4; i++ ) {
         value = inb( base + EE_ID );
-        sum = (u16)( sum | ( ( value >> 4 ) << ( ( value & 3 ) << 2 ) ) );
-        seen = (u8)( seen | ( 1 << ( value & 3 ) ) );
+        sum = (uint16_t)( sum | ( ( value >> 4 ) << ( ( value & 3 ) << 2 ) ) );
+        seen = (uint8_t)( seen | ( 1 << ( value & 3 ) ) );
     }
     *which = seen;
     return sum;
 }
 
-static int ee_is_card( u16 base )
+static int ee_is_card( uint16_t base )
 {
-    u8 which;
+    uint8_t which;
 
     return ee_id( base, &which ) == EE_SIG && which == 0x0F;
 }
 
 /* The ASIC reset (Linux waits 500us after it, FreeBSD 240us), the line
    CODE given with no enable bit, and the 82586 left held in reset. */
-static void ee_reset_asic( u8 code )
+static void ee_reset_asic( uint8_t code )
 {
     ec_out( EC_ASIC );
     net_delay_us( 10 );
@@ -587,17 +587,17 @@ static void ee_reset_asic( u8 code )
    already, the memory having wrapped round, or will not stay.  The first
    32 bytes are written once before, as both BSD drivers "warm up" the
    card's DRAM.  The 82586 is held in reset meanwhile. */
-static u16 ee_size( void )
+static uint16_t ee_size( void )
 {
-    u16 kb, off;
+    uint16_t kb, off;
 
     mem_zero( 0, 16 );
     mem_zero( 0, 32768L );
     for ( kb = 0; kb < 64; kb++ ) {
-        off = (u16)( kb << 10 );
+        off = (uint16_t)( kb << 10 );
         if ( mem_rd( off ) != 0 ) break;
-        mem_wr( off, (u16)( 0x5000 | kb ) );
-        if ( mem_rd( off ) != (u16)( 0x5000 | kb ) ) break;
+        mem_wr( off, (uint16_t)( 0x5000 | kb ) );
+        if ( mem_rd( off ) != (uint16_t)( 0x5000 | kb ) ) break;
     }
     return kb;
 }
@@ -625,9 +625,9 @@ static int ee_switch( const char *name )
 }
 
 /* the code the IRQ select register takes for LINE, 0 for none */
-static u8 line_code( u8 line )
+static uint8_t line_code( uint8_t line )
 {
-    u8 code;
+    uint8_t code;
 
     for ( code = 1; code < 7; code++ ) {
         if ( code_line[code] == line ) return code;
@@ -654,12 +654,12 @@ static void ee_name( void )
 /* the first card_find: everything the EEPROM and the card can say */
 static int ee_find_first( void )
 {
-    u16 base = 0, sum, word, w0, w5, mac[3];
-    u8  which;
-    int i;
+    uint16_t base = 0, sum, word, w0, w5, mac[3];
+    uint8_t  which;
+    int      i;
 
     if ( net_opt_port ) {
-        base = (u16)net_opt_port;
+        base = (uint16_t)net_opt_port;
         sum = ee_id( base, &which );
         if ( sum != EE_SIG || which != 0x0F ) {
             say_begin( ": no card at " );
@@ -691,14 +691,14 @@ static int ee_find_first( void )
     w0 = w5 = 0;
     for ( i = 0; i < 64; i++ ) {
         word = ee_eeprom( i );
-        sum = (u16)( sum + word );
+        sum = (uint16_t)( sum + word );
         if ( i == 0 ) w0 = word;
         if ( i == 5 ) w5 = word;
         if ( i >= 2 && i <= 4 ) mac[i - 2] = word;
     }
     for ( i = 0; i < 3; i++ ) {                 /* word 4 is the first two bytes */
-        net_mac[i * 2] = (u8)( mac[2 - i] >> 8 );
-        net_mac[i * 2 + 1] = (u8)mac[2 - i];
+        net_mac[i * 2] = (uint8_t)( mac[2 - i] >> 8 );
+        net_mac[i * 2 + 1] = (uint8_t)mac[2 - i];
     }
     if ( !net_mac_ok( net_mac ) ) {
         say_begin( " at " );
@@ -725,15 +725,15 @@ static int ee_find_first( void )
         say_end();
     }
 
-    ee_code = (u8)( ( w0 >> W0_LINE ) & 7 );
+    ee_code = (uint8_t)( ( w0 >> W0_LINE ) & 7 );
     if ( code_line[ee_code] == NIC_NOIRQ ) ee_code = 0;
-    ee_xc_rom = (u8)( !( w0 & W0_OWN ) ? XC_AUI : ( w5 & W5_TP ) ? XC_TP : XC_BNC );
+    ee_xc_rom = (unsigned char)( !( w0 & W0_OWN ) ? XC_AUI : ( w5 & W5_TP ) ? XC_TP : XC_BNC );
     ee_xc = ee_xc_rom;
     if ( ee_switch( "TP" ) ) ee_xc = XC_TP;
     else if ( ee_switch( "BNC" ) ) ee_xc = XC_BNC;
     else if ( ee_switch( "AUI" ) ) ee_xc = XC_AUI;
-    ee_wide = (u8)( ( w0 & W0_WIDE ) && !ee_switch( "8" ) );
-    if ( !ee_wide ) outb( net_port + EE_CONFIG, (u8)( inb( net_port + EE_CONFIG ) & ~CFG_16BIT ) );
+    ee_wide = (unsigned char)( ( w0 & W0_WIDE ) && !ee_switch( "8" ) );
+    if ( !ee_wide ) outb( net_port + EE_CONFIG, (uint8_t)( inb( net_port + EE_CONFIG ) & ~CFG_16BIT ) );
 
     ee_kb = ee_size();
     if ( ee_kb != 16 && ee_kb != 32 && ee_kb != 48 && ee_kb != 64 ) {
@@ -748,7 +748,7 @@ static int ee_find_first( void )
         say_end();
         return 1;
     }
-    ee_bytes = (u32)ee_kb << 10;
+    ee_bytes = (unsigned int)ee_kb << 10;
     rx_n = (int)( ( ee_bytes - 16 - M_RX ) / RX_SLOT );
     if ( rx_n > RX_MAX ) rx_n = RX_MAX;
 
@@ -798,7 +798,7 @@ int card_find( void )
     }
     net_mem = 0;
     net_bus = NICB_ISA;
-    net_flags = (u8)( ( ee_wide ? NICF_WORD : 0 ) | ( net_flags & NICF_POLLED ) );
+    net_flags = (uint8_t)( ( ee_wide ? NICF_WORD : 0 ) | ( net_flags & NICF_POLLED ) );
     return 0;
 }
 
@@ -808,11 +808,11 @@ int card_find( void )
 
 /* the CRC register after the six bytes of ADDR, low bit of each byte
    first, as QEMU's net_crc32 (its 82596 and 8255x take bits 2-7) */
-static u32 mc_crc( const u8 *addr )
+static uint32_t mc_crc( const uint8_t *addr )
 {
-    u32 crc = 0xFFFFFFFFL;
-    u8  byte;
-    int i, j, carry;
+    uint32_t crc = 0xFFFFFFFFL;
+    uint8_t  byte;
+    int      i, j, carry;
 
     for ( i = 0; i < 6; i++ ) {
         byte = addr[i];
@@ -827,13 +827,13 @@ static u32 mc_crc( const u8 *addr )
 }
 
 /* the windows of the CRC that are covered: bits 2-7, 26-31, 0-5, 24-29 */
-static const u8 mc_shift[4] = { 2, 26, 0, 24 };
+static const uint8_t mc_shift[4] = { 2, 26, 0, 24 };
 
 /* ADDR onto the list if it is wanted (KEEP) or hashes where nothing on
    the list does yet, in any window; SEEN is the hashes taken */
-static void mc_take( const u8 *addr, u8 seen[4][8], int keep )
+static void mc_take( const uint8_t *addr, uint8_t seen[4][8], int keep )
 {
-    u32 crc = mc_crc( addr );
+    uint32_t crc = mc_crc( addr );
     int win, idx, fresh = keep;
 
     for ( win = 0; win < 4; win++ ) {
@@ -843,7 +843,7 @@ static void mc_take( const u8 *addr, u8 seen[4][8], int keep )
     if ( !fresh || mc_n >= MC_MAX ) return;
     for ( win = 0; win < 4; win++ ) {
         idx = (int)( ( crc >> mc_shift[win] ) & 63 );
-        seen[win][idx >> 3] = (u8)( seen[win][idx >> 3] | ( 1 << ( idx & 7 ) ) );
+        seen[win][idx >> 3] = (uint8_t)( seen[win][idx >> 3] | ( 1 << ( idx & 7 ) ) );
     }
     net_memcpy( mc_list + mc_n * 6, addr, 6 );
     mc_n++;
@@ -851,12 +851,12 @@ static void mc_take( const u8 *addr, u8 seen[4][8], int keep )
 
 static void mc_build( void )
 {
-    static const u8 netbeui[6] = { 0x03, 0x00, 0x00, 0x00, 0x00, 0x01 };
-    static const u8 allhosts[6] = { 0x01, 0x00, 0x5E, 0x00, 0x00, 0x01 };
-    u8  seen[4][8];
-    u8  addr[6];
-    u32 cand;
-    int i, full;
+    static const uint8_t netbeui[6] = { 0x03, 0x00, 0x00, 0x00, 0x00, 0x01 };
+    static const uint8_t allhosts[6] = { 0x01, 0x00, 0x5E, 0x00, 0x00, 0x01 };
+    uint8_t  seen[4][8];
+    uint8_t  addr[6];
+    unsigned int cand;
+    int      i, full;
 
     net_memzero( seen, sizeof( seen ) );
     mc_n = 0;
@@ -865,12 +865,12 @@ static void mc_build( void )
     net_memzero( addr, sizeof( addr ) );
     addr[0] = 0x01;                             /* a group address */
     for ( cand = 0; cand < 4096 && mc_n < MC_MAX; cand++ ) {
-        addr[4] = (u8)( cand >> 8 );
-        addr[5] = (u8)cand;
+        addr[4] = (uint8_t)( cand >> 8 );
+        addr[5] = (uint8_t)cand;
         mc_take( addr, seen, 0 );
         full = 1;
         for ( i = 0; i < 32; i++ ) {
-            if ( ( (u8 *)seen )[i] != 0xFF ) { full = 0; break; }
+            if ( ( (uint8_t *)seen )[i] != 0xFF ) { full = 0; break; }
         }
         if ( full ) break;
     }
@@ -880,9 +880,9 @@ static void mc_build( void )
 /* receiving                                                         */
 /* ---------------------------------------------------------------- */
 
-static u16 rx_slot( int i )
+static uint16_t rx_slot( int i )
 {
-    return (u16)( M_RX + (u32)i * RX_SLOT );
+    return (uint16_t)( M_RX + (uint32_t)i * RX_SLOT );
 }
 
 /* Both lists laid out: each RFD linked to the next, the RBD after it to
@@ -890,20 +890,20 @@ static u16 rx_slot( int i )
    RBD and the others none (0FFFFh) - the 82586 fills those in. */
 static void rx_layout( void )
 {
-    u16 words[16];
-    u16 slot, next;
+    uint16_t words[16];
+    uint16_t slot, next;
     int i, j;
 
     for ( i = 0; i < rx_n; i++ ) {
         slot = rx_slot( i );
         next = rx_slot( ( i + 1 ) % rx_n );
         for ( j = 0; j < 16; j++ ) words[j] = 0;
-        words[1] = (u16)( i == rx_n - 1 ? CB_EL : 0 );     /* RFD command */
-        words[2] = next;                                    /* ...link */
-        words[3] = (u16)( i == 0 ? slot + RX_RBD : 0xFFFF );/* ...its RBD */
-        words[12] = (u16)( next + RX_RBD );                 /* RBD link */
-        words[13] = (u16)( slot + RX_BUF );                 /* ...buffer, low */
-        words[15] = (u16)( RX_BUFLEN | ( i == rx_n - 1 ? RBD_EL : 0 ) );
+        words[1] = (uint16_t)( i == rx_n - 1 ? CB_EL : 0 ); /* RFD command */
+        words[2] = next;                                          /* ...link */
+        words[3] = (uint16_t)( i == 0 ? slot + RX_RBD : 0xFFFF ); /* ...its RBD */
+        words[12] = (uint16_t)( next + RX_RBD );                  /* RBD link */
+        words[13] = (uint16_t)( slot + RX_BUF );                  /* ...buffer, low */
+        words[15] = (uint16_t)( RX_BUFLEN | ( i == rx_n - 1 ? RBD_EL : 0 ) );
         mem_put( slot, words, 16 );
     }
     rx_head = 0;
@@ -913,7 +913,7 @@ static void rx_layout( void )
 /* the lists laid out afresh and the receive unit started at the first */
 static int rx_start( void )
 {
-    u32 flags;
+    uint32_t flags;
     int ok = 0;
 
     rx_layout();
@@ -937,18 +937,19 @@ static void rx_restart( void )
    the old end, so the lists always have an end. */
 static void rx_drain( void )
 {
-    u16 slot, tail, status, rbd, count;
-    u32 len, flags;
-    u8 *buf;
+    uint16_t slot, tail, status, rbd, count;
+    unsigned int len;
+    uint32_t flags;
+    uint8_t *buf;
     int pass;
 
     for ( pass = 0; pass < rx_n; pass++ ) {
         slot = rx_slot( rx_head );
         status = mem_rd( slot );
         if ( !( status & CB_C ) ) break;
-        rbd = mem_rd( (u16)( slot + 6 ) );
-        count = mem_rd( (u16)( slot + RX_RBD ) );
-        if ( !( status & CB_OK ) || rbd != (u16)( slot + RX_RBD ) ||
+        rbd = mem_rd( (uint16_t)( slot + 6 ) );
+        count = mem_rd( (uint16_t)( slot + RX_RBD ) );
+        if ( !( status & CB_OK ) || rbd != (uint16_t)( slot + RX_RBD ) ||
              ( count & ( RBD_EOF | RBD_F ) ) != ( RBD_EOF | RBD_F ) ) {
             /* a frame the chip gave up on (out of resources) or one in
                more than one buffer: the lists are no longer in step with
@@ -965,19 +966,19 @@ static void rx_drain( void )
                which has room (QSLOT, NETCORE.C) */
             buf = net_rx_begin();
             flags = int_off();
-            outw( net_port + EE_RDPTR, (u16)( slot + RX_BUF ) );
+            outw( net_port + EE_RDPTR, (uint16_t)( slot + RX_BUF ) );
             insw( net_port + EE_DATA, buf, ( len + 1 ) / 2 );
             int_back( flags );
             net_rx_commit( len );
         }
         tail = rx_slot( rx_tail );
-        mem_wr( (u16)( slot + RX_RBD ), 0 );                         /* RBD count */
-        mem_wr( (u16)( slot + RX_RBD + 8 ), RX_BUFLEN | RBD_EL );    /* new end */
-        mem_wr( (u16)( tail + RX_RBD + 8 ), RX_BUFLEN );             /* old end */
-        mem_wr( slot, 0 );                                           /* RFD status */
-        mem_wr( (u16)( slot + 6 ), 0xFFFF );                         /* ...no RBD */
-        mem_wr( (u16)( slot + 2 ), CB_EL );                          /* new end */
-        mem_wr( (u16)( tail + 2 ), 0 );                              /* old end */
+        mem_wr( (uint16_t)( slot + RX_RBD ), 0 );                       /* RBD count */
+        mem_wr( (uint16_t)( slot + RX_RBD + 8 ), RX_BUFLEN | RBD_EL );  /* new end */
+        mem_wr( (uint16_t)( tail + RX_RBD + 8 ), RX_BUFLEN );           /* old end */
+        mem_wr( slot, 0 );                                              /* RFD status */
+        mem_wr( (uint16_t)( slot + 6 ), 0xFFFF );                       /* ...no RBD */
+        mem_wr( (uint16_t)( slot + 2 ), CB_EL );                        /* new end */
+        mem_wr( (uint16_t)( tail + 2 ), 0 );                            /* old end */
         rx_tail = rx_head;
         rx_head = ( rx_head + 1 ) % rx_n;
     }
@@ -990,8 +991,8 @@ static void rx_drain( void )
 /* the TDR, the 82586's cable test: said only when it finds a fault */
 static void ee_cable_test( void )
 {
-    u16 words[4];
-    u16 status, result;
+    uint16_t words[4];
+    uint16_t status, result;
 
     words[0] = 0;
     words[1] = CB_EL | CMD_TDR;
@@ -1018,7 +1019,7 @@ static void ee_cable_test( void )
 }
 
 /* a step of card_setup that failed, said at the load */
-static int ee_failed( int said, const char *what, u16 value )
+static int ee_failed( int said, const char *what, uint16_t value )
 {
     if ( said ) {
         say_begin( ": " );
@@ -1033,10 +1034,10 @@ static int ee_failed( int said, const char *what, u16 value )
 
 int card_setup( void )
 {
-    u16 words[12];
-    u16 status, top;
-    u8  conn, config;
-    int said, i, j;
+    uint16_t words[12];
+    uint16_t status, top;
+    uint8_t  conn, config;
+    int      said, i, j;
 
     said = !ee_started;                 /* the first start only: not on
                                            an un-park, which may not print */
@@ -1049,7 +1050,7 @@ int card_setup( void )
        connector (Linux: 20ms to settle) and the EEPROM control written
        again after it, as the top says why */
     ee_reset_asic( ee_irqcode );
-    conn = (u8)( inb( net_port + EE_CONN ) & ~( CONN_OWN | CONN_TPBIT ) );
+    conn = (uint8_t)( inb( net_port + EE_CONN ) & ~( CONN_OWN | CONN_TPBIT ) );
     if ( ee_xc == XC_TP ) conn |= CONN_OWN | CONN_TPBIT;
     else if ( ee_xc == XC_BNC ) conn |= CONN_OWN;
     outb( net_port + EE_CONN, conn );
@@ -1059,8 +1060,8 @@ int card_setup( void )
 
     /* loopback while the 82586 starts (Linux and both BSD drivers keep
        it off the wire so), and the ASIC's width */
-    config = (u8)( inb( net_port + EE_CONFIG ) | CFG_LOOP );
-    if ( !ee_wide ) config &= (u8)~CFG_16BIT;
+    config = (uint8_t)( inb( net_port + EE_CONFIG ) | CFG_LOOP );
+    if ( !ee_wide ) config &= (uint8_t)~CFG_16BIT;
     outb( net_port + EE_CONFIG, config );
 
     /* card memory: warmed up, cleared at the first start; the ISCP (busy,
@@ -1074,9 +1075,9 @@ int card_setup( void )
     words[3] = 0;
     mem_put( M_ISCP, words, 4 );
     mem_zero( M_SCB, 8 );
-    top = (u16)( ee_bytes - 12 );
+    top = (uint16_t)( ee_bytes - 12 );
     for ( i = 0; i < 6; i++ ) words[i] = 0;
-    words[1] = (u16)( ee_wide ? 0 : 1 );        /* SYSBUS: 1 = 8-bit */
+    words[1] = (uint16_t)( ee_wide ? 0 : 1 );   /* SYSBUS: 1 = 8-bit */
     mem_put( top, words, 6 );
     tx_cur = 0;
     tx_prev = 0;
@@ -1103,13 +1104,13 @@ int card_setup( void )
     words[0] = 0;
     words[1] = CB_EL | CMD_CONFIG;
     words[2] = 0xFFFF;
-    for ( i = 0; i < 6; i++ ) words[3 + i] = (u16)( ee_config[i * 2] | ( ee_config[i * 2 + 1] << 8 ) );
+    for ( i = 0; i < 6; i++ ) words[3 + i] = (uint16_t)( ee_config[i * 2] | ( ee_config[i * 2 + 1] << 8 ) );
     status = run_cmd( M_CMD, words, 9 );
     if ( ( status & ( CB_C | CB_OK ) ) != ( CB_C | CB_OK ) ) return ee_failed( said, "configure: status ", status );
 
     /* IA-SETUP: who this is */
     words[1] = CB_EL | CMD_IA;
-    for ( i = 0; i < 3; i++ ) words[3 + i] = (u16)( net_mac[i * 2] | ( net_mac[i * 2 + 1] << 8 ) );
+    for ( i = 0; i < 3; i++ ) words[3 + i] = (uint16_t)( net_mac[i * 2] | ( net_mac[i * 2 + 1] << 8 ) );
     status = run_cmd( M_CMD, words, 6 );
     if ( ( status & ( CB_C | CB_OK ) ) != ( CB_C | CB_OK ) ) return ee_failed( said, "address setup: status ", status );
 
@@ -1117,8 +1118,8 @@ int card_setup( void )
        the list goes in after the four words of its header */
     if ( mc_n == 0 ) mc_build();
     words[1] = CB_EL | CMD_MC;
-    words[3] = (u16)( mc_n * 6 );
-    mem_put( (u16)( M_TX + 8 ), (const u16 *)mc_list, (u32)mc_n * 3 );
+    words[3] = (uint16_t)( mc_n * 6 );
+    mem_put( (uint16_t)( M_TX + 8 ), (const uint16_t *)mc_list, (unsigned int)mc_n * 3 );
     status = run_cmd( M_TX, words, 4 );
     if ( said && ( status & ( CB_C | CB_OK ) ) != ( CB_C | CB_OK ) ) {
         /* not fatal: unicast and broadcast still come in */
@@ -1126,7 +1127,7 @@ int card_setup( void )
     }
 
     /* onto the wire; the cable test at the first start */
-    outb( net_port + EE_CONFIG, (u8)( config & ~CFG_LOOP ) );
+    outb( net_port + EE_CONFIG, (uint8_t)( config & ~CFG_LOOP ) );
     if ( said ) ee_cable_test();
 
     /* the receive unit, on lists laid out afresh */
@@ -1140,7 +1141,7 @@ int card_setup( void )
     /* what setting up raised is acknowledged, then the line let out */
     scb_ack_all();
     if ( !( net_flags & NICF_POLLED ) && ee_irqcode ) {
-        outb( net_port + EE_IRQ, (u8)( ee_irqcode | IRQ_ENABLE ) );
+        outb( net_port + EE_IRQ, (uint8_t)( ee_irqcode | IRQ_ENABLE ) );
     }
     return 0;
 }
@@ -1163,11 +1164,11 @@ void card_stop( void )
    is broken.  A failed frame is counted here. */
 static int tx_wait( void )
 {
-    u16 status;
-    u32 i;
+    uint16_t status;
+    unsigned int i;
 
     for ( i = 0; i < 10000; i++ ) {
-        status = (u16)( tx_prev ? mem_rd( tx_prev ) : CB_C );
+        status = (uint16_t)( tx_prev ? mem_rd( tx_prev ) : CB_C );
         if ( ( status & CB_C ) && ( scb_status() & ST_CUS ) != CUS_ACTIVE ) {
             if ( tx_prev && !( status & CB_OK ) ) net_stats.txerrors++;
             tx_prev = 0;
@@ -1178,26 +1179,27 @@ static int tx_wait( void )
     return 0;
 }
 
-int card_send( const u8 *frame, u32 len )
+int card_send( const uint8_t *frame, unsigned int len )
 {
-    u16 head[12];
-    u16 block, use;
-    u32 flags, done;
+    uint16_t head[12];
+    uint16_t block, use;
+    uint32_t flags;
+    unsigned int done;
     int i, ok;
 
     if ( ee_dead || len < NIC_HDRLEN || len > NIC_MAXFRAME ) { net_stats.txerrors++; return 0; }
-    use = (u16)( len < 60 ? 60 : len );
-    block = (u16)( M_TX + tx_cur * TX_SIZE );
+    use = (uint16_t)( len < 60 ? 60 : len );
+    block = (uint16_t)( M_TX + tx_cur * TX_SIZE );
 
     /* the block: transmit, the end of its list; its buffer descriptor;
        the frame, padded with zeroes, read no further than LEN */
     for ( i = 0; i < 12; i++ ) head[i] = 0;
     head[1] = CB_EL | CMD_TX;
     head[2] = 0xFFFF;
-    head[3] = (u16)( block + TX_TBD );
-    head[8] = (u16)( TBD_EOF | use );
+    head[3] = (uint16_t)( block + TX_TBD );
+    head[8] = (uint16_t)( TBD_EOF | use );
     head[9] = 0xFFFF;
-    head[10] = (u16)( block + TX_DATA );
+    head[10] = (uint16_t)( block + TX_DATA );
     flags = int_off();
     outw( net_port + EE_WRPTR, block );
     outsw( net_port + EE_DATA, head, 12 );
@@ -1239,8 +1241,8 @@ int card_send( const u8 *frame, u32 len )
    is not left waiting for the next one. */
 int card_service( void )
 {
-    u32 flags;
-    u16 status, cause;
+    uint32_t flags;
+    uint16_t status, cause;
     int pass, mine = 0;
 
     if ( ee_dead ) return 0;
@@ -1250,7 +1252,7 @@ int card_service( void )
         int_back( flags );
         return 0;
     }
-    cause = (u16)( status & ST_CAUSE );
+    cause = (uint16_t)( status & ST_CAUSE );
     for ( pass = 0; pass < 8; pass++ ) {
         if ( cause ) {
             /* the line masked while the causes are answered, from the
@@ -1274,12 +1276,12 @@ int card_service( void )
             rx_restart();
             status = scb_status();
         }
-        cause = (u16)( status & ST_CAUSE );
+        cause = (uint16_t)( status & ST_CAUSE );
         if ( !cause ) break;
     }
     if ( mine && !( net_flags & NICF_POLLED ) && ee_irqcode ) {
         /* let out again: a cause still up makes a new edge */
-        outb( net_port + EE_IRQ, (u8)( ee_irqcode | IRQ_ENABLE ) );
+        outb( net_port + EE_IRQ, (uint8_t)( ee_irqcode | IRQ_ENABLE ) );
     }
     int_back( flags );
     return mine;

@@ -106,7 +106,7 @@ void popup_place( POPUP *pop, int row, int col, int end_row, int end_col )
 static int popup_save( POPUP *pop )
 {
     RECT box = pop->at;
-    u32 want;
+    unsigned want;
 
     if ( pop->shadow ) {
         box.end_row += 1;
@@ -121,7 +121,7 @@ static int popup_save( POPUP *pop )
     if ( box.end_row < box.row || box.end_col < box.col ) {
         return 0;
     }
-    want = (u32)(box.end_row - box.row + 1) * (u32)(box.end_col - box.col + 1);
+    want = (unsigned)(box.end_row - box.row + 1) * (unsigned)(box.end_col - box.col + 1);
     if ( want > pop->save_cells ) {
         CELL *grown = (CELL *)malloc( want * sizeof( CELL ) );
 
@@ -315,8 +315,8 @@ static void dlg_hotkeys( const char *const *labels, int count, char *keys )
             if ( at > 0 && labels[one][at - 1] != ' ' ) {
                 continue;
             }
-            ch = (char)toupper( (u8)labels[one][at] );
-            if ( !isalnum( (u8)ch ) ) {
+            ch = (char)toupper( (unsigned char)labels[one][at] );
+            if ( !isalnum( (unsigned char)ch ) ) {
                 continue;
             }
             for ( prev = 0; prev < nused && used[prev] != ch; prev++ ) {
@@ -326,8 +326,8 @@ static void dlg_hotkeys( const char *const *labels, int count, char *keys )
             }
         }
         for ( at = 0; labels[one][at] && !keys[one]; at++ ) {
-            ch = (char)toupper( (u8)labels[one][at] );
-            if ( !isalnum( (u8)ch ) ) {
+            ch = (char)toupper( (unsigned char)labels[one][at] );
+            if ( !isalnum( (unsigned char)ch ) ) {
                 continue;
             }
             for ( prev = 0; prev < nused && used[prev] != ch; prev++ ) {
@@ -913,7 +913,7 @@ int prog_is_open( void )
 
 /* the name line and the bar, then a look for Esc that does not wait.
    Once the answer is "stop" it stays "stop". */
-int prog_update( const char *text, u32 done, u32 total )
+int prog_update( const char *text, uint32_t done, uint32_t total )
 {
     char line[PB_ROOM + 2];
     int row, col, room, len;
@@ -1046,7 +1046,7 @@ static int tv_index( VIEWER *tv, const char *raw, long got, int cut )
 {
     long at, out_len = 0;
     int col = 0, pad;
-    u8 ch;
+    unsigned char ch;
 
     tv->truncated = cut;
     for ( at = 0; at < got; at++ ) {
@@ -1068,7 +1068,7 @@ static int tv_index( VIEWER *tv, const char *raw, long got, int cut )
     col = 0;
     tv->text_len = 0;
     for ( at = 0; at < got; at++ ) {
-        ch = (u8)raw[at];
+        ch = (unsigned char)raw[at];
         if ( ch == '\t' ) {
             for ( pad = TV_TAB - col % TV_TAB; pad > 0; pad-- ) {
                 tv->text[tv->text_len++] = ' ';
@@ -1229,7 +1229,7 @@ static const char *find_nocase( const char *hay, const char *needle )
             if ( !hay[at + k] ) {
                 return NULL;
             }
-            if ( toupper( (u8)hay[at + k] ) != toupper( (u8)needle[k] ) ) {
+            if ( toupper( (unsigned char)hay[at + k] ) != toupper( (unsigned char)needle[k] ) ) {
                 break;
             }
         }
@@ -1464,7 +1464,7 @@ void crit_install( void )
     REGS regs;
 
     xa_clear( &regs );
-    regs.edx = (u32)crit_handler;
+    regs.edx = (uint32_t)crit_handler;
     xa_dos( &regs, 0x2524 );
 }
 

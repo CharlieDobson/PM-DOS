@@ -154,7 +154,7 @@ static int next_field( STR *fmt, int *pos, OUT *out )
 
 static STR *out_string( OUT *out )
 {
-    return qs_make( out->text, (u32)out->len );
+    return qs_make( out->text, (unsigned int)out->len );
 }
 
 /* ------------------------------------------------------------------ */
@@ -265,7 +265,7 @@ static int place_digits( double v, int decimals, char *digits, int *count, int m
         }
         if ( carry ) {
             /* 9.99 -> 10.00: one digit more at the front */
-            mem_cpy( digits + 1, digits, (u32)*count );
+            mem_cpy( digits + 1, digits, (unsigned int)*count );
             digits[0] = '1';
             (*count)++;
             top++;

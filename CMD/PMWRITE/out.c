@@ -16,18 +16,18 @@
 #define MEM_FIRST       4096
 
 struct OUT {
-    int   in_mem;
-    int   error;
-    u32   pos;                  /* where the next byte goes */
-    u32   size;                 /* the furthest any byte has gone */
+    int          in_mem;
+    int          error;
+    uint32_t     pos;           /* where the next byte goes */
+    uint32_t     size;          /* the furthest any byte has gone */
     /* a file */
-    u32   handle;
-    u32   buf_at;               /* the file offset buf[0] is for */
-    u32   buf_len;
-    u8   *buf;
+    uint32_t     handle;
+    uint32_t     buf_at;        /* the file offset buf[0] is for */
+    unsigned int buf_len;
+    uint8_t     *buf;
     /* memory */
-    u8   *data;
-    u32   cap;
+    uint8_t     *data;
+    unsigned int cap;
 };
 
 OUT *out_file( const char *path )
@@ -38,7 +38,7 @@ OUT *out_file( const char *path )
         return NULL;
     }
     mem_set( out, 0, sizeof( OUT ) );
-    out->buf = (u8 *)(out + 1);
+    out->buf = (uint8_t *)(out + 1);
     if ( sys_create( path, &out->handle ) != 0 ) {
         xfree( out );
         return NULL;
@@ -60,7 +60,7 @@ OUT *out_mem( void )
 
 static void file_flush( OUT *out )
 {
-    u32 done;
+    uint32_t done;
     int rc;
 
     if ( out->buf_len && !out->error ) {
@@ -107,10 +107,10 @@ void out_fail( OUT *out, int error )
     }
 }
 
-static int mem_room( OUT *out, u32 need )
+static int mem_room( OUT *out, unsigned int need )
 {
-    u32 cap;
-    u8 *data;
+    unsigned int cap;
+    uint8_t *data;
 
     if ( need <= out->cap ) {
         return 1;
@@ -123,7 +123,7 @@ static int mem_room( OUT *out, u32 need )
         }
         cap *= 2;
     }
-    data = (u8 *)try_realloc( out->data, cap );
+    data = (uint8_t *)try_realloc( out->data, cap );
     if ( data == NULL ) {
         out->error = WE_NOMEM;
         return 0;
@@ -133,10 +133,10 @@ static int mem_room( OUT *out, u32 need )
     return 1;
 }
 
-void out_put( OUT *out, const void *data, u32 len )
+void out_put( OUT *out, const void *data, unsigned int len )
 {
-    const u8 *src = (const u8 *)data;
-    u32 part;
+    const uint8_t *src = (const uint8_t *)data;
+    unsigned int part;
 
     if ( out == NULL || out->error || len == 0 ) {
         return;
@@ -177,55 +177,55 @@ void out_put( OUT *out, const void *data, u32 len )
 
 void out_byte( OUT *out, int value )
 {
-    u8 one = (u8)value;
+    uint8_t one = (uint8_t)value;
 
     out_put( out, &one, 1 );
 }
 
-void out_le16( OUT *out, u32 value )
+void out_le16( OUT *out, uint32_t value )
 {
-    u8 raw[2];
+    uint8_t raw[2];
 
-    raw[0] = (u8)value;
-    raw[1] = (u8)(value >> 8);
+    raw[0] = (uint8_t)value;
+    raw[1] = (uint8_t)(value >> 8);
     out_put( out, raw, 2 );
 }
 
-void out_le32( OUT *out, u32 value )
+void out_le32( OUT *out, uint32_t value )
 {
-    u8 raw[4];
+    uint8_t raw[4];
 
-    raw[0] = (u8)value;
-    raw[1] = (u8)(value >> 8);
-    raw[2] = (u8)(value >> 16);
-    raw[3] = (u8)(value >> 24);
+    raw[0] = (uint8_t)value;
+    raw[1] = (uint8_t)(value >> 8);
+    raw[2] = (uint8_t)(value >> 16);
+    raw[3] = (uint8_t)(value >> 24);
     out_put( out, raw, 4 );
 }
 
-void out_be16( OUT *out, u32 value )
+void out_be16( OUT *out, uint32_t value )
 {
-    u8 raw[2];
+    uint8_t raw[2];
 
-    raw[0] = (u8)(value >> 8);
-    raw[1] = (u8)value;
+    raw[0] = (uint8_t)(value >> 8);
+    raw[1] = (uint8_t)value;
     out_put( out, raw, 2 );
 }
 
-void out_be32( OUT *out, u32 value )
+void out_be32( OUT *out, uint32_t value )
 {
-    u8 raw[4];
+    uint8_t raw[4];
 
-    raw[0] = (u8)(value >> 24);
-    raw[1] = (u8)(value >> 16);
-    raw[2] = (u8)(value >> 8);
-    raw[3] = (u8)value;
+    raw[0] = (uint8_t)(value >> 24);
+    raw[1] = (uint8_t)(value >> 16);
+    raw[2] = (uint8_t)(value >> 8);
+    raw[3] = (uint8_t)value;
     out_put( out, raw, 4 );
 }
 
-void out_fill( OUT *out, int value, u32 count )
+void out_fill( OUT *out, int value, unsigned int count )
 {
-    u8 block[64];
-    u32 part;
+    uint8_t block[64];
+    unsigned int part;
 
     mem_set( block, value, sizeof( block ) );
     while ( count ) {
@@ -247,12 +247,12 @@ void __cdecl out_fmt( OUT *out, const char *fmt, ... )
 {
     char line[512];
     char *big;
-    u32 size = sizeof( line );
+    unsigned int size = sizeof( line );
     int len;
 
     len = vfmt( line, sizeof( line ), fmt, VA_START( fmt ) );
-    if ( (u32)len + 1 < sizeof( line ) ) {
-        out_put( out, line, (u32)len );
+    if ( (unsigned int)len + 1 < sizeof( line ) ) {
+        out_put( out, line, (unsigned int)len );
         return;
     }
     /* the line filled the buffer, so some of it may be missing: made
@@ -265,8 +265,8 @@ void __cdecl out_fmt( OUT *out, const char *fmt, ... )
             return;
         }
         len = vfmt( big, size, fmt, VA_START( fmt ) );
-        if ( (u32)len + 1 < size ) {
-            out_put( out, big, (u32)len );
+        if ( (unsigned int)len + 1 < size ) {
+            out_put( out, big, (unsigned int)len );
             xfree( big );
             return;
         }
@@ -274,17 +274,17 @@ void __cdecl out_fmt( OUT *out, const char *fmt, ... )
     }
 }
 
-u32 out_tell( const OUT *out )
+uint32_t out_tell( const OUT *out )
 {
     return out == NULL ? 0 : out->pos;
 }
 
-u32 out_size( const OUT *out )
+uint32_t out_size( const OUT *out )
 {
     return out == NULL ? 0 : out->size;
 }
 
-void out_seek( OUT *out, u32 pos )
+void out_seek( OUT *out, uint32_t pos )
 {
     int rc;
 
@@ -310,7 +310,7 @@ void out_seek( OUT *out, u32 pos )
     out->pos = pos;
 }
 
-u8 *out_data( OUT *out, u32 *len )
+uint8_t *out_data( OUT *out, uint32_t *len )
 {
     if ( out == NULL || !out->in_mem ) {
         *len = 0;
@@ -320,9 +320,9 @@ u8 *out_data( OUT *out, u32 *len )
     return out->data;
 }
 
-u8 *out_take( OUT *out, u32 *len )
+uint8_t *out_take( OUT *out, uint32_t *len )
 {
-    u8 *data = out_data( out, len );
+    uint8_t *data = out_data( out, len );
 
     if ( data != NULL ) {
         out->data = NULL;

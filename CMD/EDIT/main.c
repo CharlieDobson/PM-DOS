@@ -31,15 +31,15 @@ int   short_names;
 int   split_at;                 /* the top window's height when split */
 char  print_port[8] = "PRN";
 
-static char       *clip;
-static u32         clip_len;
-static const char *status_hint;
-static const char  status_text[] =
+static char        *clip;
+static unsigned int clip_len;
+static const char  *status_hint;
+static const char   status_text[] =
     "PM-DOS Editor   F1=Help   F10 or Alt=Menus   F6=Next Window";
-static int         next_untitled = 1;
-static int         opt_binary, opt_readonly, opt_mono, opt_lines;
-static int         ui_ready;
-static char        pending[160];    /* a complaint from the command line */
+static int          next_untitled = 1;
+static int          opt_binary, opt_readonly, opt_mono, opt_lines;
+static int          ui_ready;
+static char         pending[160];    /* a complaint from the command line */
 
 static const char usage[] =
     "Starts the PM-DOS Editor, which creates and changes ASCII files.\r\n"
@@ -104,7 +104,7 @@ int clip_has( void )
     return clip != NULL && clip_len > 0;
 }
 
-void clip_set( char *text, u32 len )
+void clip_set( char *text, unsigned int len )
 {
     xfree( clip );
     clip = text;
@@ -219,7 +219,7 @@ static DOC *new_untitled( void )
     }
     doc->untitled = next_untitled++;
     str_cpy( doc->name, "UNTITLED" );
-    str_catn( doc->name, fmt_dec( (u32)doc->untitled, 0, num ), sizeof( doc->name ) );
+    str_catn( doc->name, fmt_dec( (unsigned int)doc->untitled, 0, num ), sizeof( doc->name ) );
     add_doc( doc );
     return doc;
 }
@@ -316,7 +316,7 @@ int app_open_file( const char *path )
 int app_save( DOC *doc, int ask_name )
 {
     char path[PATH_MAX];
-    u16 attr;
+    uint16_t attr;
     int rc;
 
     if ( ask_name || doc->path[0] == 0 || doc->readonly ) {
@@ -452,7 +452,7 @@ static void copy_sel( int cut )
     VIEW *view = &views[active];
     POS from, to;
     char *text;
-    u32 len;
+    unsigned int len;
 
     if ( !view_has_sel( view ) ) {
         return;
@@ -607,7 +607,7 @@ static int blank( int ch )
     return ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n';
 }
 
-static void bad_switch( const char *start, u32 len )
+static void bad_switch( const char *start, unsigned int len )
 {
     char text[60];
 
@@ -622,10 +622,10 @@ static void bad_switch( const char *start, u32 len )
     sys_exit( 1 );
 }
 
-static void one_switch( const char *sw, u32 len )
+static void one_switch( const char *sw, unsigned int len )
 {
     char digits[8];
-    u32 width;
+    unsigned int width;
     int ok;
 
     if ( len == 1 ) {
@@ -657,7 +657,8 @@ static void open_arg( const char *arg )
     char dir[PATH_MAX], path[PATH_MAX];
     const char *last = arg, *scan;
     FINDREC rec;
-    u32 handle, len;
+    uint32_t handle;
+    unsigned int len;
 
     for ( scan = arg; *scan; scan++ ) {
         if ( *scan == '\\' || *scan == '/' || (*scan == ':' && scan == arg + 1) ) {
@@ -671,7 +672,7 @@ static void open_arg( const char *arg )
         open_file( arg, 1 );
         return;
     }
-    len = (u32)(last - arg);
+    len = (unsigned int)(last - arg);
     mem_cpy( dir, arg, len );
     dir[len] = 0;
     if ( sys_find_first( arg, ATTR_READONLY | ATTR_ARCHIVE, &rec, &handle ) != 0 ) {
@@ -695,7 +696,7 @@ static void parse_line( const char *line )
 {
     char arg[PATH_MAX];
     const char *start;
-    u32 used;
+    unsigned int used;
     int quoted;
 
     for ( ;; ) {
@@ -710,7 +711,7 @@ static void parse_line( const char *line )
             while ( *line && !blank( *line ) && *line != '/' ) {
                 line++;
             }
-            one_switch( start, (u32)(line - start) );
+            one_switch( start, (unsigned int)(line - start) );
             continue;
         }
         used = 0;
@@ -780,7 +781,7 @@ static void text_drag( VIEW *view )
             if ( row < first && view->top > 0 ) {
                 view->top--;
                 view_mouse_to( view, first, col, 1 );
-            } else if ( row >= first + rows && view->top + (u32)rows < view->doc->count ) {
+            } else if ( row >= first + rows && view->top + (unsigned int)rows < view->doc->count ) {
                 view->top++;
                 view_mouse_to( view, first + rows - 1, col, 1 );
             }
@@ -836,7 +837,7 @@ static void split_drag( void )
 /* the status bar's own words, clicked, are the keys they name */
 static int status_word( const char *word, int col )
 {
-    u32 len = str_len( word ), start;
+    unsigned int len = str_len( word ), start;
 
     for ( start = 0; status_text[start]; start++ ) {
         if ( str_nicmp( status_text + start, word, len ) == 0 ) {

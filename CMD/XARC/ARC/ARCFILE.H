@@ -53,13 +53,13 @@ int  ArcNeedsPassword( ArcFile *a );
 
 int  ArcNumEntries( ArcFile *a );
 const char *ArcEntryName( ArcFile *a, int index );
-UInt32      ArcEntrySize( ArcFile *a, int index );
+uint32_t    ArcEntrySize( ArcFile *a, int index );
 int         ArcEntryIsDir( ArcFile *a, int index );
 
 /* Extra columns for the list view.  ArcEntryPacked returns 0xFFFFFFFF when the
  * packed size is unknown; ArcEntryDate / ArcEntryAttr write "" when the field
  * is absent. */
-UInt32      ArcEntryPacked( ArcFile *a, int index );
+uint32_t    ArcEntryPacked( ArcFile *a, int index );
 const char *ArcEntryMethod( ArcFile *a, int index );
 void        ArcEntryDate( ArcFile *a, int index, char *buf, int buflen );
 void        ArcEntryAttr( ArcFile *a, int index, char *buf, int buflen );
@@ -106,7 +106,7 @@ const char *ArcComment( ArcFile *a );
  * buf == NULL to size a buffer and then ask again.  Copies at most bufLen
  * bytes, always terminating when bufLen > 0.  Returns 0 when there is no
  * comment. */
-UInt32 ArcCommentText( ArcFile *a, char *buf, UInt32 bufLen );
+uint32_t ArcCommentText( ArcFile *a, char *buf, uint32_t bufLen );
 
 void ArcClose( ArcFile *a );
 const char *ArcErrorText( int code );
@@ -165,9 +165,9 @@ const char *ArcMemFailHint( void );
  *                  per entry and still works, and being able to see inside a
  *                  file you cannot unpack is worth something.
  *-------------------------------------------------------------------------- */
-UInt32 ArcMemNeeded( ArcFile *a );
-int    ArcMemCheck( ArcFile *a, UInt32 *needKB, UInt32 *haveKB );
-int    ArcMemStartupOk( UInt32 *haveKB, UInt32 *needKB );
+uint32_t ArcMemNeeded( ArcFile *a );
+int      ArcMemCheck( ArcFile *a, uint32_t *needKB, uint32_t *haveKB );
+int      ArcMemStartupOk( uint32_t *haveKB, uint32_t *needKB );
 
 /* The wording for that warning, with both figures in it, so the three front
  * ends cannot quote different numbers at the user.  It stops short of naming

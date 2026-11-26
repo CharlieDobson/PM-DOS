@@ -31,7 +31,7 @@ static int  nparams;
 static int  old_verify = -1;
 static int  multi;              /* more than one file is being copied */
 
-extern u8 in_prompt;            /* DOSINT.ASM: ^C ends the program now */
+extern uint8_t in_prompt;       /* DOSINT.ASM: ^C ends the program now */
 
 void quit( int code )
 {
@@ -96,7 +96,7 @@ int ask( const char *tmpl, const char *arg, const char *keys )
 
 static int days_in( int month, int year )
 {
-    static const u8 days[12] = { 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
+    static const uint8_t days[12] = { 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
 
     if ( month == 2 && (year % 4) == 0 ) {
         return 29;                          /* 1980-2107: no century rule */
@@ -106,12 +106,12 @@ static int days_in( int month, int year )
 
 /* /D:date in the country's order, any of - / . or its own separator
    between the numbers, a two-digit year in 1980-2079 */
-static int parse_date( const char *text, u32 len, u16 *out )
+static int parse_date( const char *text, unsigned int len, uint16_t *out )
 {
-    u32 nums[3], val;
+    unsigned int nums[3], val;
     int digits[3], count = 0, order, month, day, year;
     char sep;
-    u32 pos = 0;
+    unsigned int pos = 0;
 
     sys_date_format( &order, &sep );
     while ( count < 3 ) {
@@ -121,7 +121,7 @@ static int parse_date( const char *text, u32 len, u16 *out )
             if ( digits[count] == 4 ) {
                 return -1;
             }
-            val = val * 10 + (u32)(text[pos] - '0');
+            val = val * 10 + (unsigned int)(text[pos] - '0');
             digits[count]++;
             pos++;
         }
@@ -162,11 +162,11 @@ static int parse_date( const char *text, u32 len, u16 *out )
          || day > days_in( month, year ) ) {
         return -1;
     }
-    *out = (u16)(((year - 1980) << 9) | (month << 5) | day);
+    *out = (uint16_t)(((year - 1980) << 9) | (month << 5) | day);
     return 0;
 }
 
-static void bad_switch( const char *start, u32 len )
+static void bad_switch( const char *start, unsigned int len )
 {
     char text[40];
 
@@ -182,7 +182,7 @@ static void bad_switch( const char *start, u32 len )
 
 /* one switch, the text after its '/'.  From COPYCMD only /Y and /-Y
    count, and anything else there is ignored, as COPY ignores it. */
-static void one_switch( const char *sw, u32 len, int from_env )
+static void one_switch( const char *sw, unsigned int len, int from_env )
 {
     int letter = ch_upper( sw[0] );
 
@@ -245,7 +245,7 @@ static void parse_line( const char *line, int from_env )
 {
     const char *cur = line, *start;
     char *dst;
-    u32 used;
+    unsigned int used;
     int quoted;
 
     for ( ;; ) {
@@ -275,7 +275,7 @@ static void parse_line( const char *line, int from_env )
                 }
                 continue;
             }
-            one_switch( start, (u32)(cur - start), from_env );
+            one_switch( start, (unsigned int)(cur - start), from_env );
             continue;
         }
 
@@ -338,7 +338,7 @@ static int is_dot( const char *name )
    "." when there is none, "X:." for a bare drive */
 static void dir_of( const char *path, const char *last, char *out )
 {
-    u32 len = (u32)(last - path);
+    unsigned int len = (unsigned int)(last - path);
 
     mem_cpy( out, path, len );
     out[len] = 0;
@@ -367,8 +367,8 @@ static void resolve_source( const char *arg )
 {
     char dir[PATH_MAX];
     const char *last;
-    u16 attr;
-    u32 len;
+    uint16_t attr;
+    unsigned int len;
     int isdir = 0;
 
     check_drive( arg );
@@ -395,7 +395,7 @@ static void resolve_source( const char *arg )
         str_cpy( job.pattern, "*.*" );
     } else {
         str_cpy( job.pattern, last );
-        len = (u32)(last - arg);
+        len = (unsigned int)(last - arg);
         mem_cpy( job.src_disp, arg, len );
         job.src_disp[len] = 0;
         dir_of( arg, last, dir );
@@ -414,7 +414,7 @@ static void resolve_dest( const char *arg )
 {
     char dir[PATH_MAX];
     const char *last;
-    u16 attr;
+    uint16_t attr;
     int isdir, key;
 
     job.tmpl[0] = 0;

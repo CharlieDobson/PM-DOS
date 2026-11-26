@@ -64,7 +64,7 @@ static int at_end( int ch )
 
 /* An error about something on the command line, shown as it was typed -
    except a path, which 6.22 showed from its parser's copy, in capitals. */
-static void bad_text( const char *tmpl, const char *start, u32 len )
+static void bad_text( const char *tmpl, const char *start, unsigned int len )
 {
     char text[PATH_MAX];
 
@@ -80,7 +80,7 @@ static void bad_text( const char *tmpl, const char *start, u32 len )
     quit( EXIT_ERROR );
 }
 
-static void one_switch( const char *start, u32 len, int *used_f, int *used_a )
+static void one_switch( const char *start, unsigned int len, int *used_f, int *used_a )
 {
     int letter = len == 2 ? ch_upper( start[1] ) : 0;
 
@@ -104,7 +104,7 @@ static void one_switch( const char *start, u32 len, int *used_f, int *used_a )
 /* The path: its drive into "drive", the rest into "typed".  A path too
    long to be one is refused here, before the heading, as 6.22 refused
    one longer than its 64 characters. */
-static void one_path( const char *text, u32 len )
+static void one_path( const char *text, unsigned int len )
 {
     const char *rest = text;
     int letter;
@@ -135,7 +135,7 @@ static void parse( const char *line )
     char text[PATH_MAX];
     const char *pos = line, *start;
     int used_f = 0, used_a = 0, quoted;
-    u32 len;
+    unsigned int len;
 
     for ( ;; ) {
         while ( is_delim( *pos ) ) {
@@ -150,7 +150,7 @@ static void parse( const char *line )
             while ( !at_end( *pos ) && !is_delim( *pos ) && *pos != '/' ) {
                 pos++;
             }
-            one_switch( start, (u32)(pos - start), &used_f, &used_a );
+            one_switch( start, (unsigned int)(pos - start), &used_f, &used_a );
             continue;
         }
 
@@ -170,14 +170,14 @@ static void parse( const char *line )
             pos++;
         }
         if ( have_path ) {
-            bad_text( M_TOOMANY, start, (u32)(pos - start) );
+            bad_text( M_TOOMANY, start, (unsigned int)(pos - start) );
         }
         have_path = 1;
         if ( len >= sizeof( text ) ) {         /* shown without its drive */
             if ( pos - start >= 2 && start[1] == ':' ) {
                 start += 2;
             }
-            bad_text( M_BADPATH, start, (u32)(pos - start) );
+            bad_text( M_BADPATH, start, (unsigned int)(pos - start) );
         }
         one_path( text, len );
     }
@@ -196,8 +196,8 @@ static int start_dir( int drv, char *out )
     char abs[PATH_MAX * 2];
     char *comp[LEVEL_MAX];
     char *cur, *name;
-    u32 count = 0, i;
-    u16 attr;
+    unsigned int count = 0, i;
+    uint16_t attr;
     int rc;
 
     abs[0] = (char)('A' + drv);
@@ -267,7 +267,7 @@ static int start_dir( int drv, char *out )
     return (attr & ATTR_DIR) ? 0 : ERR_NOPATH;
 }
 
-static void hex4( u32 val, char *buf )
+static void hex4( uint32_t val, char *buf )
 {
     static const char digits[] = "0123456789ABCDEF";
     int pos;
@@ -289,7 +289,7 @@ void tree_main( void )
     char label[LABEL_LEN + 1];
     char high[5], low[5];
     char head[2];
-    u32 serial;
+    uint32_t serial;
     int drv;
 
     sys_init();

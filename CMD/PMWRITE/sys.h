@@ -53,32 +53,32 @@
 #define SH_KEYS         0x0F
 
 typedef struct {
-    u8   attr;
-    u32  size;
-    u16  time, date;            /* DOS's packed forms */
-    char name[PATH_LEN];        /* the long name - the 8.3 when there is none */
-    char alias[14];
+    uint8_t  attr;
+    uint32_t size;
+    uint16_t time, date;        /* DOS's packed forms */
+    char     name[PATH_LEN];    /* the long name - the 8.3 when there is none */
+    char     alias[14];
 } FINDREC;
 
-int   sys_init( void );
-const char *sys_cmdline( void );
-const char *sys_getenv( const char *name );
-const char *sys_program_dir( void );        /* where PMWRITE.EXE is: "C:\DIR\" */
-void  sys_exit( int code );
-void *sys_mem_alloc( u32 size );
-u32   sys_mem_largest( void );
-void  sys_break_install( void );            /* Ctrl+C is a key, not an end */
-void  sys_stdout( const char *buf, u32 len );
-int   sys_stdout_is_console( void );
-int   sys_stdin_is_console( void );
-int   sys_stdin_byte( void );               /* -1 at the end */
-int   sys_crit_seen( void );                /* a critical error was failed since last asked */
+int          sys_init( void );
+const char  *sys_cmdline( void );
+const char  *sys_getenv( const char *name );
+const char  *sys_program_dir( void );       /* where PMWRITE.EXE is: "C:\DIR\" */
+void         sys_exit( int code );
+void        *sys_mem_alloc( unsigned int size );
+unsigned int sys_mem_largest( void );
+void         sys_break_install( void );     /* Ctrl+C is a key, not an end */
+void         sys_stdout( const char *buf, unsigned int len );
+int          sys_stdout_is_console( void );
+int          sys_stdin_is_console( void );
+int          sys_stdin_byte( void );        /* -1 at the end */
+int          sys_crit_seen( void );         /* a critical error was failed since last asked */
 
 /* the text screen */
 void  sys_cls( void );
 void  sys_screen_size( int *rows, int *cols );
-void  sys_put_cells( u32 first, const u16 *cells, u32 count );
-void  sys_get_cells( u32 first, u16 *cells, u32 count );
+void  sys_put_cells( unsigned int first, const uint16_t *cells, unsigned int count );
+void  sys_get_cells( unsigned int first, uint16_t *cells, unsigned int count );
 void  sys_cursor( int row, int col );
 void  sys_get_cursor( int *row, int *col );
 #define CUR_HIDE        0
@@ -88,14 +88,14 @@ void  sys_cursor_shape( int kind );
 int   sys_set_lines( int lines );               /* -> rows now */
 
 /* the keyboard: a key is AL = ASCII, AH = scan code */
-#define KW_NOWAIT       0x01    /* sys_key_wait: look, and come back */
-#define KW_MOUSE        0x02    /* ...and the mouse wakes it too */
-int   sys_key_wait( int shift_seen, int *shift_now, int flags );
-                                /* 1 = key waiting, 2 = the mouse moved */
-int   sys_key_read( int *shift_now );
-int   sys_shift( void );
-u32   sys_hundredths( void );   /* the time of day, good to a tick (55 ms) */
-u32   sys_clock_ms( void );     /* milliseconds, counted while it is asked often */
+#define KW_NOWAIT       0x01      /* sys_key_wait: look, and come back */
+#define KW_MOUSE        0x02      /* ...and the mouse wakes it too */
+int      sys_key_wait( int shift_seen, int *shift_now, int flags );
+                                  /* 1 = key waiting, 2 = the mouse moved */
+int      sys_key_read( int *shift_now );
+int      sys_shift( void );
+uint32_t sys_hundredths( void );  /* the time of day, good to a tick (55 ms) */
+uint32_t sys_clock_ms( void );    /* milliseconds, counted while it is asked often */
 
 typedef struct {
     int year, month, day, hour, minute, second;
@@ -126,25 +126,25 @@ int   sys_mouse_wheel( void );          /* notches the wheel turned since last a
 
 /* files and directories */
 int   sys_lfn( void );
-int   sys_open_read( const char *path, u32 *handle );
-int   sys_open_write( const char *path, u32 *handle );    /* devices too: PRN */
-int   sys_create( const char *path, u32 *handle );         /* made, or emptied; read and write */
-int   sys_read( u32 handle, void *buf, u32 len, u32 *done );
-int   sys_write( u32 handle, const void *buf, u32 len, u32 *done );
-int   sys_close( u32 handle );
-int   sys_file_size( u32 handle, u32 *size );   /* and back to the start */
-int   sys_seek( u32 handle, u32 pos );
-int   sys_get_ftime( u32 handle, u16 *time, u16 *date );
-int   sys_set_ftime( u32 handle, u16 time, u16 date );
-int   sys_get_attr( const char *path, u16 *attr );
-int   sys_set_attr( const char *path, u16 attr );
+int   sys_open_read( const char *path, uint32_t *handle );
+int   sys_open_write( const char *path, uint32_t *handle ); /* devices too: PRN */
+int   sys_create( const char *path, uint32_t *handle );    /* made, or emptied; read and write */
+int   sys_read( uint32_t handle, void *buf, uint32_t len, uint32_t *done );
+int   sys_write( uint32_t handle, const void *buf, uint32_t len, uint32_t *done );
+int   sys_close( uint32_t handle );
+int   sys_file_size( uint32_t handle, uint32_t *size ); /* and back to the start */
+int   sys_seek( uint32_t handle, uint32_t pos );
+int   sys_get_ftime( uint32_t handle, uint16_t *time, uint16_t *date );
+int   sys_set_ftime( uint32_t handle, uint16_t time, uint16_t date );
+int   sys_get_attr( const char *path, uint16_t *attr );
+int   sys_set_attr( const char *path, uint16_t attr );
 int   sys_delete( const char *path );
 int   sys_rename( const char *from, const char *to );
 int   sys_mkdir( const char *path );
 int   sys_rmdir( const char *path );
-int   sys_find_first( const char *pattern, u16 attrs, FINDREC *rec, u32 *handle );
-int   sys_find_next( u32 handle, FINDREC *rec );
-void  sys_find_close( u32 handle );
+int   sys_find_first( const char *pattern, uint16_t attrs, FINDREC *rec, uint32_t *handle );
+int   sys_find_next( uint32_t handle, FINDREC *rec );
+void  sys_find_close( uint32_t handle );
 int   sys_get_drive( void );
 void  sys_set_drive( int drv );
 int   sys_drive_valid( int drv );
@@ -159,12 +159,12 @@ int   sys_truename( const char *path, char *out, int form );
 #define DK_CDROM        3
 #define DK_OTHER        4       /* a block driver's, an image file's, a network one */
 int   sys_drive_kind( int drv );
-int   sys_disk_space( int drv, u32 *free_kb, u32 *total_kb );
+int   sys_disk_space( int drv, uint32_t *free_kb, uint32_t *total_kb );
 
 /* another program: "prog" loaded and run with "tail" as its command
    tail -> its exit code, or -1 and *error = why it could not be run */
 int   sys_exec( const char *prog, const char *tail, int *error );
-void  sys_shell_path( char *buf, u32 max );         /* the command interpreter */
+void  sys_shell_path( char *buf, unsigned int max ); /* the command interpreter */
 void  sys_version( int *major, int *minor );        /* PM-DOS's own */
 
 /* ------------------------------------------------------------------ */
@@ -172,34 +172,34 @@ void  sys_version( int *major, int *minor );        /* PM-DOS's own */
 /* ------------------------------------------------------------------ */
 
 /* the first megabyte: 1 if it was read */
-int   sys_peek( u32 addr, void *buf, u32 len );
+int   sys_peek( uint32_t addr, void *buf, unsigned int len );
 
 /* a BIOS call that only asks */
 typedef struct {
-    u32 eax, ebx, ecx, edx, esi, edi;
-    u16 es, ds;
-    u32 flags;
+    uint32_t eax, ebx, ecx, edx, esi, edi;
+    uint16_t es, ds;
+    uint32_t flags;
 } BREGS;
 int   sys_bios( int vector, BREGS *regs );  /* 1 = it was called */
 
 /* VBE: its version (0200h is 2.0), or 0 when the video BIOS has none;
    and 4F01h's 256 bytes for one mode */
-int   sys_vbe_version( u16 *modes, int max, int *count );
-int   sys_vbe_mode( int mode, u8 *info );
+int   sys_vbe_version( uint16_t *modes, int max, int *count );
+int   sys_vbe_mode( int mode, uint8_t *info );
 
 #define VMODE_LFB       0x4000
 /* set a mode: a BIOS one below 100h, a VBE one with VMODE_LFB.  ->
    the selector of its frame buffer, the bytes there and the bytes a
    scan line (0 for a planar mode); 0 when the mode was set */
-int   sys_video_set( u32 mode, u32 *selector, u32 *bytes, u32 *pitch );
+int   sys_video_set( uint32_t mode, uint32_t *selector, uint32_t *bytes, uint32_t *pitch );
 void  sys_video_restore( void );            /* the text screen from before */
 /* "count" DAC entries from "first": blue, green, red and a zero each,
    six bits a colour */
-int   sys_video_palette( int first, int count, const u8 *entries );
+int   sys_video_palette( int first, int count, const uint8_t *entries );
 
 /* DOSINT.ASM: bytes to the frame buffer, and a port */
-void     __cdecl vid_put( u32 selector, u32 offset, const void *src, u32 len );
-void     __cdecl vid_fill( u32 selector, u32 offset, u32 value, u32 len );
+void     __cdecl vid_put( uint32_t selector, uint32_t offset, const void *src, uint32_t len );
+void     __cdecl vid_fill( uint32_t selector, uint32_t offset, uint32_t value, uint32_t len );
 void     __cdecl port_out( unsigned port, unsigned value );
 unsigned __cdecl port_in( unsigned port );
 

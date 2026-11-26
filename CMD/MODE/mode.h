@@ -30,13 +30,13 @@
 #define IT_EMPTY    3           /* nothing between two commas          */
 
 typedef struct {
-    const char *text;           /* where it starts in the line         */
-    u32         len;
-    int         kind;           /* IT_*                                */
-    const char *value;          /* IT_KEY: what follows the '='        */
-    u32         vlen;
-    const char *resume;         /* where the next item is looked for   */
-    int         comma;          /* ended by a comma straight after it  */
+    const char  *text;          /* where it starts in the line         */
+    unsigned int len;
+    int          kind;          /* IT_*                                */
+    const char  *value;         /* IT_KEY: what follows the '='        */
+    unsigned int vlen;
+    const char  *resume;        /* where the next item is looked for   */
+    int          comma;         /* ended by a comma straight after it  */
 } ITEM;
 
 typedef struct {
@@ -52,7 +52,7 @@ int   scan_more( const SCAN *sc );                  /* 1 if an item is left */
 int   is_word( const ITEM *it, const char *word );
 int   is_key( const ITEM *it, const char *name );   /* name ends in '=' */
 int   val_is( const ITEM *it, const char *word );
-int   val_num( const ITEM *it, u32 *num );          /* 0, or 1 = not a number */
+int   val_num( const ITEM *it, unsigned int *num );     /* 0, or 1 = not a number */
 int   is_status( const ITEM *it );                  /* /STA /STAT /STATUS */
 int   is_help( const ITEM *it );                    /* /? */
 
@@ -109,12 +109,12 @@ typedef struct {
     int  unit;                  /* the port, 1 for COM1 or LPT1         */
 
     /* COMn */
-    u32  baud;
-    int  parity;                /* 'n' 'e' 'o' 'm' 's', 0 = not given   */
-    int  data;                  /* 0 = not given                        */
-    int  stop;                  /* 1, 15 for 1.5, 2; 0 = not given      */
-    int  retry;                 /* RETRY_*, -1 = not given              */
-    int  keyform;               /* the keyword form, not positions      */
+    unsigned int baud;
+    int          parity;        /* 'n' 'e' 'o' 'm' 's', 0 = not given   */
+    int          data;          /* 0 = not given                        */
+    int          stop;          /* 1, 15 for 1.5, 2; 0 = not given      */
+    int          retry;         /* RETRY_*, -1 = not given              */
+    int          keyform;       /* the keyword form, not positions      */
 
     /* LPTn, and the COM port of LPTn=COMm */
     int  cols;                  /* 80 or 132, 0 = not given             */

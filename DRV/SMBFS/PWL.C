@@ -44,7 +44,6 @@
 #include "ndrv.h"
 #include "redir.h"
 #include "pwl.h"
-#define NST_U32_DEFINED                /* NDRV.H's u32 - the same 32 bits */
 #include "sha.h"
 #include "aes.h"
 #include "gcm.h"
@@ -78,24 +77,24 @@ typedef struct {
 } pwl_cred;
 
 typedef struct {
-    u32  drive, flags;
-    char server[PWL_FIELD];
-    char share[PWL_SHARE];
-    char user[PWL_FIELD];
-    char domain[PWL_FIELD];
+    uint32_t drive, flags;
+    char     server[PWL_FIELD];
+    char     share[PWL_SHARE];
+    char     user[PWL_FIELD];
+    char     domain[PWL_FIELD];
 } pwl_map;
 
 typedef struct {
     int      open;                      /* a list is unlocked */
     char     owner[PWL_OWNER];
-    u8       salt[16];
-    u32      rounds;
-    u32      saves;
-    u8       key[32];
+    uint8_t  salt[16];
+    uint32_t rounds;
+    uint32_t saves;
+    uint8_t  key[32];
     int      ncred, nmap;
     pwl_cred cred[PWL_CREDS];
     pwl_map  map[PWL_MAPS];
-    u8       plain[PLAIN_MAX];          /* the entries, before and after GCM */
+    uint8_t  plain[PLAIN_MAX];          /* the entries, before and after GCM */
 } pwl_list;
 
 /* bought the first time it is needed and kept: wiped, never freed */
@@ -130,7 +129,7 @@ static int same_text( const char *a, const char *b )
     return *a == 0 && *b == 0;
 }
 
-static int same_bytes( const u8 *a, const u8 *b, int len )
+static int same_bytes( const uint8_t *a, const uint8_t *b, int len )
 {
     int i;
     for ( i = 0; i < len; i++ ) if ( a[i] != b[i] ) return 0;
@@ -139,43 +138,43 @@ static int same_bytes( const u8 *a, const u8 *b, int len )
 
 static void wipe( void *what, unsigned len )
 {
-    volatile u8 *p = (volatile u8 *)what;
+    volatile uint8_t *p = (volatile uint8_t *)what;
     while ( len-- ) *p++ = 0;
 }
 
-static void put16( u8 *at, u32 value )
+static void put16( uint8_t *at, uint32_t value )
 {
-    at[0] = (u8)value;
-    at[1] = (u8)( value >> 8 );
+    at[0] = (uint8_t)value;
+    at[1] = (uint8_t)( value >> 8 );
 }
 
-static void put32( u8 *at, u32 value )
+static void put32( uint8_t *at, uint32_t value )
 {
-    at[0] = (u8)value;
-    at[1] = (u8)( value >> 8 );
-    at[2] = (u8)( value >> 16 );
-    at[3] = (u8)( value >> 24 );
+    at[0] = (uint8_t)value;
+    at[1] = (uint8_t)( value >> 8 );
+    at[2] = (uint8_t)( value >> 16 );
+    at[3] = (uint8_t)( value >> 24 );
 }
 
-static u32 get16( const u8 *at )
+static uint32_t get16( const uint8_t *at )
 {
-    return (u32)at[0] | ( (u32)at[1] << 8 );
+    return (uint32_t)at[0] | ( (uint32_t)at[1] << 8 );
 }
 
-static u32 get32( const u8 *at )
+static uint32_t get32( const uint8_t *at )
 {
-    return (u32)at[0] | ( (u32)at[1] << 8 ) | ( (u32)at[2] << 16 ) | ( (u32)at[3] << 24 );
+    return (uint32_t)at[0] | ( (uint32_t)at[1] << 8 ) | ( (uint32_t)at[2] << 16 ) | ( (uint32_t)at[3] << 24 );
 }
 
 /* a field out of the file into a string, NUL-terminated whatever it held */
-static void take( char *to, const u8 *from, int len )
+static void take( char *to, const uint8_t *from, int len )
 {
     memcpy( to, from, (unsigned)len );
     to[len - 1] = 0;
 }
 
 /* a string into a field of the file, zero-filled */
-static void give( u8 *to, const char *from, int len )
+static void give( uint8_t *to, const char *from, int len )
 {
     memset( to, 0, (unsigned)len );
     text_copy( (char *)to, from, len );
@@ -191,13 +190,13 @@ static void give( u8 *to, const char *from, int len )
 /* rest.  The nonce does not rely on it: its write count cannot repeat. */
 /* =================================================================== */
 
-static u8  g_pool[32];
-static u32 g_draws;
+static uint8_t  g_pool[32];
+static uint32_t g_draws;
 
-static void rnd_stir( const u8 *data, int len )
+static void rnd_stir( const uint8_t *data, int len )
 {
     SHA256_CTX ctx;
-    u8         more[8];
+    uint8_t    more[8];
 
     put32( more, nds_ticks() );
     put32( more + 4, g_draws );
@@ -209,10 +208,10 @@ static void rnd_stir( const u8 *data, int len )
     wipe( &ctx, sizeof( ctx ) );
 }
 
-static void rnd_bytes( u8 *out, int len )
+static void rnd_bytes( uint8_t *out, int len )
 {
-    u8  in[40], block[32];
-    int n;
+    uint8_t in[40], block[32];
+    int     n;
 
     while ( len > 0 ) {
         memcpy( in, g_pool, 32 );
@@ -241,21 +240,21 @@ static void rnd_bytes( u8 *out, int len )
 /* the round count is what decides how long NET LOGON takes on a 486.   */
 /* =================================================================== */
 
-static void pbkdf2( const char *pass, const u8 *salt, int saltlen, u32 rounds, u8 out[32] )
+static void pbkdf2( const char *pass, const uint8_t *salt, int saltlen, uint32_t rounds, uint8_t out[32] )
 {
     SHA256_CTX inner, outer, ctx;
-    u8         pad[64], block[32], count[4];
+    uint8_t    pad[64], block[32], count[4];
     int        passlen = text_len( pass, PWL_FIELD ), i;
-    u32        round;
+    unsigned   round;
 
     /* a password longer than the block would be hashed first; ours stop
        at 63, so the key is the password itself, zero-filled */
     memset( pad, 0x36, sizeof( pad ) );
-    for ( i = 0; i < passlen; i++ ) pad[i] ^= (u8)pass[i];
+    for ( i = 0; i < passlen; i++ ) pad[i] ^= (uint8_t)pass[i];
     sha256_init( &inner );
     sha256_update( &inner, pad, sizeof( pad ) );
     memset( pad, 0x5C, sizeof( pad ) );
-    for ( i = 0; i < passlen; i++ ) pad[i] ^= (u8)pass[i];
+    for ( i = 0; i < passlen; i++ ) pad[i] ^= (uint8_t)pass[i];
     sha256_init( &outer );
     sha256_update( &outer, pad, sizeof( pad ) );
 
@@ -311,7 +310,7 @@ static void list_wipe( pwl_list *list )
    has just decrypted and is about to read */
 static void list_clear( pwl_list *list )
 {
-    wipe( list, (unsigned)( (u8 *)list->plain - (u8 *)list ) );
+    wipe( list, (unsigned)( (uint8_t *)list->plain - (uint8_t *)list ) );
 }
 
 /* =================================================================== */
@@ -321,15 +320,15 @@ static void list_clear( pwl_list *list )
 /* the list, encrypted, into q->data; q->len its length */
 static void file_write( pwl_list *list, pwl_req *q )
 {
-    u8  *file = q->data, *plain = list->plain;
-    u8   rk[240], hkey[16];
-    u32  plen;
-    int  i;
+    uint8_t *file = q->data, *plain = list->plain;
+    uint8_t  rk[240], hkey[16];
+    uint32_t plen;
+    int      i;
 
     memcpy( plain, "PWL1", 4 );
     give( plain + 4, list->owner, PWL_OWNER );
-    put16( plain + 36, (u32)list->ncred );
-    put16( plain + 38, (u32)list->nmap );
+    put16( plain + 36, (uint32_t)list->ncred );
+    put16( plain + 38, (uint32_t)list->nmap );
     plen = PLAIN_HEAD;
     for ( i = 0; i < list->ncred; i++ ) {
         give( plain + plen, list->cred[i].target, PWL_FIELD );
@@ -356,10 +355,10 @@ static void file_write( pwl_list *list, pwl_req *q )
     list->saves++;
     put32( file + 32, list->saves );
     rnd_bytes( file + 36, 8 );
-    file[44] = (u8)( list->saves >> 24 );
-    file[45] = (u8)( list->saves >> 16 );
-    file[46] = (u8)( list->saves >> 8 );
-    file[47] = (u8)list->saves;
+    file[44] = (uint8_t)( list->saves >> 24 );
+    file[45] = (uint8_t)( list->saves >> 16 );
+    file[46] = (uint8_t)( list->saves >> 8 );
+    file[47] = (uint8_t)list->saves;
     put32( file + 48, plen );
 
     aes256_expand_key( list->key, rk );
@@ -376,16 +375,17 @@ static void file_write( pwl_list *list, pwl_req *q )
 /* q->data opened with pass, and the list made of it - but only once every
    check has passed: until then the list in memory, unlocked or not, is as
    it was.  PWLE_* */
-static u32 file_open( pwl_list *list, const pwl_req *q, const char *pass )
+static unsigned int file_open( pwl_list *list, const pwl_req *q, const char *pass )
 {
-    const u8 *file = q->data;
-    u8       *plain = list->plain;
-    u8        key[32], rk[240], hkey[16];
-    u32       len = q->len, plen, rounds, ncred, nmap, pos;
-    int       i, bad;
+    const uint8_t *file = q->data;
+    uint8_t       *plain = list->plain;
+    uint8_t        key[32], rk[240], hkey[16];
+    uint32_t       len = q->len, plen, rounds;
+    unsigned int   ncred, nmap, pos;
+    int            i, bad;
 
     if ( len < PWL_HEAD + PLAIN_HEAD + PWL_TAG || len > PWL_FILE_MAX ) return PWLE_BADFILE;
-    if ( !same_bytes( file, (const u8 *)"PMDOSPWL", 8 ) || get16( file + 8 ) != PWL_VERSION ||
+    if ( !same_bytes( file, (const uint8_t *)"PMDOSPWL", 8 ) || get16( file + 8 ) != PWL_VERSION ||
          get16( file + 10 ) != PWL_HEAD ) return PWLE_BADFILE;
     rounds = get32( file + 12 );
     if ( rounds < PWL_ROUNDS_MIN || rounds > PWL_ROUNDS_MAX ) return PWLE_BADFILE;
@@ -408,7 +408,7 @@ static u32 file_open( pwl_list *list, const pwl_req *q, const char *pass )
     /* authentic - so anything wrong now is a file some other version made */
     ncred = ( plen >= PLAIN_HEAD ) ? get16( plain + 36 ) : 0;
     nmap  = ( plen >= PLAIN_HEAD ) ? get16( plain + 38 ) : 0;
-    if ( plen < PLAIN_HEAD || !same_bytes( plain, (const u8 *)"PWL1", 4 ) ||
+    if ( plen < PLAIN_HEAD || !same_bytes( plain, (const uint8_t *)"PWL1", 4 ) ||
          ncred > PWL_CREDS || nmap > PWL_MAPS ||
          PLAIN_HEAD + ncred * CRED_LEN + nmap * MAP_LEN != plen ) {
         wipe( key, sizeof( key ) );
@@ -482,7 +482,7 @@ static void req_terminate( pwl_req *q )
     q->domain[sizeof( q->domain ) - 1] = 0;
 }
 
-static u32 do_addcred( pwl_list *list, pwl_req *q )
+static unsigned int do_addcred( pwl_list *list, pwl_req *q )
 {
     int i;
     if ( q->target[0] == 0 ) return PWLE_ARGS;
@@ -501,7 +501,7 @@ static u32 do_addcred( pwl_list *list, pwl_req *q )
 }
 
 /* every password saved for the target - only the user's, when one is named */
-static u32 do_delcred( pwl_list *list, pwl_req *q )
+static unsigned int do_delcred( pwl_list *list, pwl_req *q )
 {
     int i, kept = 0, gone = 0;
     if ( q->target[0] == 0 ) return PWLE_ARGS;
@@ -521,7 +521,7 @@ static u32 do_delcred( pwl_list *list, pwl_req *q )
     return PWLE_OK;
 }
 
-static u32 do_addmap( pwl_list *list, pwl_req *q )
+static unsigned int do_addmap( pwl_list *list, pwl_req *q )
 {
     int i;
     if ( q->drive >= 26 || q->server[0] == 0 || q->share[0] == 0 ) return PWLE_ARGS;
@@ -540,7 +540,7 @@ static u32 do_addmap( pwl_list *list, pwl_req *q )
     return PWLE_OK;
 }
 
-static u32 do_delmap( pwl_list *list, pwl_req *q )
+static unsigned int do_delmap( pwl_list *list, pwl_req *q )
 {
     int i;
     for ( i = 0; i < list->nmap; i++ ) if ( list->map[i].drive == q->drive ) break;
@@ -555,7 +555,7 @@ static u32 do_delmap( pwl_list *list, pwl_req *q )
 void pwl_call( pwl_req *q )
 {
     pwl_list *list;
-    u32       rc = PWLE_OK;
+    unsigned  rc = PWLE_OK;
 
     req_terminate( q );
     rnd_stir( q->seed, (int)sizeof( q->seed ) );
@@ -567,9 +567,9 @@ void pwl_call( pwl_req *q )
 
     switch ( q->op ) {
     case PWL_STATUS:
-        q->flags = (u32)list->open;
-        q->index = list->open ? (u32)list->ncred : 0;
-        q->drive = list->open ? (u32)list->nmap : 0;
+        q->flags = (uint32_t)list->open;
+        q->index = list->open ? (uint32_t)list->ncred : 0;
+        q->drive = list->open ? (uint32_t)list->nmap : 0;
         text_copy( q->owner, list->open ? list->owner : "", (int)sizeof( q->owner ) );
         break;
 
@@ -609,12 +609,12 @@ void pwl_call( pwl_req *q )
         else if ( q->op == PWL_ADDMAP ) rc = do_addmap( list, q );
         else if ( q->op == PWL_DELMAP ) rc = do_delmap( list, q );
         else if ( q->op == PWL_GETCRED ) {
-            if ( q->index >= (u32)list->ncred ) { rc = PWLE_NOMORE; break; }
+            if ( q->index >= (uint32_t)list->ncred ) { rc = PWLE_NOMORE; break; }
             text_copy( q->target, list->cred[q->index].target, (int)sizeof( q->target ) );
             text_copy( q->user, list->cred[q->index].user, (int)sizeof( q->user ) );
         } else {
             pwl_map *map;
-            if ( q->index >= (u32)list->nmap ) { rc = PWLE_NOMORE; break; }
+            if ( q->index >= (uint32_t)list->nmap ) { rc = PWLE_NOMORE; break; }
             map = &list->map[q->index];
             q->drive = map->drive;
             q->flags = map->flags;

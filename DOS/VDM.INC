@@ -2094,6 +2094,80 @@ vdm_newid:
         shl     eax,4
         add     eax,RSP_TAIL
         mov     dword ptr [dta_ptr],eax
+        call    vdm_ivtkeep                     ; and the vectors it starts
+                                                ; with - see vdm_ivtback
+        call    vdm_txtkeep                     ; and the text screen it
+        popad                                   ; starts on - see vdm_scrtext
+        ret
+
+;=====================================================================
+; vdm_txtkeep - the screen as a program starts, if it is in a text
+;               mode: the mode and its rows, for vdm_scrtext to set
+;               again.  A program started on a graphics screen leaves
+;               the one before it.  Once at boot as well (dos_entry), so
+;               that a mono card's 7 is there before any program runs.
+;               Everything preserved.
+;=====================================================================
+vdm_txtkeep:
+        push    eax
+        mov     al,byte ptr ds:[BDA_VMODE]
+        and     al,7Fh
+        cmp     al,3
+        jbe     vtk_text
+        cmp     al,7
+        jne     vtk_out
+vtk_text:
+        mov     byte ptr ds:[vdm_txtmode],al
+        mov     al,byte ptr ds:[BDA_VROWS]      ; one short, as the BDA keeps
+        inc     al                              ; it
+        mov     byte ptr ds:[vdm_txtrows],al
+vtk_out:
+        pop     eax
+        ret
+
+;=====================================================================
+; vdm_ivtinit - once, from dos_entry, after arena_init: room for a copy
+;               of the vector table at every level a box can nest to.
+;               The kernel's own memory, for fps_boot's reason - 8K the
+;               image has no room for, and nothing in it until a program
+;               starts.  None to be had leaves vdm_ivtsave 0, and a
+;               program's vectors are then left as it leaves them.
+;=====================================================================
+vdm_ivtinit:
+        pushad
+        push    dword ptr [cur_own]
+        mov     dword ptr [cur_own],0
+        mov     ebx,VDM_MAXNEST * 400h
+        call    arena_alloc
+        pop     dword ptr [cur_own]
+        jc      vvi_out
+        mov     dword ptr ds:[vdm_ivtsave],eax
+vvi_out:
+        popad
+        ret
+
+;=====================================================================
+; vdm_ivtkeep - the real-mode vector table as the program at this level
+;               starts, into that level's copy (vdm_ivtsave).  All 256:
+;               what a program may leave hooked is not only the timer.
+;               Everything preserved.
+;=====================================================================
+vdm_ivtkeep:
+        pushad
+        mov     edi,dword ptr ds:[vdm_ivtsave]
+        or      edi,edi
+        jz      vvk_out
+        mov     eax,dword ptr ds:[vdm_depth]    ; 1 to VDM_MAXNEST while a
+        dec     eax                             ; program runs: 0 (no box) is
+        cmp     eax,VDM_MAXNEST                 ; FFFFFFFFh here, and no copy
+        jae     vvk_out
+        shl     eax,10                          ; 400h bytes a level
+        add     edi,eax
+        xor     esi,esi                         ; 0:0, read: the null trap
+        mov     ecx,256                         ; watches for writes only
+        cld
+        rep     movsd
+vvk_out:
         popad
         ret
 
@@ -2322,6 +2396,8 @@ vh_ems:
 vdm_abend:
         cmp     byte ptr ds:[irx_busy],0        ; a handler an excursion ran:
         jne     irx_lost                        ; the excursion ends, not a box
+        call    vdm_scrtext                     ; and the prompt that comes
+                                                ; next is text
         mov     dword ptr ds:[vdm_exit],0
         mov     dword ptr ds:[vdm_extype],VDX_CRITERR
 va_unwind:
@@ -5225,6 +5301,7 @@ vdm_fltloop:
         jne     vfl_say
         mov     ebx,FPU_VEC
 vfl_say:
+        call    vdm_scrtext             ; a screen the report can be read on
         push    ebx
         mov     esi,OFFSET msgVdmLoop
         call    dword ptr ds:[IOS_CONSTR]
@@ -5251,6 +5328,14 @@ vdm_fault:
         ; "vector" reported every fault in the world as a breakpoint -
         ; and sent a good hour looking for a CCh byte that was never
         ; there.  The vector is the second return value.
+        ;
+        ; CR2 FIRST, then a screen the report can be read on.  The text
+        ; mode is a trip through the BIOS with interrupts on, and what
+        ; is printed is the page fault the guest took, not anything
+        ; that happened after it.
+        mov     eax,cr2
+        mov     dword ptr ds:[vdm_fcr2],eax
+        call    vdm_scrtext
         push    ebx
         mov     esi,OFFSET msgVdmFault
         call    dword ptr ds:[IOS_CONSTR]
@@ -5266,7 +5351,7 @@ vdm_fault:
         call    vdm_hex4
         mov     esi,OFFSET msgVdmCR2    ; and where it was reaching, which
         call    dword ptr ds:[IOS_CONSTR]       ; for a page fault is the
-        mov     eax,cr2                         ; only useful half
+        mov     eax,dword ptr ds:[vdm_fcr2]     ; only useful half
         call    vdm_hex32
         mov     esi,OFFSET msgVdmCR
         call    dword ptr ds:[IOS_CONSTR]
@@ -5368,6 +5453,48 @@ vf_regs:
 vf_order    db  'ax',V86C_EAX, 'bx',V86C_EBX, 'cx',V86C_ECX, 'dx',V86C_EDX
             db  'si',V86C_ESI, 'di',V86C_EDI, 'bp',V86C_EBP, 'ds',V86C_DS
             db  'es',V86C_ES, 'fl',V86C_FLAGS
+
+;---------------------------------------------------------------------
+; vdm_scrtext - the kernel is ending a program in a box, and is about
+;               to say why.  If the screen is in a graphics mode, the
+;               text mode the program started on (vdm_txtkeep) is set
+;               first.  CF if a mode was set; everything else preserved.
+;
+; Two more callers want the same: the recovery from a ring-0 fault
+; while a box runs (df_screen, DOSMAIN.ASM), which has PMIO print its
+; report again on the text screen; and the shells, before a prompt
+; (21h/F0h AL=0Eh, fF0_text).
+;
+; THE CONSOLE WRITES CHARACTERS INTO THE TEXT PAGE (IO\CONSOLE.INC), and
+; in a graphics mode nothing shows that page: the report went in under
+; the last picture the program drew, and the user saw a game that had
+; stopped and no reason why.  The console cannot call the BIOS,
+; because it has to work in the panic and exception paths.  This is
+; not one of those: it runs from the box loop and from a DPMI client's
+; fault, and both call the BIOS already.  A native program's report
+; has had its screen back since VBE.INC (r3_fault calls vbe_exit).
+;
+; The mode set clears the screen, as it does under DOS; the picture
+; was lost the moment the program died.  Not in an excursion: the box
+; is not ending there, and the screen belongs to the program at the
+; prompt (IRQX.INC).
+;---------------------------------------------------------------------
+vdm_scrtext:
+        pushad
+        cmp     byte ptr ds:[irx_busy],0
+        jne     vst_no
+        call    vbe_isgfx
+        jnc     vst_no
+        mov     al,byte ptr ds:[vdm_txtmode]
+        mov     ah,byte ptr ds:[vdm_txtrows]
+        call    vbe_textset
+        popad
+        stc
+        ret
+vst_no:
+        popad
+        clc
+        ret
 
 ;---------------------------------------------------------------------
 ; vdm_hex4 / vdm_hex8 - EAX in hex, four or two digits.  The kernel has
@@ -5828,6 +5955,12 @@ vdm_cleanup:
         or      eax,MSTOK_BOX
         call    dword ptr ds:[IOS_MSEXIT]
 
+        ; Its other interrupt vectors, where they point into memory that
+        ; goes with it.  Before the files: closing one can raise a disk
+        ; error, whose handler runs in the box and takes the box's
+        ; interrupts while it does.
+        call    vdm_ivtback
+
         ; Its handle table first: every entry let go, and a file nobody
         ; else's table names is closed with it (JFT.INC).
         call    jft_exit
@@ -5889,6 +6022,163 @@ vt_resident:
         ; far as anybody waiting for its output is concerned.
         call    dos_commit
         popad
+        ret
+
+;=====================================================================
+; vdm_ivtback - the ending program's vectors that would point into
+;               nothing once it has gone, back to what they were when it
+;               started (vdm_ivtkeep).  Everything preserved.
+;
+; A PROGRAM THE KERNEL ENDS NEVER UNHOOKS ANYTHING.  A fault, a HLT with
+; interrupts off, a ^C or an Abort ends it wherever it is, and the
+; vector table is the machine's, not the box's.  Wolfenstein, ended by
+; a fault, left INT 08h on its own handler in memory the sweep had just
+; freed, and the timer went on being delivered there - by the next
+; program's box, and at the native prompt by the interrupt excursions
+; (IRQX.INC) - until whatever was loaded there next ran instead.
+;
+; THE RULE IS ONE TEST, AND IT IS NOT "WHO ENDED IT".  A vector is put
+; back if the program changed it - it differs from the copy taken when
+; the program started - and it now points at something that is going
+; with the program or has gone already (vdm_ivtdead).  Every way out
+; that frees the memory comes here, a 4Ch included: a program that ends
+; normally and leaves a vector hooked has made the same hole, and
+; MS-DOS would have fallen into it.  A program that cleaned up after
+; itself has nothing to put back, and the test never fires for it.
+;
+; WHAT IT DOES NOT TOUCH: a vector into memory that stays - a TSR's
+; (this is not reached for 31h), a resident driver's, a block the
+; program gave to its parent - or into the ROM, the kernel's stubs or
+; anything else that is not the arena.  And not the vectors whose
+; handlers are only somewhere ELSE in a chain: a resident program that
+; chained to the ending one still jumps to it, and nothing in DOS
+; records that link to be mended.
+;
+; All 256, not only the sixteen interrupt lines: INT 00h and 1Ch, which
+; compilers' start-up code and games hook, and INT 1Eh and 43h, which
+; are tables the BIOS reads, fail the same way.  At most a handful
+; differ, and only those are looked up in the arena.
+;=====================================================================
+vdm_ivtback:
+        pushad
+        mov     esi,dword ptr ds:[vdm_ivtsave]
+        or      esi,esi
+        jz      vvb_out
+        mov     eax,dword ptr ds:[vdm_depth]    ; this level's copy, as
+        dec     eax                             ; vdm_ivtkeep took it
+        cmp     eax,VDM_MAXNEST
+        jae     vvb_out
+        shl     eax,10
+        add     esi,eax
+        xor     ecx,ecx                         ; the vector
+vvb_one:
+        mov     edx,dword ptr ds:[ecx*4]
+        cmp     edx,dword ptr [esi+ecx*4]
+        je      vvb_next                        ; as it started: not ours to
+        call    vdm_ivtdead                     ; touch
+        jc      vvb_next
+        mov     edx,dword ptr [esi+ecx*4]
+        mov     al,cl
+        call    ivt_set                         ; through the null trap's
+vvb_next:                                       ; door, as 25h is
+        inc     ecx
+        cmp     ecx,256
+        jb      vvb_one
+vvb_out:
+        popad
+        ret
+
+;---------------------------------------------------------------------
+; vdm_ivtdead - EDX = a real-mode far pointer.  CF clear if what it
+;               points at goes with the program that is ending, or has
+;               gone already:
+;
+;   a block of the arena, conventional or upper, that is free or that
+;   vdm_pspseg owns - which is what vdm_cleanup's sweep frees, block
+;   for block (lm_freeown)
+;
+;   a DPMI callback's landing pad that no client holds: dpmi_drop has
+;   let the client's go by now, and a vector it pointed at one comes
+;   to a HLT that answers nobody
+;
+; Everything preserved.
+;
+; THE WALK GOES ON INTO UPPER MEMORY WHEN THE CHAINS ARE NOT LINKED.  A
+; program may have unlinked them (58h/03h) and still hold a block up
+; there; the conventional chain's 'Z' then ends where the first upper
+; header is, umb_head.  A pointer into neither chain is not the arena's.
+;---------------------------------------------------------------------
+vdm_ivtdead:
+        pushad
+        mov     eax,edx
+        shr     eax,16                          ; the segment
+        movzx   ebx,word ptr ds:[dpmi_cbseg]
+        or      ebx,ebx
+        jz      vvd_arena
+        cmp     eax,ebx
+        jne     vvd_arena
+        movzx   eax,dx
+        cmp     eax,DPMI_MAXCB * DPMICB_SLOT    ; past the slots the paragraph
+        jae     vvd_live                        ; is the host's, and stays
+        test    al,DPMICB_SLOT - 1              ; a slot's RETF, not its entry
+        jnz     vvd_live
+        call    dpmi_cbfind                     ; CF: nobody holds it (it
+        jc      vvd_dead                        ; halves EAX on the way)
+        jmp     vvd_live
+
+vvd_arena:
+        shl     eax,4
+        movzx   ebx,dx
+        add     ebx,eax                         ; flat; past 1MB is the HMA,
+        cmp     ebx,V86_TPA                     ; which is not the arena
+        jb      vvd_live
+        cmp     ebx,[lm_chtop]
+        jae     vvd_live
+        mov     esi,V86_TPA
+vvd_walk:
+        cmp     esi,[lm_chtop]
+        jae     vvd_live
+        cmp     byte ptr [esi+RMCB_SIG],'M'
+        je      vvd_blk
+        cmp     byte ptr [esi+RMCB_SIG],'Z'
+        jne     vvd_live                        ; a broken chain says nothing
+vvd_blk:
+        call    lm_blkok
+        jc      vvd_live
+        cmp     ebx,esi
+        jb      vvd_live                        ; between chains: nobody's
+        movzx   eax,word ptr [esi+RMCB_LEN]
+        inc     eax
+        shl     eax,4
+        add     eax,esi                         ; where this block ends
+        cmp     ebx,eax
+        jb      vvd_here                        ; header or data: this one
+        cmp     byte ptr [esi+RMCB_SIG],'Z'
+        je      vvd_end
+        mov     esi,eax
+        jmp     vvd_walk
+vvd_end:
+        cmp     dword ptr [umb_have],0          ; the end of a chain - the
+        je      vvd_live                        ; conventional one, unlinked,
+        mov     eax,[umb_head]                  ; goes on at umb_head
+        shl     eax,4
+        cmp     eax,esi
+        jbe     vvd_live                        ; already up there: the end
+        mov     esi,eax
+        jmp     vvd_walk
+vvd_here:
+        mov     ax,word ptr [esi+RMCB_OWN]
+        or      ax,ax
+        jz      vvd_dead                        ; free already
+        cmp     ax,word ptr ds:[vdm_pspseg]
+        jne     vvd_live                        ; somebody else's
+vvd_dead:
+        popad
+        clc
+        ret
+vvd_live:
+        popad
+        stc
         ret
 
 ;=====================================================================
@@ -6145,7 +6435,10 @@ vdm_subptr:
                                         ; and 71h/47h's drive number - a
                                         ; NUMBER in a register a table might
                                         ; otherwise assume is an address
-                                        ; (10h takes BL alone and needs no row)
+                                        ; (10h needs no row: BL, BH and EDX
+                                        ; are all numbers.  2Bh's pointers
+                                        ; depend on its function, and
+                                        ; r3_pflags answers it by hand)
         db  0F1h, 11h,  P_DI            ; the mount report's buffer
         db  0F1h, 15h,  P_DI            ; and the probe log's.  14h has no
                                         ; row: a drive, a track and a head
@@ -6304,6 +6597,15 @@ vdm_paras   dw  0
             dw  0
 vdm_cpath   db  EXEC_PATH_MAX dup(0)
 vdm_stack   db  (VDM_MAXNEST * VF_LEN) dup(0)
+
+vdm_ivtsave dd  0                       ; each level's vector table as its
+                                        ; program started, 1K a level, out
+                                        ; of the arena (vdm_ivtinit); 0 if
+                                        ; there was none to be had
+vdm_fcr2    dd  0                       ; CR2 as vdm_fault found it
+vdm_txtmode db  3                       ; the last text screen a program
+vdm_txtrows db  25                      ; started on (vdm_txtkeep): its
+            db  0,0                     ; mode and rows
 
 ; 4Bh AL=1's parking space: one frame, in the shape vdm_push writes,
 ; holding the CALLER while the loader writes over the live context

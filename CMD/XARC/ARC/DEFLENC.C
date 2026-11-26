@@ -70,38 +70,38 @@ static const int extraDBits[D_CODES] = {
     0,0,0,0,1,1,2,2,3,3,4,4,5,5,6,6,7,7,8,8,9,9,10,10,11,11,12,12,13,13 };
 static const int extraBlBits[BL_CODES] = {
     0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,3,7 };
-static const Byte blOrder[BL_CODES] = {
+static const uint8_t blOrder[BL_CODES] = {
     16,17,18,0,8,7,9,6,10,5,11,4,12,3,13,2,14,1,15 };
 
 /*---- Code tables built once ----------------------------------------------- */
-static Byte    g_lengthCode[256];     /* match length - 3  ->  length code - 257 */
-static int     g_baseLength[29];
-static Byte    g_distCode[512];       /* see DCode                              */
-static int     g_baseDist[D_CODES];
-static UInt16  g_staticLCode[L_CODES + 2];
-static Byte    g_staticLLen[L_CODES + 2];
-static UInt16  g_staticDCode[D_CODES];
-static Byte    g_staticDLen[D_CODES];
-static int     g_tablesBuilt = 0;
+static uint8_t  g_lengthCode[256];    /* match length - 3  ->  length code - 257 */
+static int      g_baseLength[29];
+static uint8_t  g_distCode[512];      /* see DCode                              */
+static int      g_baseDist[D_CODES];
+static uint16_t g_staticLCode[L_CODES + 2];
+static uint8_t  g_staticLLen[L_CODES + 2];
+static uint16_t g_staticDCode[D_CODES];
+static uint8_t  g_staticDLen[D_CODES];
+static int      g_tablesBuilt = 0;
 
 /* Scratch for one Huffman build, kept off the stack (about 9 KB). */
 typedef struct {
-    UInt32 freq;
-    int    sym;
+    uint32_t freq;
+    int      sym;
 } HSym;
 
 typedef struct {
-    HSym   sym[L_CODES + 2];
-    UInt32 nodeFreq[2 * ( L_CODES + 2 )];
-    int    parent[2 * ( L_CODES + 2 )];
-    int    depth[2 * ( L_CODES + 2 )];
+    HSym     sym[L_CODES + 2];
+    uint32_t nodeFreq[2 * ( L_CODES + 2 )];
+    int      parent[2 * ( L_CODES + 2 )];
+    int      depth[2 * ( L_CODES + 2 )];
 } HuffScratch;
 
 struct DeflEnc {
     /* The window and the chains. */
-    Byte   *window;                   /* 2 * WSIZE + MAX_MATCH slack           */
-    UInt16 *head;                     /* HASH_SIZE                             */
-    UInt16 *prev;                     /* WSIZE                                 */
+    uint8_t *window;                  /* 2 * WSIZE + MAX_MATCH slack           */
+    uint16_t *head;                   /* HASH_SIZE                             */
+    uint16_t *prev;                   /* WSIZE                                 */
     unsigned strstart;                /* the next position to be coded         */
     unsigned lookahead;               /* valid bytes from strstart on          */
     long     blockStart;              /* window index where the block began,
@@ -113,26 +113,26 @@ struct DeflEnc {
     int      matchAvailable;
 
     /* One block's symbols: a literal, or a length/distance pair. */
-    Byte   *lBuf;                     /* literal, or length - 3                */
-    UInt16 *dBuf;                     /* 0 for a literal, else the distance    */
-    unsigned lastLit;
-    UInt32  lFreq[L_CODES + 2];
-    UInt32  dFreq[D_CODES];
-    UInt32  blFreq[BL_CODES];
-    Byte    lLen[L_CODES + 2];
-    Byte    dLen[D_CODES];
-    Byte    blLen[BL_CODES];
-    UInt16  lCode[L_CODES + 2];
-    UInt16  dCode[D_CODES];
-    UInt16  blCode[BL_CODES];
+    uint8_t  *lBuf;                   /* literal, or length - 3                */
+    uint16_t *dBuf;                   /* 0 for a literal, else the distance    */
+    unsigned  lastLit;
+    uint32_t  lFreq[L_CODES + 2];
+    uint32_t  dFreq[D_CODES];
+    uint32_t  blFreq[BL_CODES];
+    uint8_t   lLen[L_CODES + 2];
+    uint8_t   dLen[D_CODES];
+    uint8_t   blLen[BL_CODES];
+    uint16_t  lCode[L_CODES + 2];
+    uint16_t  dCode[D_CODES];
+    uint16_t  blCode[BL_CODES];
     HuffScratch hs;
 
     /* The bit writer. */
-    UInt32  bitBuf;
-    int     bitCount;
-    Byte   *out;
+    uint32_t bitBuf;
+    int      bitCount;
+    uint8_t *out;
     unsigned outPos;
-    UInt32  outTotal;
+    uint32_t outTotal;
 
     DeflWrite write;
     void     *user;
@@ -142,7 +142,7 @@ struct DeflEnc {
 /*===========================================================================
  * Static tables
  *===========================================================================*/
-static UInt16 BitReverse( unsigned code, int len )
+static uint16_t BitReverse( unsigned code, int len )
 {
     unsigned res = 0;
     do {
@@ -150,14 +150,14 @@ static UInt16 BitReverse( unsigned code, int len )
         code >>= 1;
         res <<= 1;
     } while ( --len > 0 );
-    return (UInt16)( res >> 1 );
+    return (uint16_t)( res >> 1 );
 }
 
 /* Canonical codes for a set of lengths, bit-reversed for LSB-first output. */
-static void GenCodes( const Byte *lens, int n, UInt16 *codes )
+static void GenCodes( const uint8_t *lens, int n, uint16_t *codes )
 {
-    UInt16 blCount[MAX_BITS + 1];
-    UInt16 nextCode[MAX_BITS + 1];
+    uint16_t blCount[MAX_BITS + 1];
+    uint16_t nextCode[MAX_BITS + 1];
     unsigned code = 0;
     int bits, i;
 
@@ -167,7 +167,7 @@ static void GenCodes( const Byte *lens, int n, UInt16 *codes )
     for ( bits = 1; bits <= MAX_BITS; bits++ )
     {
         code = ( code + blCount[bits - 1] ) << 1;
-        nextCode[bits] = (UInt16)code;
+        nextCode[bits] = (uint16_t)code;
     }
     for ( i = 0; i < n; i++ )
     {
@@ -186,25 +186,25 @@ static void BuildTables( void )
     {
         g_baseLength[code] = length;
         for ( n = 0; n < ( 1 << extraLBits[code] ); n++ )
-            g_lengthCode[length++] = (Byte)code;
+            g_lengthCode[length++] = (uint8_t)code;
     }
     /* Length 258 has a code of its own (285) with no extra bits, rather than
      * being the last value of code 284's range. */
-    g_lengthCode[length - 1] = (Byte)code;
+    g_lengthCode[length - 1] = (uint8_t)code;
     g_baseLength[28] = 255;
 
     for ( code = 0; code < 16; code++ )
     {
         g_baseDist[code] = dist;
         for ( n = 0; n < ( 1 << extraDBits[code] ); n++ )
-            g_distCode[dist++] = (Byte)code;
+            g_distCode[dist++] = (uint8_t)code;
     }
     dist >>= 7;                       /* from here on, in units of 128 */
     for ( ; code < D_CODES; code++ )
     {
         g_baseDist[code] = dist << 7;
         for ( n = 0; n < ( 1 << ( extraDBits[code] - 7 ) ); n++ )
-            g_distCode[256 + dist++] = (Byte)code;
+            g_distCode[256 + dist++] = (uint8_t)code;
     }
 
     for ( n = 0;   n <= 143; n++ ) g_staticLLen[n] = 8;
@@ -237,7 +237,7 @@ static void FlushOut( DeflEnc *d )
     d->outPos = 0;
 }
 
-static void PutByte( DeflEnc *d, Byte b )
+static void PutByte( DeflEnc *d, uint8_t b )
 {
     d->out[d->outPos++] = b;
     if ( d->outPos == OUT_BUFSIZE ) FlushOut( d );
@@ -246,11 +246,11 @@ static void PutByte( DeflEnc *d, Byte b )
 /* Up to 16 bits, LSB first. */
 static void SendBits( DeflEnc *d, unsigned value, int len )
 {
-    d->bitBuf |= (UInt32)value << d->bitCount;
+    d->bitBuf |= (uint32_t)value << d->bitCount;
     d->bitCount += len;
     while ( d->bitCount >= 8 )
     {
-        PutByte( d, (Byte)d->bitBuf );
+        PutByte( d, (uint8_t)d->bitBuf );
         d->bitBuf >>= 8;
         d->bitCount -= 8;
     }
@@ -258,7 +258,7 @@ static void SendBits( DeflEnc *d, unsigned value, int len )
 
 static void AlignToByte( DeflEnc *d )
 {
-    if ( d->bitCount > 0 ) PutByte( d, (Byte)d->bitBuf );
+    if ( d->bitCount > 0 ) PutByte( d, (uint8_t)d->bitBuf );
     d->bitBuf = 0;
     d->bitCount = 0;
 }
@@ -283,16 +283,16 @@ static int HSymCmp( const void *a, const void *b )
     return x->sym - y->sym;
 }
 
-static void BuildLengths( HuffScratch *hs, const UInt32 *freq, int n,
-                          int maxBits, Byte *lens )
+static void BuildLengths( HuffScratch *hs, const uint32_t *freq, int n,
+                          int maxBits, uint8_t *lens )
 {
-    HSym    *sym      = hs->sym;
-    UInt32  *nodeFreq = hs->nodeFreq;
-    int     *parent   = hs->parent;
-    int     *depth    = hs->depth;
-    int      blCount[MAX_BITS + 2];
-    int      count = 0, i, leafHead, nodeHead, nodeTail, next;
-    int      overflow = 0;
+    HSym     *sym      = hs->sym;
+    uint32_t *nodeFreq = hs->nodeFreq;
+    int      *parent   = hs->parent;
+    int      *depth    = hs->depth;
+    int       blCount[MAX_BITS + 2];
+    int       count = 0, i, leafHead, nodeHead, nodeTail, next;
+    int       overflow = 0;
 
     memset( lens, 0, (size_t)n );
     for ( i = 0; i < n; i++ )
@@ -363,7 +363,7 @@ static void BuildLengths( HuffScratch *hs, const UInt32 *freq, int n,
         {
             int k;
             for ( k = 0; k < blCount[len]; k++ )
-                lens[ sym[idx++].sym ] = (Byte)len;
+                lens[ sym[idx++].sym ] = (uint8_t)len;
         }
     }
 }
@@ -374,7 +374,7 @@ static void BuildLengths( HuffScratch *hs, const UInt32 *freq, int n,
  * 3-10 / 11-138 zeros).  Done per tree, never across the boundary between
  * them - legal, but old inflaters have been known to object.
  *===========================================================================*/
-static void ScanTree( DeflEnc *d, const Byte *lens, int maxCode )
+static void ScanTree( DeflEnc *d, const uint8_t *lens, int maxCode )
 {
     int n, prevLen = -1, curLen, nextLen = lens[0];
     int count = 0, maxCount = 7, minCount = 4;
@@ -385,7 +385,7 @@ static void ScanTree( DeflEnc *d, const Byte *lens, int maxCode )
         curLen  = nextLen;
         nextLen = ( n + 1 <= maxCode ) ? lens[n + 1] : -1;
         if ( ++count < maxCount && curLen == nextLen ) continue;
-        if ( count < minCount )      d->blFreq[curLen] += (UInt32)count;
+        if ( count < minCount )      d->blFreq[curLen] += (uint32_t)count;
         else if ( curLen != 0 )
         {
             if ( curLen != prevLen ) d->blFreq[curLen]++;
@@ -403,7 +403,7 @@ static void ScanTree( DeflEnc *d, const Byte *lens, int maxCode )
 
 #define SendCode( d, c, codes, lens )  SendBits( (d), (codes)[c], (lens)[c] )
 
-static void SendTree( DeflEnc *d, const Byte *lens, int maxCode )
+static void SendTree( DeflEnc *d, const uint8_t *lens, int maxCode )
 {
     int n, prevLen = -1, curLen, nextLen = lens[0];
     int count = 0, maxCount = 7, minCount = 4;
@@ -449,8 +449,8 @@ static void SendTree( DeflEnc *d, const Byte *lens, int maxCode )
 /*===========================================================================
  * Sending a block
  *===========================================================================*/
-static void CompressBlock( DeflEnc *d, const UInt16 *lc, const Byte *ll,
-                           const UInt16 *dc, const Byte *dl )
+static void CompressBlock( DeflEnc *d, const uint16_t *lc, const uint8_t *ll,
+                           const uint16_t *dc, const uint8_t *dl )
 {
     unsigned i;
 
@@ -481,20 +481,20 @@ static void CompressBlock( DeflEnc *d, const UInt16 *lc, const Byte *ll,
 
 /* Bits the block's symbols would cost with these lengths (not counting the
  * block header). */
-static UInt32 BlockBits( DeflEnc *d, const Byte *ll, const Byte *dl )
+static uint32_t BlockBits( DeflEnc *d, const uint8_t *ll, const uint8_t *dl )
 {
-    UInt32 bits = 0;
-    int    i;
+    uint32_t bits = 0;
+    int      i;
 
     for ( i = 0; i < L_CODES; i++ )
         if ( d->lFreq[i] )
         {
             bits += d->lFreq[i] * ll[i];
-            if ( i >= 257 ) bits += d->lFreq[i] * (UInt32)extraLBits[i - 257];
+            if ( i >= 257 ) bits += d->lFreq[i] * (uint32_t)extraLBits[i - 257];
         }
     for ( i = 0; i < D_CODES; i++ )
         if ( d->dFreq[i] )
-            bits += d->dFreq[i] * ( (UInt32)dl[i] + (UInt32)extraDBits[i] );
+            bits += d->dFreq[i] * ( (uint32_t)dl[i] + (uint32_t)extraDBits[i] );
     return bits;
 }
 
@@ -508,12 +508,12 @@ static void InitBlock( DeflEnc *d )
 
 static void FlushBlock( DeflEnc *d, int last )
 {
-    UInt32 storedLen, dynBits, statBits, dynBytes, statBytes;
-    int    maxL, maxD, maxBl, i;
-    const Byte *buf;
+    uint32_t storedLen, dynBits, statBits, dynBytes, statBytes;
+    int      maxL, maxD, maxBl, i;
+    const uint8_t *buf;
 
     storedLen = ( d->blockStart >= 0 )
-              ? (UInt32)( (long)d->strstart - d->blockStart ) : 0;
+              ? (uint32_t)( (long)d->strstart - d->blockStart ) : 0;
     buf = ( d->blockStart >= 0 ) ? d->window + d->blockStart : 0;
 
     /* The block's own codes. */
@@ -533,9 +533,9 @@ static void FlushBlock( DeflEnc *d, int last )
     for ( maxBl = BL_CODES - 1; maxBl >= 3 && d->blLen[ blOrder[maxBl] ] == 0; maxBl-- ) ;
 
     dynBits = BlockBits( d, d->lLen, d->dLen ) + 3 + 5 + 5 + 4
-            + 3 * (UInt32)( maxBl + 1 );
+            + 3 * (uint32_t)( maxBl + 1 );
     for ( i = 0; i < BL_CODES; i++ )
-        dynBits += d->blFreq[i] * ( (UInt32)d->blLen[i] + (UInt32)extraBlBits[i] );
+        dynBits += d->blFreq[i] * ( (uint32_t)d->blLen[i] + (uint32_t)extraBlBits[i] );
     statBits  = BlockBits( d, g_staticLLen, g_staticDLen ) + 3;
     dynBytes  = ( dynBits + 7 ) >> 3;
     statBytes = ( statBits + 7 ) >> 3;
@@ -544,13 +544,13 @@ static void FlushBlock( DeflEnc *d, int last )
     if ( buf && storedLen + 4 <= dynBytes && storedLen <= 0xFFFFU )
     {
         /* Stored: header bits, then aligned LEN / NLEN and the raw bytes. */
-        UInt32 k;
+        unsigned k;
         SendBits( d, (unsigned)( 0 + ( last ? 1 : 0 ) ), 3 );
         AlignToByte( d );
-        PutByte( d, (Byte)storedLen );
-        PutByte( d, (Byte)( storedLen >> 8 ) );
-        PutByte( d, (Byte)~storedLen );
-        PutByte( d, (Byte)( ~storedLen >> 8 ) );
+        PutByte( d, (uint8_t)storedLen );
+        PutByte( d, (uint8_t)( storedLen >> 8 ) );
+        PutByte( d, (uint8_t)~storedLen );
+        PutByte( d, (uint8_t)( ~storedLen >> 8 ) );
         for ( k = 0; k < storedLen; k++ ) PutByte( d, buf[k] );
     }
     else if ( statBytes == dynBytes )
@@ -579,7 +579,7 @@ static void FlushBlock( DeflEnc *d, int last )
 /*===========================================================================
  * The parse
  *===========================================================================*/
-static unsigned Hash3( const Byte *p )
+static unsigned Hash3( const uint8_t *p )
 {
     return ( ( (unsigned)p[0] << 10 ) ^ ( (unsigned)p[1] << 5 ) ^ p[2] ) & HASH_MASK;
 }
@@ -589,29 +589,29 @@ static unsigned InsertString( DeflEnc *d, unsigned pos )
 {
     unsigned h = Hash3( d->window + pos );
     unsigned old = d->head[h];
-    d->prev[pos & WMASK] = (UInt16)old;
-    d->head[h] = (UInt16)pos;
+    d->prev[pos & WMASK] = (uint16_t)old;
+    d->head[h] = (uint16_t)pos;
     return old;
 }
 
 static unsigned LongestMatch( DeflEnc *d, unsigned curMatch )
 {
     unsigned chain = MAX_CHAIN;
-    const Byte *scan = d->window + d->strstart;
-    const Byte *strend = scan + MAX_MATCH;
+    const uint8_t *scan = d->window + d->strstart;
+    const uint8_t *strend = scan + MAX_MATCH;
     unsigned bestLen = d->prevLength;
     unsigned nice = NICE_MATCH;
     unsigned limit = ( d->strstart > MAX_DIST ) ? d->strstart - MAX_DIST : NIL;
-    Byte scanEnd1 = scan[bestLen - 1];
-    Byte scanEnd  = scan[bestLen];
+    uint8_t scanEnd1 = scan[bestLen - 1];
+    uint8_t scanEnd  = scan[bestLen];
 
     if ( d->prevLength >= GOOD_MATCH ) chain >>= 2;
     if ( nice > d->lookahead ) nice = d->lookahead;
 
     do {
-        const Byte *match = d->window + curMatch;
-        const Byte *s;
-        unsigned    len;
+        const uint8_t *match = d->window + curMatch;
+        const uint8_t *s;
+        unsigned       len;
 
         if ( match[bestLen] != scanEnd || match[bestLen - 1] != scanEnd1 ||
              match[0] != scan[0] || match[1] != scan[1] )
@@ -639,15 +639,15 @@ static unsigned LongestMatch( DeflEnc *d, unsigned curMatch )
 static int TallyLit( DeflEnc *d, unsigned c )
 {
     d->dBuf[d->lastLit] = 0;
-    d->lBuf[d->lastLit++] = (Byte)c;
+    d->lBuf[d->lastLit++] = (uint8_t)c;
     d->lFreq[c]++;
     return d->lastLit == LIT_BUFSIZE - 1;
 }
 
 static int TallyDist( DeflEnc *d, unsigned dist, unsigned lenMinus3 )
 {
-    d->dBuf[d->lastLit] = (UInt16)dist;
-    d->lBuf[d->lastLit++] = (Byte)lenMinus3;
+    d->dBuf[d->lastLit] = (uint16_t)dist;
+    d->lBuf[d->lastLit++] = (uint8_t)lenMinus3;
     dist--;
     d->lFreq[ g_lengthCode[lenMinus3] + 257 ]++;
     d->dFreq[ DCode( dist ) ]++;
@@ -734,21 +734,21 @@ static void Slide( DeflEnc *d )
     for ( n = 0; n < HASH_SIZE; n++ )
     {
         unsigned m = d->head[n];
-        d->head[n] = (UInt16)( m >= WSIZE ? m - WSIZE : NIL );
+        d->head[n] = (uint16_t)( m >= WSIZE ? m - WSIZE : NIL );
     }
     for ( n = 0; n < WSIZE; n++ )
     {
         unsigned m = d->prev[n];
-        d->prev[n] = (UInt16)( m >= WSIZE ? m - WSIZE : NIL );
+        d->prev[n] = (uint16_t)( m >= WSIZE ? m - WSIZE : NIL );
     }
 }
 
 /*===========================================================================
  * Public
  *===========================================================================*/
-UInt32 DeflMemNeeded( void )
+uint32_t DeflMemNeeded( void )
 {
-    return (UInt32)sizeof( DeflEnc ) + 2 * WSIZE + MAX_MATCH + 8
+    return (uint32_t)sizeof( DeflEnc ) + 2 * WSIZE + MAX_MATCH + 8
          + HASH_SIZE * 2 + WSIZE * 2 + LIT_BUFSIZE * 3 + OUT_BUFSIZE;
 }
 
@@ -760,12 +760,12 @@ int DeflCreate( DeflEnc **out )
     BuildTables();
     d = (DeflEnc *)calloc( 1, sizeof( DeflEnc ) );
     if ( !d ) return SZ_ERR_MEMORY;
-    d->window = (Byte *)malloc( 2 * WSIZE + MAX_MATCH + 8 );
-    d->head   = (UInt16 *)malloc( HASH_SIZE * sizeof( UInt16 ) );
-    d->prev   = (UInt16 *)malloc( WSIZE * sizeof( UInt16 ) );
-    d->lBuf   = (Byte *)malloc( LIT_BUFSIZE );
-    d->dBuf   = (UInt16 *)malloc( LIT_BUFSIZE * sizeof( UInt16 ) );
-    d->out    = (Byte *)malloc( OUT_BUFSIZE );
+    d->window = (uint8_t *)malloc( 2 * WSIZE + MAX_MATCH + 8 );
+    d->head   = (uint16_t *)malloc( HASH_SIZE * sizeof( uint16_t ) );
+    d->prev   = (uint16_t *)malloc( WSIZE * sizeof( uint16_t ) );
+    d->lBuf   = (uint8_t *)malloc( LIT_BUFSIZE );
+    d->dBuf   = (uint16_t *)malloc( LIT_BUFSIZE * sizeof( uint16_t ) );
+    d->out    = (uint8_t *)malloc( OUT_BUFSIZE );
     if ( !d->window || !d->head || !d->prev || !d->lBuf || !d->dBuf || !d->out )
     {
         DeflFree( d );
@@ -780,8 +780,8 @@ void DeflReset( DeflEnc *d, DeflWrite write, void *user )
     /* The slack past the window is compared against but never coded from;
      * zeroing it keeps those comparisons deterministic. */
     memset( d->window, 0, 2 * WSIZE + MAX_MATCH + 8 );
-    memset( d->head, 0, HASH_SIZE * sizeof( UInt16 ) );
-    memset( d->prev, 0, WSIZE * sizeof( UInt16 ) );
+    memset( d->head, 0, HASH_SIZE * sizeof( uint16_t ) );
+    memset( d->prev, 0, WSIZE * sizeof( uint16_t ) );
     d->strstart = 0;
     d->lookahead = 0;
     d->blockStart = 0;
@@ -800,7 +800,7 @@ void DeflReset( DeflEnc *d, DeflWrite write, void *user )
     InitBlock( d );
 }
 
-int DeflFeed( DeflEnc *d, const Byte *data, UInt32 len )
+int DeflFeed( DeflEnc *d, const uint8_t *data, uint32_t len )
 {
     while ( len > 0 && !d->failed )
     {
@@ -843,7 +843,7 @@ int DeflFinish( DeflEnc *d )
     return d->failed ? SZ_ERR_WRITE : SZ_OK;
 }
 
-UInt32 DeflOutBytes( DeflEnc *d )
+uint32_t DeflOutBytes( DeflEnc *d )
 {
     return d->outTotal + d->outPos;
 }

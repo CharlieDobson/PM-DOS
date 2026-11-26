@@ -25,8 +25,8 @@
 #include "setup.h"
 
 typedef struct {
-    u32 eax, ebx, ecx, edx, esi, edi;
-    u32 flags;                  /* in: bit 0 = CF before the INT */
+    uint32_t eax, ebx, ecx, edx, esi, edi;
+    uint32_t flags;             /* in: bit 0 = CF before the INT */
 } REGS;
 
 void __cdecl int21( REGS *regs );
@@ -36,15 +36,15 @@ extern char crit_hit;
 
 #define CF( regs )      ((regs).flags & 1)
 #define AX( regs )      ((regs).eax & 0xFFFF)
-#define F1( al, fn )    (0xF100UL | (al) | ((u32)(fn) << 16))
+#define F1( al, fn )    (0xF100UL | (al) | ((uint32_t)(fn) << 16))
 
 unsigned plat_caps = PC_32BIT | PC_PARTITION | PC_RESTART;
 
-static u8   *psp;
-static char  tail[130];
-static int   char_height = 16;
-static u16  *saved_screen;
-static int   saved_row, saved_col;
+static uint8_t  *psp;
+static char      tail[130];
+static int       char_height = 16;
+static uint16_t *saved_screen;
+static int       saved_row, saved_col;
 
 void __cdecl dos_entry( void )
 {
@@ -53,7 +53,7 @@ void __cdecl dos_entry( void )
     plat_exit( 0 );
 }
 
-static void call21( REGS *regs, u32 eax )
+static void call21( REGS *regs, uint32_t eax )
 {
     regs->eax = eax;
     int21( regs );
@@ -79,22 +79,22 @@ static int result( REGS *regs )
 int plat_init( void )
 {
     REGS regs;
-    u32 len;
+    unsigned int len;
 
     clear( &regs );
     call21( &regs, 0x6200 );
-    psp = (u8 *)regs.ebx;
+    psp = (uint8_t *)regs.ebx;
     len = psp[0x80];
     if ( len > 126 ) {
         len = 126;
     }
-    mem_cpy( tail, psp + 0x81, (u16)len );
+    mem_cpy( tail, psp + 0x81, (uint16_t)len );
     tail[len] = 0;
     clear( &regs );
-    regs.edx = (u32)crit_handler;
+    regs.edx = (uint32_t)crit_handler;
     call21( &regs, 0x2524 );
     clear( &regs );
-    regs.edx = (u32)break_handler;
+    regs.edx = (uint32_t)break_handler;
     call21( &regs, 0x2523 );
     return 0;
 }
@@ -114,7 +114,7 @@ const char *plat_getenv( const char *name )
     const char *env;
     int len = str_len( name );
 
-    env = (const char *)*(u32 *)(psp + 0x2C);
+    env = (const char *)*(uint32_t *)(psp + 0x2C);
     if ( env == NULL ) {
         return NULL;
     }
@@ -132,10 +132,10 @@ void plat_exit( int code )
     REGS regs;
 
     clear( &regs );
-    call21( &regs, 0x4C00 | ((u32)code & 0xFF) );
+    call21( &regs, 0x4C00 | ((uint32_t)code & 0xFF) );
 }
 
-void *plat_alloc( u32 size )
+void *plat_alloc( uint32_t size )
 {
     REGS regs;
 
@@ -150,7 +150,7 @@ void plat_free( void *ptr )
     REGS regs;
 
     clear( &regs );
-    regs.edx = (u32)ptr;
+    regs.edx = (uint32_t)ptr;
     call21( &regs, 0x4900 );
 }
 
@@ -161,24 +161,24 @@ void plat_line( const char *text )
     clear( &regs );
     regs.ebx = 1;
     regs.ecx = str_len( text );
-    regs.edx = (u32)text;
+    regs.edx = (uint32_t)text;
     call21( &regs, 0x4000 );
     clear( &regs );
     regs.ebx = 1;
     regs.ecx = 2;
-    regs.edx = (u32)"\r\n";
+    regs.edx = (uint32_t)"\r\n";
     call21( &regs, 0x4000 );
 }
 
 int plat_stdin_byte( void )
 {
     REGS regs;
-    u8 ch;
+    uint8_t ch;
 
     clear( &regs );
     regs.ebx = 0;
     regs.ecx = 1;
-    regs.edx = (u32)&ch;
+    regs.edx = (uint32_t)&ch;
     call21( &regs, 0x3F00 );
     if ( CF( regs ) || regs.eax == 0 ) {
         return -1;
@@ -238,10 +238,10 @@ int plat_boot_drive( void )
 int plat_country_code( void )
 {
     REGS regs;
-    u8 buf[48];
+    uint8_t buf[48];
 
     clear( &regs );
-    regs.edx = (u32)buf;
+    regs.edx = (uint32_t)buf;
     call21( &regs, 0x3800 );
     return CF( regs ) ? 1 : (int)(regs.ebx & 0xFFFF);
 }
@@ -272,8 +272,8 @@ int plat_set_date( int year, int month, int day )
     REGS regs;
 
     clear( &regs );
-    regs.ecx = (u32)year;
-    regs.edx = ((u32)month << 8) | (u32)day;
+    regs.ecx = (uint32_t)year;
+    regs.edx = ((uint32_t)month << 8) | (uint32_t)day;
     call21( &regs, 0x2B00 );
     return (regs.eax & 0xFF) != 0;
 }
@@ -283,7 +283,7 @@ int plat_set_time( int hour, int minute )
     REGS regs;
 
     clear( &regs );
-    regs.ecx = ((u32)hour << 8) | (u32)minute;
+    regs.ecx = ((uint32_t)hour << 8) | (uint32_t)minute;
     regs.edx = 0;
     call21( &regs, 0x2D00 );
     return (regs.eax & 0xFF) != 0;
@@ -308,7 +308,7 @@ void plat_screen_open( void )
         regs.edx = 25;
         call21( &regs, 0xF00A );        /* back to 25 lines */
     }
-    saved_screen = (u16 *)plat_alloc( SCR_ROWS * SCR_COLS * 2 );
+    saved_screen = (uint16_t *)plat_alloc( SCR_ROWS * SCR_COLS * 2 );
     if ( saved_screen ) {
         plat_screen_get( 0, saved_screen, SCR_ROWS * SCR_COLS );
     }
@@ -318,25 +318,25 @@ void plat_screen_open( void )
     saved_col = (int)(regs.edx & 0xFF);
 }
 
-void plat_screen_put( int pos, const u16 *cells, int count )
+void plat_screen_put( int pos, const uint16_t *cells, int count )
 {
     REGS regs;
 
     clear( &regs );
-    regs.ebx = (u32)pos;
-    regs.ecx = (u32)count;
-    regs.esi = (u32)cells;
+    regs.ebx = (uint32_t)pos;
+    regs.ecx = (uint32_t)count;
+    regs.esi = (uint32_t)cells;
     call21( &regs, 0xF004 );
 }
 
-void plat_screen_get( int pos, u16 *cells, int count )
+void plat_screen_get( int pos, uint16_t *cells, int count )
 {
     REGS regs;
 
     clear( &regs );
-    regs.ebx = (u32)pos;
-    regs.ecx = (u32)count;
-    regs.edi = (u32)cells;
+    regs.ebx = (uint32_t)pos;
+    regs.ecx = (uint32_t)count;
+    regs.edi = (uint32_t)cells;
     call21( &regs, 0xF005 );
 }
 
@@ -347,10 +347,10 @@ void plat_cursor( int row, int col, int shown )
 
     clear( &regs );
     if ( shown ) {
-        regs.edx = ((u32)row << 8) | (u32)col;
+        regs.edx = ((uint32_t)row << 8) | (uint32_t)col;
         call21( &regs, 0xF002 );
         clear( &regs );
-        regs.ecx = ((u32)(char_height - 2) << 8) | (u32)(char_height - 1);
+        regs.ecx = ((uint32_t)(char_height - 2) << 8) | (uint32_t)(char_height - 1);
     } else {
         regs.ecx = 0x2000;
     }
@@ -361,7 +361,7 @@ void plat_cursor( int row, int col, int shown )
 void plat_screen_close( void )
 {
     REGS regs;
-    u16 *blank = (u16 *)plat_alloc( SCR_ROWS * SCR_COLS * 2 );
+    uint16_t *blank = (uint16_t *)plat_alloc( SCR_ROWS * SCR_COLS * 2 );
     int i;
 
     if ( blank ) {
@@ -373,7 +373,7 @@ void plat_screen_close( void )
     clear( &regs );
     call21( &regs, 0xF002 );
     clear( &regs );
-    regs.ecx = ((u32)(char_height - 2) << 8) | (u32)(char_height - 1);
+    regs.ecx = ((uint32_t)(char_height - 2) << 8) | (uint32_t)(char_height - 1);
     call21( &regs, 0xF006 );
     (void)saved_row;
     (void)saved_col;
@@ -397,7 +397,7 @@ int plat_key_ready( void )
     REGS regs;
 
     clear( &regs );
-    regs.edx = 0x0100 | (u32)shift_now();       /* DH bit 0: do not wait */
+    regs.edx = 0x0100 | (uint32_t)shift_now();  /* DH bit 0: do not wait */
     call21( &regs, 0xF008 );
     return (regs.eax & 0xFF) == 1;
 }
@@ -423,7 +423,7 @@ void plat_idle( void )
     REGS regs;
 
     clear( &regs );
-    regs.edx = (u32)shift_now();
+    regs.edx = (uint32_t)shift_now();
     call21( &regs, 0xF008 );
 }
 
@@ -431,58 +431,58 @@ void plat_idle( void )
 /* files                                                               */
 /* ------------------------------------------------------------------ */
 
-int plat_open( const char *path, int write, u16 *handle )
+int plat_open( const char *path, int write, uint16_t *handle )
 {
     REGS regs;
 
     crit_hit = 0;
     clear( &regs );
-    regs.edx = (u32)path;
+    regs.edx = (uint32_t)path;
     call21( &regs, write ? 0x3D02 : 0x3D00 );
-    *handle = (u16)AX( regs );
+    *handle = (uint16_t)AX( regs );
     return result( &regs );
 }
 
-int plat_create( const char *path, u16 *handle )
+int plat_create( const char *path, uint16_t *handle )
 {
     REGS regs;
 
     crit_hit = 0;
     clear( &regs );
     regs.ecx = 0;
-    regs.edx = (u32)path;
+    regs.edx = (uint32_t)path;
     call21( &regs, 0x3C00 );
-    *handle = (u16)AX( regs );
+    *handle = (uint16_t)AX( regs );
     return result( &regs );
 }
 
-int plat_read( u16 handle, void *buf, u16 len, u16 *done )
+int plat_read( uint16_t handle, void *buf, uint16_t len, uint16_t *done )
 {
     REGS regs;
 
     clear( &regs );
     regs.ebx = handle;
     regs.ecx = len;
-    regs.edx = (u32)buf;
+    regs.edx = (uint32_t)buf;
     call21( &regs, 0x3F00 );
-    *done = CF( regs ) ? 0 : (u16)regs.eax;
+    *done = CF( regs ) ? 0 : (uint16_t)regs.eax;
     return result( &regs );
 }
 
-int plat_write( u16 handle, const void *buf, u16 len, u16 *done )
+int plat_write( uint16_t handle, const void *buf, uint16_t len, uint16_t *done )
 {
     REGS regs;
 
     clear( &regs );
     regs.ebx = handle;
     regs.ecx = len;
-    regs.edx = (u32)buf;
+    regs.edx = (uint32_t)buf;
     call21( &regs, 0x4000 );
-    *done = CF( regs ) ? 0 : (u16)regs.eax;
+    *done = CF( regs ) ? 0 : (uint16_t)regs.eax;
     return result( &regs );
 }
 
-int plat_close( u16 handle )
+int plat_close( uint16_t handle )
 {
     REGS regs;
 
@@ -493,7 +493,7 @@ int plat_close( u16 handle )
 }
 
 /* 42h, the native form: the offset in ECX, the position back in EAX */
-int plat_seek( u16 handle, u32 pos )
+int plat_seek( uint16_t handle, uint32_t pos )
 {
     REGS regs;
 
@@ -504,7 +504,7 @@ int plat_seek( u16 handle, u32 pos )
     return result( &regs );
 }
 
-int plat_size( u16 handle, u32 *size )
+int plat_size( uint16_t handle, uint32_t *size )
 {
     REGS regs;
 
@@ -519,19 +519,19 @@ int plat_size( u16 handle, u32 *size )
     return plat_seek( handle, 0 );
 }
 
-int plat_get_ftime( u16 handle, u16 *date, u16 *time )
+int plat_get_ftime( uint16_t handle, uint16_t *date, uint16_t *time )
 {
     REGS regs;
 
     clear( &regs );
     regs.ebx = handle;
     call21( &regs, 0x5700 );
-    *time = (u16)regs.ecx;
-    *date = (u16)regs.edx;
+    *time = (uint16_t)regs.ecx;
+    *date = (uint16_t)regs.edx;
     return result( &regs );
 }
 
-int plat_set_ftime( u16 handle, u16 date, u16 time )
+int plat_set_ftime( uint16_t handle, uint16_t date, uint16_t time )
 {
     REGS regs;
 
@@ -543,13 +543,13 @@ int plat_set_ftime( u16 handle, u16 date, u16 time )
     return result( &regs );
 }
 
-static int path_call( u32 func, const char *path )
+static int path_call( uint32_t func, const char *path )
 {
     REGS regs;
 
     crit_hit = 0;
     clear( &regs );
-    regs.edx = (u32)path;
+    regs.edx = (uint32_t)path;
     call21( &regs, func );
     return result( &regs );
 }
@@ -583,36 +583,36 @@ int plat_rename( const char *from, const char *to )
     REGS regs;
 
     clear( &regs );
-    regs.edx = (u32)from;
-    regs.edi = (u32)to;
+    regs.edx = (uint32_t)from;
+    regs.edi = (uint32_t)to;
     call21( &regs, 0x5600 );
     return result( &regs );
 }
 
-int plat_get_attr( const char *path, u16 *attr )
+int plat_get_attr( const char *path, uint16_t *attr )
 {
     REGS regs;
 
     crit_hit = 0;
     clear( &regs );
-    regs.edx = (u32)path;
+    regs.edx = (uint32_t)path;
     call21( &regs, 0x4300 );
-    *attr = (u16)regs.ecx;
+    *attr = (uint16_t)regs.ecx;
     return result( &regs );
 }
 
-int plat_set_attr( const char *path, u16 attr )
+int plat_set_attr( const char *path, uint16_t attr )
 {
     REGS regs;
 
     clear( &regs );
     regs.ecx = attr;
-    regs.edx = (u32)path;
+    regs.edx = (uint32_t)path;
     call21( &regs, 0x4301 );
     return result( &regs );
 }
 
-static void find_fill( FINDDATA *fd, const u8 *dta )
+static void find_fill( FINDDATA *fd, const uint8_t *dta )
 {
     fd->attr = dta[0x15];
     fd->time = RD16( dta + 0x16 );
@@ -622,16 +622,16 @@ static void find_fill( FINDDATA *fd, const u8 *dta )
 }
 
 /* the search state lives in the record's own reserved bytes */
-int plat_find_first( const char *spec, u16 attr, FINDDATA *fd )
+int plat_find_first( const char *spec, uint16_t attr, FINDDATA *fd )
 {
     REGS regs;
 
     clear( &regs );
-    regs.edx = (u32)fd->reserved;
+    regs.edx = (uint32_t)fd->reserved;
     call21( &regs, 0x1A00 );
     clear( &regs );
     regs.ecx = attr;
-    regs.edx = (u32)spec;
+    regs.edx = (uint32_t)spec;
     call21( &regs, 0x4E00 );
     if ( CF( regs ) ) {
         return result( &regs );
@@ -645,7 +645,7 @@ int plat_find_next( FINDDATA *fd )
     REGS regs;
 
     clear( &regs );
-    regs.edx = (u32)fd->reserved;
+    regs.edx = (uint32_t)fd->reserved;
     call21( &regs, 0x1A00 );
     clear( &regs );
     call21( &regs, 0x4F00 );
@@ -661,10 +661,10 @@ int plat_find_next( FINDDATA *fd )
    is two bytes ahead of DOS 7.1's, which starts with its size: a first
    word of 0 says which (and keeps this right if the kernel moves to
    DOS 7.1's layout) */
-int plat_disk_free( int drive, u32 *free_kb, u32 *cluster_bytes )
+int plat_disk_free( int drive, uint32_t *free_kb, uint32_t *cluster_bytes )
 {
     REGS regs;
-    u8 rec[44], *at;
+    uint8_t rec[44], *at;
     char root[4];
 
     root[0] = (char)('A' + drive);
@@ -674,8 +674,8 @@ int plat_disk_free( int drive, u32 *free_kb, u32 *cluster_bytes )
     mem_set( rec, 0, sizeof( rec ) );
     WR16( rec, sizeof( rec ) );
     clear( &regs );
-    regs.edx = (u32)root;
-    regs.edi = (u32)rec;
+    regs.edx = (uint32_t)root;
+    regs.edi = (uint32_t)rec;
     regs.ecx = sizeof( rec );
     regs.flags = 1;
     crit_hit = 0;
@@ -688,7 +688,7 @@ int plat_disk_free( int drive, u32 *free_kb, u32 *cluster_bytes )
         return 0;
     }
     clear( &regs );
-    regs.edx = (u32)drive + 1;
+    regs.edx = (uint32_t)drive + 1;
     call21( &regs, 0x3600 );
     if ( AX( regs ) == 0xFFFF ) {
         return 15;
@@ -710,7 +710,7 @@ int plat_current_dir( char *buf, int max )
     drive = (int)(regs.eax & 0xFF);
     clear( &regs );
     regs.edx = 0;
-    regs.esi = (u32)dir;
+    regs.esi = (uint32_t)dir;
     call21( &regs, 0x4700 );
     if ( CF( regs ) ) {
         return 1;
@@ -747,14 +747,14 @@ void plat_flush( void )
 int plat_drive( int drive, DRIVEINFO *di )
 {
     REGS regs;
-    u8 row[16];
+    uint8_t row[16];
 
     mem_set( di, 0, sizeof( *di ) );
     di->bios = -1;
     mem_set( row, 0, sizeof( row ) );
     clear( &regs );
-    regs.edx = (u32)drive;
-    regs.edi = (u32)row;
+    regs.edx = (uint32_t)drive;
+    regs.edi = (uint32_t)row;
     call21( &regs, F1( 6, 0 ) );
     if ( CF( regs ) || !(row[2] & DRVF_PRESENT) ) {
         return 1;
@@ -781,13 +781,13 @@ int plat_drive( int drive, DRIVEINFO *di )
 int plat_disk( int bios, DISKINFO *dk )
 {
     REGS regs;
-    u8 rec[16];
+    uint8_t rec[16];
 
     mem_set( dk, 0, sizeof( *dk ) );
     mem_set( rec, 0, sizeof( rec ) );
     clear( &regs );
-    regs.edx = (u32)bios;
-    regs.edi = (u32)rec;
+    regs.edx = (uint32_t)bios;
+    regs.edi = (uint32_t)rec;
     call21( &regs, F1( 0x0C, 0 ) );
     if ( CF( regs ) || !(rec[1] & 1) ) {
         return 1;
@@ -801,18 +801,18 @@ int plat_disk( int bios, DISKINFO *dk )
     return 0;
 }
 
-static int raw_io( u32 al, int bios, u32 lba, u16 count, const void *buf )
+static int raw_io( uint32_t al, int bios, uint32_t lba, uint16_t count, const void *buf )
 {
     REGS regs;
-    u16 step;
+    uint16_t step;
 
     while ( count ) {
         step = count > 64 ? 64 : count;
         clear( &regs );
-        regs.edx = (u32)bios;
+        regs.edx = (uint32_t)bios;
         regs.ebx = lba;
         regs.ecx = step;
-        regs.edi = (u32)buf;
+        regs.edi = (uint32_t)buf;
         crit_hit = 0;
         call21( &regs, al );
         if ( CF( regs ) ) {
@@ -820,33 +820,33 @@ static int raw_io( u32 al, int bios, u32 lba, u16 count, const void *buf )
         }
         lba += step;
         count -= step;
-        buf = (const u8 *)buf + (u32)step * 512;
+        buf = (const uint8_t *)buf + (uint32_t)step * 512;
     }
     return 0;
 }
 
-int plat_disk_read( int bios, u32 lba, u16 count, void *buf )
+int plat_disk_read( int bios, uint32_t lba, uint16_t count, void *buf )
 {
     return raw_io( 0xF10D, bios, lba, count, buf );
 }
 
-int plat_disk_write( int bios, u32 lba, u16 count, const void *buf )
+int plat_disk_write( int bios, uint32_t lba, uint16_t count, const void *buf )
 {
     return raw_io( 0xF10E, bios, lba, count, buf );
 }
 
-static int vol_io( int drive, u32 sector, u16 count, const void *buf, u32 mode )
+static int vol_io( int drive, uint32_t sector, uint16_t count, const void *buf, uint32_t mode )
 {
     REGS regs;
-    u8 pkt[10];
+    uint8_t pkt[10];
 
     WR32( pkt, sector );
     WR16( pkt + 4, count );
-    WR32( pkt + 6, (u32)buf );
+    WR32( pkt + 6, (uint32_t)buf );
     clear( &regs );
-    regs.ebx = (u32)pkt;
+    regs.ebx = (uint32_t)pkt;
     regs.ecx = 0xFFFFFFFFul;
-    regs.edx = (u32)drive + 1;
+    regs.edx = (uint32_t)drive + 1;
     regs.esi = mode;
     regs.flags = 1;
     crit_hit = 0;
@@ -854,12 +854,12 @@ static int vol_io( int drive, u32 sector, u16 count, const void *buf, u32 mode )
     return result( &regs );
 }
 
-int plat_vol_read( int drive, u32 sector, u16 count, void *buf )
+int plat_vol_read( int drive, uint32_t sector, uint16_t count, void *buf )
 {
     return vol_io( drive, sector, count, buf, 0 );
 }
 
-int plat_vol_write( int drive, u32 sector, u16 count, const void *buf )
+int plat_vol_write( int drive, uint32_t sector, uint16_t count, const void *buf )
 {
     return vol_io( drive, sector, count, buf, 1 );
 }
@@ -870,7 +870,7 @@ int plat_vol_remount( int drive )
 
     plat_flush();
     clear( &regs );
-    regs.edx = (u32)drive + 1;
+    regs.edx = (uint32_t)drive + 1;
     call21( &regs, 0xF102 );
     return result( &regs );
 }
@@ -901,12 +901,12 @@ int plat_fd_type( int drive )
     REGS regs;
 
     clear( &regs );
-    regs.edx = (u32)drive;
+    regs.edx = (uint32_t)drive;
     call21( &regs, F1( 0x14, FDF_TYPE ) );
     return CF( regs ) ? FDT_NONE : (int)(regs.ebx & 0xFF);
 }
 
-static u8 medium( int spt, int cyls )
+static uint8_t medium( int spt, int cyls )
 {
     if ( cyls <= 40 ) {
         return 1;                       /* FDM_360 */
@@ -914,15 +914,15 @@ static u8 medium( int spt, int cyls )
     return spt >= 36 ? 5 : spt >= 18 ? 4 : spt >= 15 ? 2 : 3;
 }
 
-int plat_fd_begin( int drive, int spt, int cyls, int heads, u16 total )
+int plat_fd_begin( int drive, int spt, int cyls, int heads, uint16_t total )
 {
     REGS regs;
 
     (void)heads;
     (void)total;
     clear( &regs );
-    regs.edx = (u32)drive;
-    regs.ecx = ((u32)cyls << 8) | (u32)spt;
+    regs.edx = (uint32_t)drive;
+    regs.ecx = ((uint32_t)cyls << 8) | (uint32_t)spt;
     regs.ebx = medium( spt, cyls );
     call21( &regs, F1( 0x14, FDF_BEGIN ) );
     if ( CF( regs ) ) {
@@ -936,8 +936,8 @@ int plat_fd_track( int drive, int cyl, int head, int spt )
     REGS regs;
 
     clear( &regs );
-    regs.edx = ((u32)head << 8) | (u32)drive;
-    regs.ecx = ((u32)cyl << 8) | (u32)spt;
+    regs.edx = ((uint32_t)head << 8) | (uint32_t)drive;
+    regs.ecx = ((uint32_t)cyl << 8) | (uint32_t)spt;
     call21( &regs, F1( 0x14, FDF_TRACK ) );
     if ( CF( regs ) ) {
         return (regs.eax & 0xFF) == 3 ? 3 : 1;
@@ -945,17 +945,17 @@ int plat_fd_track( int drive, int cyl, int head, int spt )
     return 0;
 }
 
-void plat_fd_end( int drive, int spt, int heads, u16 total )
+void plat_fd_end( int drive, int spt, int heads, uint16_t total )
 {
     REGS regs;
 
     clear( &regs );
-    regs.edx = (u32)drive;
+    regs.edx = (uint32_t)drive;
     call21( &regs, F1( 0x14, FDF_END ) );
     /* what the disk now is, for the sectors that follow */
     clear( &regs );
-    regs.edx = ((u32)heads << 8) | (u32)drive;
-    regs.ecx = (u32)spt;
+    regs.edx = ((uint32_t)heads << 8) | (uint32_t)drive;
+    regs.ecx = (uint32_t)spt;
     regs.ebx = total;
     call21( &regs, F1( 0x14, FDF_SETGEO ) );
 }

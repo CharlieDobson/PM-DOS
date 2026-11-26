@@ -114,33 +114,33 @@
 #define SPIN_TXP    200000L
 #define PROBE_TICKS 4           /* the line probe's wait, in ticks */
 
-static u32  win;                        /* the mapped memory window */
-static u32  membase;                    /* its physical address */
-static u32  ramsize;                    /* 8K or 16K */
-static u8   tx_page, rx_start, rx_stop;
-static u8   word;
+static uint32_t win;                    /* the mapped memory window */
+static uint32_t membase;                /* its physical address */
+static unsigned int ramsize;            /* 8K or 16K */
+static uint8_t  tx_page, rx_start, rx_stop;
+static unsigned char word;
 
-static const u16 wd_ports[] = { 0x280, 0x300, 0x240, 0x340, 0x2A0, 0x380, 0 };
+static const uint16_t wd_ports[] = { 0x280, 0x300, 0x240, 0x340, 0x2A0, 0x380, 0 };
 
-static u8 reg( int off ) { return inb( net_port + off ); }
-static void setreg( int off, u8 v ) { outb( net_port + off, v ); }
-static u8 nic_rd( int r ) { return inb( net_port + WD_8390 + r ); }
-static void nic_wr( int r, u8 v ) { outb( net_port + WD_8390 + r, v ); }
+static uint8_t reg( int off ) { return inb( net_port + off ); }
+static void setreg( int off, uint8_t v ) { outb( net_port + off, v ); }
+static uint8_t nic_rd( int r ) { return inb( net_port + WD_8390 + r ); }
+static void nic_wr( int r, uint8_t v ) { outb( net_port + WD_8390 + r, v ); }
 
 /* a page of the card's RAM, in the window */
-static u8 *page_at( u32 page )
+static uint8_t *page_at( unsigned int page )
 {
-    return (u8 *)( win + ( page << 8 ) );
+    return (uint8_t *)( win + ( page << 8 ) );
 }
 
 /* is there an SMC board at net_port?  The checksum of the eight PROM
    bytes is the mark */
 static int wd_probe( void )
 {
-    u8 sum = 0;
+    uint8_t sum = 0;
     int i;
 
-    for ( i = 0; i < 8; i++ ) sum = (u8)( sum + reg( WD_PROM + i ) );
+    for ( i = 0; i < 8; i++ ) sum = (uint8_t)( sum + reg( WD_PROM + i ) );
     if ( sum != 0xFF ) return 0;
     for ( i = 0; i < 6; i++ ) net_mac[i] = reg( WD_PROM + i );
     return net_mac_ok( net_mac );
@@ -150,13 +150,13 @@ static int wd_probe( void )
    0-5 repeat the address, and the slot bit stays set when cleared */
 static int wd_is16( void )
 {
-    u8 was;
+    uint8_t was;
     int i, sixteen;
 
     for ( i = 0; i < 6 && reg( i ) == reg( WD_PROM + i ); i++ ) ;
     if ( i == 6 ) return 0;
     was = reg( WD_ICR );
-    setreg( WD_ICR, (u8)( was ^ ICR_16BIT ) );
+    setreg( WD_ICR, (uint8_t)( was ^ ICR_16BIT ) );
     sixteen = ( reg( WD_ICR ) & ICR_16BIT ) && ( was & ICR_16BIT );
     setreg( WD_ICR, was );
     return sixteen;
@@ -169,22 +169,22 @@ static int wd_is16( void )
    (DCR's LS clear and TCR's LB set), where a frame sent never reaches
    the wire.  The window's address is split: MSR carries bits A13-A18,
    and on a 16-bit board LAAR carries A19-A23 */
-static void chip_init( int loop, u8 imr )
+static void chip_init( int loop, uint8_t imr )
 {
     int i;
 
     setreg( WD_MSR, MSR_RESET );
     net_delay_us( 2000 );
     setreg( WD_MSR, 0 );
-    if ( word ) setreg( WD_LAAR, (u8)( LAAR_L16EN | LAAR_M16EN | ( ( membase >> 19 ) & 0x1F ) ) );
-    setreg( WD_MSR, (u8)( MSR_MENB | ( ( membase >> 13 ) & 0x3F ) ) );
+    if ( word ) setreg( WD_LAAR, (uint8_t)( LAAR_L16EN | LAAR_M16EN | ( ( membase >> 19 ) & 0x1F ) ) );
+    setreg( WD_MSR, (uint8_t)( MSR_MENB | ( ( membase >> 13 ) & 0x3F ) ) );
 
     tx_page = 0;
     rx_start = TX_PAGES;
-    rx_stop = (u8)( ramsize >> 8 );             /* last page + 1 */
+    rx_stop = (uint8_t)( ramsize >> 8 );        /* last page + 1 */
 
     nic_wr( NE_CR, CR_PAGE0 | CR_RD2 | CR_STP );
-    nic_wr( NE_DCR, (u8)( DCR_FT1 | ( loop ? 0 : DCR_LS ) | ( word ? DCR_WTS : 0 ) ) );
+    nic_wr( NE_DCR, (uint8_t)( DCR_FT1 | ( loop ? 0 : DCR_LS ) | ( word ? DCR_WTS : 0 ) ) );
     nic_wr( NE_RBCR0, 0 );
     nic_wr( NE_RBCR1, 0 );
     nic_wr( NE_RCR, RCR_MON );
@@ -198,12 +198,12 @@ static void chip_init( int loop, u8 imr )
     nic_wr( NE_CR, CR_PAGE1 | CR_RD2 | CR_STP );
     for ( i = 0; i < 6; i++ ) nic_wr( NE_PAR0 + i, net_mac[i] );
     for ( i = 0; i < 8; i++ ) nic_wr( NE_MAR0 + i, 0xFF );
-    nic_wr( NE_CURR, (u8)( rx_start + 1 ) );    /* BNRY + 1: the ring is empty */
+    nic_wr( NE_CURR, (uint8_t)( rx_start + 1 ) ); /* BNRY + 1: the ring is empty */
     nic_wr( NE_CR, CR_PAGE0 | CR_RD2 | CR_STP );
     nic_wr( NE_CR, CR_PAGE0 | CR_RD2 | CR_STA );
     nic_wr( NE_ISR, 0xFF );
-    nic_wr( NE_TCR, (u8)( loop ? TCR_LB : 0 ) );
-    nic_wr( NE_RCR, (u8)( RCR_AB | RCR_AM ) );
+    nic_wr( NE_TCR, (uint8_t)( loop ? TCR_LB : 0 ) );
+    nic_wr( NE_RCR, (uint8_t)( RCR_AB | RCR_AM ) );
     nic_wr( NE_IMR, imr );
 }
 
@@ -218,7 +218,7 @@ static int probe_isr( void )
 
 static void probe_wait( void )
 {
-    u32 start = net_ticks();
+    uint32_t start = net_ticks();
 
     while ( net_probe_hit == NIC_NOIRQ && net_ticks() - start < PROBE_TICKS ) ;
 }
@@ -231,7 +231,7 @@ static void probe_wait( void )
    in internal loopback: its end is held as an interrupt like any other */
 static void find_line( void )
 {
-    u8 *frame;
+    uint8_t *frame;
 
     net_probe_isr = probe_isr;
     net_irq_probe_begin();
@@ -263,11 +263,11 @@ static void find_line( void )
 int card_find( void )
 {
     int i;
-    u8 msr, high;
+    uint8_t msr, high;
 
     net_strcpy( net_name, "WD8003/WD8013" );
     if ( net_opt_port ) {
-        net_port = (u16)net_opt_port;
+        net_port = (uint16_t)net_opt_port;
         if ( !wd_probe() ) return 1;
     } else {
         for ( i = 0; wd_ports[i]; i++ ) {
@@ -277,10 +277,10 @@ int card_find( void )
         if ( !wd_ports[i] ) return 1;
     }
 
-    word = (u8)wd_is16();
+    word = (unsigned char)wd_is16();
     ramsize = word ? 0x4000 : 0x2000;
     net_bus = NICB_ISA;
-    net_flags = (u8)( word ? NICF_WORD : 0 );
+    net_flags = (uint8_t)( word ? NICF_WORD : 0 );
 
     /* the window: /M:, or where the board decodes */
     if ( net_opt_mem ) {
@@ -290,9 +290,9 @@ int card_find( void )
         if ( msr == 0 || msr == 0xFF ) {
             membase = 0xD0000L;
         } else {
-            high = (u8)( word ? reg( WD_LAAR ) & 0x1F : 0x01 );
+            high = (uint8_t)( word ? reg( WD_LAAR ) & 0x1F : 0x01 );
             if ( high == 0x1F ) high = 0x01;            /* no register 5 */
-            membase = ( (u32)( msr & 0x3F ) << 13 ) | ( (u32)high << 19 );
+            membase = ( (uint32_t)( msr & 0x3F ) << 13 ) | ( (uint32_t)high << 19 );
         }
     }
     /* a window the board can decode: in upper memory, on a boundary of
@@ -312,14 +312,14 @@ int card_find( void )
 
     /* the line: /I: (2 is 9 on an AT), or found at the load */
     if ( net_opt_irq == 2 ) net_opt_irq = 9;
-    if ( reg( WD_ID ) & ID_SOFTCFG ) setreg( WD_IRR, (u8)( reg( WD_IRR ) | IRR_IEN ) );
+    if ( reg( WD_ID ) & ID_SOFTCFG ) setreg( WD_IRR, (uint8_t)( reg( WD_IRR ) | IRR_IEN ) );
     if ( net_line && net_opt_irq == NIC_NOIRQ && !net_opt_poll ) find_line();
     return 0;
 }
 
 int card_setup( void )
 {
-    chip_init( 0, (u8)( net_flags & NICF_POLLED ? 0 : IMR_WANTED ) );
+    chip_init( 0, (uint8_t)( net_flags & NICF_POLLED ? 0 : IMR_WANTED ) );
     return 0;
 }
 
@@ -328,13 +328,13 @@ void card_stop( void )
     nic_wr( NE_CR, CR_PAGE0 | CR_RD2 | CR_STP );
     nic_wr( NE_IMR, 0 );
     nic_wr( NE_ISR, 0xFF );
-    setreg( WD_MSR, (u8)( ( membase >> 13 ) & 0x3F ) );     /* window off */
+    setreg( WD_MSR, (uint8_t)( ( membase >> 13 ) & 0x3F ) ); /* window off */
 }
 
-int card_send( const u8 *frame, u32 len )
+int card_send( const uint8_t *frame, unsigned int len )
 {
-    u32 n;
-    u8 *dst = page_at( tx_page );
+    unsigned int n;
+    uint8_t *dst = page_at( tx_page );
 
     for ( n = 0; n < SPIN_TXP; n++ ) {
         if ( !( nic_rd( NE_CR ) & CR_TXP ) ) break;
@@ -343,8 +343,8 @@ int card_send( const u8 *frame, u32 len )
     net_memcpy( dst, frame, len );
     if ( len < 60 ) { net_memzero( dst + len, 60 - len ); len = 60; }
     nic_wr( NE_TPSR, tx_page );
-    nic_wr( NE_TBCR0, (u8)len );
-    nic_wr( NE_TBCR1, (u8)( len >> 8 ) );
+    nic_wr( NE_TBCR0, (uint8_t)len );
+    nic_wr( NE_TBCR1, (uint8_t)( len >> 8 ) );
     nic_wr( NE_CR, CR_PAGE0 | CR_RD2 | CR_TXP | CR_STA );
     return 1;
 }
@@ -352,23 +352,23 @@ int card_send( const u8 *frame, u32 len )
 /* the ring emptied into the queue: the next frame is at BNRY + 1 */
 static void rx_drain( void )
 {
-    u8  curr, bnry, next, page;
-    u8 *hdr;
-    u32 count, len, n, off, end, first;
-    u8 *slot;
+    uint8_t  curr, bnry, next, page;
+    uint8_t *hdr;
+    unsigned int count, len, n, off, end, first;
+    uint8_t *slot;
 
     for ( n = 0; n < 64; n++ ) {
         nic_wr( NE_CR, CR_PAGE1 | CR_RD2 | CR_STA );
         curr = nic_rd( NE_CURR );
         nic_wr( NE_CR, CR_PAGE0 | CR_RD2 | CR_STA );
         bnry = nic_rd( NE_BNRY );
-        page = (u8)( bnry + 1 );
+        page = (uint8_t)( bnry + 1 );
         if ( page >= rx_stop ) page = rx_start;
         if ( page == curr ) break;
 
         hdr = page_at( page );
         next = hdr[1];
-        count = (u16)( hdr[2] | ( hdr[3] << 8 ) );
+        count = (uint16_t)( hdr[2] | ( hdr[3] << 8 ) );
         /* a frame that is whole, of a length a frame can have, whose
            next page is in the ring: anything else is a ring the chip
            lost hold of, and it is started again empty */
@@ -378,33 +378,33 @@ static void rx_drain( void )
             nic_wr( NE_CR, CR_PAGE0 | CR_RD2 | CR_STP );
             nic_wr( NE_BNRY, rx_start );
             nic_wr( NE_CR, CR_PAGE1 | CR_RD2 | CR_STP );
-            nic_wr( NE_CURR, (u8)( rx_start + 1 ) );
+            nic_wr( NE_CURR, (uint8_t)( rx_start + 1 ) );
             nic_wr( NE_CR, CR_PAGE0 | CR_RD2 | CR_STA );
             break;
         }
         len = count - 4;
         if ( len > NIC_MAXFRAME ) len = NIC_MAXFRAME;   /* the CRC, on a real chip */
         slot = net_rx_begin();
-        off = ( (u32)page << 8 ) + 4;
+        off = ( (uint32_t)page << 8 ) + 4;
         /* a frame that runs off the end of the ring goes on at rx_start */
-        end = (u32)rx_stop << 8;
+        end = (uint32_t)rx_stop << 8;
         first = end - off;
         if ( len > first ) {
-            net_memcpy( slot, (u8 *)( win + off ), first );
-            net_memcpy( slot + first, (u8 *)( win + ( (u32)rx_start << 8 ) ), len - first );
+            net_memcpy( slot, (uint8_t *)( win + off ), first );
+            net_memcpy( slot + first, (uint8_t *)( win + ( (uint32_t)rx_start << 8 ) ), len - first );
         } else {
-            net_memcpy( slot, (u8 *)( win + off ), len );
+            net_memcpy( slot, (uint8_t *)( win + off ), len );
         }
         net_rx_commit( len );
-        nic_wr( NE_BNRY, (u8)( next == rx_start ? rx_stop - 1 : next - 1 ) );
+        nic_wr( NE_BNRY, (uint8_t)( next == rx_start ? rx_stop - 1 : next - 1 ) );
     }
 }
 
 int card_service( void )
 {
-    u8  isr;
-    u32 n;
-    int mine = 0;
+    uint8_t  isr;
+    unsigned int n;
+    int      mine = 0;
 
     for ( n = 0; n < 8; n++ ) {
         nic_wr( NE_CR, CR_PAGE0 | CR_RD2 | CR_STA );

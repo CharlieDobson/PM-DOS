@@ -92,8 +92,8 @@ const char *scheme_name( int index )
 
 void scheme_fill( int index, int graphics, PALETTE *out )
 {
-    u8 *attr = (u8 *)out;
-    u32 at;
+    uint8_t *attr = (uint8_t *)out;
+    unsigned int at;
     int strong;
 
     if ( index < 0 || index >= NSCHEMES ) {
@@ -103,10 +103,10 @@ void scheme_fill( int index, int graphics, PALETTE *out )
     strong = schemes[index].strong;
     for ( at = 0; strong && at < sizeof( PALETTE ); at++ ) {
         if ( (attr[at] & 0xF0) == 0x10 ) {
-            attr[at] = (u8)((attr[at] & 0x0F) | (strong << 4));
+            attr[at] = (uint8_t)((attr[at] & 0x0F) | (strong << 4));
         }
         if ( (attr[at] & 0x0F) == 0x01 ) {
-            attr[at] = (u8)((attr[at] & 0xF0) | strong);
+            attr[at] = (uint8_t)((attr[at] & 0xF0) | strong);
         }
     }
 }
@@ -387,7 +387,7 @@ void dlg_colors( void )
 /* Options: Show Information                                           */
 /* ------------------------------------------------------------------ */
 
-static void info_pair( char *buf, u32 max, const char *label, const char *value )
+static void info_pair( char *buf, unsigned int max, const char *label, const char *value )
 {
     str_fit( buf, label, max );
     str_catn( buf, value, max );
@@ -395,7 +395,7 @@ static void info_pair( char *buf, u32 max, const char *label, const char *value 
 
 /* Line "line" of what there is to say about the file the keys are on,
    the selection, its directory and the disk.  0 past the last line. */
-int info_line( FWIN *win, int line, char *buf, u32 max )
+int info_line( FWIN *win, int line, char *buf, unsigned int max )
 {
     char num[24], attrs[8];
     FENT *ent = win->files.count ? &win->files.ent[win->cur] : NULL;
@@ -426,7 +426,7 @@ int info_line( FWIN *win, int line, char *buf, u32 max )
         return 1;
     case 4:
         info_pair( buf, max, "  Number : ",
-                   fmt_num( (u32)(win->files.nsel + kept_count()), 0, num ) );
+                   fmt_num( (unsigned int)(win->files.nsel + kept_count()), 0, num ) );
         return 1;
     case 5:
         info_pair( buf, max, "  Size   : ", big_fmt( &win->files.selected, num ) );
@@ -453,7 +453,7 @@ int info_line( FWIN *win, int line, char *buf, u32 max )
         if ( line == 8 ) {
             info_pair( buf, max, "  Size   : ", big_fmt( &sum, num ) );
         } else {
-            info_pair( buf, max, "  Files  : ", fmt_num( (u32)count, 0, num ) );
+            info_pair( buf, max, "  Files  : ", fmt_num( (unsigned int)count, 0, num ) );
         }
         return 1;
     case 10:
@@ -473,7 +473,7 @@ int info_line( FWIN *win, int line, char *buf, u32 max )
         info_pair( buf, max, "  Avail  : ", big_fmt( &sum, num ) );
         return 1;
     case 14:
-        info_pair( buf, max, "  Dirs   : ", fmt_num( (u32)win->tree->count - 1, 0, num ) );
+        info_pair( buf, max, "  Dirs   : ", fmt_num( (unsigned int)win->tree->count - 1, 0, num ) );
         return 1;
     }
     return 0;
@@ -617,7 +617,7 @@ void dlg_associate( void )
         for ( len = 0; cur[len] && cur[len] != ' ' && cur[len] != ','; len++ ) {
         }
         if ( len && len < (int)sizeof( ext ) ) {
-            mem_cpy( ext, cur, (u32)len );
+            mem_cpy( ext, cur, (unsigned int)len );
             ext[len] = 0;
             assoc_set( ext, path );
         }
@@ -635,8 +635,8 @@ void dlg_about( void )
 
     sys_version( &major, &minor );
     str_cpy( text, "PM-DOS Shell\n\nFiles, directories and programs\nin lists and menus.\n\nPM-DOS version " );
-    str_catn( text, fmt_dec( (u32)major, 0, num ), sizeof( text ) );
+    str_catn( text, fmt_dec( (unsigned int)major, 0, num ), sizeof( text ) );
     str_catn( text, ".", sizeof( text ) );
-    str_catn( text, fmt_dec2( (u32)minor, num ), sizeof( text ) );
+    str_catn( text, fmt_dec2( (unsigned int)minor, num ), sizeof( text ) );
     msg_text( "About Shell", text, MB_OK, HELP_INDEX );
 }

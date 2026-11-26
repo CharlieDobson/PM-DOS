@@ -82,7 +82,7 @@ void popup_place( POPUP *pop, int row, int col, int end_row, int end_col )
 static int popup_save( POPUP *pop )
 {
     RECT box = pop->at;
-    u32 want;
+    unsigned want;
 
     if ( pop->shadow ) {
         box.end_row += 1;
@@ -97,7 +97,7 @@ static int popup_save( POPUP *pop )
     if ( box.end_row < box.row || box.end_col < box.col ) {
         return 0;
     }
-    want = (u32)(box.end_row - box.row + 1) * (u32)(box.end_col - box.col + 1);
+    want = (unsigned)(box.end_row - box.row + 1) * (unsigned)(box.end_col - box.col + 1);
     if ( want > pop->save_cells ) {
         CELL *grown = (CELL *)malloc( want * sizeof( CELL ) );
 
@@ -291,8 +291,8 @@ static void dlg_hotkeys( const char *const *labels, int count, char *keys )
             if ( at > 0 && labels[one][at - 1] != ' ' ) {
                 continue;
             }
-            ch = (char)toupper( (u8)labels[one][at] );
-            if ( !isalnum( (u8)ch ) ) {
+            ch = (char)toupper( (unsigned char)labels[one][at] );
+            if ( !isalnum( (unsigned char)ch ) ) {
                 continue;
             }
             for ( prev = 0; prev < nused && used[prev] != ch; prev++ ) {
@@ -302,8 +302,8 @@ static void dlg_hotkeys( const char *const *labels, int count, char *keys )
             }
         }
         for ( at = 0; labels[one][at] && !keys[one]; at++ ) {
-            ch = (char)toupper( (u8)labels[one][at] );
-            if ( !isalnum( (u8)ch ) ) {
+            ch = (char)toupper( (unsigned char)labels[one][at] );
+            if ( !isalnum( (unsigned char)ch ) ) {
                 continue;
             }
             for ( prev = 0; prev < nused && used[prev] != ch; prev++ ) {
@@ -516,7 +516,7 @@ void crit_install( void )
     REGS regs;
 
     xa_clear( &regs );
-    regs.edx = (u32)crit_handler;
+    regs.edx = (uint32_t)crit_handler;
     xa_dos( &regs, 0x2524 );
 }
 

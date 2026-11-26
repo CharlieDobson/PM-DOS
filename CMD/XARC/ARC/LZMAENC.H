@@ -34,17 +34,17 @@
  * input has ended.  A short read is not the end - only 0 is.  A reader that
  * hits an error keeps its own note of it and returns 0: the encoder finishes
  * a stream the caller then throws away. */
-typedef UInt32 (*LzmaEncRead)( void *user, Byte *buf, UInt32 len );
+typedef uint32_t (*LzmaEncRead)( void *user, uint8_t *buf, uint32_t len );
 
 /* Where compressed bytes go.  Return 0 to stop (SZ_ERR_WRITE). */
-typedef int (*LzmaEncWrite)( void *user, const Byte *data, UInt32 len );
+typedef int (*LzmaEncWrite)( void *user, const uint8_t *data, uint32_t len );
 
 /* Called every 64 KB or so of input, with the running totals.  Return 0 to
  * cancel (SZ_ERR_CANCEL).  May be NULL. */
-typedef int (*LzmaEncProgress)( void *user, UInt32 inDone, UInt32 outDone );
+typedef int (*LzmaEncProgress)( void *user, uint32_t inDone, uint32_t outDone );
 
 typedef struct {
-    UInt32 dictSize;        /* 64 KB .. 64 MB                              */
+    uint32_t dictSize;      /* 64 KB .. 64 MB                              */
     unsigned lc, lp, pb;    /* 3, 0, 2 - the defaults everything uses       */
     unsigned fastBytes;     /* 5 .. 273: a match this long is taken at once */
     unsigned cutValue;      /* how many tree nodes a search may visit       */
@@ -52,18 +52,18 @@ typedef struct {
 
 /* The defaults XArchive writes with: lc3 lp0 pb2, 64 fast bytes, cut 48 -
  * what 7-Zip uses for its two highest levels. */
-void   LzmaEncPropsInit( LzmaEncProps *p, UInt32 dictSize );
+void   LzmaEncPropsInit( LzmaEncProps *p, uint32_t dictSize );
 
 /* The five property bytes a 7z LZMA coder record carries. */
-void   LzmaEncPropsBytes( const LzmaEncProps *p, Byte out[5] );
+void   LzmaEncPropsBytes( const LzmaEncProps *p, uint8_t out[5] );
 
 /* The one property byte a 7z LZMA2 coder record carries: the dictionary size
  * rounded up to the next one LZMA2 can name (two or three times a power of
  * two, so a power of two goes in exactly). */
-Byte   Lzma2EncPropByte( const LzmaEncProps *p );
+uint8_t Lzma2EncPropByte( const LzmaEncProps *p );
 
 /* Bytes the encoder allocates for this dictionary, give or take a few KB. */
-UInt32 LzmaEncMemNeeded( UInt32 dictSize );
+uint32_t LzmaEncMemNeeded( uint32_t dictSize );
 
 /* Compress everything 'read' supplies.  *inTotal / *outTotal receive the
  * byte counts (either may be NULL).  Returns SZ_OK, SZ_ERR_MEMORY,
@@ -74,7 +74,7 @@ int    LzmaEncode( const LzmaEncProps *props,
                    LzmaEncRead read, void *readUser,
                    LzmaEncWrite write, void *writeUser,
                    LzmaEncProgress prog, void *progUser,
-                   UInt32 *inTotal, UInt32 *outTotal );
+                   uint32_t *inTotal, uint32_t *outTotal );
 
 /* The same, framed as LZMA2 - what 7-Zip has written by default since 9.x
  * and what the archive writer uses for its folders.  The coded steps are
@@ -89,6 +89,6 @@ int    Lzma2Encode( const LzmaEncProps *props,
                     LzmaEncRead read, void *readUser,
                     LzmaEncWrite write, void *writeUser,
                     LzmaEncProgress prog, void *progUser,
-                    UInt32 *inTotal, UInt32 *outTotal );
+                    uint32_t *inTotal, uint32_t *outTotal );
 
 #endif /* LZMAENC_H */

@@ -164,12 +164,18 @@ CC_BIGXFER      EQU     17
 ; is the line between that and taking memory somebody is about to.
 CC_RESERVE      EQU     00100000h       ; one megabyte
 
-; Cache drive ids.  0-1 and 80h-81h are BIOS drive numbers and E0h
-; upwards are DEVLOAD's pseudo-drives; this is the range for ATAPI
-; units, which have no drive number of their own by design and so are
-; given one no BIOS and no driver can collide with.
+; Cache drive ids.  0-1 and 80h-87h are BIOS drive numbers, 88h-8Bh
+; the USB units, and E0h upwards are DEVLOAD's pseudo-drives; this is
+; the range for ATAPI units, which have no drive number of their own by
+; design and so are given one no BIOS and no driver can collide with.
 CC_CDBASE       EQU     0F0h
-CC_UNITS        EQU     32              ; rows in cache_drvst
+
+; The rows of cache_drvst, a range of ids at a time (cache_unitof)
+CCR_HD          EQU     2                       ; 80h-87h, the hard disks
+CCR_DL          EQU     CCR_HD + MAX_PHYS       ; E0h-EFh, driver units
+CCR_CD          EQU     CCR_DL + 16             ; F0h-F7h, ATAPI units
+CCR_USB         EQU     CCR_CD + CDU_MAX        ; 88h-8Bh, USB disks
+CC_UNITS        EQU     CCR_USB + USB_MAXUNITS  ; rows in cache_drvst
 
 ; Defaults, worked out from the size of the arena.  A machine with
 ; less than CC_ARENAMIN of it gets no cache at all: the whole point is
@@ -969,8 +975,8 @@ cache_mode:
         jb      cmo_read                        ; a floppy
         cmp     al,80h
         jb      cmo_no                          ; 02h-7Fh is nothing
-        cmp     al,82h
-        jb      cmo_fixed                       ; the two hard disks
+        cmp     al,USB_DRV0
+        jb      cmo_fixed                       ; the hard disks, 80h-87h
         jmp     short cmo_read                  ; a driver unit or an ATAPI
                                                 ; one, both read-only
 cmo_fixed:
@@ -998,13 +1004,16 @@ cmo_no:
 ;                CF set if it has none.  Preserves everything else.
 ;
 ;   0,1        -> 0,1        floppies
-;   80h,81h    -> 2,3        hard disks
-;   E0h..EFh   -> 4..19      loaded block driver units
-;   F0h..F7h   -> 20..27     ATAPI units
-;   82h..85h   -> 28..31     USB disks, which are read-cached like the
+;   80h..87h   -> 2..9       hard disks                     CCR_HD
+;   E0h..EFh   -> 10..25     loaded block driver units      CCR_DL
+;   F0h..F7h   -> 26..33     ATAPI units                    CCR_CD
+;   88h..8Bh   -> 34..37     USB disks, which are read-cached like the
 ;                            ATAPI units and forgotten at every commit
 ;                            like the floppies: a stick is pulled out
 ;                            between two commands, and nothing says so
+;
+; Each range is bounded on both sides.  An ATAPI id past F7h used to
+; land in the USB rows, which followed the ATAPI ones.
 ;---------------------------------------------------------------------
 cache_unitof:
         movzx   ebx,al
@@ -1012,24 +1021,26 @@ cache_unitof:
         jb      cuo_ok
         cmp     bl,80h
         jb      cuo_no
-        cmp     bl,82h
+        cmp     bl,USB_DRV0
         jae     cuo_hi
-        sub     ebx,80h - 2
+        sub     ebx,80h - CCR_HD
         jmp     short cuo_ok
 cuo_hi:
         cmp     bl,USB_DRV0 + USB_MAXUNITS
         jae     cuo_hi2
-        sub     ebx,USB_DRV0 - 28       ; the USB units: rows 28 to 31
+        sub     ebx,USB_DRV0 - CCR_USB
         jmp     short cuo_ok
 cuo_hi2:
         cmp     bl,DL_UNIT_BASE
         jb      cuo_no
         cmp     bl,CC_CDBASE
         jae     cuo_cd
-        sub     ebx,DL_UNIT_BASE - 4
+        sub     ebx,DL_UNIT_BASE - CCR_DL
         jmp     short cuo_ok
 cuo_cd:
-        sub     ebx,CC_CDBASE - 20
+        cmp     bl,CC_CDBASE + CDU_MAX
+        jae     cuo_no
+        sub     ebx,CC_CDBASE - CCR_CD
 cuo_ok:
         cmp     ebx,CC_UNITS
         jae     cuo_no

@@ -31,7 +31,7 @@ static void to_regs( DRX *regs )
 
 static void from_regs( const DRX *regs )
 {
-    u32 limit = cpu.limit;
+    uint32_t limit = cpu.limit;
     cpu = *regs;
     if ( regs->vec != DRX_NOVEC && regs->limit == 0 ) {
         cpu.limit = limit;              /* a trap left the old one */
@@ -110,11 +110,11 @@ static int go_once( DRX *regs, int *ended )
 
 void cmd_go( void )
 {
-    DRX  regs;
-    ADDR start, bp[MAX_BP];
-    u8   saved[MAX_BP];
-    int  nbp = 0, i, ended, refused;
-    u8   cc = 0xCC;
+    DRX     regs;
+    ADDR    start, bp[MAX_BP];
+    uint8_t saved[MAX_BP];
+    int     nbp = 0, i, ended, refused;
+    uint8_t cc = 0xCC;
 
     if ( !runnable() ) {
         return;
@@ -185,11 +185,11 @@ static int trace_flag_step( DRX *regs, int *ended )
 /* step OVER the instruction at EIP with a breakpoint on the one after
    it, run without the trace flag.  Returns 0 and *ended if it never
    comes back (the instruction ended the program or jumped away). */
-static int step_over( DRX *regs, u32 len, int *ended )
+static int step_over( DRX *regs, uint32_t len, int *ended )
 {
-    u8  cc = 0xCC, saved;
-    u32 after = regs->eip + len;
-    int stopped, refused;
+    uint8_t  cc = 0xCC, saved;
+    uint32_t after = regs->eip + len;
+    int      stopped, refused;
 
     if ( sys_dbg_read( after, &saved, 1 ) ) {
         return trace_flag_step( regs, ended );      /* cannot plant it */
@@ -218,11 +218,11 @@ static int step_over( DRX *regs, u32 len, int *ended )
    would clear TF on the way in and stop a whole instruction late. */
 static int one_step( DRX *regs, int over, int *ended )
 {
-    u8      code[DIS_MAX];
+    uint8_t code[DIS_MAX];
     DISASM  dis;
     ADDR    at;
 
-    at.seg = (u16)regs->cs;
+    at.seg = (uint16_t)regs->cs;
     at.off = regs->eip;
     mem_read( at, code, DIS_MAX );
     disasm( at, code, 1, &dis );
@@ -235,10 +235,10 @@ static int one_step( DRX *regs, int over, int *ended )
 
 void cmd_trace( int proceed )
 {
-    DRX  regs;
-    ADDR start;
-    u32  count = 1;
-    int  ended;
+    DRX      regs;
+    ADDR     start;
+    uint32_t count = 1;
+    int      ended;
 
     if ( !runnable() ) {
         return;

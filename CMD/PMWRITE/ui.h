@@ -64,45 +64,45 @@ extern void (*ui_help)( const char *topic );
 typedef struct {
     /* cells: attributes (text colour in the low half, background in
        the high half) */
-    u8 desk;            /* the screen where nothing else is */
-    u8 title;           /* a title bar: the program's, a dialog's on a graphics screen */
-    u8 menu;            /* the menu bar and menus */
-    u8 menu_hot;        /* an access key in them */
-    u8 menu_sel;        /* the lit title or line */
-    u8 menu_sel_hot;
-    u8 menu_off;        /* a line that cannot be chosen now */
-    u8 status;          /* the status bar */
-    u8 status_hot;      /* something that stands out in it */
-    u8 dlg;             /* a dialog box and the words in it */
-    u8 dlg_hot;         /* an access key */
-    u8 dlg_off;         /* a control that is switched off */
-    u8 field;           /* an entry field, a drop-down list closed */
-    u8 field_sel;       /* the text offered in a field, which typing replaces */
-    u8 list;            /* a list's entries */
-    u8 select;          /* the chosen entry */
-    u8 button;
-    u8 button_hot;      /* the brackets of the button Enter presses, on a text screen */
-    u8 scroll;          /* a scroll bar */
-    u8 thumb;           /* the box in it */
-    u8 shadow;          /* what a box's shadow makes of what is under it */
-    u8 text;            /* a text screen's document */
-    u8 text_sel;        /* ...selected */
-    u8 ribbon;          /* a text screen's line of formatting, under the menu bar */
-    u8 ribbon_hot;      /* what is switched on in it */
+    uint8_t desk;           /* the screen where nothing else is */
+    uint8_t title;          /* a title bar: the program's, a dialog's on a graphics screen */
+    uint8_t menu;           /* the menu bar and menus */
+    uint8_t menu_hot;       /* an access key in them */
+    uint8_t menu_sel;       /* the lit title or line */
+    uint8_t menu_sel_hot;
+    uint8_t menu_off;       /* a line that cannot be chosen now */
+    uint8_t status;         /* the status bar */
+    uint8_t status_hot;     /* something that stands out in it */
+    uint8_t dlg;            /* a dialog box and the words in it */
+    uint8_t dlg_hot;        /* an access key */
+    uint8_t dlg_off;        /* a control that is switched off */
+    uint8_t field;          /* an entry field, a drop-down list closed */
+    uint8_t field_sel;      /* the text offered in a field, which typing replaces */
+    uint8_t list;           /* a list's entries */
+    uint8_t select;         /* the chosen entry */
+    uint8_t button;
+    uint8_t button_hot;     /* the brackets of the button Enter presses, on a text screen */
+    uint8_t scroll;         /* a scroll bar */
+    uint8_t thumb;          /* the box in it */
+    uint8_t shadow;         /* what a box's shadow makes of what is under it */
+    uint8_t text;           /* a text screen's document */
+    uint8_t text_sel;       /* ...selected */
+    uint8_t ribbon;         /* a text screen's line of formatting, under the menu bar */
+    uint8_t ribbon_hot;     /* what is switched on in it */
     /* how things are drawn */
-    u8 shadows;         /* 1: menus and dialogs cast a shadow */
-    u8 brackets;        /* 1: a field is [in brackets], a button <in angle ones> */
-    u8 fill;            /* the character in the unused part of a field */
+    uint8_t shadows;        /* 1: menus and dialogs cast a shadow */
+    uint8_t brackets;       /* 1: a field is [in brackets], a button <in angle ones> */
+    uint8_t fill;           /* the character in the unused part of a field */
     /* pixels: pixel numbers for what the application paints in panes */
-    u8 px_face;         /* a toolbar's and a ruler's surface */
-    u8 px_light;        /* the lit edge of something raised */
-    u8 px_shade;        /* its shaded edge */
-    u8 px_frame;        /* an outline */
-    u8 px_desk;         /* behind the page */
-    u8 px_page;         /* the page */
-    u8 px_ink;          /* writing on it */
-    u8 px_select;       /* behind selected writing */
-    u8 px_select_ink;   /* selected writing */
+    uint8_t px_face;        /* a toolbar's and a ruler's surface */
+    uint8_t px_light;       /* the lit edge of something raised */
+    uint8_t px_shade;       /* its shaded edge */
+    uint8_t px_frame;       /* an outline */
+    uint8_t px_desk;        /* behind the page */
+    uint8_t px_page;        /* the page */
+    uint8_t px_ink;         /* writing on it */
+    uint8_t px_select;      /* behind selected writing */
+    uint8_t px_select_ink;  /* selected writing */
 } PALETTE;
 
 extern PALETTE pal;

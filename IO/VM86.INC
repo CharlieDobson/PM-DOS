@@ -165,6 +165,37 @@ v86_run:
         mov     ebx,12                          ; a stack fault, as it would
         ret                                     ; have been on its first PUSH
 vr_stkok:
+IFDEF V86_TCOUNT
+        inc     dword ptr ds:[tc_run]
+ENDIF
+        mov     dword ptr ds:[v86_stkpg],-1     ; a new context: no stack
+                                                ; page is known good (vgf_stk)
+
+        ; UNDER VME THE PROCESSOR READS THE TRAP BITMAP ITSELF: the 32
+        ; bytes below the I/O bitmap say, a bit a vector, which INT n go
+        ; straight to the box's own vector table and which fault to the
+        ; monitor - the same thing V86C_TRAP says, the same way round.
+        ; ...unless this processor's own INT is not to be trusted with
+        ; the box's flag (VMES_NOINT): then every bit is set, and every
+        ; INT n faults to the monitor as it does without VME.
+        cmp     byte ptr ds:[v86_vme],0
+        je      vr_noredir
+        push    eax
+        push    ecx
+        xor     ecx,ecx
+vr_redir:
+        mov     eax,[esi+V86C_TRAP+ecx*4]
+        cmp     byte ptr ds:[v86_vmestat],VMES_NOINT
+        jne     vr_redir1
+        or      eax,-1
+vr_redir1:
+        mov     dword ptr ds:[TSS_BASE+TSS_REDIR+ecx*4],eax
+        inc     ecx
+        cmp     ecx,8
+        jb      vr_redir
+        pop     ecx
+        pop     eax
+vr_noredir:
 
         ; IRET WITH NT SET IS A TASK SWITCH, not a return.  The CPU
         ; follows the back-link field at the front of the current TSS,
@@ -284,10 +315,15 @@ vr_go:
         push    dword ptr [esi+V86C_ESP]
 
         ; VM to get there, IF because the guest never really runs with
-        ; interrupts off, IOPL 0 so that everything interesting faults.
+        ; interrupts off, IOPL 0 so that everything interesting faults -
+        ; and under VME its own flag as VIF, and VIP if one is owed.
         mov     eax,[esi+V86C_FLAGS]
         and     eax,V86_UFLAGS
         or      eax,EFL_VM OR EFL_IF OR 2
+        cmp     byte ptr ds:[v86_vme],0
+        je      vr_novme
+        call    v86_vmeflags
+vr_novme:
         push    eax
 
         push    dword ptr [esi+V86C_CS]
@@ -516,6 +552,8 @@ v86_fault:
         ; program that calls INT 21h in the middle of a string copy is
         ; not exotic; it is a REP MOVSB with a CALL in the loop.
         cld
+        call    v86_vmein               ; under VME the box's flag is in the
+                                        ; frame, not in v86_vif
 IFDEF V86_WATCH
         mov     dword ptr ds:[v86_wtick],0      ; the guest is still asking
 ENDIF
@@ -682,6 +720,9 @@ vc_skip:
         popad
 ENDIF
 
+IFDEF V86_TCOUNT
+        call    tc_fault                ; what it was, before anything moves
+ENDIF
         ; A STACK THE GUEST COULD NOT WRITE ITSELF ENDS IT HERE, before
         ; the monitor or the DOS side pushes anything on it for it - see
         ; v86_stkok.  Reported as the stack fault its own first PUSH
@@ -1766,6 +1807,9 @@ vio_outw:
 ; because the real gate is not where the guest thinks it is.
 ;---------------------------------------------------------------------
 vio_in:
+IFDEF V86_TCOUNT
+        call    tc_port
+ENDIF
 IFDEF V86_KBIO
         call    vio_in1
         call    vio_traceI
@@ -1893,6 +1937,9 @@ vio_i64out:
 ; vio_out - DX = port, AL = the byte.
 ;---------------------------------------------------------------------
 vio_out:
+IFDEF V86_TCOUNT
+        call    tc_port
+ENDIF
 IFDEF V86_KBIO
         call    vio_trace
 ENDIF
@@ -2496,6 +2543,12 @@ vbk_no:
 ;---------------------------------------------------------------------
 v86_ckkbd:
         pushad
+IFDEF V86_TCOUNT
+        mov     eax,[ebp+FR_EIP]        ; where the guest goes if nothing is
+        mov     dword ptr ds:[tc_ckip],eax      ; delivered, so that vck_out
+        mov     eax,[ebp+FR_CS]                 ; can tell whether something
+        mov     dword ptr ds:[tc_ckcs],eax      ; was
+ENDIF
         ; A BREAKPOINT OF THE BOX'S THAT WENT OFF UNDER THE MONITOR comes
         ; first, and whatever the box's interrupt flag says: it is a
         ; trap, and the processor would have taken it before anything
@@ -2545,6 +2598,17 @@ vck_mouse:
         jc      vck_out
         call    v86_deliverto
 vck_out:
+IFDEF V86_TCOUNT
+        mov     eax,[ebp+FR_EIP]
+        cmp     eax,dword ptr ds:[tc_ckip]
+        jne     vck_tcdlv
+        mov     eax,[ebp+FR_CS]
+        cmp     eax,dword ptr ds:[tc_ckcs]
+        je      vck_tcno
+vck_tcdlv:
+        inc     dword ptr ds:[tc_dlv]
+vck_tcno:
+ENDIF
         popad
         ret
 
@@ -2563,6 +2627,23 @@ v86_irqexit:
         je      vix_no
         test    dword ptr [ebp+FR_FLAGS],EFL_VM
         jz      vix_no                  ; ring 0: the monitor, not the guest
+IFDEF V86_TCOUNT
+        inc     dword ptr ds:[tc_irq]
+ENDIF
+        call    v86_vmein               ; the box's flag as it left it
+IFDEF V86_FAST
+        ; NOTHING TO DELIVER, NOTHING TO CHECK.  With its flag off a box
+        ; can be given only a breakpoint of its own, and with it on only
+        ; what v86_owed says may be there - so most interrupts go back
+        ; to the box without the stack check or v86_ckkbd.
+        cmp     byte ptr ds:[vbp_owed],0
+        jne     vix_look
+        cmp     byte ptr ds:[v86_vif],0
+        je      vix_done
+        call    v86_owed
+        jnc     vix_done
+vix_look:
+ENDIF
         push    eax                     ; and nothing goes onto a stack
         push    edx                     ; the guest could not write itself
         mov     eax,[ebp+FR_SS]         ; - it has not trapped, so nobody
@@ -2570,8 +2651,11 @@ v86_irqexit:
         call    v86_stkok               ; trap ends it.
         pop     edx
         pop     eax
-        jc      vix_no
+        jc      vix_done
         call    v86_ckkbd
+vix_done:
+        call    v86_vmeout              ; ...and back, with VIP if this
+                                        ; interrupt left it something owed
 vix_no:
         ret
 
@@ -3011,9 +3095,785 @@ v86_resume:
         call    v86_ckkbd               ; EBP still points at the frame, and
                                         ; this is the only door back into the
                                         ; guest that a fault can leave by
+        call    v86_vmeout              ; ...and under VME, the box's flag
+                                        ; goes back into the frame
         popad
         add     esp,8                   ; the vector and error code
         iretd
+
+IFDEF V86_FAST
+;=====================================================================
+; v86_gpfast - a #GP out of a box, straight from its gate (exc13), before
+;              exc_common has done anything.
+;
+; THE SIX INSTRUCTIONS A BOX TRAPS ON ALL DAY are CLI, STI, PUSHF, POPF,
+; IRET and INT, and the box runs at IOPL 0 so that they trap: that is
+; how its interrupt flag is kept virtual.  Through exc_common and
+; v86_fault each of them cost about 150 instructions - four segment
+; registers loaded, two PUSHADs, a walk of the page tables for a stack
+; CLI never touches, a prefix loop, a chain of compares, and four
+; "is anything owed" calls on the way out.  The processor's own share
+; of the trap cannot be made smaller; that share can.
+;
+; So the unprefixed forms of the six are done here, in a dozen or two
+; instructions each, and so are the byte forms of IN and OUT to the
+; ports the kernel stands in for - the EOI every interrupt handler
+; sends is one - with the same frame exc_common would have built: the
+; vector pushed, then PUSHAD.  Anything else goes on to exc_common
+; exactly as it always has: the 66h forms, INT to a vector the caller
+; claimed, INT 3, INTO, HLT, the word forms of IN and OUT, the 0Fh
+; group, and a stack this cannot vouch for.  None of these is answered
+; here in any way v86_fault would not have answered it.
+;
+; DS IS THE ONLY SEGMENT REGISTER LOADED.  A trap out of V86 arrives
+; with all four null, and the IRETD back loads all four from the frame,
+; so only what this code reads through needs one.  It uses no string
+; instructions, so the guest's direction flag does not matter either.
+;
+; THE STACK IS CHECKED BY THE PAGE, NOT BY THE TRAP.  What v86_stkok
+; protects is the monitor's own writes, which are ring 0 and go
+; through a read-only page: here the bytes a PUSHF, POPF, IRET or INT
+; touch must lie on one page the page tables say a box may write, and
+; the last page found good is kept (v86_stkpg).  Every routine that
+; changes the page tables forgets it, and so does v86_run.  CLI and STI
+; touch no stack and are not checked at all; a stack nobody can write
+; is the box's own business until something writes to it.
+;
+; AND NOTHING IS DELIVERED UNLESS SOMETHING MAY BE OWED (v86_owed).  The
+; only things this changes that can let an interrupt in are the
+; virtual flag going on and a breakpoint of the box's going off under
+; it, so those are the two looked at on the way out, and only then is
+; v86_ckkbd asked - through v86_resume, as from any other trap.
+;=====================================================================
+v86_gpfast:
+        ; WHOSE IS IT, asked with two registers and before any frame is
+        ; built, because under VME (below) most of what still traps is
+        ; not one of these and goes straight on to exc_common.
+        push    eax                     ; [esp+8] is the error code, then
+        push    esi                     ; EIP, CS and EFLAGS
+        mov     ax,SEL_DATA32
+        mov     ds,ax
+        inc     dword ptr ds:[v86_gpn]  ; for v86_vmeinit's count
+        movzx   esi,word ptr [esp+16]   ; CS
+        shl     esi,4
+        movzx   eax,word ptr [esp+12]   ; IP
+        add     esi,eax
+        movzx   eax,byte ptr [esi]      ; the opcode, with no prefix before it
+        bt      dword ptr ds:[vgf_ops],eax
+        pop     esi
+        pop     eax
+        push    13                      ; exc_common's frame either way (PUSH
+        jnc     exc_common              ; and POP leave CF alone)
+
+        pushad                          ; and v86_fault's, so that what is not
+        mov     ebp,esp                 ; finished here goes on there as
+        add     ebp,32                  ; though it had never been here
+        call    v86_vmein
+IFDEF V86_TCOUNT
+        call    tc_gp
+ENDIF
+        movzx   esi,word ptr [ebp+FR_CS]
+        shl     esi,4
+        movzx   eax,word ptr [ebp+FR_EIP]
+        add     esi,eax                 ; ESI = the instruction
+        mov     al,byte ptr [esi]
+        cmp     al,0FAh
+        je      vgf_cli
+        cmp     al,0FBh
+        je      vgf_sti
+        cmp     al,0CFh
+        je      vgf_iret
+        cmp     al,9Ch
+        je      vgf_pushf
+        cmp     al,9Dh
+        je      vgf_popf
+        cmp     al,0CDh
+        je      vgf_int
+        cmp     al,0E6h
+        je      vgf_outi
+        cmp     al,0EEh
+        je      vgf_outd
+        cmp     al,0E4h
+        je      vgf_ini
+        jmp     vgf_ind                 ; ECh, the last in vgf_ops
+vgf_slow:
+IFDEF V86_TCOUNT
+        mov     byte ptr ds:[tc_seen],1         ; counted already
+ENDIF
+        popad
+        jmp     exc_common              ; with the 13 still pushed
+
+        ; A BYTE IN OR OUT OF A PORT THE KERNEL STANDS IN FOR - the EOI
+        ; that ends every interrupt a box handles is one.  The same
+        ; vio_in and vio_out the slow path calls, in the same setting:
+        ; they reach the page tables (the A20 gate), and those use
+        ; string instructions, so ES and a clear direction flag too.
+vgf_outi:
+        movzx   edx,byte ptr [esi+1]    ; OUT imm8,AL
+        mov     ecx,2
+        jmp     short vgf_out1
+vgf_outd:
+        movzx   edx,word ptr [ebp+PA_EDX]       ; OUT DX,AL
+        mov     ecx,1
+vgf_out1:
+        call    vgf_env
+        add     word ptr [ebp+FR_EIP],cx
+        mov     al,byte ptr [ebp+PA_EAX]
+        call    vio_out
+        jmp     vgf_out
+vgf_ini:
+        movzx   edx,byte ptr [esi+1]    ; IN AL,imm8
+        mov     ecx,2
+        jmp     short vgf_in1
+vgf_ind:
+        movzx   edx,word ptr [ebp+PA_EDX]       ; IN AL,DX
+        mov     ecx,1
+vgf_in1:
+        call    vgf_env
+        add     word ptr [ebp+FR_EIP],cx
+        call    vio_in
+        mov     byte ptr [ebp+PA_EAX],al
+        jmp     vgf_out
+
+vgf_cli:
+        mov     byte ptr ds:[v86_vif],0
+        inc     word ptr [ebp+FR_EIP]   ; IP wraps in the segment, as
+        jmp     vgf_out                 ; v86_skip's does
+
+vgf_sti:
+        mov     byte ptr ds:[v86_vif],1
+        inc     word ptr [ebp+FR_EIP]
+        jmp     vgf_out
+
+vgf_pushf:
+        mov     edx,[ebp+FR_ESP]
+        sub     dx,2
+        mov     ecx,2
+        call    vgf_stk
+        jc      vgf_slow
+        call    vgf_image
+        mov     word ptr [edi],ax
+        mov     word ptr [ebp+FR_ESP],dx        ; SP's high half is the box's
+        inc     word ptr [ebp+FR_EIP]
+        jmp     vgf_out
+
+vgf_popf:
+        mov     edx,[ebp+FR_ESP]
+        mov     ecx,2
+        call    vgf_stk
+        jc      vgf_slow
+        mov     ax,word ptr [edi]
+        add     dx,2
+        mov     word ptr [ebp+FR_ESP],dx
+        call    v86_setflags
+        inc     word ptr [ebp+FR_EIP]
+        jmp     vgf_out
+
+vgf_iret:
+        mov     edx,[ebp+FR_ESP]
+        mov     ecx,6
+        call    vgf_stk
+        jc      vgf_slow
+        movzx   eax,word ptr [edi]
+        mov     [ebp+FR_EIP],eax
+        movzx   eax,word ptr [edi+2]
+        mov     [ebp+FR_CS],eax
+        mov     ax,word ptr [edi+4]
+        add     dx,6
+        mov     word ptr [ebp+FR_ESP],dx
+        call    v86_setflags
+        jmp     vgf_out
+
+        ; INT n to a vector the caller has not claimed: what v86_doint
+        ; and v86_deliver do, the three words in one go.
+vgf_int:
+        movzx   ebx,byte ptr [esi+1]    ; the vector
+        mov     edi,dword ptr ds:[v86_ctx]
+        bt      dword ptr [edi+V86C_TRAP],ebx
+        jc      vgf_slow                ; the caller's: v86_doint
+        mov     edx,[ebp+FR_ESP]
+        sub     dx,6
+        mov     ecx,6
+        call    vgf_stk
+        jc      vgf_slow
+        call    vgf_image
+        mov     word ptr [edi+4],ax     ; FLAGS, as v86_deliverto shows them
+        mov     eax,[ebp+FR_CS]
+        mov     word ptr [edi+2],ax     ; CS
+        mov     eax,[ebp+FR_EIP]
+        add     ax,2                    ; past the INT
+        mov     word ptr [edi],ax       ; IP
+        mov     word ptr [ebp+FR_ESP],dx
+        mov     byte ptr ds:[v86_vif],0 ; the handler starts with it off
+        mov     eax,dword ptr ds:[ebx*4]
+        movzx   edx,ax
+        mov     [ebp+FR_EIP],edx
+        shr     eax,16
+        mov     [ebp+FR_CS],eax
+        ; fall through
+
+        ; Back into the box - by way of v86_ckkbd only if there may be
+        ; something to give it.
+vgf_out:
+        cmp     byte ptr ds:[v86_vif],0
+        jne     vgf_open
+        cmp     byte ptr ds:[vbp_owed],0        ; owed whatever the flag
+        jne     vgf_deliver
+vgf_go:
+        call    v86_vmeout
+        popad
+        add     esp,8                   ; the vector and error code
+        iretd
+vgf_open:
+        call    v86_owed
+        jc      vgf_deliver
+        ; The flag on and nothing owed, which is v86_vmeout's answer
+        ; already: under VME, VIF set and VIP clear without asking
+        ; v86_owed a second time.
+        cmp     byte ptr ds:[v86_vme],0
+        je      vgf_back
+        mov     eax,[ebp+FR_FLAGS]
+        and     eax,NOT (EFL_VIP OR EFL_NT)
+        or      eax,EFL_VIF
+        mov     edx,dword ptr ds:[v86_vpriv]
+        and     edx,EFL_NT
+        or      eax,edx
+        mov     [ebp+FR_FLAGS],eax
+vgf_back:
+        popad
+        add     esp,8
+        iretd
+vgf_deliver:
+        call    vgf_env                 ; for what v86_ckkbd calls
+        jmp     v86_resume
+
+;---------------------------------------------------------------------
+; vgf_env - the rest of what exc_common sets up for v86_fault: the
+;           other three segment registers, and the direction flag clear
+;           (the box's own is in the frame).  Everything else preserved.
+;---------------------------------------------------------------------
+vgf_env:
+        push    eax
+        mov     ax,SEL_DATA32
+        mov     es,ax
+        mov     fs,ax
+        mov     gs,ax
+        pop     eax
+        cld
+        ret
+
+; The opcodes v86_gpfast answers, a bit each: 9Ch PUSHF, 9Dh POPF,
+; CDh INT, CFh IRET, E4h and ECh IN AL, E6h and EEh OUT ...,AL, FAh CLI
+; and FBh STI.
+vgf_ops         dd      0, 0, 0, 0
+                dd      30000000h               ; 80h-9Fh: 9Ch, 9Dh
+                dd      0
+                dd      0000A000h               ; C0h-DFh: CDh, CFh
+                dd      0C005050h               ; E0h-FFh: E4h, E6h, ECh,
+                                                ; EEh, FAh, FBh
+
+;---------------------------------------------------------------------
+; vgf_image - AX = the FLAGS image the box is shown: its own arithmetic
+;             flags, the IOPL and NT it believes in, bit 1, and its
+;             virtual IF.  As vf_pushf and v86_deliverto build it.
+;---------------------------------------------------------------------
+vgf_image:
+        mov     eax,[ebp+FR_FLAGS]
+        and     eax,V86_UFLAGS
+        or      eax,dword ptr ds:[v86_vpriv]
+        or      eax,2
+        cmp     byte ptr ds:[v86_vif],0
+        je      vgi_out
+        or      eax,EFL_IF
+vgi_out:
+        ret
+
+;---------------------------------------------------------------------
+; vgf_stk - EDX = an offset in the box's stack segment (low 16 bits),
+;           ECX = how many bytes from there the instruction touches.
+;           -> EDI = their linear address.  CF if they run off the top
+;           of the segment, cross a page, or are on a page a box may
+;           not write.  EAX, EBX, ECX and EDX are kept.
+;---------------------------------------------------------------------
+vgf_stk:
+        push    eax
+        push    ebx
+        movzx   edi,dx
+        lea     eax,[edi+ecx]
+        cmp     eax,10000h
+        ja      vgs_no                  ; the slow path wraps SP for it
+        movzx   eax,word ptr [ebp+FR_SS]
+        shl     eax,4
+        add     edi,eax
+        lea     eax,[edi+ecx-1]
+        xor     eax,edi
+        test    eax,0FFFFF000h
+        jnz     vgs_no                  ; two pages
+        mov     ebx,edi
+        shr     ebx,12
+        cmp     ebx,dword ptr ds:[v86_stkpg]
+        je      vgs_yes
+        push    ecx
+        mov     eax,edi
+        and     eax,NOT 0FFFh
+        mov     ecx,1000h
+        call    usr_wok
+        pop     ecx
+        jc      vgs_no
+        mov     dword ptr ds:[v86_stkpg],ebx
+vgs_yes:
+        pop     ebx
+        pop     eax
+        clc
+        ret
+vgs_no:
+        pop     ebx
+        pop     eax
+        stc
+        ret
+ENDIF
+
+;---------------------------------------------------------------------
+; v86_owed - CF if anything may be owed to the box: a breakpoint of its
+;            own, a line from the interrupt controller, a key, the Break
+;            key or a mouse event.  Never less than v86_ckkbd would
+;            deliver, and as little more as can be told cheaply, because
+;            under VME this is VIP, and VIP makes the box's every STI
+;            fault until it is clear: a line in service or masked is not
+;            owed, nor is anything but a line in an excursion (v86_ckkbd
+;            looks for nothing else there), nor a key a box has masked
+;            the keyboard against, nor a mouse event with no box handler
+;            for it.  Nothing is consumed.  Everything preserved.
+;---------------------------------------------------------------------
+v86_owed:
+        cmp     byte ptr ds:[vbp_owed],0
+        jne     vow_yes
+        cmp     byte ptr ds:[v86_vmetvip],0     ; v86_vmeinit's VIP check
+        jne     vow_yes
+        push    eax
+        mov     eax,dword ptr ds:[vpc_isr]      ; a line in service holds off
+        or      eax,dword ptr ds:[vpc_imr]      ; itself, and a masked one waits
+        not     eax
+        and     eax,dword ptr ds:[vpc_pend]
+        jnz     vow_yes1
+        cmp     byte ptr ds:[v86_irqx],0
+        jne     vow_no
+        mov     al,byte ptr ds:[kbq_head]
+        cmp     al,byte ptr ds:[kbq_tail]
+        je      vow_nokey
+        test    byte ptr ds:[vpc_imr],2         ; the keyboard's line
+        jz      vow_yes1
+vow_nokey:
+        cmp     byte ptr ds:[GV_BOX1B],GVB_OWED
+        je      vow_yes1
+        cmp     word ptr ds:[ms_pend],0
+        je      vow_no
+        cmp     byte ptr ds:[ms_busy],0
+        jne     vow_no
+        cmp     dword ptr ds:[ms_seg],0
+        jne     vow_yes1
+vow_no:
+        pop     eax
+        clc
+        ret
+vow_yes1:
+        pop     eax
+vow_yes:
+        stc
+        ret
+
+;=====================================================================
+; VME - THE PROCESSOR ANSWERS A BOX'S INTERRUPT FLAG ITSELF.
+;
+; Virtual-8086 mode extensions (CR4 bit 0; Pentium and later, and a few
+; of the last 486s) are what this monitor does, done in the processor.
+; The box still runs at IOPL 0 with the real IF on, so it still cannot
+; stop the machine's timer and the I/O bitmap still governs its ports.
+; What changes is that its CLI, STI, PUSHF, POPF and IRET work on VIF
+; (EFLAGS bit 19) without faulting, and its INT n goes straight to its
+; own vector table when that vector's bit in the TSS's redirection
+; bitmap is clear (v86_run copies the caller's trap bitmap there).  The
+; one thing the processor cannot know is that an interrupt is owed:
+; that is VIP (bit 20), which the monitor sets, and with it set the STI,
+; POPF or IRET that would turn the flag on faults instead - which is
+; exactly the moment v86_ckkbd delivers at without VME.
+;
+; Still faulting, and answered as before: the 32-bit forms PUSHFD,
+; POPFD and IRETD (so the AC and ID shadows still work), a POPF or IRET
+; that would set TF, INT n to a claimed vector, INT 3, INTO, HLT, the
+; claimed ports, and every exception.
+;
+; THE MONITOR STILL KEEPS v86_vif, AND READS IT OUT OF THE FRAME.
+; v86_vmein, at every way in from a box - a trap, an IRQ that stopped
+; it - copies VIF into v86_vif and the box's NT, which a POPF now sets
+; without the monitor seeing, into v86_vpriv.  v86_vmeout, at every way
+; back, puts them back with VIP as v86_owed says (v86_vmeflags), and
+; v86_run builds its frame the same way.  So nothing else in the monitor
+; has to know which way the flag is being kept.
+;
+; What a box can see that it could not before: a 16-bit PUSHF shows IOPL
+; 3, which is what the processor pushes under VME, instead of the IOPL
+; the box last wrote (v86_vpriv).  Every CPU detector's flags test still
+; says "386 or later" (VIFTEST check 12).  PUSHFD still shows the shadow.
+;
+; IT IS TRIED BEFORE IT IS TRUSTED.  An emulator, or a virtual machine
+; on a processor with an erratum, can say VME in CPUID and do something
+; else; and a box whose CLI went to the wrong flag would lose its
+; interrupts with nothing to show why.  So v86_vmeinit runs a box at
+; boot that does the things a box does and counts the faults - none
+; where VME needs none, one where it needs one - and leaves VME off if
+; anything is not as it should be.  IOS_VME says which (VMES_*), and
+; VME=OFF in CONFIG.SYS turns it off for good.
+;=====================================================================
+CR4_VME         EQU     00000001h
+VMT_CODE        EQU     0E00h                   ; where the check runs: the top
+VMT_SIZE        EQU     200h                    ; of the real-mode stack, idle at
+VMT_STACK       EQU     1000h                   ; boot, and kept and put back
+VMT_HAND        EQU     20h                     ; INT 0FFh's handler, from VMT_CODE
+VMT_VIP         EQU     40h                     ; the second run, from VMT_CODE
+VMT_OFFINT      EQU     60h                     ; the third
+VMT_SNIPLEN     EQU     66h                     ; vmt_snip's length
+
+;---------------------------------------------------------------------
+; v86_vmein  - EBP -> a frame out of a box.  Under VME, the box's flag
+;              and NT from it into v86_vif and v86_vpriv.
+; v86_vmeout - and back into the frame on the way in.
+; Both do nothing without VME.  Everything preserved.
+;---------------------------------------------------------------------
+v86_vmein:
+        cmp     byte ptr ds:[v86_vme],0
+        je      vmn_out
+        push    eax
+        mov     eax,[ebp+FR_FLAGS]
+        test    eax,EFL_VIF
+        setnz   byte ptr ds:[v86_vif]
+        and     eax,EFL_NT
+        and     dword ptr ds:[v86_vpriv],NOT EFL_NT
+        or      dword ptr ds:[v86_vpriv],eax
+        pop     eax
+vmn_out:
+        ret
+
+v86_vmeout:
+        cmp     byte ptr ds:[v86_vme],0
+        je      vmo_out
+        push    eax
+        mov     eax,[ebp+FR_FLAGS]
+        call    v86_vmeflags
+        mov     [ebp+FR_FLAGS],eax
+        pop     eax
+vmo_out:
+        ret
+
+;--- v86_vmeflags - EAX = the flags a box is to run under: VIF from
+;--- v86_vif, VIP if v86_owed, NT from v86_vpriv.  Nothing else changed.
+v86_vmeflags:
+        and     eax,NOT (EFL_VIF OR EFL_VIP OR EFL_NT)
+        cmp     byte ptr ds:[v86_vif],0
+        je      vmf_noif
+        or      eax,EFL_VIF
+vmf_noif:
+        call    v86_owed
+        jnc     vmf_nopend
+        or      eax,EFL_VIP
+vmf_nopend:
+        push    edx
+        mov     edx,dword ptr ds:[v86_vpriv]
+        and     edx,EFL_NT
+        or      eax,edx
+        pop     edx
+        ret
+
+;---------------------------------------------------------------------
+; v86_cr4off  - VME out of CR4, for whatever is about to own the machine
+;               without knowing the bit: rm_park (Windows, a DOS
+;               extender) and the restart through the ROM, after which
+;               EMM386 would run its boxes under it.
+; v86_cr4back - and in again, on the unpark.
+; Both do nothing unless VME is in use.  Everything preserved.
+;---------------------------------------------------------------------
+v86_cr4off:
+        cmp     byte ptr ds:[v86_vme],0
+        je      vc4f_out
+        push    eax
+        db      0Fh,20h,0E0h                    ; MOV EAX,CR4
+        and     eax,NOT CR4_VME
+        db      0Fh,22h,0E0h                    ; MOV CR4,EAX
+        pop     eax
+vc4f_out:
+        ret
+
+v86_cr4back:
+        cmp     byte ptr ds:[v86_vme],0
+        je      vc4b_out
+        push    eax
+        db      0Fh,20h,0E0h                    ; MOV EAX,CR4
+        or      eax,CR4_VME
+        db      0Fh,22h,0E0h                    ; MOV CR4,EAX
+        pop     eax
+vc4b_out:
+        ret
+
+;=====================================================================
+; v86_vmesvc - IOS_VME.  AL = VMF_ASK: AL = a VMES_*.  AL = VMF_OFF:
+;              the monitor answers a box from now on, and AL = what is
+;              in force afterwards.  Only between boxes: from the DOS
+;              side, not from inside one.
+;=====================================================================
+v86_vmesvc:
+        cmp     al,VMF_OFF
+        jne     vms_ask
+        cmp     byte ptr ds:[v86_vme],0
+        je      vms_ask                         ; never on: nothing to undo
+        pushfd
+        cli
+        call    v86_cr4off
+        mov     byte ptr ds:[v86_vme],0
+        mov     byte ptr ds:[v86_vmestat],VMES_OFF
+        popfd
+vms_ask:
+        mov     al,byte ptr ds:[v86_vmestat]
+        ret
+
+;=====================================================================
+; v86_vmeinit - from pm_entry, once, interrupts off, after fpu_init has
+;               asked CPUID.  VME on if the processor has it and a box
+;               run under it does what a box should.
+;
+; The box is thirty-odd bytes copied to 0:0E00, the top of the real-mode
+; stack, which nothing is using yet; what was there, and the two vectors
+; it borrows, are put back.  The interrupt controllers are shut while
+; it runs, because a box runs with the real flag on and an interrupt
+; would deliver a tick or a key to it and change the count.  v86_gpn
+; counts the general protection faults out of the box:
+;
+;   run 1  CLI, PUSHF, STI, PUSHF - none of them faults - and an INT 0FFh
+;          that goes straight to a handler at 0:0E20 (PUSHF, IRET: no
+;          fault), then INT 0FEh, which is claimed: one fault, and the
+;          run comes back V86R_INT with EBX = 0FEh.  Then a HLT.  AX
+;          must show the flag off after the CLI and IOPL 3, BX on after
+;          the STI, CX off inside the handler, DX the handler's mark.
+;   run 2  with VIP set throughout (v86_vmetvip): a POPF, an STI and an
+;          IRET that each turn the flag on, and each must fault; then
+;          the HLT.  Four faults.
+;   run 3  CLI, then INT 0FFh straight to the handler and back: the flag
+;          must still be off (SI), and only the HLT faults.
+;
+; The first wrong answer is VMES_FAIL + its number, and VME is left off -
+; except a wrong answer to run 3's flag alone.  That is a processor
+; whose INT pushes the real IF, always on in a box, where the box's own
+; belongs (86Box 6 does), so that the handler's IRET turns the flag on
+; behind the box's back.  Everything else about its VME is right, so
+; VME stays on and every INT n still faults to the monitor, which pushes
+; the right flag (VMES_NOINT, v86_run).
+;=====================================================================
+v86_vmeinit:
+IFDEF V86_FAST
+        pushad
+        test    byte ptr ds:[fpu_cpu],FPC_CPUID
+        jz      vmi_out
+        test    dword ptr ds:[fpu_feat],CPUF_VME
+        jz      vmi_out
+
+        cld
+        mov     esi,VMT_CODE            ; what is there now, kept
+        mov     edi,OFFSET vmt_save
+        mov     ecx,VMT_SIZE / 4
+        rep     movsd
+        mov     eax,dword ptr ds:[0FEh * 4]
+        mov     dword ptr ds:[vmt_ivt],eax
+        mov     eax,dword ptr ds:[0FFh * 4]
+        mov     dword ptr ds:[vmt_ivt+4],eax
+        mov     eax,dword ptr ds:[vpc_pend]
+        mov     dword ptr ds:[vmt_pend],eax
+        mov     dword ptr ds:[vpc_pend],0       ; nothing owed to this box
+        mov     al,0FFh                         ; and nothing to arrive
+        out     PIC1_DATA,al
+        out     PIC2_DATA,al
+
+        mov     esi,OFFSET vmt_snip
+        mov     edi,VMT_CODE
+        mov     ecx,VMT_SNIPLEN
+        rep     movsb
+        mov     dword ptr ds:[0FFh * 4],VMT_CODE + VMT_HAND     ; 0000:0E20
+        mov     byte ptr ds:[v86_irqx],1        ; nobody's program: no keys
+
+        db      0Fh,20h,0E0h                    ; MOV EAX,CR4
+        or      eax,CR4_VME
+        db      0Fh,22h,0E0h                    ; MOV CR4,EAX
+        mov     byte ptr ds:[v86_vme],1
+
+;--- run 1 ------------------------------------------------------------
+        mov     edi,OFFSET vmt_ctx
+        xor     eax,eax
+        mov     ecx,V86C_SIZE / 4
+        rep     stosd
+        mov     dword ptr ds:[vmt_ctx+V86C_EIP],VMT_CODE
+        mov     dword ptr ds:[vmt_ctx+V86C_ESP],VMT_STACK
+        mov     dword ptr ds:[vmt_ctx+V86C_FLAGS],EFL_IF OR 2
+        mov     byte ptr ds:[vmt_ctx+V86C_TRAP+1Fh],40h ; 0FEh: claimed
+        mov     eax,dword ptr ds:[v86_gpn]
+        mov     dword ptr ds:[vmt_gpn],eax
+        mov     esi,OFFSET vmt_ctx
+        call    v86_run
+        mov     dl,1
+        cmp     eax,V86R_INT
+        jne     vmi_fail
+        cmp     ebx,0FEh
+        jne     vmi_fail
+        mov     dl,2
+        mov     eax,dword ptr ds:[v86_gpn]
+        sub     eax,dword ptr ds:[vmt_gpn]
+        cmp     eax,1
+        jne     vmi_fail
+        mov     esi,OFFSET vmt_ctx
+        call    v86_run
+        mov     dl,3
+        cmp     eax,V86R_HLT
+        jne     vmi_fail
+        mov     dl,4
+        mov     eax,dword ptr ds:[v86_gpn]
+        sub     eax,dword ptr ds:[vmt_gpn]
+        cmp     eax,2
+        jne     vmi_fail
+        mov     dl,5
+        test    dword ptr ds:[vmt_ctx+V86C_EAX],EFL_IF
+        jnz     vmi_fail                        ; on after the CLI
+        mov     dl,6
+        mov     eax,dword ptr ds:[vmt_ctx+V86C_EAX]
+        and     eax,EFL_IOPL
+        cmp     eax,EFL_IOPL
+        jne     vmi_fail                        ; not the processor's PUSHF
+        mov     dl,7
+        test    dword ptr ds:[vmt_ctx+V86C_EBX],EFL_IF
+        jz      vmi_fail                        ; off after the STI
+        mov     dl,8
+        test    dword ptr ds:[vmt_ctx+V86C_ECX],EFL_IF
+        jnz     vmi_fail                        ; on inside the handler
+        mov     dl,9
+        cmp     word ptr ds:[vmt_ctx+V86C_EDX],1234h
+        jne     vmi_fail                        ; the handler never ran
+
+;--- run 2: VIP -------------------------------------------------------
+        mov     dword ptr ds:[vmt_ctx+V86C_EIP],VMT_CODE + VMT_VIP
+        mov     dword ptr ds:[vmt_ctx+V86C_ESP],VMT_STACK
+        mov     dword ptr ds:[vmt_ctx+V86C_FLAGS],EFL_IF OR 2
+        mov     byte ptr ds:[v86_vmetvip],1
+        mov     eax,dword ptr ds:[v86_gpn]
+        mov     dword ptr ds:[vmt_gpn],eax
+        mov     esi,OFFSET vmt_ctx
+        call    v86_run
+        mov     byte ptr ds:[v86_vmetvip],0
+        mov     dl,10
+        cmp     eax,V86R_HLT
+        jne     vmi_fail
+        mov     dl,11
+        mov     eax,dword ptr ds:[v86_gpn]
+        sub     eax,dword ptr ds:[vmt_gpn]
+        cmp     eax,4                           ; POPF, STI, IRET and the HLT
+        jne     vmi_fail
+
+;--- run 3: an INT made with the flag off -----------------------------
+        mov     dword ptr ds:[vmt_ctx+V86C_EIP],VMT_CODE + VMT_OFFINT
+        mov     dword ptr ds:[vmt_ctx+V86C_ESP],VMT_STACK
+        mov     dword ptr ds:[vmt_ctx+V86C_FLAGS],EFL_IF OR 2
+        mov     eax,dword ptr ds:[v86_gpn]
+        mov     dword ptr ds:[vmt_gpn],eax
+        mov     esi,OFFSET vmt_ctx
+        call    v86_run
+        mov     dl,12
+        cmp     eax,V86R_HLT
+        jne     vmi_fail
+        mov     dl,13
+        mov     eax,dword ptr ds:[v86_gpn]
+        sub     eax,dword ptr ds:[vmt_gpn]
+        cmp     eax,1                           ; the HLT alone
+        jne     vmi_fail
+        mov     byte ptr ds:[v86_vmestat],VMES_ON
+        test    dword ptr ds:[vmt_ctx+V86C_ESI],EFL_IF
+        jz      vmi_back                        ; still off: all of it is good
+        mov     byte ptr ds:[v86_vmestat],VMES_NOINT
+        jmp     short vmi_back
+
+vmi_fail:
+        add     dl,VMES_FAIL
+        mov     byte ptr ds:[v86_vmestat],dl
+        mov     byte ptr ds:[v86_vmetvip],0
+        call    v86_cr4off
+        mov     byte ptr ds:[v86_vme],0
+
+vmi_back:
+        mov     byte ptr ds:[v86_irqx],0        ; and everything as it was
+        cld
+        mov     esi,OFFSET vmt_save
+        mov     edi,VMT_CODE
+        mov     ecx,VMT_SIZE / 4
+        rep     movsd
+        mov     eax,dword ptr ds:[vmt_ivt]
+        mov     dword ptr ds:[0FEh * 4],eax
+        mov     eax,dword ptr ds:[vmt_ivt+4]
+        mov     dword ptr ds:[0FFh * 4],eax
+        mov     eax,dword ptr ds:[vmt_pend]
+        mov     dword ptr ds:[vpc_pend],eax
+        call    irq_sync                        ; the controllers' masks
+vmi_out:
+        popad
+ENDIF
+        ret
+
+IFDEF V86_FAST
+; The box v86_vmeinit runs, assembled by hand: 0000:0E00 onwards.
+vmt_snip        LABEL   BYTE
+        db      0FAh                    ; 00  cli
+        db      09Ch                    ; 01  pushf
+        db      058h                    ; 02  pop ax
+        db      0FBh                    ; 03  sti
+        db      09Ch                    ; 04  pushf
+        db      05Bh                    ; 05  pop bx
+        db      0CDh, 0FFh              ; 06  int 0FFh       straight there
+        db      0CDh, 0FEh              ; 08  int 0FEh       claimed
+        db      0F4h                    ; 0A  hlt
+        db      21 dup (0F4h)           ; 0B
+        db      09Ch                    ; 20  pushf          INT 0FFh's handler
+        db      059h                    ; 21  pop cx
+        db      0BAh                    ; 22  mov dx,1234h
+        dw      1234h
+        db      0CFh                    ; 25  iret
+        db      26 dup (0F4h)           ; 26
+        db      0FAh                    ; 40  cli            run 2
+        db      09Ch                    ; 41  pushf
+        db      058h                    ; 42  pop ax
+        db      00Dh                    ; 43  or ax,0200h
+        dw      0200h
+        db      050h                    ; 46  push ax
+        db      09Dh                    ; 47  popf           on: faults
+        db      0FAh                    ; 48  cli
+        db      0FBh                    ; 49  sti            on: faults
+        db      09Ch                    ; 4A  pushf
+        db      058h                    ; 4B  pop ax
+        db      0FAh                    ; 4C  cli
+        db      050h                    ; 4D  push ax        FLAGS, on
+        db      00Eh                    ; 4E  push cs
+        db      068h                    ; 4F  push 0E54h
+        dw      VMT_CODE + 54h
+        db      0CFh                    ; 52  iret           on: faults
+        db      090h                    ; 53  nop
+        db      0F4h                    ; 54  hlt
+        db      11 dup (0F4h)           ; 55
+        db      0FAh                    ; 60  cli            run 3
+        db      0CDh, 0FFh              ; 61  int 0FFh       straight there,
+        db      09Ch                    ; 63  pushf          and back with the
+        db      05Eh                    ; 64  pop si         flag still off
+        db      0F4h                    ; 65  hlt
+vmt_end         LABEL   BYTE
+        .ERRE   ( vmt_end - vmt_snip ) EQ VMT_SNIPLEN
+
+vmt_ctx         db      V86C_SIZE dup (0)
+vmt_save        db      VMT_SIZE dup (0)
+vmt_ivt         dd      0, 0                    ; 0FEh and 0FFh
+vmt_pend        dd      0
+vmt_gpn         dd      0
+ENDIF
 
 ;=====================================================================
 ; Data
@@ -3028,6 +3888,17 @@ v86_vpriv       dd      0               ; the guest's virtual IOPL and NT (and
                                         ; v86_setflags
 v86_o32         db      0               ; the instruction in hand had a 66h
                 db      0,0,0
+v86_stkpg       dd      -1              ; a page of a box's stack the page
+                                        ; tables have said a box may write;
+                                        ; -1 after anything changes them
+                                        ; (vgf_stk)
+v86_gpn         dd      0               ; general protection faults out of a
+                                        ; box, all of them (v86_gpfast): what
+                                        ; v86_vmeinit counts
+v86_vme         db      0               ; VME in use: a box's flag is its VIF
+v86_vmestat     db      VMES_NONE       ; ...and why it is or is not (IOS_VME)
+v86_vmetvip     db      0               ; v86_vmeinit: VIP, whatever is owed
+                db      0
 v86_fltcs       dd      -1              ; the last exception reflected into the
 v86_flteip      dd      -1              ; guest, and how many times running -
 v86_fltvec      dd      -1              ; see vf_exc.  -1 so that the first one
@@ -3073,6 +3944,289 @@ msgVcEs         db      ' es=',0
 msgVcCR         db      13,10,0
 vc_last         dd      -1              ; the last call printed, folded
 ENDIF                                   ; into one dword - see vc_show
+
+IFDEF V86_TCOUNT
+;=====================================================================
+; THE TRAP COUNTS (BUILD trapcnt).
+;
+; Which instructions a DOS box makes the monitor answer, and how often:
+; every #GP out of a box by its opcode, every INT by its vector, every
+; claimed port by its number, every other exception by its vector, and
+; beside them the interrupts that stopped a box (tc_irq), the ones
+; handed INTO a box (tc_dlv) and the trips out to the DOS side
+; (tc_run).  Every TC_EVERY ticks the timer writes whatever has
+; changed to port E9h - DOSBox-X's log with DBXRUN -E9, QEMU's
+; -debugcon - and starts again from zero, so each line is five seconds
+; of whatever the box was doing.  Nothing goes to the screen.
+;
+; A #GP is counted where it arrives: at the fast path when there is
+; one (tc_seen says so to the slow path it may fall into), at
+; v86_fault otherwise.
+;=====================================================================
+TC_EVERY        EQU     91                      ; five seconds of ticks
+TC_DWORDS       EQU     256 + 256 + 256 + 32 + 4        ; tc_first to tc_last
+
+;--- tc_fault - v86_fault, EBP -> the frame.  Everything preserved.
+tc_fault:
+        pushad
+        cmp     byte ptr ds:[tc_seen],0
+        je      tcf_new
+        mov     byte ptr ds:[tc_seen],0         ; counted on its way in
+        jmp     short tcf_out
+tcf_new:
+        mov     eax,[ebp+FR_VEC]
+        cmp     eax,13
+        je      tcf_gp
+        and     eax,31
+        inc     dword ptr ds:[tc_exc + eax*4]
+        jmp     short tcf_out
+tcf_gp:
+        call    tc_gp
+tcf_out:
+        popad
+        ret
+
+;--- tc_gp - EBP -> a #GP frame out of a box: count the instruction at
+;--- CS:IP.  EAX, ECX and ESI are changed.
+tc_gp:
+        mov     esi,[ebp+FR_CS]
+        shl     esi,4
+        movzx   eax,word ptr [ebp+FR_EIP]
+        add     esi,eax
+        xor     ecx,ecx
+tcg_pfx:
+        movzx   eax,byte ptr [esi+ecx]
+        inc     ecx
+        cmp     ecx,8
+        ja      tcg_op
+        cmp     al,66h
+        jne     tcg_n66
+        inc     dword ptr ds:[tc_o32]
+        jmp     short tcg_pfx
+tcg_n66:
+        cmp     al,67h
+        je      tcg_pfx
+        cmp     al,0F2h
+        je      tcg_pfx
+        cmp     al,0F3h
+        je      tcg_pfx
+        cmp     al,26h
+        je      tcg_pfx
+        cmp     al,2Eh
+        je      tcg_pfx
+        cmp     al,36h
+        je      tcg_pfx
+        cmp     al,3Eh
+        je      tcg_pfx
+        cmp     al,64h
+        je      tcg_pfx
+        cmp     al,65h
+        je      tcg_pfx
+tcg_op:
+        inc     dword ptr ds:[tc_op + eax*4]
+        cmp     al,0CDh
+        jne     tcg_out
+        movzx   eax,byte ptr [esi+ecx]
+        inc     dword ptr ds:[tc_int + eax*4]
+tcg_out:
+        ret
+
+;--- tc_port - EDX = a claimed port a box read or wrote.  Ports above
+;--- FFh are counted together as FFh.  Everything preserved.
+tc_port:
+        push    edx
+        movzx   edx,dx
+        cmp     edx,0FFh
+        jbe     tcp_one
+        mov     edx,0FFh
+tcp_one:
+        inc     dword ptr ds:[tc_portn + edx*4]
+        pop     edx
+        ret
+
+;--- tc_tick - irq_timer, every tick.  Everything preserved.
+tc_tick:
+        pushad
+        mov     eax,dword ptr ds:[BDA_TICKS]    ; by the clock, not by the
+        sub     eax,dword ptr ds:[tc_tk]        ; interrupts: a box can run
+        cmp     eax,TC_EVERY                    ; the timer faster
+        jb      tct_out
+        mov     eax,dword ptr ds:[BDA_TICKS]
+        mov     dword ptr ds:[tc_tk],eax
+        mov     esi,OFFSET tc_first
+        mov     ecx,TC_DWORDS
+        xor     eax,eax
+tct_any:
+        or      eax,dword ptr ds:[esi]
+        add     esi,4
+        loop    tct_any
+        or      eax,eax
+        jz      tct_out                         ; a quiet five seconds
+        mov     esi,OFFSET tcm_head
+        call    tc_e9str
+        mov     eax,dword ptr ds:[BDA_TICKS]
+        call    tc_e9dec
+        mov     esi,OFFSET tcm_op
+        mov     edi,OFFSET tc_op
+        mov     ecx,256
+        call    tc_e9tab
+        mov     esi,OFFSET tcm_int
+        mov     edi,OFFSET tc_int
+        mov     ecx,256
+        call    tc_e9tab
+        mov     esi,OFFSET tcm_port
+        mov     edi,OFFSET tc_portn
+        mov     ecx,256
+        call    tc_e9tab
+        mov     esi,OFFSET tcm_exc
+        mov     edi,OFFSET tc_exc
+        mov     ecx,32
+        call    tc_e9tab
+        mov     esi,OFFSET tcm_o32
+        mov     eax,dword ptr ds:[tc_o32]
+        call    tc_e9one
+        mov     esi,OFFSET tcm_irq
+        mov     eax,dword ptr ds:[tc_irq]
+        call    tc_e9one
+        mov     esi,OFFSET tcm_dlv
+        mov     eax,dword ptr ds:[tc_dlv]
+        call    tc_e9one
+        mov     esi,OFFSET tcm_run
+        mov     eax,dword ptr ds:[tc_run]
+        call    tc_e9one
+        mov     esi,OFFSET tcm_vme
+        movzx   eax,byte ptr ds:[v86_vmestat]
+        call    tc_e9one
+        mov     al,13
+        out     0E9h,al
+        mov     al,10
+        out     0E9h,al
+        push    es
+        push    ds
+        pop     es
+        mov     edi,OFFSET tc_first
+        mov     ecx,TC_DWORDS
+        xor     eax,eax
+        cld
+        rep     stosd
+        pop     es
+tct_out:
+        popad
+        ret
+
+;--- tc_e9tab - ESI -> a name, EDI -> ECX dword counts: " name XX=n"
+;--- for each count that is not zero.
+tc_e9tab:
+        xor     ebx,ebx
+tce_one:
+        mov     eax,dword ptr ds:[edi + ebx*4]
+        or      eax,eax
+        jz      tce_next
+        push    esi
+        call    tc_e9str
+        pop     esi
+        mov     al,bl
+        call    tc_e9hex2
+        mov     al,'='
+        out     0E9h,al
+        mov     eax,dword ptr ds:[edi + ebx*4]
+        call    tc_e9dec
+tce_next:
+        inc     ebx
+        cmp     ebx,ecx
+        jb      tce_one
+        ret
+
+;--- tc_e9one - ESI -> " name=", EAX = the count: both, if it is not 0.
+tc_e9one:
+        or      eax,eax
+        jz      tco_out
+        push    eax
+        call    tc_e9str
+        pop     eax
+        call    tc_e9dec
+tco_out:
+        ret
+
+;--- tc_e9str - ESI -> a NUL-ended string, out of E9h.
+tc_e9str:
+        push    eax
+tcs_one:
+        mov     al,byte ptr ds:[esi]
+        inc     esi
+        or      al,al
+        jz      tcs_out
+        out     0E9h,al
+        jmp     short tcs_one
+tcs_out:
+        pop     eax
+        ret
+
+;--- tc_e9hex2 - AL as two hex digits.  EAX changed.
+tc_e9hex2:
+        push    eax
+        shr     al,4
+        call    tc_e9nib
+        pop     eax
+tc_e9nib:
+        and     al,0Fh
+        add     al,'0'
+        cmp     al,'9'
+        jbe     tcn_out
+        add     al,7
+tcn_out:
+        out     0E9h,al
+        ret
+
+;--- tc_e9dec - EAX in decimal.  EAX, EDX changed.
+tc_e9dec:
+        push    ecx
+        push    ebx
+        mov     ebx,10
+        xor     ecx,ecx
+tcd_div:
+        xor     edx,edx
+        div     ebx
+        push    edx
+        inc     ecx
+        or      eax,eax
+        jnz     tcd_div
+tcd_put:
+        pop     eax
+        add     al,'0'
+        out     0E9h,al
+        loop    tcd_put
+        pop     ebx
+        pop     ecx
+        ret
+
+tcm_head        db      'TC t=',0
+tcm_op          db      ' op',0
+tcm_int         db      ' int',0
+tcm_port        db      ' port',0
+tcm_exc         db      ' exc',0
+tcm_o32         db      ' o32=',0
+tcm_irq         db      ' irq=',0
+tcm_dlv         db      ' dlv=',0
+tcm_run         db      ' run=',0
+tcm_vme         db      ' vme=',0               ; a VMES_*, if not 0
+tc_seen         db      0                       ; the fast path counted this #GP
+                db      0,0,0
+tc_tk           dd      0                       ; the tick of the last line
+tc_ckip         dd      0                       ; v86_ckkbd: where the guest was
+tc_ckcs         dd      0                       ; going before it looked
+tc_first        LABEL   DWORD                   ; ...from here, zeroed per line
+tc_op           dd      256 dup (0)
+tc_int          dd      256 dup (0)
+tc_portn        dd      256 dup (0)
+tc_exc          dd      32 dup (0)
+tc_o32          dd      0
+tc_irq          dd      0
+tc_dlv          dd      0
+tc_run          dd      0
+tc_last         LABEL   DWORD
+        .ERRE   ( tc_last - tc_first ) EQ TC_DWORDS * 4
+ENDIF
 
 ;=====================================================================
 ; pm3_fault - a fault taken in ring-3 PROTECTED mode: a DPMI client.

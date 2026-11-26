@@ -54,18 +54,18 @@ enum {
 
 /* a PDF being looked at, which is pages and not text */
 typedef struct {
-    int   pages;
-    int   page;                 /* the one showing, from 0 */
-    int   zoom;                 /* percent; 0: as wide as the window */
-    s32   scroll_x, scroll_y;   /* pixels of the page at the window's top left */
-    u8   *pix;                  /* the page as pixel numbers, when it has been drawn */
-    int   pix_w, pix_h;
-    int   pix_page, pix_zoom;   /* ...which page, and how big */
-    int   pix_failed;           /* that page at that size could not be drawn */
-    char **lines;               /* a text screen: the page's words */
-    int   nlines, lines_page;
-    int   top;                  /* ...and the first line showing */
-    char  password[48];         /* what opened it, for when it is opened again */
+    int      pages;
+    int      page;                /* the one showing, from 0 */
+    int      zoom;                /* percent; 0: as wide as the window */
+    int      scroll_x, scroll_y;  /* pixels of the page at the window's top left */
+    uint8_t *pix;                 /* the page as pixel numbers, when it has been drawn */
+    int      pix_w, pix_h;
+    int      pix_page, pix_zoom;  /* ...which page, and how big */
+    int      pix_failed;          /* that page at that size could not be drawn */
+    char   **lines;               /* a text screen: the page's words */
+    int      nlines, lines_page;
+    int      top;                 /* ...and the first line showing */
+    char     password[48];        /* what opened it, for when it is opened again */
 } PDFDOCVIEW;
 
 typedef struct {
@@ -136,7 +136,7 @@ int   view_after_draw( void );                  /* once the screen is out: 1 = d
 void  view_reset( void );                       /* another document, or another screen */
 void  view_mouse( void );                       /* a K_MOUSE in the document */
 void  view_wheel( int notches );
-int   view_px( s32 twips );                     /* a length as pixels at the zoom now */
+int   view_px( int twips );                     /* a length as pixels at the zoom now */
 void  view_free_pdf( PDFDOCVIEW *pdf );
 void  view_pdf_key( int key );                  /* a key, when a PDF is showing */
 int   view_reclaim( void );                     /* caches given back: 1 if any */
@@ -189,21 +189,21 @@ void  dlg_keys( void );
 void  dlg_about( void );
 int   dlg_pick( const char *title, const char *const *names, int count, int start );  /* -> index or -1 */
 /* a length as the user reads it ("1.25" or "3.18 cm"), and back: twips */
-void  len_text( s32 twips, char *buf );
-int   len_parse( const char *text, s32 *twips );
+void  len_text( int twips, char *buf );
+int   len_parse( const char *text, int *twips );
 
 /* ------------------------------------------------------------------ */
 /* FILES.C                                                             */
 /* ------------------------------------------------------------------ */
-int   file_open( const char *path, int as_text );   /* 1 = it is open and showing */
-void  file_open_ask( void );
-int   file_save( int index, int ask );              /* 1 = saved */
-int   file_close_ask( int index );                  /* 1 = it may go (saved, or not wanted) */
-void  file_new( void );
-void  file_insert( void );
-void  file_picture( void );
-void  file_print( void );
-void  file_to_text( void );                         /* a PDF's words as a document */
-u8   *file_read( const char *path, u32 *len, int quiet );   /* the whole file, or NULL */
+int      file_open( const char *path, int as_text );  /* 1 = it is open and showing */
+void     file_open_ask( void );
+int      file_save( int index, int ask );             /* 1 = saved */
+int      file_close_ask( int index );                 /* 1 = it may go (saved, or not wanted) */
+void     file_new( void );
+void     file_insert( void );
+void     file_picture( void );
+void     file_print( void );
+void     file_to_text( void );                        /* a PDF's words as a document */
+uint8_t *file_read( const char *path, uint32_t *len, int quiet ); /* the whole file, or NULL */
 
 #endif

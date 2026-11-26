@@ -34,9 +34,9 @@ static int not_supported( int rc )
 }
 
 /* a number from 0 to 999, for SEL= and the list in PREP= */
-static int cp_num( const char *text, u32 len, u32 *num )
+static int cp_num( const char *text, unsigned int len, unsigned int *num )
 {
-    u32 pos, val = 0;
+    unsigned int pos, val = 0;
 
     if ( len == 0 || len > 5 ) {
         return 1;
@@ -45,7 +45,7 @@ static int cp_num( const char *text, u32 len, u32 *num )
         if ( text[pos] < '0' || text[pos] > '9' ) {
             return 1;
         }
-        val = val * 10 + (u32)(text[pos] - '0');
+        val = val * 10 + (unsigned int)(text[pos] - '0');
     }
     *num = val;
     return 0;
@@ -65,7 +65,7 @@ static int prep_parse( REQ *rq, const ITEM *it )
 {
     const char *pos = it->value, *start;
     char num[8];
-    u32 val, len;
+    unsigned int val, len;
 
     if ( *pos != '(' || pos[1] != '(' ) {
         return err_count();
@@ -86,7 +86,7 @@ static int prep_parse( REQ *rq, const ITEM *it )
             while ( *pos >= '0' && *pos <= '9' ) {
                 pos++;
             }
-            len = (u32)(pos - start);
+            len = (unsigned int)(pos - start);
             if ( len == 0 ) {
                 return err_count();
             }
@@ -135,7 +135,7 @@ static int prep_parse( REQ *rq, const ITEM *it )
 int cp_parse( SCAN *sc, REQ *rq, int kind, int unit )
 {
     ITEM it;
-    u32 val;
+    unsigned int val;
 
     rq->form = F_CP;
     rq->kind = kind;
@@ -201,7 +201,7 @@ static void dev_name( char *buf, int kind, int unit )
 static int dev_open( const char *name )
 {
     int handle;
-    u16 info;
+    uint16_t info;
 
     if ( sys_open( name, 2, &handle ) != 0 ) {
         out_line( M_CPDEV, name, NULL );
@@ -220,13 +220,13 @@ static int dev_open( const char *name )
 static void say_cp( const char *tmpl, int cp )
 {
     char num[8];
-    u32 len;
+    unsigned int len;
 
     if ( cp < 0 || cp == 0xFFFF ) {
         out_line( M_CPUNPREP, NULL, NULL );
         return;
     }
-    len = num_str( num + 2, (u32)cp );
+    len = num_str( num + 2, (unsigned int)cp );
     /* three places wide */
     num[0] = ' ';
     num[1] = ' ';
@@ -237,7 +237,7 @@ static void say_cp( const char *tmpl, int cp )
 void cp_status( int kind, int unit )
 {
     char name[8], num[8];
-    u16 packet[2 + 2 * (CP_MAX + 1)];
+    uint16_t packet[2 + 2 * (CP_MAX + 1)];
     int handle, rc, cat, n, count, used = 0, problem = 0, list;
     int brk;
 
@@ -267,7 +267,7 @@ void cp_status( int kind, int unit )
     }
 
     mem_set( packet, 0, sizeof( packet ) );
-    packet[0] = (u16)(sizeof( packet ) - 2);
+    packet[0] = (uint16_t)(sizeof( packet ) - 2);
     rc = sys_genioctl( handle, cat, 0x6B, packet );
     if ( not_supported( rc ) ) {
         out_line( M_CPNOTSUPP, NULL, NULL );
@@ -324,12 +324,12 @@ static void start_error( int rc, const char *word )
 /* the font file, through IOCTL writes, in binary */
 static int send_file( int handle, int file )
 {
-    u8 *buf;
-    u32 got;
-    u16 info;
+    uint8_t *buf;
+    unsigned int got;
+    uint16_t info;
     int rc;
 
-    buf = (u8 *)sys_mem_alloc( CHUNK );
+    buf = (uint8_t *)sys_mem_alloc( CHUNK );
     if ( buf == NULL ) {
         out_raw( H_ERR, M_NOMEM, str_len( M_NOMEM ) );
         out_raw( H_ERR, "\r\n", 2 );
@@ -337,7 +337,7 @@ static int send_file( int handle, int file )
         return 1;
     }
     if ( sys_devinfo( handle, &info ) == 0 ) {
-        sys_setinfo( handle, (u16)((info | 0x20) & 0xFF) );
+        sys_setinfo( handle, (uint16_t)((info | 0x20) & 0xFF) );
     }
     for ( ;; ) {
         if ( sys_read( file, buf, CHUNK, &got ) != 0 ) {
@@ -366,7 +366,7 @@ static int send_file( int handle, int file )
 void cp_run( const REQ *rq )
 {
     char name[8];
-    u16 packet[3 + CP_MAX];
+    uint16_t packet[3 + CP_MAX];
     int handle, file = -1, rc, cat, n, brk;
     const char *word;
 
@@ -394,7 +394,7 @@ void cp_run( const REQ *rq )
 
     if ( rq->cpop == CP_SELECT ) {
         packet[0] = 2;
-        packet[1] = (u16)rq->cplist[0];
+        packet[1] = (uint16_t)rq->cplist[0];
         rc = sys_genioctl( handle, cat, 0x4A, packet );
         if ( rc == ERR_NOTPREP ) {
             out_line( M_CPNOTPREP, NULL, NULL );
@@ -415,11 +415,11 @@ void cp_run( const REQ *rq )
     word = rq->cpop == CP_REFRESH ? M_W_REFRESH : M_W_PREPARE;
     mem_set( packet, 0, sizeof( packet ) );
     if ( rq->cpop == CP_PREPARE ) {
-        packet[0] = (u16)(file < 0 ? 1 : 0);        /* 1: a cartridge */
-        packet[1] = (u16)(2 + 2 * rq->ncp);
-        packet[2] = (u16)rq->ncp;
+        packet[0] = (uint16_t)(file < 0 ? 1 : 0);   /* 1: a cartridge */
+        packet[1] = (uint16_t)(2 + 2 * rq->ncp);
+        packet[2] = (uint16_t)rq->ncp;
         for ( n = 0; n < rq->ncp; n++ ) {
-            packet[3 + n] = (u16)rq->cplist[n];
+            packet[3 + n] = (uint16_t)rq->cplist[n];
         }
     } else {
         packet[1] = 2;

@@ -3,7 +3,7 @@
 ;                ports?
 ;
 ; Prints the report IO\AHCI.INC keeps (21h/F1h AL=2Ah): the adapter,
-; its registers as the BIOS left them, which of 80h and 81h the BIOS
+; its registers as the BIOS left them, which of 80h to 87h the BIOS
 ; could read before the kernel took anything, and for each port how
 ; far it got and what the device said.  A disk that is still being
 ; read through the BIOS shows here as the stage it stopped at.
@@ -186,8 +186,15 @@ at_nounits:
         ; what the BIOS read before anything was taken
         cmp     byte ptr [rpt+AHR_STATE],AHS_FOUND
         jbe     at_ports
+        ; 80h and 81h whatever happened, and 82h to 87h when the BIOS
+        ; read them: the report keeps a size for the first two only
         xor     ebx,ebx
 at_bios:
+        cmp     ebx,2
+        jb      at_bshow
+        bt      dword ptr [rpt+AHR_BIOSOK],ebx
+        jnc     at_bnext
+at_bshow:
         mov     edx,OFFSET msg_bios
         call    puts
         lea     eax,[ebx+80h]
@@ -202,6 +209,8 @@ at_bios:
 at_bread:
         mov     edx,OFFSET msg_bread
         call    puts
+        cmp     ebx,2
+        jae     at_bnosize
         mov     eax,dword ptr [rpt+AHR_BTOT0+ebx*4]
         or      eax,eax
         jz      at_bnosize
@@ -214,7 +223,7 @@ at_bnosize:
         call    crlf
 at_bnext:
         inc     ebx
-        cmp     ebx,2
+        cmp     ebx,MAX_PHYS
         jb      at_bios
 
 ;=====================================================================

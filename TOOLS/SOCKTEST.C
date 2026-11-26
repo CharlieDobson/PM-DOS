@@ -37,31 +37,31 @@ void __cdecl int21( REGS *regs );
 #define WAIT_CONN  400
 #define WAIT_DATA  600
 
-static u8   out_buf[OUT_BUF];
-static u32  out_len;
-static u32  failures;
-static int  column;
+static uint8_t  out_buf[OUT_BUF];
+static unsigned int out_len;
+static unsigned int failures;
+static int      column;
 
-static u8   io[2048];           /* a SOCK_IO header and its data */
+static uint8_t io[2048];        /* a SOCK_IO header and its data */
 
-static void mem_zero( void *to, u32 len )
+static void mem_zero( void *to, unsigned int len )
 {
-    u8 *dst = (u8 *)to;
+    uint8_t *dst = (uint8_t *)to;
     while ( len-- ) *dst++ = 0;
 }
 
-static void str_set( char *to, const char *from, u32 max )
+static void str_set( char *to, const char *from, unsigned int max )
 {
-    u32 i;
+    unsigned int i;
     for ( i = 0; i + 1 < max && from[i]; i++ ) to[i] = from[i];
     to[i] = 0;
 }
 
-static int has_text( const u8 *buf, u32 len, const char *want )
+static int has_text( const uint8_t *buf, unsigned int len, const char *want )
 {
-    u32 i, j;
+    unsigned int i, j;
     for ( i = 0; i < len; i++ ) {
-        for ( j = 0; want[j] && i + j < len && buf[i + j] == (u8)want[j]; j++ ) ;
+        for ( j = 0; want[j] && i + j < len && buf[i + j] == (uint8_t)want[j]; j++ ) ;
         if ( !want[j] ) return TRUE;
     }
     return FALSE;
@@ -81,7 +81,7 @@ static void out_flush( void )
         regs.eax = 0x4000;
         regs.ebx = 1;
         regs.ecx = out_len;
-        regs.edx = (u32)out_buf;
+        regs.edx = (uint32_t)out_buf;
         int21( &regs );
         out_len = 0;
     }
@@ -99,14 +99,14 @@ static void test_exit( int code )
 static void out_ch( char ch )
 {
     if ( out_len == OUT_BUF ) out_flush();
-    out_buf[out_len++] = (u8)ch;
+    out_buf[out_len++] = (uint8_t)ch;
     column = ( ch == '\n' ) ? 0 : column + 1;
 }
 
 static void out_str( const char *str ) { while ( *str ) out_ch( *str++ ); }
 static void out_nl( void ) { out_str( "\r\n" ); }
 
-static void out_dec( u32 value )
+static void out_dec( unsigned int value )
 {
     char digits[12];
     int  n = 0;
@@ -114,7 +114,7 @@ static void out_dec( u32 value )
     while ( n ) out_ch( digits[--n] );
 }
 
-static void out_ip( u32 ip )
+static void out_ip( uint32_t ip )
 {
     out_dec( IP_A( ip ) ); out_ch( '.' );
     out_dec( IP_B( ip ) ); out_ch( '.' );
@@ -139,10 +139,10 @@ static void note( void ) { out_nl(); }       /* reported, not counted */
 /* the clock, in hundredths (21h/2Ch counts ticks on PM-DOS)         */
 /* ---------------------------------------------------------------- */
 
-static u32 now_cs( void )
+static unsigned int now_cs( void )
 {
-    REGS regs;
-    u32  h, m, s, cs;
+    REGS     regs;
+    unsigned int h, m, s, cs;
     clear( &regs );
     regs.eax = 0x2C00;
     int21( &regs );
@@ -153,9 +153,9 @@ static u32 now_cs( void )
     return ( ( h * 60 + m ) * 60 + s ) * 100 + cs;
 }
 
-static u32 since( u32 start )
+static unsigned int since( unsigned int start )
 {
-    u32 now = now_cs();
+    unsigned int now = now_cs();
     if ( now < start ) now += 24UL * 60 * 60 * 100;     /* past midnight */
     return now - start;
 }
@@ -164,13 +164,13 @@ static u32 since( u32 start )
 /* the socket call                                                   */
 /* ---------------------------------------------------------------- */
 
-static u32 sk( u32 fn, void *buf, u32 len, int *err )
+static uint32_t sk( unsigned int fn, void *buf, unsigned int len, int *err )
 {
     REGS regs;
     clear( &regs );
     regs.eax = ( fn << 16 ) | 0xF126;
     regs.ecx = len;
-    regs.edi = (u32)buf;
+    regs.edi = (uint32_t)buf;
     int21( &regs );
     if ( CF( regs ) ) { if ( err ) *err = (int)( regs.eax & 0xFFFF ); return 0; }
     if ( err ) *err = 0;
@@ -192,7 +192,7 @@ static int stack_here( void )
 
 static int wait_up( void )
 {
-    u32 start = now_cs();
+    unsigned int start = now_cs();
     int err;
     for ( ;; ) {
         sk( SOCK_IFSTAT, &ifs, SOCKIF_LEN, &err );
@@ -201,7 +201,7 @@ static int wait_up( void )
     }
 }
 
-static void out_mac( const u8 *mac )
+static void out_mac( const uint8_t *mac )
 {
     int i;
     for ( i = 0; i < 6; i++ ) {
@@ -215,7 +215,7 @@ static void out_mac( const u8 *mac )
    stands: tx counts up if the DISCOVER is leaving, rx if anything arrives */
 static void show_nicstats( void )
 {
-    u32 st[16];
+    uint32_t st[16];
     int err;
     mem_zero( st, sizeof( st ) );
     sk( SOCK_NICSTATS, st, 40, &err );          /* NICS_LEN = 40 */
@@ -259,7 +259,7 @@ static void test_dhcp( void )
 static void test_ping( void )
 {
     SOCK_PINGREQ req;
-    u32 start, state;
+    unsigned int start, state;
     int err;
 
     check( "ping the gateway" );
@@ -284,7 +284,7 @@ static void test_ping( void )
 static void test_dns( void )
 {
     SOCK_RES req;
-    u32 start, state;
+    unsigned int start, state;
     int err;
 
     check( "a name looked up (DNS)" );
@@ -301,12 +301,13 @@ static void test_dns( void )
     else { out_str( "no answer (no resolver?)" ); note(); }
 }
 
-static int open_connect( int type, u32 ip, u16 port )
+static int open_connect( int type, uint32_t ip, uint16_t port )
 {
     SOCK_OPENREQ oreq;
     SOCK_CONNREQ creq;
     SOCK_STAT st;
-    u32 start, state, handle;
+    unsigned int start, state;
+    uint32_t handle;
     int err;
 
     oreq.type = type;
@@ -333,10 +334,10 @@ static int open_connect( int type, u32 ip, u16 port )
 }
 
 /* resolve a name to an address, polling until it is known or time is up */
-static u32 resolve( const char *name )
+static uint32_t resolve( const char *name )
 {
     SOCK_RES req;
-    u32 start, state;
+    unsigned int start, state;
     int err;
 
     mem_zero( &req, sizeof( req ) );
@@ -357,9 +358,10 @@ static void test_tcp( void )
     SOCK_IO *msg = (SOCK_IO *)io;
     SOCK_HANDLE hreq;
     SOCK_STAT st;
-    u32 start, got, total = 0, state, ip;
+    unsigned int start, got, total = 0, state;
+    uint32_t ip;
     int handle, err, i;
-    static u8 reply[2048];
+    static uint8_t reply[2048];
 
     check( "connect to example.com:80 and GET over TCP" );
     ip = resolve( "example.com" );
@@ -371,7 +373,7 @@ static void test_tcp( void )
     mem_zero( msg, SOCK_IO_HDR );
     msg->handle = handle;
     msg->len = sizeof( request ) - 1;
-    for ( i = 0; i < (int)msg->len; i++ ) io[SOCK_IO_HDR + i] = (u8)request[i];
+    for ( i = 0; i < (int)msg->len; i++ ) io[SOCK_IO_HDR + i] = (uint8_t)request[i];
     got = sk( SOCK_SEND, io, SOCK_IO_HDR + msg->len, &err );
     if ( err ) { out_str( "send failed" ); fail(); return; }
 

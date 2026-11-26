@@ -69,7 +69,7 @@ void out_of_memory( void )
             if ( docs[index].ed == NULL || !ed_modified( docs[index].ed ) ) {
                 continue;
             }
-            sfmt( path, sizeof( path ), "%sPMWRITE%u.SAV", sys_program_dir(), (u32)index + 1 );
+            sfmt( path, sizeof( path ), "%sPMWRITE%u.SAV", sys_program_dir(), (uint32_t)index + 1 );
             out = out_file( path );
             if ( out != NULL ) {
                 fmt_txt.save( docs[index].ed->doc, out, 2 );
@@ -100,8 +100,9 @@ static void settings_load( void )
     int *const values[] = { &set.show_toolbar, &set.show_ruler, &set.show_status, &set.mode_w, &set.mode_h,
                             &set.zoom, &set.inches, &set.find_case, &set.find_word };
     char path[PATH_LEN], number[12];
-    u8 *data;
-    u32 len, pos = 0, start, index, used;
+    uint8_t *data;
+    uint32_t len;
+    unsigned int pos = 0, start, index, used;
     int ok;
 
     set.show_toolbar = set.show_ruler = set.show_status = 1;
@@ -158,9 +159,9 @@ void settings_save( void )
         return;                         /* a disk that cannot be written: nothing is remembered */
     }
     out_fmt( out, "Toolbar=%u\r\nRuler=%u\r\nStatusBar=%u\r\nScreenWidth=%u\r\nScreenHeight=%u\r\nZoom=%u\r\n"
-             "Inches=%u\r\nMatchCase=%u\r\nWholeWord=%u\r\n", (u32)set.show_toolbar, (u32)set.show_ruler,
-             (u32)set.show_status, (u32)set.mode_w, (u32)set.mode_h, (u32)set.zoom, (u32)set.inches,
-             (u32)set.find_case, (u32)set.find_word );
+             "Inches=%u\r\nMatchCase=%u\r\nWholeWord=%u\r\n", (uint32_t)set.show_toolbar, (uint32_t)set.show_ruler,
+             (uint32_t)set.show_status, (uint32_t)set.mode_w, (uint32_t)set.mode_h, (uint32_t)set.zoom, (uint32_t)set.inches,
+             (uint32_t)set.find_case, (uint32_t)set.find_word );
     if ( font_dirs[0] ) {
         out_fmt( out, "Fonts=%s\r\n", font_dirs );
     }
@@ -184,7 +185,7 @@ void doc_name( int index )
     if ( *base ) {
         str_cpyt( doc->name, base, sizeof( doc->name ) );
     } else if ( doc->ed != NULL && doc->ed->untitled ) {
-        sfmt( doc->name, sizeof( doc->name ), "Document%u", (u32)doc->ed->untitled );
+        sfmt( doc->name, sizeof( doc->name ), "Document%u", (uint32_t)doc->ed->untitled );
     } else {
         str_cpy( doc->name, "Untitled" );
     }
@@ -362,8 +363,7 @@ void app_quit( void )
 /* ------------------------------------------------------------------ */
 
 static const char usage[] =
-    "Edits and shows documents: Word, WordPerfect, WordStar, Ami Pro, Word Pro,\r\n"
-    "OpenDocument, RTF, PDF and text.\r\n"
+    "PMWRITE, word processor for PM-DOS.\r\n"
     "\r\n"
     "PMWRITE [file ...] [/T | /G[:width]] [/P:n] [/X]\r\n"
     "\r\n"
@@ -387,8 +387,8 @@ static int extract_text( const char *path )
 {
     WDOC *doc;
     OUT *out;
-    u8 *data;
-    u32 len;
+    uint8_t *data;
+    uint32_t len;
     int id, rc;
 
     data = file_read( path, &len, 1 );
@@ -426,10 +426,10 @@ static int extract_text( const char *path )
 }
 
 /* the next word of the command line, or a name in quotes: 0 at the end */
-static int next_word( const char **line, char *word, u32 max )
+static int next_word( const char **line, char *word, unsigned int max )
 {
     const char *cur = *line;
-    u32 used = 0;
+    unsigned int used = 0;
     int quoted = 0;
 
     while ( *cur == ' ' || *cur == '\t' ) {
@@ -458,7 +458,7 @@ void pw_main( void )
     const char *line;
     char word[PATH_LEN];
     int key, cmd, index, mode, want_w = -1, want_h = 0, ok, extract = 0, failed = 0;
-    u32 start_page = 0;
+    unsigned int start_page = 0;
 
     sys_init();
     sys_break_install();
@@ -541,7 +541,7 @@ void pw_main( void )
     line = sys_cmdline();
     while ( next_word( &line, word, sizeof( word ) ) ) {
         if ( word[0] != '/' && file_open( word, 0 ) && start_page > 0 && PDFV != NULL && PDFV->pages > 0 ) {
-            PDFV->page = (int)(start_page > (u32)PDFV->pages ? (u32)PDFV->pages : start_page) - 1;
+            PDFV->page = (int)(start_page > (unsigned int)PDFV->pages ? (unsigned int)PDFV->pages : start_page) - 1;
         }
     }
     if ( ndocs == 0 ) {

@@ -41,12 +41,11 @@
  * few routines a library would have supplied are at the bottom.
  */
 
-typedef unsigned char  u8;
-typedef unsigned long  u32;
+#include <stdint.h>
 
 typedef struct {
-    u32 eax, ebx, ecx, edx, esi, edi;
-    u32 flags;                  /* in: bit 0 = CF before the INT */
+    uint32_t eax, ebx, ecx, edx, esi, edi;
+    uint32_t flags;             /* in: bit 0 = CF before the INT */
 } REGS;
 
 void __cdecl int21( REGS *regs );
@@ -63,15 +62,15 @@ void __cdecl int21( REGS *regs );
 #define OUT_BUF      4096
 
 typedef struct {
-    int line;                   /* its number in the file */
-    u8  text[MAXARG];
+    int     line;               /* its number in the file */
+    uint8_t text[MAXARG];
 } LINE;
 
 typedef struct {
     int handle;
-    u32 pos, len;
+    unsigned int pos, len;
     int eof;
-    u8 *buf;                    /* RD_BUF bytes, off the heap */
+    uint8_t *buf;               /* RD_BUF bytes, off the heap */
 } INFILE;
 
 /* switches */
@@ -85,14 +84,14 @@ static int fCase   = TRUE;      /* not /C */
 static int fIgnore = FALSE;     /* /W */
 static int fTabs   = FALSE;     /* /T */
 
-static LINE   *buffer1, *buffer2;
-static INFILE  in1, in2;
-static char    tail[160];
-static char   *argv[64];
-static int     argc;
-static u8      out_buf[OUT_BUF];
-static u32     out_len;
-static u8      dta[64];
+static LINE        *buffer1, *buffer2;
+static INFILE       in1, in2;
+static char         tail[160];
+static char        *argv[64];
+static int          argc;
+static uint8_t      out_buf[OUT_BUF];
+static unsigned int out_len;
+static uint8_t      dta[64];
 
 static const char *ext_bin[] = {
     ".EXE", ".OBJ", ".LIB", ".COM", ".BIN", ".SYS", NULL
@@ -124,9 +123,9 @@ static const char msg_help[] =
 /* the few library routines                                          */
 /* ---------------------------------------------------------------- */
 
-static u32 str_len( const char *str )
+static unsigned int str_len( const char *str )
 {
-    u32 len = 0;
+    unsigned int len = 0;
 
     while ( str[len] ) len++;
     return len;
@@ -168,7 +167,7 @@ static int up( int ch )
 
 static void str_upr( char *str )
 {
-    for ( ; *str; str++ ) *str = (char)up( (u8)*str );
+    for ( ; *str; str++ ) *str = (char)up( (uint8_t)*str );
 }
 
 static int str_icmp( const char *lhs, const char *rhs )
@@ -176,16 +175,16 @@ static int str_icmp( const char *lhs, const char *rhs )
     int c1, c2;
 
     do {
-        c1 = up( (u8)*lhs++ );
-        c2 = up( (u8)*rhs++ );
+        c1 = up( (uint8_t)*lhs++ );
+        c2 = up( (uint8_t)*rhs++ );
     } while ( c1 == c2 && c1 );
     return c1 - c2;
 }
 
-static void mem_move( void *dst, const void *src, u32 len )
+static void mem_move( void *dst, const void *src, unsigned int len )
 {
-    u8 *d = dst;
-    const u8 *s = src;
+    uint8_t *d = dst;
+    const uint8_t *s = src;
 
     if ( d < s ) {
         while ( len-- ) *d++ = *s++;
@@ -208,8 +207,8 @@ static int is_space( int ch )
 
 static void clear( REGS *regs )
 {
-    u8 *p = (u8 *)regs;
-    u32 i;
+    uint8_t *p = (uint8_t *)regs;
+    unsigned int i;
 
     for ( i = 0; i < sizeof( *regs ); i++ ) p[i] = 0;
 }
@@ -223,7 +222,7 @@ static void out_flush( void )
         regs.eax = 0x4000;
         regs.ebx = 1;
         regs.ecx = out_len;
-        regs.edx = (u32)out_buf;
+        regs.edx = (uint32_t)out_buf;
         int21( &regs );
         out_len = 0;
     }
@@ -239,11 +238,11 @@ static void fc_exit( int code )
     int21( &regs );
 }
 
-static void out_bytes( const char *str, u32 len )
+static void out_bytes( const char *str, unsigned int len )
 {
     while ( len-- ) {
         if ( out_len == OUT_BUF ) out_flush();
-        out_buf[out_len++] = (u8)*str++;
+        out_buf[out_len++] = (uint8_t)*str++;
     }
 }
 
@@ -264,7 +263,7 @@ static void out_line( const char *str )
     out_nl();
 }
 
-static void out_hex( u32 val, int digits )
+static void out_hex( uint32_t val, int digits )
 {
     char buf[8];
     int i;
@@ -281,7 +280,7 @@ static void out_dec5( int val )
 {
     char buf[12];
     int i = 11, neg = val < 0;
-    u32 u = neg ? (u32)-val : (u32)val;
+    unsigned int u = neg ? (unsigned int)-val : (unsigned int)val;
 
     buf[i] = 0;
     do {
@@ -293,7 +292,7 @@ static void out_dec5( int val )
     out_str( buf + i );
 }
 
-static void *mem_alloc( u32 size )
+static void *mem_alloc( unsigned int size )
 {
     REGS regs;
 
@@ -310,7 +309,7 @@ static void mem_free( void *ptr )
 
     clear( &regs );
     regs.eax = 0x4900;
-    regs.edx = (u32)ptr;
+    regs.edx = (uint32_t)ptr;
     int21( &regs );
 }
 
@@ -321,7 +320,7 @@ static int f_open( INFILE *f, const char *name )
 
     clear( &regs );
     regs.eax = 0x3D00;
-    regs.edx = (u32)name;
+    regs.edx = (uint32_t)name;
     int21( &regs );
     if ( CF( regs ) ) return (int)(regs.eax & 0xFFFF);
     f->handle = (int)(regs.eax & 0xFFFF);
@@ -336,7 +335,7 @@ static void f_close( INFILE *f )
 
     clear( &regs );
     regs.eax = 0x3E00;
-    regs.ebx = (u32)f->handle;
+    regs.ebx = (uint32_t)f->handle;
     int21( &regs );
 }
 
@@ -349,9 +348,9 @@ static int f_getc( INFILE *f )
         if ( f->eof ) return -1;
         clear( &regs );
         regs.eax = 0x3F00;
-        regs.ebx = (u32)f->handle;
+        regs.ebx = (uint32_t)f->handle;
         regs.ecx = RD_BUF;
-        regs.edx = (u32)f->buf;
+        regs.edx = (uint32_t)f->buf;
         int21( &regs );
         if ( CF( regs ) || regs.eax == 0 ) {
             f->eof = TRUE;
@@ -387,12 +386,12 @@ static int find_first( const char *spec )
 
     clear( &regs );
     regs.eax = 0x1A00;
-    regs.edx = (u32)dta;
+    regs.edx = (uint32_t)dta;
     int21( &regs );
     clear( &regs );
     regs.eax = 0x4E00;
     regs.ecx = 1;                       /* files and read-only ones */
-    regs.edx = (u32)spec;
+    regs.edx = (uint32_t)spec;
     int21( &regs );
     return !CF( regs );
 }
@@ -428,7 +427,7 @@ static void fc_say( const char *a, const char *b, const char *c )
 static void binary_compare( const char *f1, const char *f2 )
 {
     int c1, c2, same = TRUE;
-    u32 pos = 0;
+    uint32_t pos = 0;
 
     for ( ;; ) {
         c1 = f_getc( &in1 );
@@ -438,9 +437,9 @@ static void binary_compare( const char *f1, const char *f2 )
             same = FALSE;
             out_hex( pos, 8 );
             out_str( ": " );
-            out_hex( (u32)c1, 2 );
+            out_hex( (uint32_t)c1, 2 );
             out_str( " " );
-            out_hex( (u32)c2, 2 );
+            out_hex( (uint32_t)c2, 2 );
             out_nl();
         }
         pos++;
@@ -460,7 +459,7 @@ static void binary_compare( const char *f1, const char *f2 )
 
 /* One line into text, at most MAXARG-1 characters.  FALSE at the end of
    the file with nothing read. */
-static int read_line( INFILE *f, u8 *text )
+static int read_line( INFILE *f, uint8_t *text )
 {
     int c = 0, left = MAXARG - 1, n = 0, fill;
 
@@ -470,7 +469,7 @@ static int read_line( INFILE *f, u8 *text )
             c = f_getc( f );
             if ( c < 0 ) break;
             if ( c == '\n' ) break;
-            text[n++] = (u8)c;
+            text[n++] = (uint8_t)c;
             left--;
         }
         text[n] = 0;
@@ -481,7 +480,7 @@ static int read_line( INFILE *f, u8 *text )
         if ( c < 0 || c == '\n' ) break;
         if ( c == '\r' ) continue;
         if ( c != '\t' ) {
-            text[n++] = (u8)c;
+            text[n++] = (uint8_t)c;
             left--;
         } else {
             fill = LINE_TAB - (n & (LINE_TAB - 1));
@@ -494,16 +493,16 @@ static int read_line( INFILE *f, u8 *text )
     return !( c < 0 && n == 0 );
 }
 
-static const u8 *skip_white( const u8 *p )
+static const uint8_t *skip_white( const uint8_t *p )
 {
     while ( is_space( *p ) ) p++;
     return p;
 }
 
 /* white space compressed: zero if the two lines are the same */
-static int cmp_white( const u8 *p1, const u8 *p2, int fold )
+static int cmp_white( const uint8_t *p1, const uint8_t *p2, int fold )
 {
-    const u8 *q;
+    const uint8_t *q;
     int c1, c2;
 
     p1 = skip_white( p1 );
@@ -529,7 +528,7 @@ static int cmp_white( const u8 *p1, const u8 *p2, int fold )
     }
 }
 
-static int lines_differ( const u8 *a, const u8 *b )
+static int lines_differ( const uint8_t *a, const uint8_t *b )
 {
     int c1, c2;
 
@@ -552,7 +551,7 @@ static int fill( LINE *pl, INFILE *f, int ct, int *plnum )
     int i = 0;
 
     while ( ct-- > 0 && read_line( f, pl->text ) ) {
-        if ( fIgnore && cmp_white( pl->text, (const u8 *)"", 0 ) == 0 ) {
+        if ( fIgnore && cmp_white( pl->text, (const uint8_t *)"", 0 ) == 0 ) {
             pl->text[0] = 0;
             ++*plnum;
         }
@@ -569,7 +568,7 @@ static int fill( LINE *pl, INFILE *f, int ct, int *plnum )
 static int adjust( LINE *pl, int ml, int lt )
 {
     if ( ml <= lt ) return 0;
-    mem_move( &pl[0], &pl[lt], sizeof( LINE ) * (u32)(ml - lt) );
+    mem_move( &pl[0], &pl[lt], sizeof( LINE ) * (unsigned int)(ml - lt) );
     return ml - lt;
 }
 
@@ -628,8 +627,8 @@ static void line_compare( const char *f1, const char *f2 )
     int l1, l2, i, xp, yp, xc, yc, xd, yd, same = TRUE;
     int line1, line2;
 
-    buffer1 = mem_alloc( (u32)cLine * sizeof( LINE ) + 1 );
-    buffer2 = buffer1 ? mem_alloc( (u32)cLine * sizeof( LINE ) + 1 ) : NULL;
+    buffer1 = mem_alloc( (unsigned int)cLine * sizeof( LINE ) + 1 );
+    buffer2 = buffer1 ? mem_alloc( (unsigned int)cLine * sizeof( LINE ) + 1 ) : NULL;
     if ( buffer2 == NULL ) {
         if ( buffer1 ) mem_free( buffer1 );
         fc_say( "out of memory", NULL, NULL );
@@ -880,15 +879,15 @@ static void parse_file_names( char *file1, char *file2 )
 static void split_args( void )
 {
     REGS regs;
-    u8 *psp;
-    u32 len, i;
+    uint8_t *psp;
+    unsigned int len, i;
     char *in, *out;
     int quoted;
 
     clear( &regs );
     regs.eax = 0x6200;
     int21( &regs );
-    psp = (u8 *)regs.ebx;
+    psp = (uint8_t *)regs.ebx;
     len = psp[0x80];
     if ( len > 127 ) len = 127;
     for ( i = 0; i < len; i++ ) tail[i] = (char)psp[0x81 + i];
@@ -952,7 +951,7 @@ void __cdecl dos_entry( void )
     char n[2][MAXFNAME + 4];
     char ext[MAXFNAME + 4];
     int i, fileargs = 0;
-    u32 j, len;
+    unsigned int j, len;
     char *arg, *slash;
 
     in1.buf = mem_alloc( RD_BUF );      /* off the heap, so that the */
@@ -980,7 +979,7 @@ void __cdecl dos_entry( void )
         len = str_len( arg );
         for ( j = 0; j < len; j++ ) {
             if ( arg[j] != '/' ) continue;
-            switch ( up( (u8)arg[j + 1] ) ) {
+            switch ( up( (uint8_t)arg[j + 1] ) ) {
             case '?':
                 out_str( msg_help );
                 fc_exit( 0 );
@@ -998,7 +997,7 @@ void __cdecl dos_entry( void )
                 fIgnore = TRUE;
                 break;
             case 'L':
-                if ( up( (u8)arg[j + 2] ) == 'B' ) {
+                if ( up( (uint8_t)arg[j + 2] ) == 'B' ) {
                     cLine = to_int( arg + j + 3 );
                 } else {
                     fLine = TRUE;

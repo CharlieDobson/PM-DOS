@@ -23,9 +23,9 @@
 /* INC\PMDOS.INC's DRX_* record: the held program's registers, and why
    it stopped */
 typedef struct {
-    u32 eax, ebx, ecx, edx, esi, edi, ebp, esp, eip, efl;
-    u16 cs, ds, es, ss, fs, gs;
-    u32 vec, err, addr, dr6, limit;
+    uint32_t eax, ebx, ecx, edx, esi, edi, ebp, esp, eip, efl;
+    uint16_t cs, ds, es, ss, fs, gs;
+    uint32_t vec, err, addr, dr6, limit;
 } DRX;
 
 #define DRX_NOVEC       0xFFFFFFFFUL
@@ -40,45 +40,45 @@ typedef struct {
 
 int   sys_init( void );
 const char *sys_cmdline( void );        /* the command tail, NUL-ended */
-void  sys_write( int handle, const char *buf, u32 len );
+void  sys_write( int handle, const char *buf, unsigned int len );
 void  sys_exit( int code );
-void *sys_mem_alloc( u32 size );
+void *sys_mem_alloc( unsigned int size );
 void  sys_mem_free( void *block );
 int   sys_is_device( int handle );
 
-int   sys_read_line( char *buf, u32 max );  /* -1 at the end of the input */
-int   sys_get_key( void );                  /* -1 at the end of the input */
+int   sys_read_line( char *buf, unsigned int max );  /* -1 at the end of the input */
+int   sys_get_key( void );                           /* -1 at the end of the input */
 
 void  sys_break_install( void );
-extern u8 break_hit;
-extern u8 break_quiet;
+extern uint8_t break_hit;
+extern uint8_t break_quiet;
 
 /* files: a handle, or -1 with *err set */
 int   sys_open( const char *name, int *err );
 int   sys_create( const char *name, int *err );
 void  sys_delete( const char *name );
-int   sys_read( int handle, void *buf, u32 len, u32 *got );
-int   sys_write_file( int handle, const void *buf, u32 len, u32 *done );
-int   sys_size( int handle, u32 *size );
-int   sys_seek( int handle, u32 pos );  /* from the start */
+int   sys_read( int handle, void *buf, unsigned int len, unsigned int *got );
+int   sys_write_file( int handle, const void *buf, unsigned int len, unsigned int *done );
+int   sys_size( int handle, uint32_t *size );
+int   sys_seek( int handle, uint32_t pos ); /* from the start */
 void  sys_close( int handle );
 
 /* the first megabyte, read only (21h/F1h AL=20h) */
-int   sys_low_read( u32 linear, void *buf, u32 len );
-u16   sys_conv_seg( void );             /* the first free paragraph a DOS box would have */
+int      sys_low_read( uint32_t linear, void *buf, uint32_t len );
+uint16_t sys_conv_seg( void );          /* the first free paragraph a DOS box would have */
 
 /* raw sectors (INT 25h / 26h) */
-int   sys_abs_read( int drive, u32 sector, u32 count, void *buf );
-int   sys_abs_write( int drive, u32 sector, u32 count, const void *buf );
+int   sys_abs_read( int drive, uint32_t sector, uint32_t count, void *buf );
+int   sys_abs_write( int drive, uint32_t sector, uint32_t count, const void *buf );
 
-u32   __cdecl port_in( u32 port );
-void  __cdecl port_out( u32 port, u32 value );
+uint32_t __cdecl port_in( uint32_t port );
+void     __cdecl port_out( uint32_t port, uint32_t value );
 
 /* the held program (21h/F1h AL=29h) */
 int   sys_dbg_load( const char *path, const char *tail, DRX *regs );
 int   sys_dbg_go( DRX *regs, int *stopped );
-int   sys_dbg_read( u32 offset, void *buf, u32 len );
-int   sys_dbg_write( u32 offset, const void *buf, u32 len );
+int   sys_dbg_read( uint32_t offset, void *buf, uint32_t len );
+int   sys_dbg_write( uint32_t offset, const void *buf, uint32_t len );
 int   sys_dbg_kill( void );
 int   sys_exit_code( void );            /* 4Dh: AL, and AH = how it ended */
 

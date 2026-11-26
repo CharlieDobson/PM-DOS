@@ -28,8 +28,8 @@
 #include "defrag.h"
 
 typedef struct {
-    u32 eax, ebx, ecx, edx, esi, edi;
-    u32 flags;                  /* in: bit 0 = CF before the INT */
+    uint32_t eax, ebx, ecx, edx, esi, edi;
+    uint32_t flags;             /* in: bit 0 = CF before the INT */
 } REGS;
 
 void __cdecl int21( REGS *regs );
@@ -41,17 +41,17 @@ extern char break_hit, crit_hit;
 
 #define CF( regs )  ((regs).flags & 1)
 #define AX( regs )  ((regs).eax & 0xFFFF)
-#define F1( al, fn )    (0xF100UL | (al) | ((u32)(fn) << 16))
+#define F1( al, fn )    (0xF100UL | (al) | ((uint32_t)(fn) << 16))
 
-static u8   *psp;
-static char  tail[300];
+static uint8_t *psp;
+static char     tail[300];
 
 void __cdecl dos_entry( void )
 {
     defrag_main();
 }
 
-static void call21( REGS *regs, u32 eax )
+static void call21( REGS *regs, uint32_t eax )
 {
     regs->eax = eax;
     int21( regs );
@@ -78,12 +78,12 @@ int sys_init( void )
 {
     REGS regs;
     const char *full;
-    u32 len;
+    unsigned int len;
     int quoted;
 
     clear( &regs );
     call21( &regs, 0x6200 );
-    psp = (u8 *)regs.ebx;
+    psp = (uint8_t *)regs.ebx;
     len = psp[0x80];
     if ( len > 126 ) {
         len = 126;
@@ -107,7 +107,7 @@ int sys_init( void )
 
     /* a drive that will not answer is failed, not asked about */
     clear( &regs );
-    regs.edx = (u32)crit_handler;
+    regs.edx = (uint32_t)crit_handler;
     call21( &regs, 0x2524 );
     return 0;
 }
@@ -120,9 +120,9 @@ const char *sys_cmdline( void )
 const char *sys_getenv( const char *name )
 {
     const char *env;
-    u32 len = str_len( name );
+    unsigned int len = str_len( name );
 
-    env = (const char *)*(u32 *)(psp + 0x2C);
+    env = (const char *)*(uint32_t *)(psp + 0x2C);
     if ( env == NULL ) {
         return NULL;
     }
@@ -140,10 +140,10 @@ void sys_exit( int code )
     REGS regs;
 
     clear( &regs );
-    call21( &regs, 0x4C00 | ((u32)code & 0xFF) );
+    call21( &regs, 0x4C00 | ((uint32_t)code & 0xFF) );
 }
 
-void *sys_mem_alloc( u32 size )
+void *sys_mem_alloc( unsigned int size )
 {
     REGS regs;
 
@@ -158,7 +158,7 @@ void sys_break_install( void )
     REGS regs;
 
     clear( &regs );
-    regs.edx = (u32)break_handler;
+    regs.edx = (uint32_t)break_handler;
     call21( &regs, 0x2523 );
 }
 
@@ -170,19 +170,19 @@ int sys_break_take( void )
     return hit;
 }
 
-void sys_stdout( const char *buf, u32 len )
+void sys_stdout( const char *buf, unsigned int len )
 {
     REGS regs;
 
     clear( &regs );
     regs.ebx = 1;
     regs.ecx = len;
-    regs.edx = (u32)buf;
+    regs.edx = (uint32_t)buf;
     call21( &regs, 0x4000 );
 }
 
 /* 4400h: bit 7 a device, bit 1 the console's output, bit 0 its input */
-static u32 dev_info( u32 handle )
+static uint32_t dev_info( uint32_t handle )
 {
     REGS regs;
 
@@ -203,7 +203,7 @@ int sys_handle_is_file( int handle )
     REGS regs;
 
     clear( &regs );
-    regs.ebx = (u32)handle;
+    regs.ebx = (uint32_t)handle;
     call21( &regs, 0x4400 );
     return !CF( regs ) && !(regs.edx & 0x80);
 }
@@ -213,22 +213,22 @@ int sys_handle_is_file( int handle )
    length, the text, a carriage return.  4Dh has its exit code. */
 int sys_exec( const char *prog, const char *args, int *error )
 {
-    static u8  tail_buf[132];
-    static u32 parm[2];
+    static uint8_t  tail_buf[132];
+    static uint32_t parm[2];
     REGS regs;
-    u32 len = str_len( args );
+    unsigned int len = str_len( args );
 
     if ( len > 126 ) {
         len = 126;
     }
-    tail_buf[0] = (u8)len;
+    tail_buf[0] = (uint8_t)len;
     mem_cpy( tail_buf + 1, args, len );
     tail_buf[1 + len] = 0x0D;
-    parm[0] = *(u32 *)(psp + 0x2C);
-    parm[1] = (u32)tail_buf;
+    parm[0] = *(uint32_t *)(psp + 0x2C);
+    parm[1] = (uint32_t)tail_buf;
     clear( &regs );
-    regs.edx = (u32)prog;
-    regs.ebx = (u32)parm;
+    regs.edx = (uint32_t)prog;
+    regs.ebx = (uint32_t)parm;
     call21( &regs, 0x4B00 );
     if ( CF( regs ) ) {
         *error = (int)AX( regs );
@@ -254,12 +254,12 @@ int sys_stdin_byte( void )
 {
 
     REGS regs;
-    u8 ch;
+    uint8_t ch;
 
     clear( &regs );
     regs.ebx = 0;
     regs.ecx = 1;
-    regs.edx = (u32)&ch;
+    regs.edx = (uint32_t)&ch;
     call21( &regs, 0x3F00 );
     if ( CF( regs ) || regs.eax == 0 ) {
         return -1;
@@ -272,7 +272,7 @@ int sys_stdin_byte( void )
 /* ------------------------------------------------------------------ */
 
 /* 2Ch, as hundredths of a second since midnight */
-u32 sys_hundredths( void )
+uint32_t sys_hundredths( void )
 {
     REGS regs;
 
@@ -285,11 +285,11 @@ u32 sys_hundredths( void )
 void sys_get_country( COUNTRY *ctry )
 {
     REGS regs;
-    u8 buf[48];
+    uint8_t buf[48];
 
     mem_set( buf, 0, sizeof( buf ) );
     clear( &regs );
-    regs.edx = (u32)buf;
+    regs.edx = (uint32_t)buf;
     call21( &regs, 0x3800 );
     if ( CF( regs ) ) {
         return;
@@ -316,6 +316,15 @@ void sys_get_country( COUNTRY *ctry )
 #define DRVF_FLOPPY     0x02
 #define DRVF_CDROM      0x08
 #define DRVF_IMAGE      0x10
+#define DRVF_USB        0x80
+
+/* a physical disk's flags (PMDOS.INC, DSKF_*) */
+#define DSKF_REMOVABLE  0x02
+#define DSKF_SOLID      0x04
+#define DSKF_MEMORY     0x10
+
+#define IMG_UNIT_BASE   0xC0            /* a mount's number in the table */
+#define IMG_MAX         8               /* mounts there can be */
 
 int sys_get_drive( void )
 {
@@ -337,18 +346,25 @@ int sys_boot_drive( void )
     return drive >= 0 && drive < 26 ? drive : 2;
 }
 
-/* 21h/F1h AL=6: a letter's row of the volume table; 0 = no such row */
-static int drive_flags( int drv )
+/* 21h/F1h AL=6: a letter's row of the volume table into rec, 16 bytes;
+   -> the row's flags, 0 = no such row */
+static int drive_row( int drv, uint8_t *rec )
 {
     REGS regs;
-    u8 rec[16];
 
-    mem_set( rec, 0, sizeof( rec ) );
+    mem_set( rec, 0, 16 );
     clear( &regs );
-    regs.edx = (u32)drv;
-    regs.edi = (u32)rec;
+    regs.edx = (uint32_t)drv;
+    regs.edi = (uint32_t)rec;
     call21( &regs, 0xF106 );
     return CF( regs ) ? 0 : rec[2];
+}
+
+static int drive_flags( int drv )
+{
+    uint8_t rec[16];
+
+    return drive_row( drv, rec );
 }
 
 /* What a drive is to DEFRAG: nothing it can optimize, a diskette drive,
@@ -366,7 +382,7 @@ int sys_drive_kind( int drv )
         return DK_NONE;
     }
     clear( &regs );
-    regs.ebx = (u32)drv + 1;
+    regs.ebx = (uint32_t)drv + 1;
     call21( &regs, 0x4409 );
     if ( !CF( regs ) && (regs.edx & 0x9000) ) {
         return DK_NONE;                         /* SUBST, or a network drive */
@@ -377,8 +393,8 @@ int sys_drive_kind( int drv )
     in[3] = 0;
     out[0] = 0;
     clear( &regs );
-    regs.esi = (u32)in;
-    regs.edi = (u32)out;
+    regs.esi = (uint32_t)in;
+    regs.edi = (uint32_t)out;
     call21( &regs, 0x6000 );
     if ( !CF( regs ) && out[1] == ':' && ch_upper( out[0] ) != 'A' + drv ) {
         return DK_NONE;                         /* another drive under this letter */
@@ -387,7 +403,7 @@ int sys_drive_kind( int drv )
         return DK_FLOPPY;
     }
     clear( &regs );
-    regs.edx = (u32)drv + 1;
+    regs.edx = (uint32_t)drv + 1;
     call21( &regs, 0xF101 );
     /* 0EFh is exFAT, which has no FAT for this program to rearrange */
     return !CF( regs ) && (regs.eax & 0xFF) != 0 && (regs.eax & 0xFF) != 0xEF ?
@@ -400,9 +416,65 @@ int sys_drive_exfat( int drv )
     REGS regs;
 
     clear( &regs );
-    regs.edx = (u32)drv + 1;
+    regs.edx = (uint32_t)drv + 1;
     call21( &regs, 0xF101 );
     return !CF( regs ) && (regs.eax & 0xFF) == 0xEF;
+}
+
+/* 21h/F1h AL=0Ch: a BIOS drive number's DSKF_* flags.  The call fails
+   for a RAM disk's unit and still sets DSKF_MEMORY, so the carry is not
+   looked at: the record starts out as zeros. */
+static int disk_flags( int bios )
+{
+    REGS regs;
+    uint8_t rec[16];
+
+    mem_set( rec, 0, sizeof( rec ) );
+    clear( &regs );
+    regs.edx = (uint32_t)bios;
+    regs.edi = (uint32_t)rec;
+    call21( &regs, 0xF10C );
+    return rec[1];
+}
+
+/* What a drive's sectors are stored on.  A mounted image is a file, so
+   the disk that counts is the one under the file, and that volume may
+   be a mounted image too.  One mount per step, so the walk ends even if
+   the table were to go round in a circle. */
+int sys_drive_medium( int drv )
+{
+    REGS regs;
+    uint8_t row[16], mount[100];
+    int hops, flags, disk;
+
+    flags = drive_row( drv, row );
+    for ( hops = 0; (flags & DRVF_IMAGE) && hops < IMG_MAX; hops++ ) {
+        clear( &regs );
+        regs.ebx = (uint8_t)(row[0] - IMG_UNIT_BASE);
+        regs.edi = (uint32_t)mount;
+        call21( &regs, 0xF111 );
+        if ( CF( regs ) ) {
+            return MED_DISK;
+        }
+        flags = drive_row( mount[2], row );
+    }
+    if ( flags & DRVF_IMAGE ) {
+        return MED_DISK;
+    }
+    if ( flags & DRVF_USB ) {
+        return MED_USB;
+    }
+    if ( (flags & (DRVF_FLOPPY | DRVF_CDROM)) || row[0] < 0x80 ) {
+        return MED_DISK;
+    }
+    disk = disk_flags( row[0] );
+    if ( disk & DSKF_MEMORY ) {
+        return MED_RAM;
+    }
+    if ( disk & DSKF_SOLID ) {
+        return MED_SOLID;
+    }
+    return (disk & DSKF_REMOVABLE) ? MED_USB : MED_DISK;
 }
 
 int sys_get_cwd( int drv, char *buf, int max )
@@ -412,14 +484,14 @@ int sys_get_cwd( int drv, char *buf, int max )
 
     tmp[0] = 0;
     clear( &regs );
-    regs.edx = (u32)drv + 1;
-    regs.esi = (u32)tmp;
+    regs.edx = (uint32_t)drv + 1;
+    regs.esi = (uint32_t)tmp;
     regs.flags = 1;
     call21( &regs, 0x7147 );                    /* long path (DOS 7) */
     if ( CF( regs ) ) {
         clear( &regs );
-        regs.edx = (u32)drv + 1;
-        regs.esi = (u32)tmp;
+        regs.edx = (uint32_t)drv + 1;
+        regs.esi = (uint32_t)tmp;
         call21( &regs, 0x4700 );
         if ( CF( regs ) ) {
             return -1;
@@ -441,12 +513,12 @@ int sys_chdir( int drv, const char *dir )
 
     sfmt( path, sizeof( path ), "%c:\\%s", 'A' + drv, dir );
     clear( &regs );
-    regs.edx = (u32)path;
+    regs.edx = (uint32_t)path;
     regs.flags = 1;
     call21( &regs, 0x713B );                    /* long path (DOS 7) */
     if ( CF( regs ) ) {
         clear( &regs );
-        regs.edx = (u32)path;
+        regs.edx = (uint32_t)path;
         call21( &regs, 0x3B00 );
     }
     return result( &regs );
@@ -456,17 +528,17 @@ int sys_chdir( int drv, const char *dir )
  the drive in DL (1 = A:), the buffer at
    EDI and its size in ECX, and back comes DOS 7.1's extended DPB behind
    a length word. */
-int sys_get_bpb( int drv, u8 *sector )
+int sys_get_bpb( int drv, uint8_t *sector )
 {
     REGS regs;
-    u8 buf[0x40];
+    uint8_t buf[0x40];
 
     mem_set( buf, 0, sizeof( buf ) );
     WR16( buf, 0x3F );
     clear( &regs );
-    regs.edx = (u32)drv + 1;
+    regs.edx = (uint32_t)drv + 1;
     regs.ecx = 0x3F;
-    regs.edi = (u32)buf;
+    regs.edi = (uint32_t)buf;
     call21( &regs, 0x7302 );
     if ( CF( regs ) ) {
         return -1;
@@ -483,15 +555,15 @@ int sys_get_bpb( int drv, u8 *sector )
  * there came back "access denied" and looked like a lock refused.  So
  * EDX points at something, which costs nothing and is ignored.
  */
-static int lock_call( int drv, u32 cx )
+static int lock_call( int drv, uint32_t cx )
 {
-    static u8 unused[8];
+    static uint8_t unused[8];
     REGS regs;
 
     clear( &regs );
-    regs.ebx = (u32)drv + 1;                    /* BH = lock level 0 */
+    regs.ebx = (uint32_t)drv + 1;               /* BH = lock level 0 */
     regs.ecx = cx;
-    regs.edx = (u32)unused;
+    regs.edx = (uint32_t)unused;
     call21( &regs, 0x440D );
     if ( !CF( regs ) ) {
         return 0;
@@ -522,34 +594,34 @@ void sys_unlock( int drv, int fat32 )
     }
 }
 
-static int disk_io( int drv, u32 lba, u32 count, void *buf, u32 mode )
+static int disk_io( int drv, uint32_t lba, uint32_t count, void *buf, uint32_t mode )
 {
     REGS regs;
-    u8 pkt[10];
+    uint8_t pkt[10];
 
     WR32( pkt, lba );
     WR16( pkt + 4, count );
-    WR32( pkt + 6, (u32)buf );
+    WR32( pkt + 6, (uint32_t)buf );
     clear( &regs );
-    regs.ebx = (u32)pkt;
+    regs.ebx = (uint32_t)pkt;
     regs.ecx = 0xFFFFFFFFul;
-    regs.edx = (u32)drv + 1;
+    regs.edx = (uint32_t)drv + 1;
     regs.esi = mode;
     regs.flags = 1;
     call21( &regs, 0x7305 );
     return result( &regs );
 }
 
-int sys_read_sec( int drv, u32 lba, u32 count, u32 bps, void *buf )
+int sys_read_sec( int drv, uint32_t lba, uint32_t count, uint32_t bps, void *buf )
 {
     (void)bps;
     return disk_io( drv, lba, count, buf, 0 );
 }
 
-int sys_write_sec( int drv, u32 lba, u32 count, u32 bps, const void *buf, int kind )
+int sys_write_sec( int drv, uint32_t lba, uint32_t count, uint32_t bps, const void *buf, int kind )
 {
     (void)bps;
-    return disk_io( drv, lba, count, (void *)buf, 1u | ((u32)kind << 13) );
+    return disk_io( drv, lba, count, (void *)buf, 1u | ((uint32_t)kind << 13) );
 }
 
 void sys_reset_drive( int drv )
@@ -558,7 +630,7 @@ void sys_reset_drive( int drv )
 
     clear( &regs );
     regs.ecx = 1;                               /* flush and invalidate */
-    regs.edx = (u32)drv + 1;
+    regs.edx = (uint32_t)drv + 1;
     call21( &regs, 0x710D );
     clear( &regs );
     call21( &regs, 0x0D00 );
@@ -571,7 +643,7 @@ int sys_vol_flags( int drv )
     REGS regs;
 
     clear( &regs );
-    regs.edx = (u32)drv + 1;
+    regs.edx = (uint32_t)drv + 1;
     call21( &regs, F1( 0x1D, 0 ) );
     return CF( regs ) ? 0 : (int)(regs.eax & 0xFF);
 }
@@ -580,20 +652,20 @@ int sys_vol_flags( int drv )
 /* files                                                               */
 /* ------------------------------------------------------------------ */
 
-int sys_create( const char *path, u32 *handle )
+int sys_create( const char *path, uint32_t *handle )
 {
     REGS regs;
 
     crit_hit = 0;
     clear( &regs );
     regs.ecx = 0;
-    regs.edx = (u32)path;
+    regs.edx = (uint32_t)path;
     call21( &regs, 0x3C00 );
     *handle = AX( regs );
     return result( &regs );
 }
 
-int sys_write( u32 handle, const void *buf, u32 len, u32 *done )
+int sys_write( uint32_t handle, const void *buf, unsigned int len, unsigned int *done )
 
 {
     REGS regs;
@@ -601,7 +673,7 @@ int sys_write( u32 handle, const void *buf, u32 len, u32 *done )
     clear( &regs );
     regs.ebx = handle;
     regs.ecx = len;
-    regs.edx = (u32)buf;
+    regs.edx = (uint32_t)buf;
     call21( &regs, 0x4000 );
     if ( CF( regs ) ) {
         *done = 0;
@@ -611,7 +683,7 @@ int sys_write( u32 handle, const void *buf, u32 len, u32 *done )
     return regs.eax < len ? 112 : 0;            /* the disk is full */
 }
 
-int sys_close( u32 handle )
+int sys_close( uint32_t handle )
 {
     REGS regs;
 
@@ -626,7 +698,7 @@ int sys_exists( const char *path )
     REGS regs;
 
     clear( &regs );
-    regs.edx = (u32)path;
+    regs.edx = (uint32_t)path;
     call21( &regs, 0x4300 );
     return !CF( regs );
 }
@@ -657,25 +729,25 @@ void sys_screen_size( int *rows, int *cols )
     }
 }
 
-void sys_put_cells( u32 first, const u16 *cells, u32 count )
+void sys_put_cells( unsigned int first, const uint16_t *cells, unsigned int count )
 {
     REGS regs;
 
     clear( &regs );
     regs.ebx = first;
     regs.ecx = count;
-    regs.esi = (u32)cells;
+    regs.esi = (uint32_t)cells;
     call21( &regs, 0xF004 );
 }
 
-void sys_get_cells( u32 first, u16 *cells, u32 count )
+void sys_get_cells( unsigned int first, uint16_t *cells, unsigned int count )
 {
     REGS regs;
 
     clear( &regs );
     regs.ebx = first;
     regs.ecx = count;
-    regs.edi = (u32)cells;
+    regs.edi = (uint32_t)cells;
     call21( &regs, 0xF005 );
 }
 
@@ -684,7 +756,7 @@ void sys_cursor( int row, int col )
     REGS regs;
 
     clear( &regs );
-    regs.edx = ((u32)row << 8) | (u32)col;
+    regs.edx = ((uint32_t)row << 8) | (uint32_t)col;
     call21( &regs, 0xF002 );
 }
 
@@ -719,7 +791,7 @@ void sys_cursor_shape( int kind )
             first = char_height - 2;
             last = char_height - 1;
         }
-        regs.ecx = ((u32)first << 8) | (u32)last;
+        regs.ecx = ((uint32_t)first << 8) | (uint32_t)last;
     }
     call21( &regs, 0xF006 );
 }
@@ -735,7 +807,7 @@ int sys_key_wait( int shift_seen, int *shift_now, int flags )
     REGS regs;
 
     clear( &regs );
-    regs.edx = ((u32)(flags & 3) << 8) | (u32)(shift_seen & 0xFF);
+    regs.edx = ((uint32_t)(flags & 3) << 8) | (uint32_t)(shift_seen & 0xFF);
     call21( &regs, 0xF008 );
     *shift_now = (int)(regs.ebx & 0xFFFF);
     return (int)(regs.eax & 0xFF);
@@ -764,7 +836,7 @@ int sys_shift( void )
 /* the mouse                                                           */
 /* ------------------------------------------------------------------ */
 
-static void call33( REGS *regs, u32 eax )
+static void call33( REGS *regs, uint32_t eax )
 {
     regs->eax = eax;
     int33( regs );
@@ -810,7 +882,7 @@ int sys_mouse_count( int release, int button, int *x, int *y )
     REGS regs;
 
     clear( &regs );
-    regs.ebx = (u32)button;
+    regs.ebx = (uint32_t)button;
     call33( &regs, release ? 0x0006 : 0x0005 );
     *x = (int)(regs.ecx & 0xFFFF);
     *y = (int)(regs.edx & 0xFFFF);
@@ -835,10 +907,10 @@ void sys_mouse_range( int xmax, int ymax )
     REGS regs;
 
     clear( &regs );
-    regs.edx = (u32)xmax;
+    regs.edx = (uint32_t)xmax;
     call33( &regs, 0x0007 );
     clear( &regs );
-    regs.edx = (u32)ymax;
+    regs.edx = (uint32_t)ymax;
     call33( &regs, 0x0008 );
 }
 
@@ -847,8 +919,8 @@ void sys_mouse_move( int x, int y )
     REGS regs;
 
     clear( &regs );
-    regs.ecx = (u32)x;
-    regs.edx = (u32)y;
+    regs.ecx = (uint32_t)x;
+    regs.edx = (uint32_t)y;
     call33( &regs, 0x0004 );
 }
 
@@ -859,7 +931,7 @@ void sys_mouse_inject( int buttons )
     REGS regs;
 
     clear( &regs );
-    regs.ebx = (u32)(buttons & 7);
+    regs.ebx = (uint32_t)(buttons & 7);
     call21( &regs, 0xF00B );
 }
 
@@ -869,14 +941,14 @@ void sys_mouse_inject( int buttons )
 
 /* 21h/F1h AL=20h: bytes of the first megabyte, which is outside a
    native program's segment.  A kernel without the call reads nothing. */
-int sys_peek( u32 addr, void *buf, u32 len )
+int sys_peek( uint32_t addr, void *buf, unsigned int len )
 {
     REGS regs;
 
     clear( &regs );
     regs.ebx = addr;
     regs.ecx = len;
-    regs.edi = (u32)buf;
+    regs.edi = (uint32_t)buf;
     call21( &regs, F1( 0x20, 0 ) );
     if ( CF( regs ) ) {
         mem_set( buf, 0, len );
@@ -893,15 +965,15 @@ int sys_bios( int vector, BREGS *bregs )
     bregs->es = bregs->ds = 0;
     bregs->flags = 0;
     clear( &regs );
-    regs.edx = (u32)vector;
-    regs.esi = (u32)bregs;
+    regs.edx = (uint32_t)vector;
+    regs.esi = (uint32_t)bregs;
     call21( &regs, 0xF121 );
     return !CF( regs );
 }
 
 /* 21h/F1h AL=1Fh, function 2: a mode below 100h is the BIOS's own, and
    the selector is the 64K at A0000h */
-int sys_video_set( u32 mode, u32 *selector, u32 *bytes )
+int sys_video_set( uint32_t mode, uint32_t *selector, uint32_t *bytes )
 {
     REGS regs;
 

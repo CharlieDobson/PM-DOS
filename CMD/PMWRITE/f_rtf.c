@@ -58,8 +58,8 @@ enum { A_NOP, A_SKIP, A_DEST, A_INFO, A_PICT, A_FIELD, A_FLDINST, A_FLDRSLT, A_N
 
 typedef struct {
     const char *name;
-    u8    action;
-    u16   arg;
+    uint8_t  action;
+    uint16_t arg;
 } RWORD;
 
 /* borders: which one the next line-style word is for */
@@ -175,7 +175,7 @@ static const RWORD rtf_words[] = {
 #define RTF_NWORDS      (sizeof( rtf_words ) / sizeof( rtf_words[0] ))
 
 /* the sixteen colours a highlighter has, in Word's order */
-static const u32 rtf_ico[17] = {
+static const uint32_t rtf_ico[17] = {
     COLOR_AUTO, 0x000000UL, 0x0000FFUL, 0x00FFFFUL, 0x00FF00UL, 0xFF00FFUL, 0xFF0000UL,
     0xFFFF00UL, 0xFFFFFFUL, 0x000080UL, 0x008080UL, 0x008000UL, 0x800080UL, 0x800000UL,
     0x808000UL, 0x808080UL, 0xC0C0C0UL
@@ -183,125 +183,126 @@ static const u32 rtf_ico[17] = {
 
 /* everything a group saves and puts back */
 typedef struct {
-    CHP   chp;
-    PAP   pap;                  /* tabs and row stay NULL: the tabs are below */
-    WTAB  tabs[MAX_TABS];
-    s32   sl;                   /* \sl as it was written */
-    s32   ls;                   /* the list it is in, 0 for none */
-    s32   style;
-    u16   codepage;             /* of the font in use; 2 for a font of symbols */
-    u16   pn_start;
-    u8    dest;                 /* D_* */
-    u8    owner;                /* the group that began its destination */
-    u8    is_field;
-    u8    uc;                   /* stand-in characters after a \u */
-    u8    slmult;
-    u8    intbl;
-    u8    itap;
-    u8    ilvl;
-    u8    dead;                 /* text a tracked change took out */
-    u8    tab_kind, tab_lead;
-    u8    brdr;                 /* BT_* */
-    u8    pn_kind, pn_level;
-    u8    star;                 /* a \* came before the next word */
-    u8    upr_dest;
-    u8    info;
-    u8    not_para;             /* a style that is not a paragraph's */
-    u8    loch;                 /* \loch: the next \af is the font of plain letters */
+    CHP      chp;
+    PAP      pap;               /* tabs and row stay NULL: the tabs are below */
+    WTAB     tabs[MAX_TABS];
+    int32_t  sl;                /* \sl as it was written */
+    int32_t  ls;                /* the list it is in, 0 for none */
+    int32_t  style;
+    uint16_t codepage;          /* of the font in use; 2 for a font of symbols */
+    uint16_t pn_start;
+    uint8_t  dest;              /* D_* */
+    uint8_t  owner;             /* the group that began its destination */
+    uint8_t  is_field;
+    uint8_t  uc;                /* stand-in characters after a \u */
+    uint8_t  slmult;
+    uint8_t  intbl;
+    uint8_t  itap;
+    uint8_t  ilvl;
+    uint8_t  dead;              /* text a tracked change took out */
+    uint8_t  tab_kind, tab_lead;
+    uint8_t  brdr;              /* BT_* */
+    uint8_t  pn_kind, pn_level;
+    uint8_t  star;              /* a \* came before the next word */
+    uint8_t  upr_dest;
+    uint8_t  info;
+    uint8_t  not_para;          /* a style that is not a paragraph's */
+    uint8_t  loch;              /* \loch: the next \af is the font of plain letters */
 } RSTATE;
 
 typedef struct {
-    s32   num;
-    s32   doc;                  /* the document's font, -1 until it is used */
-    s32   charset;
-    u16   codepage;
-    u8    family;
-    s8    fixed;
-    char  name[FONT_NAME_LEN];
+    int32_t  num;
+    int      doc;               /* the document's font, -1 until it is used */
+    int32_t  charset;
+    uint16_t codepage;
+    uint8_t  family;
+    int8_t   fixed;
+    char     name[FONT_NAME_LEN];
 } RFONT;
 
 typedef struct {
-    s32   num;
-    u32   doc;
+    int32_t      num;
+    unsigned int doc;
 } RSTYLE;
 
 typedef struct {
-    s32   id;
-    u32   nlevels;
-    u8    nfc[MAX_LEVELS];
-    u16   start[MAX_LEVELS];
-    u8    seen[MAX_LEVELS], again[MAX_LEVELS];
-    s32   last_ls[MAX_LEVELS];
+    int32_t      id;
+    unsigned int nlevels;
+    uint8_t      nfc[MAX_LEVELS];
+    uint16_t     start[MAX_LEVELS];
+    uint8_t      seen[MAX_LEVELS], again[MAX_LEVELS];
+    int32_t      last_ls[MAX_LEVELS];
 } RLIST;
 
 typedef struct {
-    s32   ls;
-    s32   id;
-    u32   nlevels;
-    u16   over;
-    u16   start[MAX_LEVELS];
+    int32_t      ls;
+    int32_t      id;
+    unsigned int nlevels;
+    uint16_t     over;
+    uint16_t     start[MAX_LEVELS];
 } ROVER;
 
 typedef struct {
-    u16   kind;                 /* the character it is, or 0 for one kept as its result */
-    u8    put;
-    u8    len;
-    s32   font;                 /* a symbol's font, or -1 */
-    u16   size;                 /* ...and its size, or 0 */
-    char  inst[INST_LEN];
+    uint16_t kind;              /* the character it is, or 0 for one kept as its result */
+    uint8_t  put;
+    uint8_t  len;
+    int      font;              /* a symbol's font, or -1 */
+    uint16_t size;              /* ...and its size, or 0 */
+    char     inst[INST_LEN];
 } RFIELD;
 
 typedef struct {
-    WDOC *doc;
-    const u8 *data;
-    u32   len, pos;
-    RSTATE *st;                 /* the group in hand */
-    RSTATE *stack;
-    u32   depth, cap, over_deep;
-    u16  *hash;
-    WBUILD body, sub;
-    WBUILD *wb;
-    int   in_sub;               /* 1 a header or footer, 2 a note */
-    int   note_obj;
-    u16   def_cp;
-    s32   deff;
-    u32   skip;                 /* stand-ins still to pass over */
-    RFONT *font;
-    u32   nfont, font_cap;
-    u16  *font_index;           /* by the file's number: which font, + 1 */
-    RFONT new_font;
-    char  name[NAME_LEN];
-    u32   name_len;
-    u32  *color;
-    u32   ncolor, color_cap;
-    u32   rgb[3];
-    int   rgb_have;
-    RSTYLE *style;
-    u32   nstyle, style_cap;
-    u16   info[INFO_LEN];
-    u32   info_len;
-    u8   *pict;
-    u32   pict_len, pict_cap;
-    int   pict_nibble, pict_fmt, pict_bad;
-    s32   pic_num[6];
-    RFIELD field[RTF_FIELDS];
-    u32   nfield;
-    TROW  row;
-    u32   row_cells, cells;
-    RLIST *list;
-    u32   nlist, list_cap;
-    RLIST new_list;
-    ROVER *over;
-    u32   nover, over_cap;
-    ROVER new_over;
-    u32   lfo_start;
-    int   lfo_set;
-    u32   sect;
-    WPARA *sect_para;
-    u32   sect_off;
-    int   pgn_restart;
-    u32   pgn_starts;
-    int   was_list;
+    WDOC        *doc;
+    const uint8_t *data;
+    unsigned int len, pos;
+    RSTATE      *st;            /* the group in hand */
+    RSTATE      *stack;
+    unsigned int depth, cap, over_deep;
+    uint16_t    *hash;
+    WBUILD       body, sub;
+    WBUILD      *wb;
+    int          in_sub;        /* 1 a header or footer, 2 a note */
+    int          note_obj;
+    uint16_t     def_cp;
+    int32_t      deff;
+    unsigned int skip;          /* stand-ins still to pass over */
+    RFONT       *font;
+    unsigned int nfont, font_cap;
+    uint16_t    *font_index;    /* by the file's number: which font, + 1 */
+    RFONT        new_font;
+    char         name[NAME_LEN];
+    unsigned int name_len;
+    uint32_t    *color;
+    unsigned int ncolor, color_cap;
+    uint32_t     rgb[3];
+    int          rgb_have;
+    RSTYLE      *style;
+    unsigned int nstyle, style_cap;
+    uint16_t     info[INFO_LEN];
+    unsigned int info_len;
+    uint8_t     *pict;
+    uint32_t     pict_len;
+    unsigned int pict_cap;
+    int          pict_nibble, pict_fmt, pict_bad;
+    int32_t      pic_num[6];
+    RFIELD       field[RTF_FIELDS];
+    unsigned int nfield;
+    TROW         row;
+    unsigned int row_cells, cells;
+    RLIST       *list;
+    unsigned int nlist, list_cap;
+    RLIST        new_list;
+    ROVER       *over;
+    unsigned int nover, over_cap;
+    ROVER        new_over;
+    uint32_t     lfo_start;
+    int          lfo_set;
+    unsigned int sect;
+    WPARA       *sect_para;
+    unsigned int sect_off;
+    int          pgn_restart;
+    uint32_t     pgn_starts;
+    int          was_list;
 } RTF;
 
 /* ------------------------------------------------------------------ */
@@ -309,10 +310,10 @@ typedef struct {
 /* ------------------------------------------------------------------ */
 
 /* room for one more in an array that doubles: 0 if there is no memory */
-static int rtf_room( RTF *ctx, void **array, u32 *cap, u32 count, u32 size )
+static int rtf_room( RTF *ctx, void **array, unsigned int *cap, unsigned int count, unsigned int size )
 {
     void *fresh;
-    u32 want;
+    unsigned int want;
 
     if ( count < *cap ) {
         return 1;
@@ -331,38 +332,39 @@ static int rtf_room( RTF *ctx, void **array, u32 *cap, u32 count, u32 size )
     return 1;
 }
 
-static u32 word_hash( const char *name, u32 len )
+static unsigned int word_hash( const char *name, unsigned int len )
 {
-    u32 hash = 5381, index;
+    uint32_t hash = 5381;
+    unsigned int index;
 
     for ( index = 0; index < len; index++ ) {
-        hash = hash * 33 + (u8)name[index];
+        hash = hash * 33 + (uint8_t)name[index];
     }
     return hash & (HASH_SIZE - 1);
 }
 
 static int rtf_hash_build( RTF *ctx )
 {
-    u32 index, slot;
+    unsigned int index, slot;
 
-    ctx->hash = (u16 *)try_alloc( HASH_SIZE * sizeof( u16 ) );
+    ctx->hash = (uint16_t *)try_alloc( HASH_SIZE * sizeof( uint16_t ) );
     if ( ctx->hash == NULL ) {
         return 0;
     }
-    mem_set( ctx->hash, 0, HASH_SIZE * sizeof( u16 ) );
+    mem_set( ctx->hash, 0, HASH_SIZE * sizeof( uint16_t ) );
     for ( index = 0; index < RTF_NWORDS; index++ ) {
         slot = word_hash( rtf_words[index].name, str_len( rtf_words[index].name ) );
         while ( ctx->hash[slot] ) {
             slot = (slot + 1) & (HASH_SIZE - 1);
         }
-        ctx->hash[slot] = (u16)(index + 1);
+        ctx->hash[slot] = (uint16_t)(index + 1);
     }
     return 1;
 }
 
-static const RWORD *rtf_lookup( const RTF *ctx, const char *name, u32 len )
+static const RWORD *rtf_lookup( const RTF *ctx, const char *name, unsigned int len )
 {
-    u32 slot = word_hash( name, len );
+    unsigned int slot = word_hash( name, len );
     const RWORD *word;
 
     while ( ctx->hash[slot] ) {
@@ -381,12 +383,12 @@ static int is_text_dest( int dest )
 }
 
 /* the code page of a font's 8-bit text; 2 marks a font of symbols */
-static u16 rtf_charset_cp( const RTF *ctx, s32 charset )
+static uint16_t rtf_charset_cp( const RTF *ctx, int32_t charset )
 {
     switch ( charset ) {
     case 0:   return CP_1252;
     case 2:   return 2;
-    case 77:  return (u16)CP_MAC;
+    case 77:  return (uint16_t)CP_MAC;
     case 161: return CP_1253;
     case 162: return CP_1254;
     case 204: return CP_1251;
@@ -396,9 +398,9 @@ static u16 rtf_charset_cp( const RTF *ctx, s32 charset )
     return ctx->def_cp;
 }
 
-static RFONT *rtf_font_find( RTF *ctx, s32 num )
+static RFONT *rtf_font_find( RTF *ctx, int32_t num )
 {
-    u32 index;
+    unsigned int index;
 
     if ( ctx->font_index == NULL || num < 0 || num > MAX_FONT_NUM ) {
         return NULL;
@@ -408,7 +410,7 @@ static RFONT *rtf_font_find( RTF *ctx, s32 num )
 }
 
 /* a font of the file's as the document's: added when it is first used */
-static void rtf_font_use( RTF *ctx, RSTATE *st, s32 num )
+static void rtf_font_use( RTF *ctx, RSTATE *st, int32_t num )
 {
     RFONT *font = rtf_font_find( ctx, num );
 
@@ -420,7 +422,7 @@ static void rtf_font_use( RTF *ctx, RSTATE *st, s32 num )
     if ( font->doc < 0 ) {
         font->doc = wd_font( ctx->doc, font->name, font->family, font->fixed );
     }
-    st->chp.font = (u16)font->doc;
+    st->chp.font = (uint16_t)font->doc;
     st->codepage = font->codepage;
 }
 
@@ -452,7 +454,7 @@ static void rtf_pard( RSTATE *st )
     st->pn_start = 0;
 }
 
-static int rtf_nfc_list( u32 nfc )
+static int rtf_nfc_list( uint32_t nfc )
 {
     switch ( nfc ) {
     case 1:   return LIST_ROMAN_UPPER;
@@ -468,7 +470,7 @@ static int rtf_nfc_list( u32 nfc )
 /* a state's paragraph properties as the document's: all but the tabs */
 static void rtf_pap_of( const RSTATE *st, PAP *pap )
 {
-    s32 line = st->sl < 0 ? -st->sl : st->sl;
+    int32_t line = st->sl < 0 ? -st->sl : st->sl;
 
     *pap = st->pap;
     pap->tabs = NULL;
@@ -482,20 +484,20 @@ static void rtf_pap_of( const RSTATE *st, PAP *pap )
         pap->line = 240;
     } else if ( st->slmult ) {
         pap->line_rule = LS_MULTIPLE;
-        pap->line = (u16)line;
+        pap->line = (uint16_t)line;
     } else {
-        pap->line_rule = (u8)(st->sl < 0 ? LS_EXACT : LS_ATLEAST);
-        pap->line = (u16)line;
+        pap->line_rule = (uint8_t)(st->sl < 0 ? LS_EXACT : LS_ATLEAST);
+        pap->line = (uint16_t)line;
     }
 }
 
 /* the paragraph's properties handed to the builder, for wb_par */
-static void rtf_set_pap( RTF *ctx, RSTATE *st, u16 extra )
+static void rtf_set_pap( RTF *ctx, RSTATE *st, uint16_t extra )
 {
     PAP *pap = &ctx->wb->pap;
     RLIST *list = NULL;
     ROVER *over = NULL;
-    u32 index, level, deeper, start;
+    unsigned int index, level, deeper, start;
     int kind;
 
     pap_free( pap );
@@ -503,11 +505,11 @@ static void rtf_set_pap( RTF *ctx, RSTATE *st, u16 extra )
     if ( st->pap.ntabs && !pap_set_tabs( pap, st->tabs, st->pap.ntabs ) ) {
         ctx->doc->failed = 1;
     }
-    pap->flags = (u16)(st->pap.flags | extra | (st->intbl ? PF_INTABLE : 0));
+    pap->flags = (uint16_t)(st->pap.flags | extra | (st->intbl ? PF_INTABLE : 0));
     pap->style = 0;
     for ( index = 0; index < ctx->nstyle; index++ ) {
         if ( ctx->style[index].num == st->style ) {
-            pap->style = (u8)ctx->style[index].doc;
+            pap->style = (uint8_t)ctx->style[index].doc;
             break;
         }
     }
@@ -535,8 +537,8 @@ static void rtf_set_pap( RTF *ctx, RSTATE *st, u16 extra )
         level = st->ilvl < list->nlevels ? st->ilvl : list->nlevels - 1;
         kind = rtf_nfc_list( list->nfc[level] );
         if ( kind != LIST_NONE ) {
-            pap->list = (u8)kind;
-            pap->level = (u8)level;
+            pap->list = (uint8_t)kind;
+            pap->level = (uint8_t)level;
             start = 0;
             if ( !list->seen[level] || list->again[level] ) {
                 start = list->start[level];
@@ -553,20 +555,20 @@ static void rtf_set_pap( RTF *ctx, RSTATE *st, u16 extra )
                 list->again[deeper] = 1;
             }
             if ( kind != LIST_BULLET ) {
-                pap->list_start = (u16)start;
+                pap->list_start = (uint16_t)start;
             }
         }
     } else if ( st->pn_kind != LIST_NONE ) {
         pap->list = st->pn_kind;
         pap->level = st->pn_level;
         if ( st->pn_kind != LIST_BULLET && !ctx->was_list ) {
-            pap->list_start = (u16)(st->pn_start ? st->pn_start : 1);
+            pap->list_start = (uint16_t)(st->pn_start ? st->pn_start : 1);
         }
     }
     ctx->was_list = pap->list != LIST_NONE;
 }
 
-static void rtf_par( RTF *ctx, u16 extra )
+static void rtf_par( RTF *ctx, uint16_t extra )
 {
     if ( !is_text_dest( ctx->st->dest ) ) {
         return;
@@ -577,9 +579,9 @@ static void rtf_par( RTF *ctx, u16 extra )
 }
 
 /* a unit of text put into the story, looking as the state says */
-static void rtf_put( RTF *ctx, u32 unit )
+static void rtf_put( RTF *ctx, uint32_t unit )
 {
-    u16 one = (u16)unit;
+    uint16_t one = (uint16_t)unit;
 
     ctx->wb->chp = ctx->st->chp;
     wb_text( ctx->wb, &one, 1 );
@@ -591,7 +593,7 @@ static void rtf_put_field( RTF *ctx, RFIELD *field )
     field->put = 1;
     ctx->wb->chp = ctx->st->chp;
     if ( field->font >= 0 ) {
-        ctx->wb->chp.font = (u16)field->font;
+        ctx->wb->chp.font = (uint16_t)field->font;
     }
     if ( field->size ) {
         ctx->wb->chp.size = field->size;
@@ -603,17 +605,17 @@ static void rtf_put_field( RTF *ctx, RFIELD *field )
 /* pictures, fonts, colours, styles: what a destination gathers        */
 /* ------------------------------------------------------------------ */
 
-static void rtf_pict_byte( RTF *ctx, u32 value )
+static void rtf_pict_byte( RTF *ctx, uint32_t value )
 {
-    u8 *fresh;
-    u32 want;
+    uint8_t *fresh;
+    unsigned int want;
 
     if ( ctx->pict_bad ) {
         return;
     }
     if ( ctx->pict_len == ctx->pict_cap ) {
         want = ctx->pict_cap ? ctx->pict_cap * 2 : 4096;
-        fresh = want > 0x40000000UL ? NULL : (u8 *)try_realloc( ctx->pict, want );
+        fresh = want > 0x40000000UL ? NULL : (uint8_t *)try_realloc( ctx->pict, want );
         if ( fresh == NULL ) {
             ctx->pict_bad = 1;          /* too big to keep: the picture is lost, not the file */
             return;
@@ -621,10 +623,10 @@ static void rtf_pict_byte( RTF *ctx, u32 value )
         ctx->pict = fresh;
         ctx->pict_cap = want;
     }
-    ctx->pict[ctx->pict_len++] = (u8)value;
+    ctx->pict[ctx->pict_len++] = (uint8_t)value;
 }
 
-static void rtf_pict_hex( RTF *ctx, u32 ch )
+static void rtf_pict_hex( RTF *ctx, uint32_t ch )
 {
     int digit = ch >= '0' && ch <= '9' ? (int)ch - '0' : ch >= 'a' && ch <= 'f' ? (int)ch - 'a' + 10 :
                 ch >= 'A' && ch <= 'F' ? (int)ch - 'A' + 10 : -1;
@@ -635,13 +637,13 @@ static void rtf_pict_hex( RTF *ctx, u32 ch )
     if ( ctx->pict_nibble < 0 ) {
         ctx->pict_nibble = digit;
     } else {
-        rtf_pict_byte( ctx, (u32)(ctx->pict_nibble * 16 + digit) );
+        rtf_pict_byte( ctx, (uint32_t)(ctx->pict_nibble * 16 + digit) );
         ctx->pict_nibble = -1;
     }
 }
 
 /* a number from the file kept within what a size can sensibly be */
-static s32 rtf_clamp( s32 value, s32 low, s32 high )
+static int32_t rtf_clamp( int32_t value, int32_t low, int32_t high )
 {
     return value < low ? low : value > high ? high : value;
 }
@@ -649,7 +651,7 @@ static s32 rtf_clamp( s32 value, s32 low, s32 high )
 /* the picture's group has closed: "outer" is the state it was in */
 static void rtf_pict_end( RTF *ctx, const RSTATE *outer )
 {
-    s32 width, height;
+    int width, height;
     int obj;
 
     if ( ctx->pict_bad || ctx->pict_fmt == IMG_UNKNOWN || ctx->pict_len == 0 ) {
@@ -682,14 +684,14 @@ static void rtf_font_end( RTF *ctx )
     /* Word lists a font once for each alphabet it has, the alphabet
        added to its name: it is the same font */
     static const struct {
-        s32 charset;
+        int32_t charset;
         const char *tail;
     } tails[] = {
         { 238, " CE" }, { 204, " Cyr" }, { 161, " Greek" }, { 162, " Tur" }, { 186, " Baltic" },
         { 177, " (Hebrew)" }, { 178, " (Arabic)" }, { 163, " (Vietnamese)" }
     };
     RFONT *font;
-    u32 len, index, tail_len;
+    unsigned int len, index, tail_len;
 
     for ( index = 0; index < sizeof( tails ) / sizeof( tails[0] ); index++ ) {
         tail_len = str_len( tails[index].tail );
@@ -706,17 +708,17 @@ static void rtf_font_end( RTF *ctx )
         return;
     }
     if ( ctx->font_index == NULL ) {
-        ctx->font_index = (u16 *)try_alloc( (MAX_FONT_NUM + 1) * sizeof( u16 ) );
+        ctx->font_index = (uint16_t *)try_alloc( (MAX_FONT_NUM + 1) * sizeof( uint16_t ) );
         if ( ctx->font_index == NULL ) {
             ctx->doc->failed = 1;
             return;
         }
-        mem_set( ctx->font_index, 0, (MAX_FONT_NUM + 1) * sizeof( u16 ) );
+        mem_set( ctx->font_index, 0, (MAX_FONT_NUM + 1) * sizeof( uint16_t ) );
     }
     if ( !rtf_room( ctx, (void **)&ctx->font, &ctx->font_cap, ctx->nfont, sizeof( RFONT ) ) ) {
         return;
     }
-    ctx->font_index[ctx->new_font.num] = (u16)(ctx->nfont + 1);
+    ctx->font_index[ctx->new_font.num] = (uint16_t)(ctx->nfont + 1);
     font = &ctx->font[ctx->nfont++];
     *font = ctx->new_font;
     font->doc = -1;
@@ -727,7 +729,7 @@ static void rtf_font_end( RTF *ctx )
 
 static void rtf_color_end( RTF *ctx )
 {
-    if ( !rtf_room( ctx, (void **)&ctx->color, &ctx->color_cap, ctx->ncolor, sizeof( u32 ) ) ) {
+    if ( !rtf_room( ctx, (void **)&ctx->color, &ctx->color_cap, ctx->ncolor, sizeof( uint32_t ) ) ) {
         return;
     }
     ctx->color[ctx->ncolor++] = ctx->rgb_have ? RGB( ctx->rgb[0] & 0xFF, ctx->rgb[1] & 0xFF,
@@ -754,7 +756,7 @@ static int rtf_style_kind( const char *name, const char **proper )
         { "heading 7", "Heading 7", STY_OTHER }, { "heading 8", "Heading 8", STY_OTHER },
         { "heading 9", "Heading 9", STY_OTHER }
     };
-    u32 index;
+    unsigned int index;
 
     for ( index = 0; index < sizeof( known ) / sizeof( known[0] ); index++ ) {
         if ( str_icmp( name, known[index].name ) == 0 ) {
@@ -791,7 +793,7 @@ static void rtf_style_end( RTF *ctx, const RSTATE *st )
     if ( doc_style != 0 && ctx->nstyle < MAX_RSTYLES &&
          rtf_room( ctx, (void **)&ctx->style, &ctx->style_cap, ctx->nstyle, sizeof( RSTYLE ) ) ) {
         ctx->style[ctx->nstyle].num = st->style;
-        ctx->style[ctx->nstyle].doc = (u32)doc_style;
+        ctx->style[ctx->nstyle].doc = (unsigned int)doc_style;
         ctx->nstyle++;
     }
     made = &ctx->doc->style[doc_style];
@@ -802,15 +804,15 @@ static void rtf_style_end( RTF *ctx, const RSTATE *st )
 }
 
 /* a number in a field's instruction at *at, which moves past it */
-static u32 rtf_inst_number( const RFIELD *field, u32 *at )
+static uint32_t rtf_inst_number( const RFIELD *field, unsigned int *at )
 {
-    u32 value = 0;
+    uint32_t value = 0;
 
     while ( *at < field->len && field->inst[*at] == ' ' ) {
         (*at)++;
     }
     while ( *at < field->len && field->inst[*at] >= '0' && field->inst[*at] <= '9' && value < 100000UL ) {
-        value = value * 10 + (u32)(field->inst[(*at)++] - '0');
+        value = value * 10 + (uint32_t)(field->inst[(*at)++] - '0');
     }
     return value;
 }
@@ -819,10 +821,11 @@ static u32 rtf_inst_number( const RFIELD *field, u32 *at )
  * SYMBOL 97 \f "Symbol" \s 12: one character of a named font.  A font
  * of symbols has its characters where Word 97 keeps them, at F000h.
  */
-static void rtf_field_symbol( RTF *ctx, RFIELD *field, u32 at )
+static void rtf_field_symbol( RTF *ctx, RFIELD *field, unsigned int at )
 {
     char name[FONT_NAME_LEN];
-    u32 code = rtf_inst_number( field, &at ), len, size;
+    uint32_t code = rtf_inst_number( field, &at );
+    unsigned int len, size;
     int unicode = 0;
 
     while ( at + 1 < field->len ) {
@@ -838,7 +841,7 @@ static void rtf_field_symbol( RTF *ctx, RFIELD *field, u32 at )
         case 's':
             size = rtf_inst_number( field, &at );
             if ( size >= 1 && size <= 500 ) {
-                field->size = (u16)(size * 2);
+                field->size = (uint16_t)(size * 2);
             }
             break;
         case 'f':
@@ -868,21 +871,21 @@ static void rtf_field_symbol( RTF *ctx, RFIELD *field, u32 at )
             code = cp_to_uni( CP_1252, (int)code );
         }
     }
-    field->kind = (u16)code;
+    field->kind = (uint16_t)code;
 }
 
 /* which of the fields that are kept as themselves an instruction names */
-static u16 rtf_field_kind( RTF *ctx, RFIELD *field )
+static uint16_t rtf_field_kind( RTF *ctx, RFIELD *field )
 {
     static const struct {
         const char *word;
-        u16 code;
+        uint16_t code;
     } known[] = {
         { "PAGE", WCH_PAGENUM }, { "NUMPAGES", WCH_NUMPAGES }, { "DATE", WCH_DATE },
         { "TIME", WCH_TIME }, { "FILENAME", WCH_FILENAME }
     };
     char word[INST_LEN];
-    u32 at = 0, len = 0, index;
+    unsigned int at = 0, len = 0, index;
 
     while ( at < field->len && field->inst[at] == ' ' ) {
         at++;
@@ -910,7 +913,7 @@ static u16 rtf_field_kind( RTF *ctx, RFIELD *field )
 
 /* a character of the file: "byte" says it came as one, in the code
    page of the font in use, and not as Unicode */
-static void rtf_char( RTF *ctx, u32 unit, int byte )
+static void rtf_char( RTF *ctx, uint32_t unit, int byte )
 {
     RSTATE *st = ctx->st;
     RFIELD *field;
@@ -983,7 +986,7 @@ static void rtf_char( RTF *ctx, u32 unit, int byte )
             unit = cp_to_uni( st->codepage == 2 ? CP_1252 : st->codepage, (int)unit );
         }
         if ( ctx->info_len < INFO_LEN - 1 && unit >= 0x20 ) {
-            ctx->info[ctx->info_len++] = (u16)unit;
+            ctx->info[ctx->info_len++] = (uint16_t)unit;
         }
         return;
     case D_PICT:
@@ -999,7 +1002,7 @@ static void rtf_char( RTF *ctx, u32 unit, int byte )
 static void rtf_push( RTF *ctx )
 {
     RSTATE *stack, *st;
-    u32 want;
+    unsigned int want;
 
     ctx->skip = 0;
     if ( ctx->over_deep || ctx->depth + 1 >= MAX_DEPTH ) {
@@ -1108,8 +1111,8 @@ static void rtf_pop( RTF *ctx )
         case D_LFOLEVEL:
             if ( ctx->new_over.nlevels < MAX_LEVELS ) {
                 if ( ctx->lfo_set ) {
-                    ctx->new_over.over |= (u16)(1u << ctx->new_over.nlevels);
-                    ctx->new_over.start[ctx->new_over.nlevels] = (u16)ctx->lfo_start;
+                    ctx->new_over.over |= (uint16_t)(1u << ctx->new_over.nlevels);
+                    ctx->new_over.start[ctx->new_over.nlevels] = (uint16_t)ctx->lfo_start;
                 }
                 ctx->new_over.nlevels++;
             }
@@ -1137,7 +1140,7 @@ static void rtf_pop( RTF *ctx )
 /* a destination begins in the group in hand */
 static void rtf_dest( RSTATE *st, int dest )
 {
-    st->dest = (u8)dest;
+    st->dest = (uint8_t)dest;
     st->owner = 1;
 }
 
@@ -1151,7 +1154,7 @@ static void rtf_row_end( RTF *ctx )
     STORY *story = ctx->wb->story;
     WPARA *prev;
     TROW row;
-    u32 cells = ctx->cells, have = ctx->row_cells, index, width;
+    unsigned int cells = ctx->cells, have = ctx->row_cells, index, width;
 
     ctx->cells = 0;
     if ( ctx->wb->para != NULL ) {
@@ -1173,17 +1176,17 @@ static void rtf_row_end( RTF *ctx )
     }
     row = ctx->row;
     if ( have == 0 ) {
-        width = (u32)(ctx->doc->page.width - ctx->doc->page.left - ctx->doc->page.right);
+        width = (unsigned int)(ctx->doc->page.width - ctx->doc->page.left - ctx->doc->page.right);
         if ( width < 1440 || width > 31680 ) {
             width = 8640;
         }
         row.left = 0;
         for ( index = 0; index < cells; index++ ) {
-            row.edge[index] = (s32)(width * (index + 1) / cells);
+            row.edge[index] = (int)(width * (index + 1) / cells);
         }
     }
     for ( index = 0; index < cells; index++ ) {
-        s32 before = index ? row.edge[index - 1] : row.left;
+        int before = index ? row.edge[index - 1] : row.left;
 
         if ( index >= have && have != 0 ) {
             row.edge[index] = before + 720;
@@ -1192,7 +1195,7 @@ static void rtf_row_end( RTF *ctx )
             row.edge[index] = before + 1;
         }
     }
-    row.ncells = (u8)cells;
+    row.ncells = (uint8_t)cells;
     row.spare = 0;
     prev->pap.flags |= PF_CELLEND | PF_ROWEND;
     if ( !pap_set_row( &prev->pap, &row ) ) {
@@ -1204,9 +1207,9 @@ static void rtf_row_end( RTF *ctx )
 /* control words                                                       */
 /* ------------------------------------------------------------------ */
 
-static void rtf_tab_add( RSTATE *st, s32 pos )
+static void rtf_tab_add( RSTATE *st, int pos )
 {
-    u32 count = st->pap.ntabs, slot;
+    unsigned int count = st->pap.ntabs, slot;
 
     for ( slot = 0; slot < count && st->tabs[slot].pos < pos; slot++ ) {
     }
@@ -1215,7 +1218,7 @@ static void rtf_tab_add( RSTATE *st, s32 pos )
             return;
         }
         mem_cpy( &st->tabs[slot + 1], &st->tabs[slot], (count - slot) * sizeof( WTAB ) );
-        st->pap.ntabs = (u8)(count + 1);
+        st->pap.ntabs = (uint8_t)(count + 1);
     }
     st->tabs[slot].pos = pos;
     st->tabs[slot].kind = st->tab_kind;
@@ -1225,7 +1228,7 @@ static void rtf_tab_add( RSTATE *st, s32 pos )
 
 static void rtf_border( RTF *ctx, RSTATE *st, int on )
 {
-    u16 flags = 0;
+    uint16_t flags = 0;
 
     switch ( st->brdr ) {
     case BT_TOP:    flags = PF_BORDER_TOP; break;
@@ -1242,22 +1245,22 @@ static void rtf_border( RTF *ctx, RSTATE *st, int on )
     if ( on ) {
         st->pap.flags |= flags;
     } else {
-        st->pap.flags &= (u16)~flags;
+        st->pap.flags &= (uint16_t)~flags;
     }
 }
 
 /* a number from the file as a length in twips that the document can hold */
-static s32 rtf_twips( s32 value )
+static int rtf_twips( int32_t value )
 {
     return rtf_clamp( value, -31680, 31680 );
 }
 
-static void rtf_word( RTF *ctx, const RWORD *word, int has, s32 num )
+static void rtf_word( RTF *ctx, const RWORD *word, int has, int32_t num )
 {
     RSTATE *st = ctx->st;
     WDOC *doc = ctx->doc;
     int text = is_text_dest( st->dest ), obj;
-    u32 index;
+    unsigned int index;
 
     switch ( word->action ) {
     case A_NOP:
@@ -1291,7 +1294,7 @@ static void rtf_word( RTF *ctx, const RWORD *word, int has, s32 num )
     case A_INFO:
         if ( st->dest == D_INFO ) {
             rtf_dest( st, D_INFOTEXT );
-            st->info = (u8)word->arg;
+            st->info = (uint8_t)word->arg;
             ctx->info_len = 0;
         }
         break;
@@ -1348,7 +1351,7 @@ static void rtf_word( RTF *ctx, const RWORD *word, int has, s32 num )
         st->dest = D_SKIP;
         break;
     case A_FTNALT:
-        if ( st->dest == D_NOTE && ctx->in_sub == 2 && (u32)ctx->note_obj < doc->nobj ) {
+        if ( st->dest == D_NOTE && ctx->in_sub == 2 && (unsigned int)ctx->note_obj < doc->nobj ) {
             doc->obj[ctx->note_obj].fmt = NOTE_END;
         }
         break;
@@ -1414,19 +1417,19 @@ static void rtf_word( RTF *ctx, const RWORD *word, int has, s32 num )
         break;
     case A_FLAG:
         if ( has && num == 0 ) {
-            st->chp.flags &= (u16)~word->arg;
+            st->chp.flags &= (uint16_t)~word->arg;
         } else {
             st->chp.flags |= word->arg;
         }
         break;
     case A_UL:
-        st->chp.flags &= (u16)~(CF_UNDER | CF_DUNDER | CF_WUNDER);
+        st->chp.flags &= (uint16_t)~(CF_UNDER | CF_DUNDER | CF_WUNDER);
         if ( !(has && num == 0) ) {
             st->chp.flags |= word->arg;
         }
         break;
     case A_SUPER:
-        st->chp.flags &= (u16)~(CF_SUPER | CF_SUB);
+        st->chp.flags &= (uint16_t)~(CF_SUPER | CF_SUB);
         if ( !(has && num == 0) ) {
             st->chp.flags |= word->arg;
         }
@@ -1443,24 +1446,24 @@ static void rtf_word( RTF *ctx, const RWORD *word, int has, s32 num )
         }
         break;
     case A_FS:
-        st->chp.size = (u16)rtf_clamp( num, 2, 1000 );
+        st->chp.size = (uint16_t)rtf_clamp( num, 2, 1000 );
         break;
     case A_CF:
-        st->chp.color = num > 0 && (u32)num < ctx->ncolor ? ctx->color[num] : COLOR_AUTO;
+        st->chp.color = num > 0 && (unsigned int)num < ctx->ncolor ? ctx->color[num] : COLOR_AUTO;
         break;
     case A_HILITE:
         st->chp.hilite = 0;
-        if ( num > 0 && (u32)num < ctx->ncolor ) {
+        if ( num > 0 && (unsigned int)num < ctx->ncolor ) {
             st->chp.hilite = 7;         /* a color the highlighter has not got: yellow */
             for ( index = 1; index <= 16; index++ ) {
                 if ( rtf_ico[index] == ctx->color[num] ) {
-                    st->chp.hilite = (u8)index;
+                    st->chp.hilite = (uint8_t)index;
                 }
             }
         }
         break;
     case A_DELETED:
-        st->dead = (u8)!(has && num == 0);
+        st->dead = (uint8_t)!(has && num == 0);
         doc->lost |= LOST_REVISIONS;
         break;
     case A_REVISED:
@@ -1472,7 +1475,7 @@ static void rtf_word( RTF *ctx, const RWORD *word, int has, s32 num )
         }
         break;
     case A_FCLASS:
-        st->loch = (u8)word->arg;
+        st->loch = (uint8_t)word->arg;
         break;
     case A_AFONT:
         /* the font of plain letters, where a run names no font of its own */
@@ -1488,7 +1491,7 @@ static void rtf_word( RTF *ctx, const RWORD *word, int has, s32 num )
         rtf_pard( st );
         break;
     case A_ALIGN:
-        st->pap.align = (u8)word->arg;
+        st->pap.align = (uint8_t)word->arg;
         break;
     case A_LI:
         st->pap.left = rtf_twips( num );
@@ -1500,20 +1503,20 @@ static void rtf_word( RTF *ctx, const RWORD *word, int has, s32 num )
         st->pap.first = rtf_twips( num );
         break;
     case A_SB:
-        st->pap.before = (u16)rtf_clamp( num, 0, 31680 );
+        st->pap.before = (uint16_t)rtf_clamp( num, 0, 31680 );
         break;
     case A_SA:
-        st->pap.after = (u16)rtf_clamp( num, 0, 31680 );
+        st->pap.after = (uint16_t)rtf_clamp( num, 0, 31680 );
         break;
     case A_SL:
         st->sl = rtf_twips( num );
         break;
     case A_SLMULT:
-        st->slmult = (u8)(num != 0);
+        st->slmult = (uint8_t)(num != 0);
         break;
     case A_PFLAG:
         if ( has && num == 0 ) {
-            st->pap.flags &= (u16)~word->arg;
+            st->pap.flags &= (uint16_t)~word->arg;
         } else {
             st->pap.flags |= word->arg;
         }
@@ -1525,7 +1528,7 @@ static void rtf_word( RTF *ctx, const RWORD *word, int has, s32 num )
         st->intbl = 1;
         break;
     case A_ITAP:
-        st->itap = (u8)rtf_clamp( num, 0, 255 );
+        st->itap = (uint8_t)rtf_clamp( num, 0, 255 );
         break;
     case A_LS:
         if ( st->dest == D_OVERRIDE ) {
@@ -1535,7 +1538,7 @@ static void rtf_word( RTF *ctx, const RWORD *word, int has, s32 num )
         }
         break;
     case A_ILVL:
-        st->ilvl = (u8)rtf_clamp( num, 0, MAX_LEVELS - 1 );
+        st->ilvl = (uint8_t)rtf_clamp( num, 0, MAX_LEVELS - 1 );
         break;
     case A_TX:
         rtf_tab_add( st, rtf_twips( num ) );
@@ -1547,13 +1550,13 @@ static void rtf_word( RTF *ctx, const RWORD *word, int has, s32 num )
         st->tab_lead = LEAD_NONE;
         break;
     case A_TABKIND:
-        st->tab_kind = (u8)word->arg;
+        st->tab_kind = (uint8_t)word->arg;
         break;
     case A_TABLEAD:
-        st->tab_lead = (u8)word->arg;
+        st->tab_lead = (uint8_t)word->arg;
         break;
     case A_BRDR:
-        st->brdr = (u8)word->arg;
+        st->brdr = (uint8_t)word->arg;
         break;
     case A_BRDRON:
         rtf_border( ctx, st, 1 );
@@ -1562,16 +1565,16 @@ static void rtf_word( RTF *ctx, const RWORD *word, int has, s32 num )
         rtf_border( ctx, st, 0 );
         break;
     case A_PNKIND:
-        st->pn_kind = (u8)word->arg;
+        st->pn_kind = (uint8_t)word->arg;
         break;
     case A_PNBODY:
         st->pn_level = 0;
         break;
     case A_PNLVL:
-        st->pn_level = (u8)rtf_clamp( num - 1, 0, MAX_LEVELS - 1 );
+        st->pn_level = (uint8_t)rtf_clamp( num - 1, 0, MAX_LEVELS - 1 );
         break;
     case A_PNSTART:
-        st->pn_start = (u16)rtf_clamp( num, 0, 0xFFFF );
+        st->pn_start = (uint16_t)rtf_clamp( num, 0, 0xFFFF );
         break;
     case A_LISTID:
         if ( st->dest == D_LIST ) {
@@ -1582,14 +1585,14 @@ static void rtf_word( RTF *ctx, const RWORD *word, int has, s32 num )
         break;
     case A_LEVELNFC:
         if ( st->dest == D_LISTLEVEL && ctx->new_list.nlevels < MAX_LEVELS ) {
-            ctx->new_list.nfc[ctx->new_list.nlevels] = (u8)rtf_clamp( num, 0, 255 );
+            ctx->new_list.nfc[ctx->new_list.nlevels] = (uint8_t)rtf_clamp( num, 0, 255 );
         }
         break;
     case A_LEVELSTART:
         if ( st->dest == D_LISTLEVEL && ctx->new_list.nlevels < MAX_LEVELS ) {
-            ctx->new_list.start[ctx->new_list.nlevels] = (u16)rtf_clamp( num, 0, 0xFFFF );
+            ctx->new_list.start[ctx->new_list.nlevels] = (uint16_t)rtf_clamp( num, 0, 0xFFFF );
         } else if ( st->dest == D_LFOLEVEL ) {
-            ctx->lfo_start = (u32)rtf_clamp( num, 0, 0xFFFF );
+            ctx->lfo_start = (uint32_t)rtf_clamp( num, 0, 0xFFFF );
         }
         break;
     case A_OVERSTART:
@@ -1630,7 +1633,7 @@ static void rtf_word( RTF *ctx, const RWORD *word, int has, s32 num )
         if ( text ) {
             /* the cells past what a row can have are joined to the last */
             ctx->cells++;
-            rtf_par( ctx, (u16)(PF_INTABLE | (ctx->cells < MAX_CELLS ? PF_CELLEND : 0)) );
+            rtf_par( ctx, (uint16_t)(PF_INTABLE | (ctx->cells < MAX_CELLS ? PF_CELLEND : 0)) );
         }
         break;
     case A_NESTCELL:
@@ -1667,7 +1670,7 @@ static void rtf_word( RTF *ctx, const RWORD *word, int has, s32 num )
         break;
     case A_ANSICPG:
         if ( num > 0 && num < 65536 && cp_known( (int)num ) && num != CP_UTF8 ) {
-            ctx->def_cp = (u16)num;
+            ctx->def_cp = (uint16_t)num;
             st->codepage = ctx->def_cp;
         }
         break;
@@ -1675,10 +1678,10 @@ static void rtf_word( RTF *ctx, const RWORD *word, int has, s32 num )
         ctx->deff = num;
         break;
     case A_UC:
-        st->uc = (u8)rtf_clamp( num, 0, 255 );
+        st->uc = (uint8_t)rtf_clamp( num, 0, 255 );
         break;
     case A_U:
-        rtf_char( ctx, (u32)num & 0xFFFF, 0 );
+        rtf_char( ctx, (uint32_t)num & 0xFFFF, 0 );
         ctx->skip = st->uc;
         return;                         /* the stand-ins are still to come */
     case A_BIN:
@@ -1715,7 +1718,7 @@ static void rtf_word( RTF *ctx, const RWORD *word, int has, s32 num )
         break;
     case A_PGNSTARTS:
         if ( ctx->sect == 0 ) {
-            ctx->pgn_starts = (u32)rtf_clamp( num, 0, 0xFFFF );
+            ctx->pgn_starts = (uint32_t)rtf_clamp( num, 0, 0xFFFF );
         }
         break;
     case A_PGNRESTART:
@@ -1730,7 +1733,7 @@ static void rtf_word( RTF *ctx, const RWORD *word, int has, s32 num )
         break;
     case A_FAM:
         if ( st->dest == D_FONTTBL ) {
-            ctx->new_font.family = (u8)word->arg;
+            ctx->new_font.family = (uint8_t)word->arg;
         }
         break;
     case A_CHARSET:
@@ -1744,17 +1747,17 @@ static void rtf_word( RTF *ctx, const RWORD *word, int has, s32 num )
         break;
     case A_FPRQ:
         if ( st->dest == D_FONTTBL ) {
-            ctx->new_font.fixed = (s8)(num == 1 ? 1 : num == 2 ? 0 : -1);
+            ctx->new_font.fixed = (int8_t)(num == 1 ? 1 : num == 2 ? 0 : -1);
         }
         break;
     case A_CPG:
         if ( st->dest == D_FONTTBL && num > 0 && num < 65536 && cp_known( (int)num ) && num != CP_UTF8 ) {
-            ctx->new_font.codepage = (u16)num;
+            ctx->new_font.codepage = (uint16_t)num;
         }
         break;
     case A_RGB:
         if ( st->dest == D_COLORTBL ) {
-            ctx->rgb[word->arg] = (u32)rtf_clamp( num, 0, 255 );
+            ctx->rgb[word->arg] = (uint32_t)rtf_clamp( num, 0, 255 );
             ctx->rgb_have = 1;
         }
         break;
@@ -1777,8 +1780,8 @@ static void rtf_control( RTF *ctx )
 {
     const RWORD *word;
     char name[WORD_LEN];
-    u32 len = 0, ch, digits = 0, count;
-    s32 num = 0;
+    unsigned int len = 0, ch, digits = 0, count;
+    int32_t num = 0;
     int has = 0, minus = 0, high, low;
 
     if ( ctx->pos >= ctx->len ) {
@@ -1801,7 +1804,7 @@ static void rtf_control( RTF *ctx )
                     if ( ctx->skip ) {
                         ctx->skip--;
                     } else {
-                        rtf_char( ctx, (u32)(high * 16 + low), 1 );
+                        rtf_char( ctx, (uint32_t)(high * 16 + low), 1 );
                     }
                 }
             }
@@ -1859,7 +1862,7 @@ static void rtf_control( RTF *ctx )
     }
     while ( ctx->pos < ctx->len && ctx->data[ctx->pos] >= '0' && ctx->data[ctx->pos] <= '9' ) {
         if ( digits < 9 ) {
-            num = num * 10 + (s32)(ctx->data[ctx->pos] - '0');
+            num = num * 10 + (int32_t)(ctx->data[ctx->pos] - '0');
             digits++;
         }
         has = 1;
@@ -1874,7 +1877,7 @@ static void rtf_control( RTF *ctx )
     word = len < WORD_LEN ? rtf_lookup( ctx, name, len ) : NULL;
     /* bytes that are not text at all: passed over whatever they are in */
     if ( word != NULL && word->action == A_BIN && num > 0 ) {
-        count = (u32)num < ctx->len - ctx->pos ? (u32)num : ctx->len - ctx->pos;
+        count = (unsigned int)num < ctx->len - ctx->pos ? (unsigned int)num : ctx->len - ctx->pos;
         if ( !ctx->over_deep && ctx->st->dest == D_PICT ) {
             while ( count-- ) {
                 rtf_pict_byte( ctx, ctx->data[ctx->pos++] );
@@ -1903,9 +1906,9 @@ static void rtf_control( RTF *ctx )
 /* detect and load                                                     */
 /* ------------------------------------------------------------------ */
 
-static int rtf_detect( const u8 *data, u32 len, const char *ext )
+static int rtf_detect( const uint8_t *data, uint32_t len, const char *ext )
 {
-    u32 pos = 0;
+    unsigned int pos = 0;
 
     (void)ext;
     if ( len >= 3 && data[0] == 0xEF && data[1] == 0xBB && data[2] == 0xBF ) {
@@ -1932,11 +1935,11 @@ static void rtf_free( RTF *ctx )
     xfree( ctx );
 }
 
-static int rtf_load( const u8 *data, u32 len, WDOC *doc )
+static int rtf_load( const uint8_t *data, uint32_t len, WDOC *doc )
 {
     RTF *ctx;
     RSTATE *st;
-    u32 ch;
+    uint32_t ch;
 
     ctx = (RTF *)try_alloc( sizeof( RTF ) );
     if ( ctx == NULL ) {
@@ -1987,7 +1990,7 @@ static int rtf_load( const u8 *data, u32 len, WDOC *doc )
         rtf_set_pap( ctx, ctx->st, 0 );
     }
     wb_done( &ctx->body );
-    doc->page.first_page = (u16)(ctx->pgn_restart && ctx->pgn_starts ? ctx->pgn_starts : 1);
+    doc->page.first_page = (uint16_t)(ctx->pgn_restart && ctx->pgn_starts ? ctx->pgn_starts : 1);
     rtf_free( ctx );
     return wd_failed( doc ) ? WE_NOMEM : WE_OK;
 }
@@ -1999,23 +2002,23 @@ static int rtf_load( const u8 *data, u32 len, WDOC *doc )
 /* a list as the file has it: nine levels, of which the document has
    said what one or two are */
 typedef struct {
-    u8    kind[MAX_LEVELS];     /* LIST_*, FFh where nothing has said */
-    u16   start[MAX_LEVELS];
+    uint8_t  kind[MAX_LEVELS];  /* LIST_*, FFh where nothing has said */
+    uint16_t start[MAX_LEVELS];
 } WLIST;
 
 typedef struct {
-    WDOC *doc;
-    OUT  *out;
-    u32  *color;                /* the color table: [0] is "automatic" */
-    u32   ncolor, color_cap;
-    WLIST *list;
-    u32   nlist, list_cap;
-    u32   cur[MAX_LEVELS];      /* the list each level is in, + 1 */
-    u32   replay;               /* the second time through: lists met so far */
-    int   second;
-    u32   symbol;               /* the font the bullets are in */
-    int   endnotes;
-    int   failed;
+    WDOC        *doc;
+    OUT         *out;
+    uint32_t    *color;         /* the color table: [0] is "automatic" */
+    unsigned int ncolor, color_cap;
+    WLIST       *list;
+    unsigned int nlist, list_cap;
+    unsigned int cur[MAX_LEVELS]; /* the list each level is in, + 1 */
+    unsigned int replay;        /* the second time through: lists met so far */
+    int          second;
+    unsigned int symbol;        /* the font the bullets are in */
+    int          endnotes;
+    int          failed;
 } RTFW;
 
 /*
@@ -2026,10 +2029,10 @@ typedef struct {
  * text; the second pass meets the same paragraphs in the same order
  * and so counts its way through the same lists.
  */
-static u32 rtfw_list( RTFW *w, const PAP *pap )
+static unsigned int rtfw_list( RTFW *w, const PAP *pap )
 {
     WLIST *list;
-    u32 want, level = pap->level < MAX_LEVELS ? pap->level : MAX_LEVELS - 1;
+    unsigned int want, level = pap->level < MAX_LEVELS ? pap->level : MAX_LEVELS - 1;
 
     if ( pap->list_start == 0 && w->cur[level] != 0 && w->list[w->cur[level] - 1].kind[level] == pap->list ) {
         return w->cur[level];
@@ -2055,7 +2058,7 @@ static u32 rtfw_list( RTFW *w, const PAP *pap )
     mem_set( list->kind, 0xFF, MAX_LEVELS );
     mem_set( list->start, 0, sizeof( list->start ) );
     list->kind[level] = pap->list;
-    list->start[level] = (u16)(pap->list_start ? pap->list_start : 1);
+    list->start[level] = (uint16_t)(pap->list_start ? pap->list_start : 1);
     w->cur[level] = w->nlist;
     return w->nlist;
 }
@@ -2070,7 +2073,7 @@ static void rtfw_lists_story( RTFW *w, STORY *story, int depth )
 {
     WPARA *para;
     WOBJ *obj;
-    u32 index, anch;
+    unsigned int index, anch;
 
     for ( index = 0; index < story->count; index++ ) {
         para = story->para[index];
@@ -2092,10 +2095,10 @@ static void rtfw_lists_story( RTFW *w, STORY *story, int depth )
 }
 
 /* a color's place in the color table, added if it is new */
-static u32 rtfw_color( RTFW *w, u32 color )
+static unsigned int rtfw_color( RTFW *w, uint32_t color )
 {
-    u32 *fresh;
-    u32 index, want;
+    uint32_t *fresh;
+    unsigned int index, want;
 
     if ( color == COLOR_AUTO ) {
         return 0;
@@ -2110,7 +2113,7 @@ static u32 rtfw_color( RTFW *w, u32 color )
     }
     if ( w->ncolor == w->color_cap ) {
         want = w->color_cap ? w->color_cap * 2 : 32;
-        fresh = want > 0x00010000UL ? NULL : (u32 *)try_realloc( w->color, want * sizeof( u32 ) );
+        fresh = want > 0x00010000UL ? NULL : (uint32_t *)try_realloc( w->color, want * sizeof( uint32_t ) );
         if ( fresh == NULL ) {
             w->failed = 1;
             return 0;
@@ -2126,7 +2129,7 @@ static u32 rtfw_color( RTFW *w, u32 color )
 }
 
 /* one unit of the document's text */
-static void rtfw_unit( RTFW *w, u32 unit )
+static void rtfw_unit( RTFW *w, uint32_t unit )
 {
     OUT *out = w->out;
     int byte;
@@ -2153,9 +2156,9 @@ static void rtfw_unit( RTFW *w, u32 unit )
            for a reader that does not know numbers */
         byte = cp_from_uni( CP_1252, unit );
         if ( byte >= 0x80 ) {
-            out_fmt( out, "\\'%02x", (u32)byte );
+            out_fmt( out, "\\'%02x", (uint32_t)byte );
         } else {
-            out_fmt( out, "\\u%d?", unit > 32767 ? (s32)unit - 65536 : (s32)unit );
+            out_fmt( out, "\\u%d?", unit > 32767 ? (int32_t)unit - 65536 : (int32_t)unit );
         }
     }
 }
@@ -2163,8 +2166,8 @@ static void rtfw_unit( RTFW *w, u32 unit )
 /* a name or a line of the summary: UTF-8, with nothing that ends it early */
 static void rtfw_utf8( RTFW *w, const char *text )
 {
-    const u8 *cur = (const u8 *)text, *end = cur + str_len( text );
-    u32 code;
+    const uint8_t *cur = (const uint8_t *)text, *end = cur + str_len( text );
+    uint32_t code;
 
     while ( cur < end ) {
         code = utf8_get( &cur, end );
@@ -2182,7 +2185,7 @@ static void rtfw_chp( RTFW *w, const CHP *chp )
 {
     OUT *out = w->out;
 
-    out_fmt( out, "\\f%u\\fs%u", (u32)(chp->font < w->doc->nfont ? chp->font : 0), (u32)chp->size );
+    out_fmt( out, "\\f%u\\fs%u", (uint32_t)(chp->font < w->doc->nfont ? chp->font : 0), (uint32_t)chp->size );
     if ( chp->flags & CF_BOLD ) {
         out_str( out, "\\b" );
     }
@@ -2229,40 +2232,40 @@ static void rtfw_chp( RTFW *w, const CHP *chp )
 }
 
 /* a paragraph's look; "list" is the list it is in, 0 for none */
-static void rtfw_pap( RTFW *w, const PAP *pap, int intbl, u32 list )
+static void rtfw_pap( RTFW *w, const PAP *pap, int intbl, unsigned int list )
 {
     static const char *const aligns[] = { "\\ql", "\\qc", "\\qr", "\\qj" };
     static const char *const kinds[] = { "", "\\tqc", "\\tqr", "\\tqdec" };
     static const char *const leads[] = { "", "\\tldot", "\\tlhyph", "\\tlul" };
     static const struct {
-        u16 flag;
+        uint16_t flag;
         const char *word;
     } sides[] = {
         { PF_BORDER_TOP, "\\brdrt" }, { PF_BORDER_BOT, "\\brdrb" }, { PF_BORDER_LEFT, "\\brdrl" },
         { PF_BORDER_RIGHT, "\\brdrr" }
     };
     OUT *out = w->out;
-    u32 index;
+    unsigned int index;
 
     if ( pap->style != 0 && pap->style < w->doc->nstyle ) {
-        out_fmt( out, "\\s%u", (u32)pap->style );
+        out_fmt( out, "\\s%u", (uint32_t)pap->style );
     }
     out_str( out, aligns[pap->align <= AL_JUSTIFY ? pap->align : 0] );
     if ( pap->left || pap->right || pap->first ) {
         out_fmt( out, "\\li%d\\ri%d\\fi%d", pap->left, pap->right, pap->first );
     }
     if ( pap->before ) {
-        out_fmt( out, "\\sb%u", (u32)pap->before );
+        out_fmt( out, "\\sb%u", (uint32_t)pap->before );
     }
     if ( pap->after ) {
-        out_fmt( out, "\\sa%u", (u32)pap->after );
+        out_fmt( out, "\\sa%u", (uint32_t)pap->after );
     }
     if ( pap->line_rule == LS_MULTIPLE ) {
         if ( pap->line != 240 && pap->line != 0 ) {
-            out_fmt( out, "\\sl%u\\slmult1", (u32)pap->line );
+            out_fmt( out, "\\sl%u\\slmult1", (uint32_t)pap->line );
         }
     } else if ( pap->line != 0 ) {
-        out_fmt( out, pap->line_rule == LS_EXACT ? "\\sl-%u\\slmult0" : "\\sl%u\\slmult0", (u32)pap->line );
+        out_fmt( out, pap->line_rule == LS_EXACT ? "\\sl-%u\\slmult0" : "\\sl%u\\slmult0", (uint32_t)pap->line );
     }
     if ( pap->flags & PF_KEEP ) {
         out_str( out, "\\keep" );
@@ -2286,15 +2289,15 @@ static void rtfw_pap( RTFW *w, const PAP *pap, int intbl, u32 list )
         out_str( out, "\\intbl" );
     }
     if ( list ) {
-        out_fmt( out, "\\ls%u\\ilvl%u", list, (u32)(pap->level < MAX_LEVELS ? pap->level : MAX_LEVELS - 1) );
+        out_fmt( out, "\\ls%u\\ilvl%u", list, (uint32_t)(pap->level < MAX_LEVELS ? pap->level : MAX_LEVELS - 1) );
     }
 }
 
 /* a picture's size in dots, where its file says it in a place easy to find */
-static void rtfw_pixels( const WOBJ *obj, u32 *wide, u32 *high )
+static void rtfw_pixels( const WOBJ *obj, uint32_t *wide, uint32_t *high )
 {
-    const u8 *data = obj->data;
-    u32 len = obj->len, pos = 2, mark, seg;
+    const uint8_t *data = obj->data;
+    uint32_t len = obj->len, pos = 2, mark, seg;
 
     *wide = *high = 0;
     if ( obj->fmt == IMG_PNG && len >= 24 ) {
@@ -2327,10 +2330,11 @@ static void rtfw_image( RTFW *w, const WOBJ *obj )
     static const char hex[] = "0123456789abcdef";
     char line[130];
     OUT *out = w->out;
-    const u8 *data = obj->data;
+    const uint8_t *data = obj->data;
     const char *kind;
-    u32 len = obj->len, wide, high, pos, used;
-    s32 width = obj->width, height = obj->height;
+    uint32_t len = obj->len, wide, high, pos;
+    unsigned int used;
+    int width = obj->width, height = obj->height;
 
     switch ( obj->fmt ) {
     case IMG_PNG:   kind = "\\pngblip"; break;
@@ -2360,8 +2364,8 @@ static void rtfw_image( RTFW *w, const WOBJ *obj )
     rtfw_pixels( obj, &wide, &high );
     if ( obj->fmt == IMG_WMF ) {
         /* a metafile's own units: hundredths of a millimeter */
-        wide = (u32)width * 127 / 72;
-        high = (u32)height * 127 / 72;
+        wide = (uint32_t)width * 127 / 72;
+        high = (uint32_t)height * 127 / 72;
     }
     out_fmt( out, "{\\pict%s", kind );
     if ( wide && high ) {
@@ -2387,7 +2391,7 @@ static void rtfw_para_start( RTFW *w, WPARA *para, int intbl )
 {
     WDOC *doc = w->doc;
     const CHP *chp;
-    u32 list = 0;
+    unsigned int list = 0;
 
     if ( rtfw_is_list( &para->pap ) ) {
         list = rtfw_list( w, &para->pap );
@@ -2406,7 +2410,8 @@ static void rtfw_para_text( RTFW *w, WPARA *para, int depth )
     WDOC *doc = w->doc;
     OUT *out = w->out;
     WOBJ *obj;
-    u32 off, run, index, unit;
+    unsigned int off, run, index;
+    uint32_t unit;
     int which;
 
     for ( off = 0; off < para->len; off += run ) {
@@ -2420,7 +2425,7 @@ static void rtfw_para_text( RTFW *w, WPARA *para, int depth )
         rtfw_chp( w, wd_chp_get( doc, para->attr[off] ) );
         if ( para->text[off] == WCH_OBJ ) {
             which = wd_obj_at( para, off );
-            obj = which >= 0 && (u32)which < doc->nobj ? &doc->obj[which] : NULL;
+            obj = which >= 0 && (unsigned int)which < doc->nobj ? &doc->obj[which] : NULL;
             if ( obj != NULL && obj->kind == OBJ_IMAGE ) {
                 rtfw_image( w, obj );
             } else if ( obj != NULL && obj->kind == OBJ_NOTE && obj->story != NULL && depth == 0 ) {
@@ -2446,7 +2451,7 @@ static void rtfw_para_text( RTFW *w, WPARA *para, int depth )
 }
 
 /* the last paragraph of the row that paragraph "index" is in */
-static u32 rtfw_row_last( const STORY *story, u32 index )
+static unsigned int rtfw_row_last( const STORY *story, unsigned int index )
 {
     while ( index + 1 < story->count && !(story->para[index]->pap.flags & PF_ROWEND) &&
             (story->para[index + 1]->pap.flags & PF_INTABLE) ) {
@@ -2456,12 +2461,12 @@ static u32 rtfw_row_last( const STORY *story, u32 index )
 }
 
 /* a row's cells, which the file wants said before the row's text */
-static void rtfw_row_def( RTFW *w, const STORY *story, u32 first, u32 last )
+static void rtfw_row_def( RTFW *w, const STORY *story, unsigned int first, unsigned int last )
 {
     OUT *out = w->out;
     const TROW *row = story->para[last]->pap.row;
-    u32 cells = 0, index, have;
-    s32 edge = 0;
+    unsigned int cells = 0, index, have;
+    int edge = 0;
 
     for ( index = first; index <= last; index++ ) {
         if ( (story->para[index]->pap.flags & PF_CELLEND) || index == last ) {
@@ -2483,7 +2488,7 @@ static void rtfw_row_def( RTFW *w, const STORY *story, u32 first, u32 last )
         }
         /* a cell the row does not place: the width between the margins
            shared out, or one more of half an inch */
-        edge = index < have ? row->edge[index] : have ? edge + 720 : (s32)(9000 * (index + 1) / cells);
+        edge = index < have ? row->edge[index] : have ? edge + 720 : (int)(9000 * (index + 1) / cells);
         out_fmt( out, "\\cellx%d", edge );
     }
     out_str( out, "\r\n" );
@@ -2494,7 +2499,7 @@ static void rtfw_story( RTFW *w, STORY *story, int kind )
 {
     OUT *out = w->out;
     WPARA *para;
-    u32 index = 0, last;
+    unsigned int index = 0, last;
 
     while ( index < story->count ) {
         para = story->para[index];
@@ -2536,10 +2541,10 @@ static const char *rtfw_style_name( const WSTYLE *style )
 
 static void rtfw_list_table( RTFW *w )
 {
-    static const u8 nfc[] = { 0, 23, 0, 4, 3, 2, 1 };       /* by LIST_* */
+    static const uint8_t nfc[] = { 0, 23, 0, 4, 3, 2, 1 };  /* by LIST_* */
     OUT *out = w->out;
     WLIST *list;
-    u32 index, level, kind, first;
+    unsigned int index, level, kind, first;
 
     out_str( out, "{\\*\\listtable" );
     for ( index = 0; index < w->nlist; index++ ) {
@@ -2557,8 +2562,8 @@ static void rtfw_list_table( RTFW *w )
                 kind = LIST_NUMBER;
             }
             out_fmt( out, "{\\listlevel\\levelnfc%u\\levelnfcn%u\\leveljc0\\leveljcn0\\levelfollow0"
-                          "\\levelstartat%u\\levelspace0\\levelindent0", (u32)nfc[kind], (u32)nfc[kind],
-                     (u32)(list->start[level] ? list->start[level] : 1) );
+                          "\\levelstartat%u\\levelspace0\\levelindent0", (uint32_t)nfc[kind], (uint32_t)nfc[kind],
+                     (uint32_t)(list->start[level] ? list->start[level] : 1) );
             if ( kind == LIST_BULLET ) {
                 out_fmt( out, "{\\leveltext\\'01\\u-3913 ?;}{\\levelnumbers;}\\f%u", w->symbol );
             } else {
@@ -2592,7 +2597,7 @@ static int rtf_save( WDOC *doc, OUT *out, int variant )
     RTFW *w;
     const WFONT *font;
     const WSTYLE *style;
-    u32 index;
+    unsigned int index;
     int failed;
 
     (void)variant;
@@ -2680,7 +2685,7 @@ static int rtf_save( WDOC *doc, OUT *out, int variant )
              doc->page.width, doc->page.height, doc->page.left, doc->page.right, doc->page.top,
              doc->page.bottom, doc->page.header, doc->page.footer, doc->page.landscape ? "\\lndscpsxn" : "" );
     if ( doc->page.first_page != 1 ) {
-        out_fmt( out, "\\pgnrestart\\pgnstarts%u", (u32)doc->page.first_page );
+        out_fmt( out, "\\pgnrestart\\pgnstarts%u", (uint32_t)doc->page.first_page );
     }
     out_str( out, "\r\n" );
     if ( doc->header.count ) {

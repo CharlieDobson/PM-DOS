@@ -10,19 +10,19 @@
 
 /* PM-DOS has no Windows entropy; the CPU time-stamp counter, sampled
    across a little jitter, is the modest seed the header warns about */
-static unsigned long rdtsc_lo( void );
+static uint32_t rdtsc_lo( void );
 #pragma aux rdtsc_lo = 0x0F 0x31 value [eax] modify exact [eax edx];
 
-void rng_seed(nst_rng *r, const unsigned char *seed, int len)
+void rng_seed(nst_rng *r, const uint8_t *seed, int len)
 {
     sha256(seed, (unsigned int)len, r->key);
     r->counter = 0;
 }
 
-void rng_stir(nst_rng *r, const unsigned char *data, int len)
+void rng_stir(nst_rng *r, const uint8_t *data, int len)
 {
     SHA256_CTX c;
-    unsigned char out[32];
+    uint8_t out[32];
     sha256_init(&c);
     sha256_update(&c, r->key, 32);
     sha256_update(&c, data, (unsigned int)len);
@@ -30,17 +30,17 @@ void rng_stir(nst_rng *r, const unsigned char *data, int len)
     memcpy(r->key, out, 32);
 }
 
-void rng_bytes(nst_rng *r, unsigned char *out, int len)
+void rng_bytes(nst_rng *r, uint8_t *out, int len)
 {
-    unsigned char in[36], blk[32], kin[33];
+    uint8_t in[36], blk[32], kin[33];
     int n;
 
     while (len > 0) {
         memcpy(in, r->key, 32);
-        in[32] = (unsigned char)(r->counter >> 24);
-        in[33] = (unsigned char)(r->counter >> 16);
-        in[34] = (unsigned char)(r->counter >> 8);
-        in[35] = (unsigned char)(r->counter);
+        in[32] = (uint8_t)(r->counter >> 24);
+        in[33] = (uint8_t)(r->counter >> 16);
+        in[34] = (uint8_t)(r->counter >> 8);
+        in[35] = (uint8_t)(r->counter);
         sha256(in, 36, blk);
         r->counter++;
 
@@ -59,10 +59,10 @@ void rng_bytes(nst_rng *r, unsigned char *out, int len)
 void rng_init(nst_rng *r)
 {
     SHA256_CTX    c;
-    unsigned char junk[32];             /* uninitialised: extra noise */
+    uint8_t       junk[32];             /* uninitialised: extra noise */
     void         *self = (void *)&c;
     volatile int  spin;
-    unsigned long t;
+    uint32_t      t;
     int           i, k;
 
     sha256_init(&c);

@@ -82,11 +82,11 @@
 
 #define TD_SETUP 0x08000000L    /* this transmit is a setup frame */
 
-static volatile u32 *rxr, *txr;
-static u8  *rxbuf[RXN];
-static u8  *txbuf[TXN];
-static u8  *setupbuf;           /* the 192-byte perfect-filter frame */
-static int  rx_cur, tx_cur;
+static volatile uint32_t *rxr, *txr;
+static uint8_t *rxbuf[RXN];
+static uint8_t *txbuf[TXN];
+static uint8_t *setupbuf;       /* the 192-byte perfect-filter frame */
+static int      rx_cur, tx_cur;
 
 static const PCI_ID tulip_ids[] = {
     { 0x1011, 0x0002 },         /* DEC 21040 */
@@ -98,21 +98,21 @@ static const PCI_ID tulip_ids[] = {
     { 0, 0 }
 };
 
-static u32 align16( u32 p ) { return ( p + 15 ) & ~15L; }
+static uint32_t align16( uint32_t p ) { return ( p + 15 ) & ~15L; }
 static void eedelay( void ) { inl( net_port + CSR9 ); inl( net_port + CSR9 ); }
 
 /* a word of the 93C46 at a word address (six address bits) */
-static u16 srom_word( int addr )
+static uint16_t srom_word( int addr )
 {
-    u32 base = EE_SR | EE_RD;
-    u32 cmd = ( (u32)EE_READ_CMD << 6 ) | ( addr & 0x3F );  /* 110 aaaaaa, 9 bits */
-    u16 val = 0;
+    uint32_t base = EE_SR | EE_RD;
+    uint32_t cmd = ( (uint32_t)EE_READ_CMD << 6 ) | ( addr & 0x3F ); /* 110 aaaaaa, 9 bits */
+    uint16_t val = 0;
     int i;
 
     outl( net_port + CSR9, base );
     outl( net_port + CSR9, base | EE_CS );
     for ( i = 8; i >= 0; i-- ) {
-        u32 d = base | EE_CS | ( ( cmd >> i ) & 1 ? EE_DO : 0 );
+        uint32_t d = base | EE_CS | ( ( cmd >> i ) & 1 ? EE_DO : 0 );
         outl( net_port + CSR9, d );
         eedelay();
         outl( net_port + CSR9, d | EE_CLK );
@@ -123,7 +123,7 @@ static u16 srom_word( int addr )
     for ( i = 0; i < 16; i++ ) {
         outl( net_port + CSR9, base | EE_CS | EE_CLK );
         eedelay();
-        val = (u16)( ( val << 1 ) | ( ( inl( net_port + CSR9 ) & EE_DI ) ? 1 : 0 ) );
+        val = (uint16_t)( ( val << 1 ) | ( ( inl( net_port + CSR9 ) & EE_DI ) ? 1 : 0 ) );
         outl( net_port + CSR9, base | EE_CS );
         eedelay();
     }
@@ -135,13 +135,13 @@ static u16 srom_word( int addr )
    the oldest; read enough words to cover both and keep the real one */
 static int read_mac( void )
 {
-    u8 rom[32];
+    uint8_t rom[32];
     int i;
 
     for ( i = 0; i < 16; i++ ) {
-        u16 w = srom_word( i );
-        rom[i * 2] = (u8)w;
-        rom[i * 2 + 1] = (u8)( w >> 8 );
+        uint16_t w = srom_word( i );
+        rom[i * 2] = (uint8_t)w;
+        rom[i * 2 + 1] = (uint8_t)( w >> 8 );
     }
     net_memcpy( net_mac, rom + 20, 6 );
     if ( net_mac_ok( net_mac ) ) return 1;
@@ -153,14 +153,15 @@ int card_find( void )
 {
     const PCI_ID *which;
     int isio, i;
-    u32 at, need;
-    u8 *pool;
+    uint32_t at;
+    unsigned int need;
+    uint8_t *pool;
 
     if ( !net_pci_find( tulip_ids, &which ) ) return 1;
     net_pci_enable( net_pciaddr );
-    net_port = (u16)net_pci_bar( net_pciaddr, 0, &isio );   /* BAR0 is I/O */
+    net_port = (uint16_t)net_pci_bar( net_pciaddr, 0, &isio ); /* BAR0 is I/O */
     if ( net_port == 0 || !isio ) return 1;
-    net_irq = (u8)net_pci_irqline( net_pciaddr );
+    net_irq = (uint8_t)net_pci_irqline( net_pciaddr );
     net_bus = NICB_PCI;
     net_flags = NICF_WORD;
 
@@ -174,12 +175,12 @@ int card_find( void )
         need = RXN * 16 + TXN * 16 + ( RXN + TXN ) * BUFSZ + 192 + 16;
         pool = net_alloc( need );
         if ( pool == 0 ) return 1;
-        at = align16( (u32)pool );
-        rxr = (volatile u32 *)at;   at += RXN * 16;
-        txr = (volatile u32 *)at;   at += TXN * 16;
-        setupbuf = (u8 *)at;        at += 192;
-        for ( i = 0; i < RXN; i++ ) { rxbuf[i] = (u8 *)at; at += BUFSZ; }
-        for ( i = 0; i < TXN; i++ ) { txbuf[i] = (u8 *)at; at += BUFSZ; }
+        at = align16( (uint32_t)pool );
+        rxr = (volatile uint32_t *)at;   at += RXN * 16;
+        txr = (volatile uint32_t *)at;   at += TXN * 16;
+        setupbuf = (uint8_t *)at;        at += 192;
+        for ( i = 0; i < RXN; i++ ) { rxbuf[i] = (uint8_t *)at; at += BUFSZ; }
+        for ( i = 0; i < TXN; i++ ) { txbuf[i] = (uint8_t *)at; at += BUFSZ; }
     }
     net_strcpy( net_name, "DEC 21x4x Tulip" );
     return 0;
@@ -187,7 +188,7 @@ int card_find( void )
 
 int card_setup( void )
 {
-    u32 n;
+    unsigned int n;
     int i;
 
     outl( net_port + CSR0, 0x00000001L );
@@ -197,19 +198,19 @@ int card_setup( void )
     for ( i = 0; i < RXN; i++ ) {
         rxr[i * 4 + 0] = D_OWN;
         rxr[i * 4 + 1] = ( i == RXN - 1 ? D_TER : 0 ) | BUFSZ;   /* buffer 1 size */
-        rxr[i * 4 + 2] = (u32)rxbuf[i];
+        rxr[i * 4 + 2] = (uint32_t)rxbuf[i];
         rxr[i * 4 + 3] = 0;
     }
     for ( i = 0; i < TXN; i++ ) {
         txr[i * 4 + 0] = 0;                      /* the driver owns it */
         txr[i * 4 + 1] = ( i == TXN - 1 ? D_TER : 0 );
-        txr[i * 4 + 2] = (u32)txbuf[i];
+        txr[i * 4 + 2] = (uint32_t)txbuf[i];
         txr[i * 4 + 3] = 0;
     }
     rx_cur = tx_cur = 0;
 
-    outl( net_port + CSR3, (u32)rxr );
-    outl( net_port + CSR4, (u32)txr );
+    outl( net_port + CSR3, (uint32_t)rxr );
+    outl( net_port + CSR4, (uint32_t)txr );
     /* the SIA, for the 21040/21143's 10baseT port: reset it, then the
        usual 10baseT values.  The 21140 and QEMU's 21143 ignore what
        they do not use */
@@ -220,7 +221,7 @@ int card_setup( void )
        03-00-00-00-00-01 is a multicast, not only broadcast */
     outl( net_port + CSR6, M_SF | M_BCAST | M_PAM | M_RXON | M_TXON );
     outl( net_port + CSR5, S_CLEAR );
-    outl( net_port + CSR7, (u32)( net_flags & NICF_POLLED ? 0 : ( S_NIS | S_AIS | S_RI | S_RU | S_TI ) ) );
+    outl( net_port + CSR7, (uint32_t)( net_flags & NICF_POLLED ? 0 : ( S_NIS | S_AIS | S_RI | S_RU | S_TI ) ) );
     outl( net_port + CSR2, 0 );                  /* poll the receive ring */
 
     /* tell the chip its address: a setup frame of 16 perfect-filter
@@ -229,17 +230,17 @@ int card_setup( void )
        are us again.  Each slot is three longwords, two address bytes
        in the low word of each */
     {
-        u32 *sf = (u32 *)setupbuf;
-        u32 me0 = (u32)( net_mac[0] | ( net_mac[1] << 8 ) );
-        u32 me1 = (u32)( net_mac[2] | ( net_mac[3] << 8 ) );
-        u32 me2 = (u32)( net_mac[4] | ( net_mac[5] << 8 ) );
+        uint32_t *sf = (uint32_t *)setupbuf;
+        uint32_t me0 = (uint32_t)( net_mac[0] | ( net_mac[1] << 8 ) );
+        uint32_t me1 = (uint32_t)( net_mac[2] | ( net_mac[3] << 8 ) );
+        uint32_t me2 = (uint32_t)( net_mac[4] | ( net_mac[5] << 8 ) );
         for ( i = 0; i < 16; i++ ) {
             if ( i == 1 ) { sf[i * 3] = 0xFFFF; sf[i * 3 + 1] = 0xFFFF; sf[i * 3 + 2] = 0xFFFF; }
             else { sf[i * 3] = me0; sf[i * 3 + 1] = me1; sf[i * 3 + 2] = me2; }
         }
         txr[0 * 4 + 0] = D_OWN;
         txr[0 * 4 + 1] = ( txr[0 * 4 + 1] & D_TER ) | TD_SETUP | 192;
-        txr[0 * 4 + 2] = (u32)setupbuf;
+        txr[0 * 4 + 2] = (uint32_t)setupbuf;
         outl( net_port + CSR1, 1 );              /* poll the transmit ring */
         for ( n = 0; n < SPIN_TX; n++ ) {
             if ( !( txr[0 * 4 + 0] & D_OWN ) ) break;
@@ -263,12 +264,12 @@ void card_stop( void )
     outl( net_port + CSR5, S_CLEAR );
 }
 
-int card_send( const u8 *frame, u32 len )
+int card_send( const uint8_t *frame, unsigned int len )
 {
-    static u8 pad[64];
+    static uint8_t pad[64];
     int entry = tx_cur;
-    volatile u32 *d = txr + entry * 4;
-    u32 n;
+    volatile uint32_t *d = txr + entry * 4;
+    unsigned int n;
 
     if ( d[0] & D_OWN ) {
         for ( n = 0; n < SPIN_TX; n++ ) {
@@ -284,7 +285,7 @@ int card_send( const u8 *frame, u32 len )
     } else {
         net_memcpy( txbuf[entry], frame, len );
     }
-    d[2] = (u32)txbuf[entry];
+    d[2] = (uint32_t)txbuf[entry];
     d[1] = ( d[1] & D_TER ) | TD_FS | TD_LS | len;   /* one descriptor, whole frame */
     d[0] = D_OWN;
     tx_cur = ( entry + 1 ) % TXN;
@@ -294,9 +295,10 @@ int card_send( const u8 *frame, u32 len )
 
 static void rx_drain( void )
 {
-    volatile u32 *d;
-    u32 status, len, n;
-    u8 *slot;
+    volatile uint32_t *d;
+    uint32_t status;
+    unsigned int len, n;
+    uint8_t *slot;
 
     for ( n = 0; n < RXN * 2; n++ ) {
         d = rxr + rx_cur * 4;
@@ -321,8 +323,8 @@ static void rx_drain( void )
 
 int card_service( void )
 {
-    u32 csr;
-    u32 n;
+    uint32_t csr;
+    unsigned int n;
     int mine = 0;
 
     for ( n = 0; n < 8; n++ ) {

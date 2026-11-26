@@ -111,17 +111,17 @@ static int fmt_float( double v, int prec, int letter, char *buf )
     return pos;
 }
 
-int num_fmt_l( s32 v, char *buf )
+int num_fmt_l( int32_t v, char *buf )
 {
     char digits[12];
-    u32 mag;
+    uint32_t mag;
     int count = 0, pos = 0;
 
     if ( v < 0 ) {
         buf[pos++] = '-';
-        mag = (u32)0 - (u32)v;
+        mag = (uint32_t)0 - (uint32_t)v;
     } else {
-        mag = (u32)v;
+        mag = (uint32_t)v;
     }
     do {
         digits[count++] = (char)('0' + mag % 10);
@@ -152,9 +152,9 @@ int num_fmt_lit( double v, int type, char *buf )
 
     switch ( type ) {
     case TY_INT:
-        return num_fmt_l( (s32)v, buf );
+        return num_fmt_l( (int32_t)v, buf );
     case TY_LONG:
-        len = num_fmt_l( (s32)v, buf );
+        len = num_fmt_l( (int32_t)v, buf );
         if ( v >= -32768.0 && v <= 32767.0 ) {
             buf[len++] = '&';
             buf[len] = 0;
@@ -210,12 +210,13 @@ static int hex_digit( int ch )
    it are skipped, and it ends at the first character that cannot go on
    with it.  *type comes back as the type the number is written as (a
    suffix, the digits, &H...), *used as the characters taken. */
-static double scan_number( const char *text, u32 len, u32 *used, int *type, int *any )
+static double scan_number( const char *text, unsigned int len, unsigned int *used, int *type, int *any )
 {
-    u32 pos = 0, lo = 0, hi = 0;
+    unsigned int pos = 0;
+    uint32_t lo = 0, hi = 0;
     int neg = 0, digits = 0, sig = 0, scale = 0, point = 0, expn = 0, eneg = 0;
     int ch, radix = 0, dval, exp_letter = 0, exp_digits = 0;
-    u32 val32 = 0;
+    uint32_t val32 = 0;
     double result;
 
     *any = 0;
@@ -254,7 +255,7 @@ static double scan_number( const char *text, u32 len, u32 *used, int *type, int 
             if ( (radix == 16 && val32 > 0x0FFFFFFFUL) || (radix == 8 && val32 > 0x1FFFFFFFUL) ) {
                 *type = -1;                     /* too big: Overflow */
             }
-            val32 = val32 * (u32)radix + (u32)dval;
+            val32 = val32 * (uint32_t)radix + (uint32_t)dval;
             digits++;
             pos++;
         }
@@ -272,9 +273,9 @@ static double scan_number( const char *text, u32 len, u32 *used, int *type, int 
         }
         *used = pos;
         if ( *type == TY_LONG ) {
-            result = (double)(s32)val32;
+            result = (double)(int32_t)val32;
         } else {
-            result = (double)(s16)(u16)val32;
+            result = (double)(int16_t)(uint16_t)val32;
         }
         return neg ? -result : result;
     }
@@ -299,10 +300,10 @@ static double scan_number( const char *text, u32 len, u32 *used, int *type, int 
         }
         if ( sig < 18 ) {
             /* hi:lo = hi:lo * 10 + digit, in 16-bit pieces */
-            u32 l0 = (lo & 0xFFFF) * 10 + (u32)(ch - '0');
-            u32 l1 = (lo >> 16) * 10 + (l0 >> 16);
-            u32 h0 = (hi & 0xFFFF) * 10 + (l1 >> 16);
-            u32 h1 = (hi >> 16) * 10 + (h0 >> 16);
+            uint32_t l0 = (lo & 0xFFFF) * 10 + (uint32_t)(ch - '0');
+            uint32_t l1 = (lo >> 16) * 10 + (l0 >> 16);
+            uint32_t h0 = (hi & 0xFFFF) * 10 + (l1 >> 16);
+            uint32_t h1 = (hi >> 16) * 10 + (h0 >> 16);
             lo = (l0 & 0xFFFF) | (l1 << 16);
             hi = (h0 & 0xFFFF) | (h1 << 16);
             sig++;
@@ -375,7 +376,7 @@ static double scan_number( const char *text, u32 len, u32 *used, int *type, int 
     return result;
 }
 
-double num_parse( const char *text, u32 len, u32 *used )
+double num_parse( const char *text, unsigned int len, unsigned int *used )
 {
     int type, any;
 
@@ -384,9 +385,9 @@ double num_parse( const char *text, u32 len, u32 *used )
 
 /* A whole item as INPUT and READ want it: a number and nothing after it
    but blanks.  -> 0 if it is not one. */
-int num_scan( const char *text, u32 len, double *val, int *type )
+int num_scan( const char *text, unsigned int len, double *val, int *type )
 {
-    u32 used;
+    unsigned int used;
     int any;
 
     *val = scan_number( text, len, &used, type, &any );

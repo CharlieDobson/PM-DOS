@@ -58,6 +58,37 @@
 ; loopback mount has ever made.
 ;
 ;---------------------------------------------------------------------
+; A FILE ON A NETWORK DRIVE IS READ THROUGH THE REDIRECTOR (IMF_NET).
+; It has no sectors on this machine, so there is nothing to map - and
+; none of the three reasons above applies to it.  A request to the
+; redirector selects no volume and touches nothing of the FAT layer's:
+; it is a block (img_nreq, its own, so net_req is never in the middle
+; of somebody else's call) handed to the driver, with the driver's
+; handle for the file and a 64-bit position.  It is not INT 21h, so no
+; DOS call is nested.  And there is no cache to keep two views of: the
+; file's bytes are not in the disk cache under any number.  So F1h
+; AL=0Fh opens the file once through the driver, keeps the handle in
+; IM_FILE, and a transfer on the letter is a READ or WRITE at sector
+; times 512.  Any size, .ISO or hard disk, written where it is
+; (Charlie, 2026-11-25).  The driver opens the file again by name after
+; a reconnect; a share that is gone fails the transfer, which is a
+; critical error like any disk's.  NET USE /DELETE is refused while an
+; image is mounted from the drive (img_netbusy).
+;
+;---------------------------------------------------------------------
+; A FILE WITH NO CLUSTERS TO MAP AND NO REDIRECTOR IS COPIED INSTEAD.
+; One on a CD or an exFAT volume has extents this file does not walk,
+; and a .IMZ is packed - so F1h AL=0Fh refuses them with ERR_NOTSUP,
+; and MOUNT reads the file itself and hands the bytes to F1h AL=2Bh.  That copies them into
+; a block of the kernel's (IMF_MEM), and a transfer on the letter is
+; then a copy to or from that block: no host drive, no map, no cache.
+; IM_GEN counts the writes.  The file is not touched until MOUNT /U,
+; which takes the image back out (IMEM_COPY), writes it to the file and
+; only then unmounts - and the unmount checks IM_GEN, so a write that
+; came in between is not thrown away.  A diskette is the most it holds
+; (IMG_MEM_MAX): a hard disk image belongs on a local FAT drive.
+;
+;---------------------------------------------------------------------
 ; ONE IMAGE IS ONE LETTER.  An image holding a bare volume is that
 ; volume; an image holding a whole disk - a master boot record and a
 ; partition table - is its FIRST FAT partition, and the rest are
@@ -84,11 +115,19 @@ IM_CLUS         EQU     04h             ; dd - the file's first cluster
 IM_SIZE         EQU     08h             ; dd - its length in bytes
 IM_SECS         EQU     0Ch             ; dd - and in 512-byte sectors
 IM_NEXT         EQU     10h             ; dd - extents in the map
-IM_MAP          EQU     14h             ; dd - the map itself, from the arena
+IM_MAP          EQU     14h             ; dd - the map itself, from the arena;
+                                        ; for IMF_MEM the image's bytes
 IM_HINT         EQU     18h             ; dd - the extent the last lookup hit
-IM_PATH         EQU     1Ch             ; 80 bytes - what was mounted, so
-                                        ; MOUNT can print it back
-IM_LEN          EQU     1Ch + 80
+IM_GEN          EQU     1Ch             ; dd - IMF_MEM: writes since it was
+                                        ; loaded, so MOUNT /U can tell a
+                                        ; copy it saved from a later change
+IM_FILE         EQU     20h             ; dd - IMF_NET: the redirector's
+                                        ; handle for the file (IM_HOSTVOL
+                                        ; is its drive)
+IM_PATH         EQU     24h             ; 80 bytes - what was mounted, so
+                                        ; MOUNT can print it back - and for
+                                        ; IMF_MEM, where it is saved to
+IM_LEN          EQU     24h + 80
 
 ; (IMF_USED, IMF_RO and IMF_ISO are in PMDOS.INC too - they are part
 ;  of what AL=11h reports, so they belong where a program can see
@@ -259,6 +298,11 @@ img_locked:
 iml_lp:
         test    byte ptr [esi+IM_FLAGS],IMF_USED
         jz      iml_next
+        test    byte ptr [esi+IM_FLAGS],IMF_MEM OR IMF_NET
+        jnz     iml_next                ; a copy, or a file on a share: no
+                                        ; cluster here to protect, and an
+                                        ; IM_CLUS of 0 would match every
+                                        ; empty file on the volume
         cmp     al,[esi+IM_HOSTVOL]
         jne     iml_next
         cmp     ebx,[esi+IM_CLUS]
@@ -418,9 +462,14 @@ img_iobody:
         jz      iib_done                ; nothing asked for, nothing wrong
 
         cmp     edx,IOS_WRBLK
-        jne     iib_lp
+        jne     iib_rdok
         test    byte ptr [esi+IM_FLAGS],IMF_RO
         jnz     iib_wp                  ; refused BEFORE anything moves
+iib_rdok:
+        test    byte ptr [esi+IM_FLAGS],IMF_MEM
+        jnz     iib_mem
+        test    byte ptr [esi+IM_FLAGS],IMF_NET
+        jnz     iib_net
 
 iib_lp:
         or      ecx,ecx
@@ -490,6 +539,76 @@ iib_wp:
         stc                             ; a read-only mount is
         ret
 
+;--- an image held in memory: the transfer is a copy, and the bounds
+;--- are checked before anything moves.  ECX is not 0 (tested above).
+iib_mem:
+        mov     eax,[esi+IM_SECS]
+        cmp     ebx,eax
+        jae     iib_bad                 ; it starts past the end
+        sub     eax,ebx
+        cmp     ecx,eax
+        ja      iib_bad                 ; ...or runs on past it
+        shl     ebx,9                   ; IMG_MEM_MAX keeps this small
+        add     ebx,[esi+IM_MAP]        ; EBX -> the first sector in memory
+        shl     ecx,7                   ; sectors -> dwords
+        cld
+        cmp     edx,IOS_WRBLK
+        je      iib_memwr
+        push    esi
+        mov     esi,ebx
+        rep     movsd                   ; the image -> the caller
+        pop     esi
+        jmp     iib_done
+iib_memwr:
+        push    esi
+        mov     esi,edi
+        mov     edi,ebx
+        rep     movsd                   ; the caller -> the image
+        pop     esi
+        inc     dword ptr [esi+IM_GEN]  ; MOUNT /U's reason to save
+        jmp     iib_done
+
+;--- a file on a network drive: one READ or WRITE through the
+;--- redirector at sector times 512, which is 64 bits wide.  The bounds
+;--- are checked first, as for memory; CX was 16 bits, so the count in
+;--- bytes is 32MB at most.  A transfer that comes back short means the
+;--- file is shorter than it was when it was mounted.
+iib_net:
+        mov     eax,[esi+IM_SECS]
+        cmp     ebx,eax
+        jae     iib_bad
+        sub     eax,ebx
+        cmp     ecx,eax
+        ja      iib_bad
+        call    img_nclear
+        mov     dword ptr [img_nreq+NR_OP],REDIR_READ
+        cmp     edx,IOS_WRBLK
+        jne     iin_op
+        mov     dword ptr [img_nreq+NR_OP],REDIR_WRITE
+iin_op:
+        movzx   eax,byte ptr [esi+IM_HOSTVOL]
+        mov     [img_nreq+NR_DRIVE],eax
+        mov     eax,[esi+IM_FILE]
+        mov     [img_nreq+NR_HANDLE],eax
+        mov     eax,ebx
+        shl     eax,9
+        mov     [img_nreq+NR_POSLO],eax
+        mov     eax,ebx
+        shr     eax,23
+        mov     [img_nreq+NR_POSHI],eax
+        mov     eax,ecx
+        shl     eax,9
+        mov     [img_nreq+NR_COUNT],eax
+        mov     [img_nreq+NR_BUFPTR],edi
+        call    img_nfire
+        jc      iib_bad
+        cmp     dword ptr [img_nreq+NR_STATUS],0
+        jne     iib_bad
+        mov     eax,[img_nreq+NR_RESULT]
+        cmp     eax,[img_nreq+NR_COUNT]
+        jne     iib_bad
+        jmp     iib_done
+
 ;=====================================================================
 ; img_block - read ECX blocks of 2048 from block EBX of image unit AL
 ;             into EDI.  The optical door: an .ISO mounted from a file
@@ -537,52 +656,32 @@ imb_bad:
 ;               8  ERR_NOMEM     the arena would not give up a map
 ;              15  ERR_BADDRIVE  no such letter, or it is taken, or
 ;                                there are no image slots left
+;              50  ERR_NOTSUP    the file is on a volume with no
+;                                clusters to map and no redirector - a
+;                                CD, exFAT, another image, a driver's
+;                                unit - and MOUNT has to load it (F1h
+;                                AL=2Bh).  A file on a network drive is
+;                                mounted where it is (img_netopen).
 ;=====================================================================
 img_mount:
         pushad
         mov     [imm_letter],al
         mov     [imm_flags],ah
         mov     [imm_path],esi
-
-;--- a free image slot, before anything else is disturbed ------------
-        mov     esi,OFFSET img_tbl
-        xor     ecx,ecx
-imm_free:
-        test    byte ptr [esi+IM_FLAGS],IMF_USED
-        jz      imm_gotslot
-        add     esi,IM_LEN
-        inc     ecx
-        cmp     ecx,IMG_MAX
-        jb      imm_free
-        jmp     imm_nodrive
-imm_gotslot:
-        mov     [imm_slot],esi
-        mov     eax,ecx
-        add     eax,IMG_UNIT_BASE
-        mov     [imm_unit],al
-
-;--- and a free letter -----------------------------------------------
-; FFh means "the next one after everything the scan found", which is
-; the same rule a CD-ROM follows and for the same reason: a letter
-; handed out in the middle would renumber the disks.
-        movzx   eax,byte ptr [imm_letter]
-        cmp     al,0FFh
-        jne     imm_named
-        movzx   eax,byte ptr [drv_count]
-        cmp     eax,[drv_ceil]                  ; LASTDRIVE= (drv_fixletters)
-        jae     imm_nodrive
-        jmp     short imm_haveltr
-imm_named:
-        cmp     eax,[drv_ceil]
-        jae     imm_nodrive
-        call    drv_slot
-        test    byte ptr [ebx+DRV_FLAGS],DRVF_PRESENT
-        jnz     imm_nodrive             ; taken, and this call does not
-                                        ; get to decide that C: is free
-imm_haveltr:
-        mov     [imm_letter],al
+        call    img_claim               ; a slot and a letter
+        jc      imm_fail
 
 ;--- find the file ---------------------------------------------------
+; A NETWORK DRIVE GOES ITS OWN WAY BEFORE ITS PATH IS WALKED.  walk_to
+; is FAT's directory walk, and on a share it read sectors from a drive
+; that is not there, with the last volume's layout - a critical error
+; for a file in a directory.  resolve_core only parses the path and
+; selects the volume, which is enough to know what the volume is.
+        mov     esi,[imm_path]
+        call    resolve_core
+        jc      imm_nopath
+        cmp     byte ptr [vol_fs],FS_NET
+        je      imm_net
         mov     esi,[imm_path]
 IFDEF IMG_DEBUG
         push    esi
@@ -629,10 +728,11 @@ ENDIF
         ; cluster chain; an ISO9660 file has extents instead and a
         ; second image's file has a map, and while both could be made
         ; to work neither is what this call is for.  Refused with
-        ; ERR_NOPATH, which is the truth: there is no path to those
-        ; sectors from here.
+        ; ERR_NOTSUP, which tells MOUNT the file is there and has to be
+        ; loaded instead (F1h AL=2Bh) - ERR_NOPATH said "no such
+        ; directory", which was not the trouble.
         cmp     byte ptr [vol_fs],FS_FAT
-        jne     imm_nopath
+        jne     imm_notsup
 
         ; ...AND NOT A FAT VOLUME THAT IS ITSELF AN IMAGE.  Stacking
         ; them would work arithmetically - each level translates to
@@ -641,9 +741,12 @@ ENDIF
         ; working variables img_iobody uses are single and a nested
         ; transfer would overwrite the outer one's.  A stack of them
         ; is three more variables and no use anybody has asked for, so
-        ; this is refused honestly instead of half-supported.
+        ; this is refused honestly instead of half-supported.  (The
+        ; test takes in the driver and ATAPI units above the images
+        ; too, so a file on RAMDISK.SYS is loaded rather than mapped -
+        ; which on a RAM disk costs nothing.)
         cmp     byte ptr [fat_drive],IMG_UNIT_BASE
-        jae     imm_nopath
+        jae     imm_notsup
 
         mov     byte ptr [srch_attr],0
         xor     ebx,ebx
@@ -744,6 +847,7 @@ imm_notro:
         mov     dword ptr [esi+IM_NEXT],0
         mov     dword ptr [esi+IM_MAP],0
         mov     dword ptr [esi+IM_HINT],0
+        mov     dword ptr [esi+IM_GEN],0
         mov     al,[imm_flags]
         or      al,IMF_USED
         mov     [esi+IM_FLAGS],al
@@ -762,7 +866,136 @@ imm_notro:
         call    img_sniff               ; sets DRV_* fields in imm_*
         jc      imm_unwind2
 
-;--- and now it has a letter -----------------------------------------
+        call    img_assign              ; and now it has a letter
+        popad
+        mov     al,[imm_letter]
+        clc
+        ret
+
+;--- a file on a network drive: opened through the redirector and read
+;--- where it is (img_netopen).  The sniff and the letter are a mapped
+;--- file's, and a sniff that finds nothing closes the file again.
+imm_net:
+        call    img_netopen             ; -> CF, AX; the slot filled
+        jc      imm_fail
+        call    img_sniff
+        jc      imm_netbad
+        call    img_assign
+        popad
+        mov     al,[imm_letter]
+        clc
+        ret
+imm_netbad:
+        push    eax
+        mov     esi,[imm_slot]
+        call    img_netclose
+        pop     eax
+        jmp     imm_unwind
+
+;--- unwinds ---------------------------------------------------------
+; imm_unwind2 has a map to give back; imm_unwind does not.  Neither
+; has a letter to give back, which is the whole reason the letter is
+; claimed last.
+imm_unwind2:
+        push    eax
+        mov     esi,[imm_slot]
+        call    img_unmap
+        pop     eax
+imm_unwind:
+        mov     esi,[imm_slot]
+        mov     byte ptr [esi+IM_FLAGS],0
+        mov     [imm_err],ax
+        popad
+        mov     ax,[imm_err]
+        stc
+        ret
+imm_nofile:
+        mov     ax,ERR_NOFILE
+        jmp     short imm_fail
+imm_isdir:
+imm_wild:
+        mov     ax,ERR_ACCESS           ; a directory or a pattern: neither
+        jmp     short imm_fail          ; is one file to mount
+imm_already:
+        mov     ax,ERR_EXISTS           ; it already has a letter, and the
+        jmp     short imm_fail          ; answer is that letter, not a second
+imm_nopath:
+        mov     ax,ERR_NOPATH
+        jmp     short imm_fail
+imm_notsup:
+        mov     ax,ERR_NOTSUP           ; there, but not mappable from here
+        jmp     short imm_fail
+imm_denied:
+        mov     ax,ERR_ACCESS
+imm_fail:
+        mov     [imm_err],ax
+        popad
+        mov     ax,[imm_err]
+        stc
+        ret
+
+;---------------------------------------------------------------------
+; img_claim - a free image slot, and the letter [imm_letter] names
+;             (FFh = the next free one).  Sets imm_slot, imm_unit and
+;             imm_letter.  CF set with AX = ERR_BADDRIVE when there is
+;             no slot or no such letter.  Nothing is taken yet: the
+;             slot stays empty and the letter free until the caller
+;             fills them, so a failure after this has nothing to undo.
+;---------------------------------------------------------------------
+img_claim:
+        pushad
+        mov     esi,OFFSET img_tbl
+        xor     ecx,ecx
+imcl_free:
+        test    byte ptr [esi+IM_FLAGS],IMF_USED
+        jz      imcl_gotslot
+        add     esi,IM_LEN
+        inc     ecx
+        cmp     ecx,IMG_MAX
+        jb      imcl_free
+        jmp     short imcl_no
+imcl_gotslot:
+        mov     [imm_slot],esi
+        mov     eax,ecx
+        add     eax,IMG_UNIT_BASE
+        mov     [imm_unit],al
+
+; FFh means "the next one after everything the scan found", which is
+; the same rule a CD-ROM follows and for the same reason: a letter
+; handed out in the middle would renumber the disks.
+        movzx   eax,byte ptr [imm_letter]
+        cmp     al,0FFh
+        jne     imcl_named
+        movzx   eax,byte ptr [drv_count]
+        cmp     eax,[drv_ceil]                  ; LASTDRIVE= (drv_fixletters)
+        jae     imcl_no
+        jmp     short imcl_have
+imcl_named:
+        cmp     eax,[drv_ceil]
+        jae     imcl_no
+        call    drv_slot
+        test    byte ptr [ebx+DRV_FLAGS],DRVF_PRESENT
+        jnz     imcl_no                 ; taken, and this call does not
+                                        ; get to decide that C: is free
+imcl_have:
+        mov     [imm_letter],al
+        popad
+        clc
+        ret
+imcl_no:
+        popad
+        mov     ax,ERR_BADDRIVE
+        stc
+        ret
+
+;---------------------------------------------------------------------
+; img_assign - the mount at [imm_slot] is filled in and its contents
+;              known: give it the letter.  imm_letter, imm_unit,
+;              imm_ptype, imm_start and imm_secs say how.  Everything
+;              preserved.
+;---------------------------------------------------------------------
+img_assign:
+        pushad
         movzx   eax,byte ptr [imm_letter]
         call    drv_slot
         mov     al,[imm_unit]
@@ -797,52 +1030,7 @@ imm_counted:
         ; and vol_select would believe them.
         mov     al,[imm_letter]
         call    img_dropvol
-
         popad
-        mov     al,[imm_letter]
-        clc
-        ret
-
-;--- unwinds ---------------------------------------------------------
-; imm_unwind2 has a map to give back; imm_unwind does not.  Neither
-; has a letter to give back, which is the whole reason the letter is
-; claimed last.
-imm_unwind2:
-        push    eax
-        mov     esi,[imm_slot]
-        call    img_unmap
-        pop     eax
-imm_unwind:
-        mov     esi,[imm_slot]
-        mov     byte ptr [esi+IM_FLAGS],0
-        mov     [imm_err],ax
-        popad
-        mov     ax,[imm_err]
-        stc
-        ret
-imm_nofile:
-        mov     ax,ERR_NOFILE
-        jmp     short imm_fail
-imm_isdir:
-imm_wild:
-        mov     ax,ERR_ACCESS           ; a directory or a pattern: neither
-        jmp     short imm_fail          ; is one file to mount
-imm_already:
-        mov     ax,ERR_EXISTS           ; it already has a letter, and the
-        jmp     short imm_fail          ; answer is that letter, not a second
-imm_nopath:
-        mov     ax,ERR_NOPATH
-        jmp     short imm_fail
-imm_denied:
-        mov     ax,ERR_ACCESS
-        jmp     short imm_fail
-imm_nodrive:
-        mov     ax,ERR_BADDRIVE
-imm_fail:
-        mov     [imm_err],ax
-        popad
-        mov     ax,[imm_err]
-        stc
         ret
 
 ;---------------------------------------------------------------------
@@ -1340,6 +1528,14 @@ ims_match5:
 ; img_umount - AL = a drive letter.  CF set with AX if it is not a
 ;              mounted image, or if something still has it open.
 ;
+;              AH matters only for an image held in memory (IMF_MEM),
+;              and says what to do with changes made to it:
+;                0  refuse (ERR_ACCESS) if it has been written at all
+;                1  throw them away
+;                2  MOUNT has saved the copy IMEM_COPY took when the
+;                   count was EDX - so refuse only if IM_GEN has moved
+;                   on since, which is a write the save did not carry
+;
 ; EVERYTHING THE VOLUME OWES GOES OUT FIRST.  The cache holds the
 ; image's blocks under the HOST's drive number, so they are not
 ; special and vol_syncdrv retires them the way it retires anybody's -
@@ -1349,6 +1545,8 @@ ims_match5:
 ;=====================================================================
 img_umount:
         pushad
+        mov     [imu_mode],ah
+        mov     [imu_gen],edx
         movzx   eax,al
         cmp     eax,MAX_DRIVES
         jae     imu_nodrive
@@ -1379,6 +1577,24 @@ img_umount:
         ; freed.  dos_commit does both layers in that order already.
         call    dos_commit
 
+        ; A MEMORY IMAGE'S CHANGES ARE NOT LOST BY ACCIDENT.  The count
+        ; is read after the commit, because the commit's own writes go
+        ; into the block and are changes like any other.
+        mov     esi,[imu_slot]
+        test    byte ptr [esi+IM_FLAGS],IMF_MEM
+        jz      imu_go
+        mov     eax,[esi+IM_GEN]
+        cmp     byte ptr [imu_mode],1
+        je      imu_go                  ; thrown away, as asked
+        cmp     byte ptr [imu_mode],2
+        jne     imu_plain
+        cmp     eax,[imu_gen]
+        jne     imu_busy                ; written since MOUNT took its copy
+        jmp     short imu_go
+imu_plain:
+        or      eax,eax
+        jnz     imu_busy                ; written, and nobody saved it
+imu_go:
         mov     al,[imu_letter]
         call    img_dropvol
 
@@ -1392,6 +1608,10 @@ img_umount:
 
         mov     esi,[imu_slot]
         call    img_unmap
+        test    byte ptr [esi+IM_FLAGS],IMF_NET
+        jz      imu_nonet
+        call    img_netclose            ; last: the volume is gone already
+imu_nonet:
         mov     byte ptr [esi+IM_FLAGS],0
 
         ; A LETTER THE DEFAULT DRIVE WAS STANDING ON is not left
@@ -1488,8 +1708,9 @@ img_dropvol:
 ;              CF clear if that slot is mounted, and the buffer holds:
 ;
 ;                +00  db  the drive letter, 0 = A:
-;                +01  db  IMF_* flags
-;                +02  db  the host volume's letter
+;                +01  db  IMF_* flags, and IMF_CHANGED for a memory
+;                         image that has been written to
+;                +02  db  the host volume's letter (FFh: none known)
 ;                +03  db  (pad)
 ;                +04  dd  the image's size in bytes
 ;                +08  dd  extents in its map
@@ -1513,6 +1734,12 @@ img_report:
         mov     al,[esi+IM_LETTER]
         mov     [edi+0],al
         mov     al,[esi+IM_FLAGS]
+        test    al,IMF_MEM              ; IMF_CHANGED is worked out, not
+        jz      irp_flags               ; kept: it is "IM_GEN is not 0"
+        cmp     dword ptr [esi+IM_GEN],0
+        je      irp_flags
+        or      al,IMF_CHANGED
+irp_flags:
         mov     [edi+1],al
         mov     al,[esi+IM_HOSTVOL]
         mov     [edi+2],al
@@ -1562,6 +1789,558 @@ irp_no:
         ret
 
 ;=====================================================================
+; img_memload - give a letter to an image held in memory.  F1h AL=2Bh,
+;               IMEM_LOAD.
+;
+;   ESI -> the image's bytes   ECX = how many (fF1_imem checked them)
+;   EDX -> ASCIIZ, the file they came from: MOUNT prints it, a second
+;          load of the same file is refused by it, and MOUNT /U saves
+;          the image back to it
+;   AL  = the letter (0 = A:), or FFh for the next free one
+;   AH  = IMF_RO to mount it read-only, else 0
+;
+;   CF clear: AL = the letter it took.  CF set: AX =
+;               3  ERR_NOPATH    no path, or one that will not fit in
+;                                IM_PATH whole
+;               5  ERR_ACCESS    less than a sector, or more than
+;                                IMG_MEM_MAX
+;               8  ERR_NOMEM     the arena has no block that size
+;              13  ERR_BADDATA   nothing in it this kernel can read
+;              15  ERR_BADDRIVE  no slot left, or the letter is taken
+;              80  ERR_EXISTS    that file already has a letter
+;
+; THE BYTES ARE COPIED, NOT BORROWED.  They are in MOUNT's slot, which
+; goes when MOUNT ends; the copy is a block of the kernel's (cur_own 0,
+; img_map's reason) bought last fit, from the top of the arena and out
+; of a growing slot's way (CACHE.INC's).  The sniff and the letter are
+; img_mount's own, so a loaded image is told apart and mounted exactly
+; as a mapped one is.
+;=====================================================================
+img_memload:
+        pushad
+        mov     [imm_letter],al
+        mov     [imm_flags],ah
+        mov     [imld_src],esi
+        mov     [imld_len],ecx
+        mov     [imm_path],edx
+
+        cmp     ecx,512
+        jb      imld_denied             ; not one sector of anything
+        cmp     ecx,IMG_MEM_MAX
+        ja      imld_denied             ; bigger than a diskette
+
+        ; THE PATH HAS TO FIT WHOLE.  MOUNT /U writes the image back to
+        ; it, and a name cut short is somebody else's file.
+        xor     ecx,ecx
+imld_meas:
+        cmp     byte ptr [edx+ecx],0
+        je      imld_measd
+        inc     ecx
+        cmp     ecx,80
+        jb      imld_meas
+        jmp     imld_nopath             ; 80 and no NUL yet: too long
+imld_measd:
+        or      ecx,ecx
+        jz      imld_nopath
+        mov     [imld_plen],ecx
+
+        call    imld_dup                ; one file, one letter
+        jc      imld_already
+        call    img_claim
+        jc      imm_fail
+
+        push    dword ptr [cur_own]
+        push    dword ptr [alloc_strat]
+        mov     dword ptr [cur_own],0
+        mov     dword ptr [alloc_strat],AF_LAST
+        mov     ebx,[imld_len]
+        call    arena_alloc
+        pop     dword ptr [alloc_strat]
+        pop     dword ptr [cur_own]
+        jc      imld_nomem
+        mov     edi,eax
+        mov     esi,[imld_src]
+        mov     ecx,[imld_len]
+        cld
+        rep     movsb
+
+        ; THE SLOT.  IM_HOSTVOL is the letter the path starts with, for
+        ; MOUNT's listing and DEFRAG's walk to the medium underneath;
+        ; no sector is ever read from it.  IM_CLUS 0 and IMF_MEM keep
+        ; img_locked away from the file.
+        mov     esi,[imm_slot]
+        mov     [esi+IM_MAP],eax
+        mov     edx,[imm_path]
+        mov     al,0FFh
+        cmp     byte ptr [edx+1],':'
+        jne     imld_host
+        mov     al,[edx]
+        or      al,20h
+        sub     al,'a'
+        cmp     al,MAX_DRIVES
+        jb      imld_host
+        mov     al,0FFh
+imld_host:
+        mov     [esi+IM_HOSTVOL],al
+        mov     byte ptr [esi+IM_HOSTDRV],0FFh
+        mov     dword ptr [esi+IM_CLUS],0
+        mov     eax,[imld_len]
+        mov     [esi+IM_SIZE],eax
+        shr     eax,9                   ; whole sectors, as img_mount
+        mov     [esi+IM_SECS],eax
+        mov     dword ptr [esi+IM_NEXT],0
+        mov     dword ptr [esi+IM_HINT],0
+        mov     dword ptr [esi+IM_GEN],0
+        mov     al,[imm_flags]
+        or      al,IMF_USED OR IMF_MEM
+        mov     [esi+IM_FLAGS],al
+        mov     al,[imm_letter]
+        mov     [esi+IM_LETTER],al
+        lea     edi,[esi+IM_PATH]
+        mov     esi,[imm_path]
+        mov     ecx,[imld_plen]
+        inc     ecx                     ; and its NUL: measured under 80
+        rep     movsb
+
+        call    img_sniff               ; what is in it, through iib_mem
+        jc      imm_unwind2             ; gives the block back
+        call    img_assign
+        popad
+        mov     al,[imm_letter]
+        clc
+        ret
+imld_denied:
+        mov     ax,ERR_ACCESS
+        jmp     imm_fail
+imld_nopath:
+        mov     ax,ERR_NOPATH
+        jmp     imm_fail
+imld_already:
+        mov     ax,ERR_EXISTS
+        jmp     imm_fail
+imld_nomem:
+        mov     ax,ERR_NOMEM
+        jmp     imm_fail
+
+;--- imld_dup - CF if [imm_path] is already the file of a memory image
+;--- or of one on a share - the two kinds a name is all there is to go
+;--- by.  The case of letters does not count: TRUENAME gives upper
+;--- case, a caller that did not ask it may not.
+imld_dup:
+        pushad
+        mov     ebx,OFFSET img_tbl
+        mov     ecx,IMG_MAX
+imdu_slot:
+        test    byte ptr [ebx+IM_FLAGS],IMF_USED
+        jz      imdu_next
+        test    byte ptr [ebx+IM_FLAGS],IMF_MEM OR IMF_NET
+        jz      imdu_next
+        lea     esi,[ebx+IM_PATH]
+        mov     edi,[imm_path]
+imdu_ch:
+        mov     al,[esi]
+        cmp     al,'a'
+        jb      imdu_up1
+        cmp     al,'z'
+        ja      imdu_up1
+        sub     al,20h
+imdu_up1:
+        mov     dl,[edi]
+        cmp     dl,'a'
+        jb      imdu_up2
+        cmp     dl,'z'
+        ja      imdu_up2
+        sub     dl,20h
+imdu_up2:
+        cmp     al,dl
+        jne     imdu_next
+        or      al,al
+        jz      imdu_yes
+        inc     esi
+        inc     edi
+        jmp     short imdu_ch
+imdu_next:
+        add     ebx,IM_LEN
+        dec     ecx
+        jnz     imdu_slot
+        popad
+        clc
+        ret
+imdu_yes:
+        popad
+        stc
+        ret
+
+;=====================================================================
+; img_memcopy - an image held in memory, copied back out for MOUNT /U
+;               to save.  F1h AL=2Bh, IMEM_COPY.
+;
+;   AL = the letter   EDI -> the caller's buffer   ECX = its room
+;        (fF1_imem checked EDI and ECX)
+;
+;   CF clear: ECX = the image's length, all of it copied, and EDX =
+;             IM_GEN when the copy was taken - the number F1h AL=10h
+;             is handed back with BH=2 to say the copy was saved.
+;   CF set:   AX = ERR_BADDRIVE  not an image held in memory
+;                  ERR_ACCESS    a file on it is open
+;                  ERR_BADLEN    the room is too small; ECX = the
+;                                length needed
+;
+; EVERYTHING OWED GOES IN FIRST.  The volume's FAT and directory
+; sectors may still be in the FAT layer's buffers; dos_commit writes
+; them, they land in the block like any other write, and the count
+; handed back includes them.  An open file is refused rather than
+; copied half-written: its directory entry is settled when it closes.
+;=====================================================================
+img_memcopy:
+        pushad
+        mov     [imcp_dst],edi
+        mov     [imcp_room],ecx
+        movzx   eax,al
+        cmp     eax,MAX_DRIVES
+        jae     imcp_nodrive
+        mov     [imcp_letter],al
+        call    drv_slot
+        test    byte ptr [ebx+DRV_FLAGS],DRVF_PRESENT
+        jz      imcp_nodrive
+        test    byte ptr [ebx+DRV_FLAGS],DRVF_IMAGE
+        jz      imcp_nodrive
+        mov     al,[ebx+DRV_BIOS]
+        call    img_slot                ; -> ESI = the mount
+        jc      imcp_nodrive
+        test    byte ptr [esi+IM_FLAGS],IMF_MEM
+        jz      imcp_nodrive
+        mov     [imcp_slot],esi
+        mov     eax,[esi+IM_SIZE]
+        mov     [imcp_len],eax
+        cmp     eax,[imcp_room]
+        ja      imcp_short
+
+        mov     al,[imcp_letter]
+        call    img_anyopen
+        jc      imcp_busy
+        call    dos_commit
+
+        mov     esi,[imcp_slot]
+        mov     eax,[esi+IM_GEN]
+        mov     [imcp_gen],eax
+        mov     ecx,[esi+IM_SIZE]
+        mov     esi,[esi+IM_MAP]
+        mov     edi,[imcp_dst]
+        cld
+        rep     movsb
+        popad
+        mov     ecx,[imcp_len]
+        mov     edx,[imcp_gen]
+        clc
+        ret
+imcp_short:
+        popad
+        mov     ecx,[imcp_len]
+        mov     ax,ERR_BADLEN
+        stc
+        ret
+imcp_busy:
+        popad
+        mov     ax,ERR_ACCESS
+        stc
+        ret
+imcp_nodrive:
+        popad
+        mov     ax,ERR_BADDRIVE
+        stc
+        ret
+
+;=====================================================================
+; img_netopen - the file at [imm_path] is on the network drive that
+;               resolve_core just selected ([cur_vol]).  Open it through
+;               the redirector and fill the slot at [imm_slot] for
+;               IMF_NET.  CF with AX = why not, and nothing left open.
+;               Runs inside img_mount, so [imm_flags] may say IMF_RO.
+;
+; READ AND WRITE IF THE SERVER WILL, READ-ONLY IF IT WILL NOT.  The
+; driver says "no such file" for any open it is refused, so a refused
+; read-and-write open is asked again for reading before it is believed:
+; a read-only file or share mounts read-only, the way a read-only file
+; on C: does, and a file that is not there fails both.
+;
+; net_req IS FREE HERE: this is F1h's own call, with no file operation
+; of anybody's in the middle of it, so the mount uses NETFS's routines.
+; The transfers later use img_nreq, which nothing else touches.
+;=====================================================================
+img_netopen:
+        pushad
+        mov     al,[cur_vol]
+        mov     [imn_drive],al
+
+        ; THE NAME AS THE SERVER SPELLS IT, for the listing and so that
+        ; one file has one letter.  The 8.3 form, as 60h gives.
+        mov     ebx,REDIR_CANON
+        xor     edx,edx
+        mov     esi,[imm_path]
+        call    net_text                ; -> net_req's NR_PATH, or CF/AX
+        jc      imn_fail
+        call    imn_keepname            ; -> IM_PATH, [imn_whole]
+        cmp     byte ptr [imn_whole],0
+        je      imn_open1               ; a name cut short proves nothing
+        push    dword ptr [imm_path]
+        mov     eax,[imm_slot]
+        add     eax,IM_PATH
+        mov     [imm_path],eax          ; what imld_dup compares
+        call    imld_dup
+        pop     dword ptr [imm_path]
+        jc      imn_already
+
+imn_open1:
+        mov     dword ptr [imn_access],2        ; read and write
+        test    byte ptr [imm_flags],IMF_RO
+        jz      imn_open
+        mov     dword ptr [imn_access],0        ; /R: reading only
+imn_open:
+        mov     al,[imn_drive]
+        mov     ebx,REDIR_OPEN
+        call    net_req_begin
+        mov     esi,[imm_path]
+        call    net_setpath
+        mov     eax,[imn_access]
+        mov     [net_req+NR_COUNT],eax          ; NR_SPARE 0: an existing file
+        call    net_fire
+        jc      imn_general
+        cmp     dword ptr [net_req+NR_STATUS],0
+        je      imn_opened
+        cmp     dword ptr [imn_access],0
+        je      imn_status              ; refused even for reading
+        mov     dword ptr [imn_access],0
+        or      byte ptr [imm_flags],IMF_RO
+        jmp     short imn_open
+
+imn_opened:
+        mov     esi,[imm_slot]
+        mov     eax,[net_req+NR_HANDLE]
+        mov     [esi+IM_FILE],eax
+        mov     al,[imn_drive]
+        mov     [esi+IM_HOSTVOL],al
+        mov     byte ptr [esi+IM_HOSTDRV],0FFh
+        mov     dword ptr [esi+IM_CLUS],0
+        mov     dword ptr [esi+IM_NEXT],0
+        mov     dword ptr [esi+IM_MAP],0
+        mov     dword ptr [esi+IM_HINT],0
+        mov     dword ptr [esi+IM_GEN],0
+        test    byte ptr [net_req+NR_ATTR],ATTR_DIR
+        jnz     imn_closedeny           ; a directory is not one file
+        test    byte ptr [net_req+NR_ATTR],ATTR_READONLY
+        jz      imn_size
+        or      byte ptr [imm_flags],IMF_RO
+imn_size:
+        ; THE SIZE IS 64 BITS ON A SHARE.  IM_SIZE, which only the report
+        ; reads, stops at 4GB; IM_SECS is the drive table's 32 bits, which
+        ; is two terabytes.
+        mov     eax,[net_req+NR_SIZELO]
+        mov     edx,[net_req+NR_SIZEHI]
+        or      edx,edx
+        jnz     imn_big
+        cmp     eax,512
+        jb      imn_closedeny           ; not one sector of anything
+        mov     [esi+IM_SIZE],eax
+        shr     eax,9                   ; whole sectors, as img_mount
+        jmp     short imn_secs
+imn_big:
+        mov     dword ptr [esi+IM_SIZE],0FFFFFFFFh
+        shrd    eax,edx,9
+        shr     edx,9
+        jz      imn_secs
+        mov     eax,0FFFFFFFFh          ; past 2TB: as far as a letter goes
+imn_secs:
+        mov     [esi+IM_SECS],eax
+        mov     al,[imm_flags]
+        or      al,IMF_USED OR IMF_NET
+        mov     [esi+IM_FLAGS],al
+        mov     al,[imm_letter]
+        mov     [esi+IM_LETTER],al
+        popad
+        clc
+        ret
+
+imn_closedeny:
+        call    img_netclose            ; ESI = the slot, IM_FILE set
+        mov     ax,ERR_ACCESS
+        jmp     short imn_fail
+imn_general:
+        mov     ax,ERR_GENERAL
+        jmp     short imn_fail
+imn_status:
+        mov     ax,word ptr [net_req+NR_STATUS]
+        jmp     short imn_fail
+imn_already:
+        mov     ax,ERR_EXISTS
+imn_fail:
+        mov     [imm_err],ax
+        popad
+        mov     ax,[imm_err]
+        stc
+        ret
+
+;--- imn_keepname - IM_PATH = "X:\" and net_req's NR_PATH, the server's
+;--- share-relative name with no leading backslash.  When that will not
+;--- fit in IM_PATH's 80 bytes, "X:\" and its last component, and
+;--- [imn_whole] = 0 so nothing is concluded from a partial name.
+imn_keepname:
+        pushad
+        mov     edi,[imm_slot]
+        add     edi,IM_PATH
+        mov     al,[imn_drive]
+        add     al,'A'
+        mov     [edi],al
+        mov     byte ptr [edi+1],':'
+        mov     byte ptr [edi+2],'\'
+        add     edi,3
+        mov     esi,OFFSET net_req + NR_PATH
+        xor     ecx,ecx
+ikn_len:
+        cmp     byte ptr [esi+ecx],0
+        je      ikn_measd
+        inc     ecx
+        cmp     ecx,259                 ; NR_PATH is 260 with its NUL
+        jb      ikn_len
+ikn_measd:
+        mov     byte ptr [imn_whole],1
+        cmp     ecx,80 - 3 - 1
+        jbe     ikn_copy
+        mov     byte ptr [imn_whole],0
+        lea     edx,[esi+ecx]           ; the end; back to the last '\'
+ikn_back:
+        cmp     edx,esi
+        je      ikn_tail
+        cmp     byte ptr [edx-1],'\'
+        je      ikn_tail
+        dec     edx
+        jmp     short ikn_back
+ikn_tail:
+        add     ecx,esi
+        sub     ecx,edx                 ; ECX = the component's length
+        mov     esi,edx
+        cmp     ecx,80 - 3 - 1
+        jbe     ikn_copy
+        mov     ecx,80 - 3 - 1          ; an 8.3 name never is
+ikn_copy:
+        cld
+        rep     movsb
+        mov     byte ptr [edi],0
+        popad
+        ret
+
+;---------------------------------------------------------------------
+; img_netclose - ESI = an IMF_NET mount (or the slot img_netopen was
+;                filling): close its file on the server.  Best effort,
+;                as net_close's is: a share that is gone has nothing
+;                left to close.  Everything preserved.
+;---------------------------------------------------------------------
+img_netclose:
+        pushad
+        call    img_nclear
+        mov     dword ptr [img_nreq+NR_OP],REDIR_CLOSE
+        movzx   eax,byte ptr [esi+IM_HOSTVOL]
+        mov     [img_nreq+NR_DRIVE],eax
+        mov     eax,[esi+IM_FILE]
+        mov     [img_nreq+NR_HANDLE],eax
+        call    img_nfire
+        popad
+        ret
+
+;---------------------------------------------------------------------
+; img_netbusy - AL = a drive letter.  CF set if an image is mounted
+;               from a file on it: NET USE /DELETE asks, because taking
+;               the share away would leave the image reading through a
+;               handle on a session that no longer exists.  Everything
+;               preserved.
+;---------------------------------------------------------------------
+img_netbusy:
+        push    ecx
+        push    esi
+        mov     esi,OFFSET img_tbl
+        mov     ecx,IMG_MAX
+inb_lp:
+        test    byte ptr [esi+IM_FLAGS],IMF_USED
+        jz      inb_next
+        test    byte ptr [esi+IM_FLAGS],IMF_NET
+        jz      inb_next
+        cmp     al,[esi+IM_HOSTVOL]
+        je      inb_yes
+inb_next:
+        add     esi,IM_LEN
+        dec     ecx
+        jnz     inb_lp
+        pop     esi
+        pop     ecx
+        clc
+        ret
+inb_yes:
+        pop     esi
+        pop     ecx
+        stc
+        ret
+
+;---------------------------------------------------------------------
+; img_nclear - img_nreq all zero.  Everything preserved.
+; img_nfire  - hand img_nreq to the redirector, as net_fire hands
+;              net_req: interrupts on for the call (the driver waits on
+;              the card and the clock), the caller's flags back after.
+;              CF if there is no redirector or it would not take the
+;              call; otherwise NR_STATUS says how it went.
+;
+; THE CACHE IS HELD BUSY FOR THE CALL.  A transfer comes here from
+; inside dio_try, whose statics hold it, and the driver may allocate
+; memory: an arena with none to spare asks cache_reclaim, which writes
+; dirty blocks out through disk_write - dio_try again, over those
+; statics, which CACHE.INC says must never happen.  cache_busy is the
+; flag cache_reclaim already obeys ("already inside ourselves"), so the
+; driver's allocation is refused instead of paid for with a flush.
+;---------------------------------------------------------------------
+img_nclear:
+        push    eax
+        push    ecx
+        push    edi
+        mov     edi,OFFSET img_nreq
+        xor     eax,eax
+        mov     ecx,NR_SIZE / 4
+        cld
+        rep     stosd
+        pop     edi
+        pop     ecx
+        pop     eax
+        ret
+
+img_nfire:
+        pushad
+        pushfd
+        mov     al,[cache_busy]
+        mov     [inf_busy],al
+        mov     byte ptr [cache_busy],1
+        sti
+        mov     eax,NDTF_REDIR
+        xor     edx,edx
+        call    nd_find_flag            ; ESI -> the redirector's row
+        jc      inf_fail
+        mov     ebx,[img_nreq+NR_OP]
+        mov     edi,OFFSET img_nreq
+        mov     ecx,NR_SIZE
+        call    nd_call_row
+        jc      inf_fail
+        mov     al,[inf_busy]
+        mov     [cache_busy],al
+        popfd
+        popad
+        clc
+        ret
+inf_fail:
+        mov     al,[inf_busy]
+        mov     [cache_busy],al
+        popfd
+        popad
+        stc
+        ret
+
+;=====================================================================
 ; State
 ;=====================================================================
 img_tbl     db  (IMG_MAX * IM_LEN) dup(0)
@@ -1582,8 +2361,32 @@ imm_err     dw  0
             dw  0
 
 imu_letter  db  0
-            db  0,0,0
+imu_mode    db  0                       ; AH: 0 keep, 1 discard, 2 saved
+            db  0,0
 imu_slot    dd  0
+imu_gen     dd  0                       ; EDX: the count MOUNT saved at
+
+; img_memload's and img_memcopy's
+imld_src    dd  0
+imld_len    dd  0
+imld_plen   dd  0
+imcp_dst    dd  0
+imcp_room   dd  0
+imcp_slot   dd  0
+imcp_len    dd  0
+imcp_gen    dd  0
+imcp_letter db  0
+            db  0,0,0
+
+; img_netopen's, and the redirector request every transfer of an IMF_NET
+; mount is made with - its own, not net_req (see the file's header)
+imn_drive   db  0
+imn_whole   db  0
+inf_busy    db  0                       ; cache_busy as img_nfire found it
+            db  0
+imn_access  dd  0
+img_nreq    dd  NR_SIZE / 4 dup(0)      ; dwords: wasm types every
+                                        ; [img_nreq+NR_x] by this line
 
 ; img_walk's, and the chain walk is a loop of its own inside a pushad
 imp_count   db  0

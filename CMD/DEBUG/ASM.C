@@ -35,45 +35,45 @@
 #define O_FAR    7              /* seg:off */
 
 typedef struct {
-    int  kind;
-    int  reg;                  /* O_REG*, O_SREG: which */
-    u32  imm;                  /* O_IMM, O_MEM disp, O_FAR off */
-    u16  seg;                  /* O_FAR */
-    int  mem_mod;              /* O_MEM: the mod field it needs */
-    int  mem_rm;               /* ...and r/m */
-    int  mem_has_disp;
-    int  size;                 /* 0 unknown, else 8/16/32/64/80 - from PTR words */
-    int  is_far;               /* FAR in front: JMP FAR [BX] */
-    int  base, index;          /* 32-bit O_MEM, -1 none */
-    int  has_sib;              /* 32-bit O_MEM: a SIB byte follows ModRM */
-    u8   sib;
-    int  disp32;               /* 32-bit O_MEM: the displacement is four bytes */
+    int      kind;
+    int      reg;              /* O_REG*, O_SREG: which */
+    uint32_t imm;              /* O_IMM, O_MEM disp, O_FAR off */
+    uint16_t seg;              /* O_FAR */
+    int      mem_mod;          /* O_MEM: the mod field it needs */
+    int      mem_rm;           /* ...and r/m */
+    int      mem_has_disp;
+    int      size;             /* 0 unknown, else 8/16/32/64/80 - from PTR words */
+    int      is_far;           /* FAR in front: JMP FAR [BX] */
+    int      base, index;      /* 32-bit O_MEM, -1 none */
+    int      has_sib;          /* 32-bit O_MEM: a SIB byte follows ModRM */
+    uint8_t  sib;
+    int      disp32;           /* 32-bit O_MEM: the displacement is four bytes */
 } OPND;
 
-static int use32;
-static u8  code[DIS_MAX];
-static int clen;
-static ADDR asm_at;
+static int     use32;
+static uint8_t code[DIS_MAX];
+static int     clen;
+static ADDR    asm_at;
 
-static void emit( u8 b )
+static void emit( uint8_t b )
 {
     if ( clen < DIS_MAX ) {
         code[clen++] = b;
     }
 }
 
-static void emit16( u16 w )
+static void emit16( uint16_t w )
 {
-    emit( (u8)w );
-    emit( (u8)( w >> 8 ) );
+    emit( (uint8_t)w );
+    emit( (uint8_t)( w >> 8 ) );
 }
 
-static void emit32( u32 v )
+static void emit32( uint32_t v )
 {
-    emit( (u8)v );
-    emit( (u8)( v >> 8 ) );
-    emit( (u8)( v >> 16 ) );
-    emit( (u8)( v >> 24 ) );
+    emit( (uint8_t)v );
+    emit( (uint8_t)( v >> 8 ) );
+    emit( (uint8_t)( v >> 16 ) );
+    emit( (uint8_t)( v >> 24 ) );
 }
 
 /* the parser reads from lp, with syntax_error() on anything wrong */
@@ -85,7 +85,7 @@ static const char *sregn[]  = { "ES","CS","SS","DS","FS","GS" };
 
 static int match_word( const char *w )
 {
-    u32 n = str_len( w );
+    unsigned int n = str_len( w );
 
     skip_blanks();
     if ( str_nicmp( lp, w, n ) == 0 ) {
@@ -132,7 +132,7 @@ static int addr16_form( void )
 static void parse_mem32( OPND *o )
 {
     int base = -1, index = -1, scale = 0;
-    u32 disp = 0;
+    uint32_t disp = 0;
     int have_disp = 0;
     int neg = 0;
     int r;
@@ -147,7 +147,7 @@ static void parse_mem32( OPND *o )
                 syntax_error();         /* a register cannot be taken away */
             }
             if ( *lp == '*' ) {
-                u32 s;
+                uint32_t s;
                 lp++;
                 skip_blanks();
                 s = get_hex( 1 );
@@ -164,8 +164,8 @@ static void parse_mem32( OPND *o )
                 syntax_error();
             }
         } else {
-            u32 v = get_hex( 8 );
-            disp += neg ? (u32)( -(s32)v ) : v;
+            uint32_t v = get_hex( 8 );
+            disp += neg ? (uint32_t)( -(int32_t)v ) : v;
             have_disp = 1;
         }
         skip_blanks();
@@ -192,7 +192,7 @@ static void parse_mem32( OPND *o )
     }
     if ( index >= 0 || base == 4 ) {    /* ESP as a base needs a SIB too */
         o->has_sib = 1;
-        o->sib = (u8)( ( scale << 6 ) | ( ( index >= 0 ? index : 4 ) << 3 ) | ( base >= 0 ? base : 5 ) );
+        o->sib = (uint8_t)( ( scale << 6 ) | ( ( index >= 0 ? index : 4 ) << 3 ) | ( base >= 0 ? base : 5 ) );
         o->mem_rm = 4;
         if ( base < 0 ) {               /* [index*scale+disp32] */
             o->mem_mod = 0;
@@ -216,7 +216,7 @@ static void parse_mem32( OPND *o )
 static void parse_mem( OPND *o )
 {
     int form;
-    u32 disp = 0;
+    uint32_t disp = 0;
     int have_disp = 0;
     int neg = 0;
 
@@ -246,7 +246,7 @@ static void parse_mem( OPND *o )
     }
     lp++;
     if ( neg ) {
-        disp = (u32)( -(s32)disp );
+        disp = (uint32_t)( -(int32_t)disp );
     }
 
     if ( form < 0 ) {           /* [disp] direct */
@@ -307,16 +307,16 @@ static int parse_operand( OPND *o )
     if ( *lp == '-' ) {
         lp++;
         o->kind = O_IMM;
-        o->imm = (u32)( -(s32)get_hex( 8 ) );
+        o->imm = (uint32_t)( -(int32_t)get_hex( 8 ) );
         return 1;
     }
     {
-        u32 v = get_hex( 8 );
+        uint32_t v = get_hex( 8 );
         skip_blanks();
         if ( *lp == ':' ) {
             lp++;
             o->kind = O_FAR;
-            o->seg = (u16)v;
+            o->seg = (uint16_t)v;
             o->imm = get_hex( 8 );
             return 1;
         }
@@ -330,27 +330,27 @@ static int parse_operand( OPND *o )
 static void emit_modrm( OPND *o, int reg )
 {
     if ( o->kind != O_MEM ) {
-        emit( (u8)( 0xC0 | ( reg << 3 ) | o->reg ) );
+        emit( (uint8_t)( 0xC0 | ( reg << 3 ) | o->reg ) );
         return;
     }
-    emit( (u8)( ( o->mem_mod << 6 ) | ( reg << 3 ) | o->mem_rm ) );
+    emit( (uint8_t)( ( o->mem_mod << 6 ) | ( reg << 3 ) | o->mem_rm ) );
     if ( use32 ) {
         if ( o->has_sib ) {
             emit( o->sib );
         }
         if ( o->mem_mod == 1 ) {
-            emit( (u8)o->imm );
+            emit( (uint8_t)o->imm );
         } else if ( o->disp32 ) {
             emit32( o->imm );
         }
         return;
     }
     if ( o->mem_rm == 6 && o->mem_mod == 0 ) {
-        emit16( (u16)o->imm );
+        emit16( (uint16_t)o->imm );
     } else if ( o->mem_mod == 1 ) {
-        emit( (u8)o->imm );
+        emit( (uint8_t)o->imm );
     } else if ( o->mem_mod == 2 ) {
-        emit16( (u16)o->imm );
+        emit16( (uint16_t)o->imm );
     }
 }
 
@@ -372,15 +372,15 @@ static int asm_arith( const char *mnem, int family, OPND *a, OPND *b )
     /* reg,reg or reg,mem or mem,reg */
     if ( ( a->kind == O_MEM || a->kind >= O_REG8 ) && ( b->kind >= O_REG8 && b->kind <= O_REG32 ) ) {
         sz = op_size( b );
-        if ( sz == 8 ) emit( (u8)( family * 8 + 0 ) );
-        else { if ( sz == 32 && !use32 ) emit( 0x66 ); emit( (u8)( family * 8 + 1 ) ); }
+        if ( sz == 8 ) emit( (uint8_t)( family * 8 + 0 ) );
+        else { if ( sz == 32 && !use32 ) emit( 0x66 ); emit( (uint8_t)( family * 8 + 1 ) ); }
         emit_modrm( a, b->reg );
         return 1;
     }
     if ( a->kind >= O_REG8 && a->kind <= O_REG32 && b->kind == O_MEM ) {
         sz = op_size( a );
-        if ( sz == 8 ) emit( (u8)( family * 8 + 2 ) );
-        else { if ( sz == 32 && !use32 ) emit( 0x66 ); emit( (u8)( family * 8 + 3 ) ); }
+        if ( sz == 8 ) emit( (uint8_t)( family * 8 + 2 ) );
+        else { if ( sz == 32 && !use32 ) emit( 0x66 ); emit( (uint8_t)( family * 8 + 3 ) ); }
         emit_modrm( b, a->reg );
         return 1;
     }
@@ -391,26 +391,26 @@ static int asm_arith( const char *mnem, int family, OPND *a, OPND *b )
             return 0;           /* a size is needed */
         }
         /* AL/AX/EAX,imm short forms */
-        if ( a->kind == O_REG8 && a->reg == 0 ) { emit( (u8)( family * 8 + 4 ) ); emit( (u8)b->imm ); return 1; }
+        if ( a->kind == O_REG8 && a->reg == 0 ) { emit( (uint8_t)( family * 8 + 4 ) ); emit( (uint8_t)b->imm ); return 1; }
         if ( ( a->kind == O_REG16 || a->kind == O_REG32 ) && a->reg == 0 ) {
             if ( sz == 32 && !use32 ) emit( 0x66 );
-            emit( (u8)( family * 8 + 5 ) );
-            if ( sz == 32 ) emit32( b->imm ); else emit16( (u16)b->imm );
+            emit( (uint8_t)( family * 8 + 5 ) );
+            if ( sz == 32 ) emit32( b->imm ); else emit16( (uint16_t)b->imm );
             return 1;
         }
         if ( sz == 8 ) {
-            emit( 0x80 ); emit_modrm( a, family ); emit( (u8)b->imm );
+            emit( 0x80 ); emit_modrm( a, family ); emit( (uint8_t)b->imm );
         } else {
             /* a value a signed byte holds takes 83h, as 6.22 wrote SBB
                WORD PTR [BX],1 (83 1F 01) */
-            u32 v = sz == 32 ? b->imm : b->imm & 0xFFFF;
-            u32 top = sz == 32 ? 0xFFFFFF80UL : 0xFF80UL;
+            uint32_t v = sz == 32 ? b->imm : b->imm & 0xFFFF;
+            uint32_t top = sz == 32 ? 0xFFFFFF80UL : 0xFF80UL;
             if ( sz == 32 && !use32 ) emit( 0x66 );
             if ( v < 0x80 || v >= top ) {
-                emit( 0x83 ); emit_modrm( a, family ); emit( (u8)v );
+                emit( 0x83 ); emit_modrm( a, family ); emit( (uint8_t)v );
             } else {
                 emit( 0x81 ); emit_modrm( a, family );
-                if ( sz == 32 ) emit32( b->imm ); else emit16( (u16)b->imm );
+                if ( sz == 32 ) emit32( b->imm ); else emit16( (uint16_t)b->imm );
             }
         }
         return 1;
@@ -421,18 +421,18 @@ static int asm_arith( const char *mnem, int family, OPND *a, OPND *b )
 static const char *grp1[] = { "ADD","OR","ADC","SBB","AND","SUB","XOR","CMP" };
 
 /* a short/near relative target */
-static void emit_jcc( int cc, u32 target )
+static void emit_jcc( int cc, uint32_t target )
 {
-    s32 rel = (s32)( target - ( asm_at.off + clen + 2 ) );
+    int32_t rel = (int32_t)( target - ( asm_at.off + clen + 2 ) );
 
     if ( rel >= -128 && rel < 128 ) {
-        emit( (u8)( 0x70 + cc ) );
-        emit( (u8)rel );
+        emit( (uint8_t)( 0x70 + cc ) );
+        emit( (uint8_t)rel );
     } else {
         emit( 0x0F );
-        emit( (u8)( 0x80 + cc ) );
-        rel = (s32)( target - ( asm_at.off + clen + ( use32 ? 4 : 2 ) ) );
-        if ( use32 ) emit32( (u32)rel ); else emit16( (u16)rel );
+        emit( (uint8_t)( 0x80 + cc ) );
+        rel = (int32_t)( target - ( asm_at.off + clen + ( use32 ? 4 : 2 ) ) );
+        if ( use32 ) emit32( (uint32_t)rel ); else emit16( (uint16_t)rel );
     }
 }
 
@@ -455,9 +455,9 @@ static int which_jcc( const char *m )
 }
 
 /* the text as the disassembler writes it: upper case, no blanks */
-static void squeeze( const char *src, char *dst, u32 max )
+static void squeeze( const char *src, char *dst, unsigned int max )
 {
-    u32 n = 0;
+    unsigned int n = 0;
 
     for ( ; *src && n + 1 < max; src++ ) {
         if ( *src != ' ' && *src != '\t' ) {
@@ -474,12 +474,12 @@ static void squeeze( const char *src, char *dst, u32 max )
    already (a prefix) stays in front. */
 static int asm_fpu( const char *m )
 {
-    char   want[64], got[80];
-    u8     one[DIS_MAX];        /* the encoding being tried, on its own */
-    DISASM dis;
-    int    base = clen;
-    int    op, i;
-    u32    n;
+    char         want[64], got[80];
+    uint8_t      one[DIS_MAX];      /* the encoding being tried, on its own */
+    DISASM       dis;
+    int          base = clen;
+    int          op, i;
+    unsigned int n;
 
     skip_blanks();
     for ( i = 0; lp[i] && lp[i] != '[' && lp[i] != '\r'; i++ ) {
@@ -488,10 +488,10 @@ static int asm_fpu( const char *m )
     if ( lp[i] == '[' ) {
         /* a memory operand: MNEMONIC and its size words must match the
            disassembly up to the [ */
-        OPND o;
-        char head[64];
-        int  reg;
-        u32  take = (u32)i;
+        OPND         o;
+        char         head[64];
+        int          reg;
+        unsigned int take = (unsigned int)i;
 
         n = str_len( m );
         if ( take > sizeof( got ) - n - 1 ) {
@@ -508,10 +508,10 @@ static int asm_fpu( const char *m )
             for ( reg = 0; reg < 8; reg++ ) {
                 char *br;
                 clen = base;
-                emit( (u8)op );
+                emit( (uint8_t)op );
                 emit_modrm( &o, reg );
                 mem_set( one, 0, sizeof( one ) );
-                mem_cpy( one, code + base, (u32)( clen - base ) );
+                mem_cpy( one, code + base, (unsigned int)( clen - base ) );
                 disasm( asm_at, one, use32, &dis );
                 squeeze( dis.text, got, sizeof( got ) );
                 br = got;
@@ -519,7 +519,7 @@ static int asm_fpu( const char *m )
                     br++;
                 }
                 *br = 0;
-                if ( dis.len == (u32)( clen - base ) && str_icmp( got, head ) == 0 ) {
+                if ( dis.len == (uint32_t)( clen - base ) && str_icmp( got, head ) == 0 ) {
                     return 1;
                 }
             }
@@ -550,14 +550,14 @@ static int asm_fpu( const char *m )
         for ( op = 0xD8; op <= 0xDF; op++ ) {
             for ( modrm = 0xC0; modrm <= 0xFF; modrm++ ) {
                 mem_set( one, 0, sizeof( one ) );
-                one[0] = (u8)op;
-                one[1] = (u8)modrm;
+                one[0] = (uint8_t)op;
+                one[1] = (uint8_t)modrm;
                 disasm( asm_at, one, use32, &dis );
                 squeeze( dis.text, got, sizeof( got ) );
                 if ( dis.len == 2 && str_icmp( got, want ) == 0 ) {
                     clen = base;
-                    emit( (u8)op );
-                    emit( (u8)modrm );
+                    emit( (uint8_t)op );
+                    emit( (uint8_t)modrm );
                     return 1;
                 }
             }
@@ -595,11 +595,11 @@ static int assemble_insn( void )
     /* a prefix, on a line of its own or in front of its instruction:
        REP MOVSB, LOCK, ES: */
     {
-        static const struct { const char *n; u8 b; } pre[] = {
+        static const struct { const char *n; uint8_t b; } pre[] = {
             {"REP",0xF3},{"REPE",0xF3},{"REPZ",0xF3},{"REPNE",0xF2},{"REPNZ",0xF2},
             {"LOCK",0xF0},{NULL,0}
         };
-        static const u8 segpre[] = { 0x26, 0x2E, 0x36, 0x3E, 0x64, 0x65 };
+        static const uint8_t segpre[] = { 0x26, 0x2E, 0x36, 0x3E, 0x64, 0x65 };
 
         for ( i = 0; pre[i].n; i++ ) {
             if ( str_icmp( m, pre[i].n ) == 0 ) {
@@ -621,14 +621,14 @@ static int assemble_insn( void )
     /* RET n and RETF n, before the RET of the table below */
     if ( ( str_icmp( m, "RET" ) == 0 || str_icmp( m, "RETF" ) == 0 ) && !at_end() ) {
         emit( m[3] ? 0xCA : 0xC2 );
-        emit16( (u16)get_hex( 4 ) );
+        emit16( (uint16_t)get_hex( 4 ) );
         return 1;
     }
 
     /* AAM and AAD, base 10 unless one is given */
     if ( str_icmp( m, "AAM" ) == 0 || str_icmp( m, "AAD" ) == 0 ) {
         emit( m[2] == 'M' ? 0xD4 : 0xD5 );
-        emit( at_end() ? 0x0A : (u8)get_hex( 2 ) );
+        emit( at_end() ? 0x0A : (uint8_t)get_hex( 2 ) );
         return 1;
     }
 
@@ -639,7 +639,7 @@ static int assemble_insn( void )
     }
     if ( str_icmp( m, "DW" ) == 0 ) {
         do {
-            emit16( (u16)get_hex( 4 ) );
+            emit16( (uint16_t)get_hex( 4 ) );
             skip_blanks();
         } while ( !at_end() );
         return 1;
@@ -671,19 +671,19 @@ static int assemble_insn( void )
         }
         if ( ( a.kind >= O_REG8 && a.kind <= O_REG32 ) && b.kind == O_IMM ) {
             int sz = op_size( &a );
-            if ( sz == 8 ) { emit( (u8)( 0xB0 + a.reg ) ); emit( (u8)b.imm ); return 1; }
+            if ( sz == 8 ) { emit( (uint8_t)( 0xB0 + a.reg ) ); emit( (uint8_t)b.imm ); return 1; }
             if ( sz == 32 && !use32 ) emit( 0x66 );
-            emit( (u8)( 0xB8 + a.reg ) );
-            if ( sz == 32 ) emit32( b.imm ); else emit16( (u16)b.imm );
+            emit( (uint8_t)( 0xB8 + a.reg ) );
+            if ( sz == 32 ) emit32( b.imm ); else emit16( (uint16_t)b.imm );
             return 1;
         }
         if ( a.kind == O_MEM && b.kind == O_IMM ) {
             int sz = a.size;
             if ( sz == 0 ) return 0;
-            if ( sz == 8 ) { emit( 0xC6 ); emit_modrm( &a, 0 ); emit( (u8)b.imm ); return 1; }
+            if ( sz == 8 ) { emit( 0xC6 ); emit_modrm( &a, 0 ); emit( (uint8_t)b.imm ); return 1; }
             if ( sz == 32 && !use32 ) emit( 0x66 );
             emit( 0xC7 ); emit_modrm( &a, 0 );
-            if ( sz == 32 ) emit32( b.imm ); else emit16( (u16)b.imm );
+            if ( sz == 32 ) emit32( b.imm ); else emit16( (uint16_t)b.imm );
             return 1;
         }
         /* AL or AX and a plain address: A0h-A3h, as 6.22 wrote MOV AX,[1234]
@@ -696,8 +696,8 @@ static int assemble_insn( void )
             if ( r && mem->mem_mod == 0 && !mem->has_sib && mem->mem_rm == ( use32 ? 5 : 6 ) ) {
                 int sz = op_size( r );
                 if ( sz == 32 && !use32 ) emit( 0x66 );
-                emit( (u8)( 0xA0 + ( to_mem ? 2 : 0 ) + ( sz == 8 ? 0 : 1 ) ) );
-                if ( use32 ) emit32( mem->imm ); else emit16( (u16)mem->imm );
+                emit( (uint8_t)( 0xA0 + ( to_mem ? 2 : 0 ) + ( sz == 8 ? 0 : 1 ) ) );
+                if ( use32 ) emit32( mem->imm ); else emit16( (uint16_t)mem->imm );
                 return 1;
             }
         }
@@ -716,9 +716,9 @@ static int assemble_insn( void )
 
     /* INT, INT3 */
     if ( str_icmp( m, "INT" ) == 0 ) {
-        u32 n = get_hex( 2 );
+        uint32_t n = get_hex( 2 );
         if ( n == 3 ) emit( 0xCC );
-        else { emit( 0xCD ); emit( (u8)n ); }
+        else { emit( 0xCD ); emit( (uint8_t)n ); }
         return 1;
     }
     if ( str_icmp( m, "INTO" ) == 0 ) { emit( 0xCE ); return 1; }
@@ -726,7 +726,7 @@ static int assemble_insn( void )
 
     /* the zero-operand instructions */
     {
-        static const struct { const char *n; u8 b; } simple[] = {
+        static const struct { const char *n; uint8_t b; } simple[] = {
             {"NOP",0x90},{"RET",0xC3},{"RETF",0xCB},{"CLC",0xF8},{"STC",0xF9},
             {"CLI",0xFA},{"STI",0xFB},{"CLD",0xFC},{"STD",0xFD},{"CMC",0xF5},
             {"HLT",0xF4},{"WAIT",0x9B},{"FWAIT",0x9B},{"PUSHF",0x9C},{"POPF",0x9D},
@@ -747,11 +747,11 @@ static int assemble_insn( void )
         if ( !parse_operand( &a ) ) return 0;
         if ( a.kind == O_REG16 || a.kind == O_REG32 ) {
             if ( a.kind == O_REG32 && !use32 ) emit( 0x66 );
-            emit( (u8)( ( push ? 0x50 : 0x58 ) + a.reg ) ); return 1;
+            emit( (uint8_t)( ( push ? 0x50 : 0x58 ) + a.reg ) ); return 1;
         }
         if ( a.kind == O_SREG ) {
-            static const u8 ps[] = { 0x06,0x0E,0x16,0x1E };
-            static const u8 po[] = { 0x07,0x00,0x17,0x1F };
+            static const uint8_t ps[] = { 0x06,0x0E,0x16,0x1E };
+            static const uint8_t po[] = { 0x07,0x00,0x17,0x1F };
             if ( a.reg < 4 ) { emit( push ? ps[a.reg] : po[a.reg] ); return 1; }
             emit( 0x0F ); emit( push ? ( a.reg == 4 ? 0xA0 : 0xA8 ) : ( a.reg == 4 ? 0xA1 : 0xA9 ) ); return 1;
         }
@@ -768,7 +768,7 @@ static int assemble_insn( void )
         if ( !parse_operand( &a ) ) return 0;
         if ( a.kind == O_REG16 || a.kind == O_REG32 ) {
             if ( a.kind == O_REG32 && !use32 ) emit( 0x66 );
-            emit( (u8)( ( dec ? 0x48 : 0x40 ) + a.reg ) ); return 1;
+            emit( (uint8_t)( ( dec ? 0x48 : 0x40 ) + a.reg ) ); return 1;
         }
         {
             int sz = op_size( &a );
@@ -784,16 +784,16 @@ static int assemble_insn( void )
         int call = str_icmp( m, "CALL" ) == 0;
         if ( !parse_operand( &a ) ) return 0;
         if ( a.kind == O_IMM ) {
-            s32 rel = (s32)( a.imm - ( asm_at.off + clen + 2 ) );
-            if ( !call && rel >= -128 && rel < 128 ) { emit( 0xEB ); emit( (u8)rel ); return 1; }
+            int32_t rel = (int32_t)( a.imm - ( asm_at.off + clen + 2 ) );
+            if ( !call && rel >= -128 && rel < 128 ) { emit( 0xEB ); emit( (uint8_t)rel ); return 1; }
             emit( call ? 0xE8 : 0xE9 );
-            rel = (s32)( a.imm - ( asm_at.off + clen + ( use32 ? 4 : 2 ) ) );
-            if ( use32 ) emit32( (u32)rel ); else emit16( (u16)rel );
+            rel = (int32_t)( a.imm - ( asm_at.off + clen + ( use32 ? 4 : 2 ) ) );
+            if ( use32 ) emit32( (uint32_t)rel ); else emit16( (uint16_t)rel );
             return 1;
         }
         if ( a.kind == O_FAR ) {
             emit( call ? 0x9A : 0xEA );
-            if ( use32 ) emit32( a.imm ); else emit16( (u16)a.imm );
+            if ( use32 ) emit32( a.imm ); else emit16( (uint16_t)a.imm );
             emit16( a.seg );
             return 1;
         }
@@ -817,13 +817,13 @@ static int assemble_insn( void )
     }
     if ( str_icmp( m, "LOOP" ) == 0 || str_icmp( m, "LOOPZ" ) == 0 ||
          str_icmp( m, "LOOPNZ" ) == 0 || str_icmp( m, "JCXZ" ) == 0 ) {
-        u8 b = str_icmp( m, "LOOPNZ" ) == 0 ? 0xE0 : str_icmp( m, "LOOPZ" ) == 0 ? 0xE1 :
+        uint8_t b = str_icmp( m, "LOOPNZ" ) == 0 ? 0xE0 : str_icmp( m, "LOOPZ" ) == 0 ? 0xE1 :
                str_icmp( m, "LOOP" ) == 0 ? 0xE2 : 0xE3;
-        s32 rel;
+        int32_t rel;
         if ( !parse_operand( &a ) || a.kind != O_IMM ) return 0;
-        rel = (s32)( a.imm - ( asm_at.off + clen + 2 ) );
+        rel = (int32_t)( a.imm - ( asm_at.off + clen + 2 ) );
         if ( rel < -128 || rel >= 128 ) return 0;
-        emit( b ); emit( (u8)rel ); return 1;
+        emit( b ); emit( (uint8_t)rel ); return 1;
     }
 
     /* IN / OUT */
@@ -831,14 +831,14 @@ static int assemble_insn( void )
         if ( !parse_operand( &a ) ) return 0;
         skip_blanks(); if ( *lp == ',' ) lp++;
         if ( !parse_operand( &b ) ) return 0;
-        if ( b.kind == O_IMM ) { emit( a.kind == O_REG8 ? 0xE4 : 0xE5 ); emit( (u8)b.imm ); return 1; }
+        if ( b.kind == O_IMM ) { emit( a.kind == O_REG8 ? 0xE4 : 0xE5 ); emit( (uint8_t)b.imm ); return 1; }
         emit( a.kind == O_REG8 ? 0xEC : 0xED ); return 1;
     }
     if ( str_icmp( m, "OUT" ) == 0 ) {
         if ( !parse_operand( &a ) ) return 0;
         skip_blanks(); if ( *lp == ',' ) lp++;
         if ( !parse_operand( &b ) ) return 0;
-        if ( a.kind == O_IMM ) { emit( b.kind == O_REG8 ? 0xE6 : 0xE7 ); emit( (u8)a.imm ); return 1; }
+        if ( a.kind == O_IMM ) { emit( b.kind == O_REG8 ? 0xE6 : 0xE7 ); emit( (uint8_t)a.imm ); return 1; }
         emit( b.kind == O_REG8 ? 0xEE : 0xEF ); return 1;
     }
 
@@ -854,14 +854,14 @@ static int assemble_insn( void )
         if ( b.kind == O_IMM ) {
             int sz = op_size( &a );
             if ( sz == 0 ) return 0;
-            if ( a.kind == O_REG8 && a.reg == 0 ) { emit( 0xA8 ); emit( (u8)b.imm ); return 1; }
+            if ( a.kind == O_REG8 && a.reg == 0 ) { emit( 0xA8 ); emit( (uint8_t)b.imm ); return 1; }
             if ( ( a.kind == O_REG16 || a.kind == O_REG32 ) && a.reg == 0 ) {
                 if ( sz == 32 && !use32 ) emit( 0x66 ); emit( 0xA9 );
-                if ( sz == 32 ) emit32( b.imm ); else emit16( (u16)b.imm ); return 1;
+                if ( sz == 32 ) emit32( b.imm ); else emit16( (uint16_t)b.imm ); return 1;
             }
-            if ( sz == 8 ) { emit( 0xF6 ); emit_modrm( &a, 0 ); emit( (u8)b.imm ); }
+            if ( sz == 8 ) { emit( 0xF6 ); emit_modrm( &a, 0 ); emit( (uint8_t)b.imm ); }
             else { if ( sz == 32 && !use32 ) emit( 0x66 ); emit( 0xF7 ); emit_modrm( &a, 0 );
-                   if ( sz == 32 ) emit32( b.imm ); else emit16( (u16)b.imm ); }
+                   if ( sz == 32 ) emit32( b.imm ); else emit16( (uint16_t)b.imm ); }
             return 1;
         }
         return 0;
@@ -945,8 +945,8 @@ static int assemble_insn( void )
 void cmd_assemble( void )
 {
     static char buf[80];
-    ADDR addr;
-    u32  jb[3];
+    ADDR     addr;
+    uint32_t jb[3];
 
     use32 = ( mode == MODE_NAT );
     if ( at_end() ) {
@@ -988,14 +988,14 @@ void cmd_assemble( void )
             need_end();
             /* in the first megabyte the code goes round the segment, as
                6.22's did; a slot ends where it ends */
-            if ( !mem_is_low( addr ) && ( addr.off > mem_seg_end( addr ) || (u32)clen > mem_seg_end( addr ) - addr.off ) ) {
+            if ( !mem_is_low( addr ) && ( addr.off > mem_seg_end( addr ) || (uint32_t)clen > mem_seg_end( addr ) - addr.off ) ) {
                 lp = buf;
                 syntax_error();
             }
             if ( mem_write( addr, code, clen ) ) {
                 coded_error( "df" );    /* and the same address again */
             }
-            addr_add( &addr, (u32)clen );
+            addr_add( &addr, (uint32_t)clen );
         }
         error_jmp = NULL;
     }

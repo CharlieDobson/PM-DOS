@@ -26,34 +26,42 @@
 
 #define SMB1_SENDBUF   8192
 #define SMB1_RECVBUF   33280     /* a shade over 32K of data + headers */
+#define SMB1_TRANSPARM 16        /* the most a TRANS2 reply's parameters total */
+#define SMB1_TRANSDATA 16384     /* ...and its data (the MaxDataCount we ask) */
 
 typedef struct {
     smb_send_fn    send;
     smb_recv_fn    recv;
     void          *ioctx;
 
-    unsigned long  seed;              /* PRNG for the NetBIOS CALLING scope */
+    uint32_t       seed;              /* PRNG for the NetBIOS CALLING scope */
     unsigned int   tree_id;           /* TID of the connected share */
     unsigned int   uid;               /* UID from session setup */
     unsigned int   mid;               /* next multiplex id */
-    unsigned long  capabilities;      /* the server's NEGOTIATE capabilities */
-    unsigned char  challenge[8];      /* the server's 8-byte encryption key */
+    unsigned int   req_mid;           /* the request in flight's: its reply
+                                         carries the same one */
+    uint32_t       capabilities;      /* the server's NEGOTIATE capabilities */
+    uint8_t        challenge[8];      /* the server's 8-byte encryption key */
     int            max_buffer;        /* the server's MaxBufferSize */
     int            lm;                /* 1: a LAN Manager dialect was chosen */
     unsigned int   secmode;           /* SecurityMode: 1 user level, 2 encrypt */
     unsigned int   flags2;            /* Flags2 for every request */
     unsigned int   pid;               /* the PID every request carries */
-    unsigned long  sesskey;           /* the server's NEGOTIATE SessionKey */
+    uint32_t       sesskey;           /* the server's NEGOTIATE SessionKey */
 
-    unsigned long  last_status;       /* NTSTATUS of the last response, or
+    uint32_t       last_status;       /* NTSTATUS of the last response, or
                                          (code << 16) | class from LAN Manager */
     const char    *stage;             /* where we are, for error reports */
     int            broken;            /* the connection failed under a call:
                                          a send or a receive came to nothing */
 
-    unsigned char  sendbuf[SMB1_SENDBUF];
-    unsigned char  recvbuf[SMB1_RECVBUF];
+    uint8_t        sendbuf[SMB1_SENDBUF];
+    uint8_t        recvbuf[SMB1_RECVBUF];
     int            recvlen;
+
+    /* a TRANS2 reply put together from every message it came in */
+    uint8_t        trparm[SMB1_TRANSPARM];
+    uint8_t        trdata[SMB1_TRANSDATA];
 } smb1_client;
 
 /* our NetBIOS name, sent as the CALLING name of the session request:
@@ -71,7 +79,7 @@ extern unsigned int smb1_vc_number;
    is the share's.  0 on success, <0 on failure (cl->stage /
    cl->last_status say what). */
 int  smb1_connect( smb1_client *cl, smb_send_fn send, smb_recv_fn recv, void *ioctx,
-                   unsigned long seed,
+                   uint32_t seed,
                    const char *server, const char *share,
                    const char *user, const char *password, const char *domain );
 
@@ -87,12 +95,12 @@ int  smb1_list_dir( smb1_client *cl, const char *dir, const char *pattern,
    1 FILE_OPEN (must exist), 3 FILE_OPEN_IF (open or create), 5
    FILE_OVERWRITE_IF (create or truncate).  Fills 'fh' (FID in file_id[0..1]). */
 int  smb1_open_disp( smb1_client *cl, const char *path, int write,
-                     unsigned long disposition, smb2_fh *fh );
+                     uint32_t disposition, smb2_fh *fh );
 
-int  smb1_read( smb1_client *cl, const smb2_fh *fh, unsigned long off_lo, unsigned long off_hi,
-                unsigned char *buf, int len );
-int  smb1_write( smb1_client *cl, const smb2_fh *fh, unsigned long off_lo, unsigned long off_hi,
-                 const unsigned char *buf, int len );
+int  smb1_read( smb1_client *cl, const smb2_fh *fh, uint32_t off_lo, uint32_t off_hi,
+                uint8_t *buf, int len );
+int  smb1_write( smb1_client *cl, const smb2_fh *fh, uint32_t off_lo, uint32_t off_hi,
+                 const uint8_t *buf, int len );
 int  smb1_close_file( smb1_client *cl, const smb2_fh *fh );
 
 int  smb1_delete( smb1_client *cl, const char *path );
@@ -116,6 +124,6 @@ int  smb1_tree_connect( smb1_client *cl, const char *server, const char *share,
 void smb1_disconnect( smb1_client *cl );
 
 const char   *smb1_stage( const smb1_client *cl );
-unsigned long smb1_status( const smb1_client *cl );
+uint32_t      smb1_status( const smb1_client *cl );
 
 #endif /* PMDOS_SMB1_H */

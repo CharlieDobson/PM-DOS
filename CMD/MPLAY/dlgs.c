@@ -51,7 +51,7 @@ void dlg_goto( void )
     char text[16];
     PLSTAT st;
     const char *at;
-    u32 minutes = 0, seconds = 0, part;
+    uint32_t minutes = 0, seconds = 0, part;
     int ok, colon = 0;
 
     pl_status( &st );
@@ -65,7 +65,7 @@ void dlg_goto( void )
         ok = 1;
         for ( at = text; *at && ok; at++ ) {
             if ( *at >= '0' && *at <= '9' ) {
-                part = (u32)(*at - '0');
+                part = (uint32_t)(*at - '0');
                 if ( seconds > 100000UL ) {
                     ok = 0;
                 } else {
@@ -119,7 +119,7 @@ void dlg_sound( void )
     ctl[used - 2].disabled = !(card->flags & AUDF_MPU);
     ctl_check( &ctl[used++], 10, 2, "&Mono: one channel, which is less work", &mono );
     ctl_check( &ctl[used++], 11, 2, "No more than &22 kHz from the card", &limit22 );
-    ctl_check( &ctl[used++], 12, 2, "&Equalizer for wave, VOC and MIDI files", &eq_pcm );
+    ctl_check( &ctl[used++], 12, 2, "&Equalizer for wave, FLAC, VOC and MIDI files", &eq_pcm );
     ctl_text( &ctl[used++], 13, 4, 50, "(costs time on a slow machine)" );
     dlg.sep = 15;
     used += ok_cancel( &ctl[used], 16, dlg.cols );
@@ -228,9 +228,9 @@ void dlg_about( void )
     sfmt( text, sizeof( text ),
           "MPLAY version %s\n"
 #ifdef HAVE_WMA
-          "Plays WAV, VOC, MIDI, MP3, WMA and Ogg Vorbis files.\n"
+          "Plays WAV, VOC, MIDI, MP3, FLAC, WMA and Ogg Vorbis files.\n"
 #else
-          "Plays WAV, VOC, MIDI, MP3 and Ogg Vorbis files.\n"
+          "Plays WAV, VOC, MIDI, MP3, FLAC and Ogg Vorbis files.\n"
 #endif
           "\n"
           "Sound card: %s\n"

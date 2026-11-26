@@ -36,35 +36,35 @@ typedef struct {
 } XNS;
 
 typedef struct {
-    const u8 *prefix;
-    u32   len;
-    int   ns;
-    u32   level;                /* the depth of the element that declared it */
+    const uint8_t *prefix;
+    unsigned int len;
+    int          ns;
+    unsigned int level;         /* the depth of the element that declared it */
 } XBIND;
 
 typedef struct {
-    const u8 *name;             /* as it is written, prefix and all */
-    u32   len;
+    const uint8_t *name;        /* as it is written, prefix and all */
+    unsigned int len;
 } XOPEN;
 
 typedef struct {
-    XML   pub;
-    const u8 *data;
-    u32   len, pos;
-    u8   *own;                  /* a UTF-16 document, as UTF-8 */
-    int   failed, ended;
-    int   pending;              /* <a/> was given as a start: its end is owed */
-    u32   level;                /* how many elements are open */
-    XNS  *known;
-    u32   nknown, known_cap;
-    XBIND *bind;
-    u32   nbind, bind_cap;
-    XATTR *attr;
-    u32   attr_cap;
-    u8   *scratch;
-    u32   used, cap;
-    int   xml_id;               /* the number XML_NS_URI was given */
-    XOPEN open[XML_MAX_DEPTH];
+    XML          pub;
+    const uint8_t *data;
+    unsigned int len, pos;
+    uint8_t     *own;           /* a UTF-16 document, as UTF-8 */
+    int          failed, ended;
+    int          pending;       /* <a/> was given as a start: its end is owed */
+    unsigned int level;         /* how many elements are open */
+    XNS         *known;
+    unsigned int nknown, known_cap;
+    XBIND       *bind;
+    unsigned int nbind, bind_cap;
+    XATTR       *attr;
+    unsigned int attr_cap;
+    uint8_t     *scratch;
+    unsigned int used, cap;
+    int          xml_id;        /* the number XML_NS_URI was given */
+    XOPEN        open[XML_MAX_DEPTH];
 } XMLP;
 
 #define IS_SPACE( ch )  ((ch) == ' ' || (ch) == '\t' || (ch) == '\r' || (ch) == '\n')
@@ -73,10 +73,10 @@ typedef struct {
 /* the scratch block                                                   */
 /* ------------------------------------------------------------------ */
 
-static int xml_put( XMLP *xp, const u8 *bytes, u32 len )
+static int xml_put( XMLP *xp, const uint8_t *bytes, unsigned int len )
 {
-    u8 *fresh;
-    u32 want;
+    uint8_t *fresh;
+    unsigned int want;
 
     if ( len > xp->cap - xp->used ) {
         if ( len > 0x7FFFFFFFUL - xp->used ) {
@@ -86,7 +86,7 @@ static int xml_put( XMLP *xp, const u8 *bytes, u32 len )
         while ( want < xp->used + len ) {
             want *= 2;
         }
-        fresh = (u8 *)try_realloc( xp->scratch, want );
+        fresh = (uint8_t *)try_realloc( xp->scratch, want );
         if ( fresh == NULL ) {
             return 0;
         }
@@ -100,16 +100,17 @@ static int xml_put( XMLP *xp, const u8 *bytes, u32 len )
 
 /* an entity at raw[0] == '&': its character, and *took bytes of the
    text; 0 if it is not one this reader knows */
-static u32 xml_entity( const u8 *raw, u32 len, u32 *took )
+static uint32_t xml_entity( const uint8_t *raw, unsigned int len, unsigned int *took )
 {
     static const struct {
         const char *name;
-        u8 len, code;
+        uint8_t len, code;
     } named[5] = {
         { "amp;", 4, '&' }, { "lt;", 3, '<' }, { "gt;", 3, '>' }, { "quot;", 5, '"' },
         { "apos;", 5, '\'' }
     };
-    u32 code = 0, index, digit;
+    uint32_t code = 0;
+    unsigned int index, digit;
     int hex, digits = 0;
 
     if ( len >= 4 && raw[1] == '#' ) {
@@ -139,7 +140,7 @@ static u32 xml_entity( const u8 *raw, u32 len, u32 *took )
     }
     for ( index = 0; index < 5; index++ ) {
         if ( len > named[index].len && mem_cmp( raw + 1, named[index].name, named[index].len ) == 0 ) {
-            *took = (u32)named[index].len + 1;
+            *took = (unsigned int)named[index].len + 1;
             return named[index].code;
         }
     }
@@ -151,10 +152,11 @@ static u32 xml_entity( const u8 *raw, u32 len, u32 *took )
  * their characters, and line ends as XML says a reader sees them - one
  * line feed in text, one space in an attribute's value.
  */
-static int xml_decode( XMLP *xp, const u8 *raw, u32 len, int quoted )
+static int xml_decode( XMLP *xp, const uint8_t *raw, unsigned int len, int quoted )
 {
-    u8 utf[4];
-    u32 pos = 0, from = 0, code, took;
+    uint8_t utf[4];
+    uint32_t code;
+    unsigned int pos = 0, from = 0, took;
 
     while ( pos < len ) {
         if ( raw[pos] == '&' ) {
@@ -164,14 +166,14 @@ static int xml_decode( XMLP *xp, const u8 *raw, u32 len, int quoted )
                 continue;
             }
             if ( !xml_put( xp, raw + from, pos - from ) ||
-                 !xml_put( xp, utf, (u32)utf8_put( utf, code ) ) ) {
+                 !xml_put( xp, utf, (unsigned int)utf8_put( utf, code ) ) ) {
                 return 0;
             }
             pos += took;
             from = pos;
         } else if ( raw[pos] == '\r' || (quoted && (raw[pos] == '\n' || raw[pos] == '\t')) ) {
             if ( !xml_put( xp, raw + from, pos - from ) ||
-                 !xml_put( xp, (const u8 *)(quoted ? " " : "\n"), 1 ) ) {
+                 !xml_put( xp, (const uint8_t *)(quoted ? " " : "\n"), 1 ) ) {
                 return 0;
             }
             if ( raw[pos] == '\r' && pos + 1 < len && raw[pos + 1] == '\n' ) {
@@ -191,15 +193,15 @@ static int xml_decode( XMLP *xp, const u8 *raw, u32 len, int quoted )
 /* ------------------------------------------------------------------ */
 
 /* UTF-16 as UTF-8, in a block of its own */
-static u8 *xml_from_utf16( const u8 *data, u32 len, int big, u32 *out_len )
+static uint8_t *xml_from_utf16( const uint8_t *data, uint32_t len, int big, uint32_t *out_len )
 {
-    u8 *out;
-    u32 pos, used = 0, code, low;
+    uint8_t *out;
+    uint32_t pos, used = 0, code, low;
 
     if ( len / 2 > 0x7FFFFFFFUL / 3 ) {
         return NULL;
     }
-    out = (u8 *)try_alloc( len / 2 * 3 + 4 );
+    out = (uint8_t *)try_alloc( len / 2 * 3 + 4 );
     if ( out == NULL ) {
         return NULL;
     }
@@ -215,13 +217,13 @@ static u8 *xml_from_utf16( const u8 *data, u32 len, int big, u32 *out_len )
         if ( code >= 0xD800 && code <= 0xDFFF ) {
             code = 0xFFFD;
         }
-        used += (u32)utf8_put( out + used, code );
+        used += (uint32_t)utf8_put( out + used, code );
     }
     *out_len = used;
     return out;
 }
 
-XML *xml_open( const u8 *data, u32 len )
+XML *xml_open( const uint8_t *data, uint32_t len )
 {
     XMLP *xp = (XMLP *)try_alloc( sizeof( XMLP ) );
     int wide = 0, big = 0;
@@ -277,7 +279,7 @@ int xml_ns( XML *xml, const char *uri, int id )
 {
     XMLP *xp = (XMLP *)xml;
     XNS *fresh;
-    u32 want;
+    unsigned int want;
 
     if ( xp->nknown == xp->known_cap ) {
         want = xp->known_cap ? xp->known_cap * 2 : 32;
@@ -304,7 +306,7 @@ int xml_ns( XML *xml, const char *uri, int id )
 
 static int xml_known( const XMLP *xp, const char *uri )
 {
-    u32 index;
+    unsigned int index;
 
     for ( index = 0; index < xp->nknown; index++ ) {
         if ( str_cmp( xp->known[index].uri, uri ) == 0 ) {
@@ -314,10 +316,10 @@ static int xml_known( const XMLP *xp, const char *uri )
     return 0;
 }
 
-static int xml_declare( XMLP *xp, const u8 *prefix, u32 len, const char *uri )
+static int xml_declare( XMLP *xp, const uint8_t *prefix, unsigned int len, const char *uri )
 {
     XBIND *fresh;
-    u32 want;
+    unsigned int want;
 
     if ( xp->nbind == xp->bind_cap ) {
         want = xp->bind_cap ? xp->bind_cap * 2 : 32;
@@ -337,9 +339,9 @@ static int xml_declare( XMLP *xp, const u8 *prefix, u32 len, const char *uri )
 }
 
 /* the namespace a prefix stands for now; "len" 0 asks for the default */
-static int xml_resolve( const XMLP *xp, const u8 *prefix, u32 len )
+static int xml_resolve( const XMLP *xp, const uint8_t *prefix, unsigned int len )
 {
-    u32 index;
+    unsigned int index;
 
     if ( len == 3 && mem_cmp( prefix, "xml", 3 ) == 0 ) {
         return xp->xml_id;
@@ -354,9 +356,9 @@ static int xml_resolve( const XMLP *xp, const u8 *prefix, u32 len )
 }
 
 /* how long the prefix of a name is, with its colon: 0 for none */
-static u32 xml_prefix( const u8 *name, u32 len )
+static unsigned int xml_prefix( const uint8_t *name, unsigned int len )
 {
-    u32 index;
+    unsigned int index;
 
     for ( index = 0; index < len; index++ ) {
         if ( name[index] == ':' ) {
@@ -380,7 +382,7 @@ static int xml_fail( XMLP *xp )
 static int xml_give_end( XMLP *xp )
 {
     const XOPEN *top = &xp->open[xp->level - 1];
-    u32 cut = xml_prefix( top->name, top->len );
+    unsigned int cut = xml_prefix( top->name, top->len );
 
     xp->pub.ns = xml_resolve( xp, top->name, cut ? cut - 1 : 0 );
     xp->pub.name = (const char *)top->name + cut;
@@ -397,8 +399,8 @@ static int xml_give_end( XMLP *xp )
 
 static int xml_end_tag( XMLP *xp )
 {
-    const u8 *data = xp->data;
-    u32 len = xp->len, pos = xp->pos + 2, name_at = pos, name_len;
+    const uint8_t *data = xp->data;
+    unsigned int len = xp->len, pos = xp->pos + 2, name_at = pos, name_len;
 
     while ( pos < len && !IS_SPACE( data[pos] ) && data[pos] != '>' ) {
         pos++;
@@ -418,10 +420,10 @@ static int xml_end_tag( XMLP *xp )
 
 static int xml_start_tag( XMLP *xp )
 {
-    const u8 *data = xp->data;
+    const uint8_t *data = xp->data;
     XATTR *fresh, *attr;
-    u32 len = xp->len, pos = xp->pos + 1, name_at = pos, name_len, at, val_at, cut, want;
-    u32 nattr = 0, index;
+    unsigned int len = xp->len, pos = xp->pos + 1, name_at = pos, name_len, at, val_at, cut, want;
+    unsigned int nattr = 0, index;
     int quote, empty;
 
     while ( pos < len && !IS_SPACE( data[pos] ) && data[pos] != '/' && data[pos] != '>' ) {
@@ -495,7 +497,7 @@ static int xml_start_tag( XMLP *xp )
         }
         attr->at = xp->used;
         if ( !xml_decode( xp, data + val_at, pos - val_at, 1 ) ||
-             !xml_put( xp, (const u8 *)"", 1 ) ) {
+             !xml_put( xp, (const uint8_t *)"", 1 ) ) {
             return xml_fail( xp );
         }
         attr->value_len = xp->used - 1 - attr->at;
@@ -519,7 +521,7 @@ static int xml_start_tag( XMLP *xp )
             }
         } else if ( attr->name_len > 6 && mem_cmp( attr->name, "xmlns:", 6 ) == 0 ) {
             attr->ns = -1;
-            if ( !xml_declare( xp, (const u8 *)attr->name + 6, attr->name_len - 6, attr->value ) ) {
+            if ( !xml_declare( xp, (const uint8_t *)attr->name + 6, attr->name_len - 6, attr->value ) ) {
                 return xml_fail( xp );
             }
         }
@@ -527,9 +529,9 @@ static int xml_start_tag( XMLP *xp )
     for ( index = 0; index < nattr; index++ ) {
         attr = &xp->attr[index];
         if ( attr->ns == 0 ) {
-            cut = xml_prefix( (const u8 *)attr->name, attr->name_len );
+            cut = xml_prefix( (const uint8_t *)attr->name, attr->name_len );
             if ( cut ) {
-                attr->ns = xml_resolve( xp, (const u8 *)attr->name, cut - 1 );
+                attr->ns = xml_resolve( xp, (const uint8_t *)attr->name, cut - 1 );
                 attr->name += cut;
                 attr->name_len -= cut;
             }
@@ -547,18 +549,18 @@ static int xml_start_tag( XMLP *xp )
 }
 
 /* where "needle" is at or after "from", or the document's length */
-static u32 xml_find( const XMLP *xp, u32 from, const char *needle )
+static unsigned int xml_find( const XMLP *xp, unsigned int from, const char *needle )
 {
     int at = mem_find( xp->data + from, xp->len - from, needle );
 
-    return at < 0 ? xp->len : from + (u32)at;
+    return at < 0 ? xp->len : from + (unsigned int)at;
 }
 
 /* a declaration: <!DOCTYPE ...>, with what it may hold in brackets */
 static int xml_skip_decl( XMLP *xp )
 {
-    const u8 *data = xp->data;
-    u32 pos = xp->pos + 2, square = 0;
+    const uint8_t *data = xp->data;
+    unsigned int pos = xp->pos + 2, square = 0;
     int quote = 0;
 
     for ( ; pos < xp->len; pos++ ) {
@@ -584,8 +586,8 @@ static int xml_skip_decl( XMLP *xp )
 
 static int xml_piece( XMLP *xp )
 {
-    const u8 *data;
-    u32 len, start, end, index;
+    const uint8_t *data;
+    unsigned int len, start, end, index;
     int plain;
 
     if ( xp == NULL || xp->failed ) {
@@ -667,7 +669,7 @@ static int xml_piece( XMLP *xp )
                         if ( index + 1 < end && data[index + 1] == '\n' ) {
                             continue;
                         }
-                        if ( !xml_put( xp, (const u8 *)"\n", 1 ) ) {
+                        if ( !xml_put( xp, (const uint8_t *)"\n", 1 ) ) {
                             return xml_fail( xp );
                         }
                     } else if ( !xml_put( xp, data + index, 1 ) ) {
@@ -720,7 +722,7 @@ int xml_next( XML *xml )
 
 int xml_is( const XML *xml, int ns, const char *name )
 {
-    u32 len;
+    unsigned int len;
 
     if ( xml->ns != ns ) {
         return 0;
@@ -731,7 +733,7 @@ int xml_is( const XML *xml, int ns, const char *name )
 
 const char *xml_attr( const XML *xml, int ns, const char *name )
 {
-    u32 index, len = str_len( name );
+    unsigned int index, len = str_len( name );
 
     for ( index = 0; index < xml->nattr; index++ ) {
         if ( xml->attr[index].ns == ns && xml->attr[index].name_len == len &&
@@ -777,10 +779,10 @@ int xml_child( XML *xml, int depth )
     }
 }
 
-int xml_gather( XML *xml, char *buf, u32 max )
+int xml_gather( XML *xml, char *buf, unsigned int max )
 {
     int depth = xml->depth, token;
-    u32 used = 0, part;
+    unsigned int used = 0, part;
 
     if ( max ) {
         buf[0] = 0;
@@ -797,7 +799,7 @@ int xml_gather( XML *xml, char *buf, u32 max )
             part = xml->text_len < max - 1 - used ? xml->text_len : max - 1 - used;
             /* cut between characters, not inside one */
             if ( part < xml->text_len ) {
-                while ( part && ((u8)xml->text[part] & 0xC0) == 0x80 ) {
+                while ( part && ((uint8_t)xml->text[part] & 0xC0) == 0x80 ) {
                     part--;
                 }
             }
@@ -839,12 +841,12 @@ void xml_rewind( XML *xml, const XMARK *mark )
 /* ------------------------------------------------------------------ */
 
 typedef struct {
-    OUT  *out;
-    u32   used;
-    u8    buf[160];
+    OUT         *out;
+    unsigned int used;
+    uint8_t      buf[160];
 } XESC;
 
-static void esc_code( XESC *esc, u32 code, int quote )
+static void esc_code( XESC *esc, uint32_t code, int quote )
 {
     const char *as = NULL;
 
@@ -877,17 +879,17 @@ static void esc_code( XESC *esc, u32 code, int quote )
     }
     if ( as != NULL ) {
         while ( *as ) {
-            esc->buf[esc->used++] = (u8)*as++;
+            esc->buf[esc->used++] = (uint8_t)*as++;
         }
     } else {
-        esc->used += (u32)utf8_put( esc->buf + esc->used, code );
+        esc->used += (unsigned int)utf8_put( esc->buf + esc->used, code );
     }
 }
 
-void xml_esc_n( OUT *out, const u8 *text, u32 len, int quote )
+void xml_esc_n( OUT *out, const uint8_t *text, unsigned int len, int quote )
 {
     XESC esc;
-    const u8 *end = text + len;
+    const uint8_t *end = text + len;
 
     esc.out = out;
     esc.used = 0;
@@ -899,13 +901,13 @@ void xml_esc_n( OUT *out, const u8 *text, u32 len, int quote )
 
 void xml_esc( OUT *out, const char *text, int quote )
 {
-    xml_esc_n( out, (const u8 *)text, str_len( text ), quote );
+    xml_esc_n( out, (const uint8_t *)text, str_len( text ), quote );
 }
 
-void xml_esc16( OUT *out, const u16 *text, u32 len, int quote )
+void xml_esc16( OUT *out, const uint16_t *text, unsigned int len, int quote )
 {
     XESC esc;
-    u32 pos = 0;
+    unsigned int pos = 0;
 
     esc.out = out;
     esc.used = 0;

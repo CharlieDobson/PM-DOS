@@ -84,11 +84,11 @@ void  out_blank( void );
 void  out_flush( void );
 void  out_input_done( void );
 
-char *fmt_num( u64 val, char *buf );        /* 1,234,567 (country separator) */
-char *fmt_dec( u32 val, char *buf );        /* 1234567                       */
-char *fmt_hex4( u32 val, char *buf );       /* 0000-FFFF                     */
+char *fmt_num( uint64_t val, char *buf );   /* 1,234,567 (country separator) */
+char *fmt_dec( uint32_t val, char *buf );   /* 1234567                       */
+char *fmt_hex4( uint32_t val, char *buf );  /* 0000-FFFF                     */
 char *fmt_right( const char *str, int width, char *buf );
-char *fmt_date( u16 dos_date, char *buf );
-char *fmt_time( u16 dos_time, char *buf );
+char *fmt_date( uint16_t dos_date, char *buf );
+char *fmt_time( uint16_t dos_time, char *buf );
 
 #endif

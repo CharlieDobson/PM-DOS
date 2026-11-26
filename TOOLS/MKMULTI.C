@@ -35,29 +35,30 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
 
 #define SECSIZE   512
 #define SPT       63
 #define HEADS     16
 #define SECPERCYL (SPT * HEADS)
 
-static unsigned char *image;
+static uint8_t *image;
 static long img_secs;
 
-static unsigned char *sec(long lba) { return image + (long)lba * SECSIZE; }
+static uint8_t *sec(uint32_t lba) { return image + (long)lba * SECSIZE; }
 
-static void put16(unsigned char *p, unsigned v)
+static void put16(uint8_t *p, uint16_t v)
 {
-    p[0] = (unsigned char)(v & 0xFF);
-    p[1] = (unsigned char)((v >> 8) & 0xFF);
+    p[0] = (uint8_t)(v & 0xFF);
+    p[1] = (uint8_t)((v >> 8) & 0xFF);
 }
 
-static void put32(unsigned char *p, unsigned long v)
+static void put32(uint8_t *p, uint32_t v)
 {
-    p[0] = (unsigned char)(v & 0xFF);
-    p[1] = (unsigned char)((v >> 8) & 0xFF);
-    p[2] = (unsigned char)((v >> 16) & 0xFF);
-    p[3] = (unsigned char)((v >> 24) & 0xFF);
+    p[0] = (uint8_t)(v & 0xFF);
+    p[1] = (uint8_t)((v >> 8) & 0xFF);
+    p[2] = (uint8_t)((v >> 16) & 0xFF);
+    p[3] = (uint8_t)((v >> 24) & 0xFF);
 }
 
 /* A CHS triple for the partition table.  Frozen at the maximum once
@@ -65,44 +66,44 @@ static void put32(unsigned char *p, unsigned long v)
    disks passed 8GB - the LBA fields are the real answer and these are
    there so that something reading only CHS sees a legal value rather
    than a wrapped one. */
-static void putchs(unsigned char *p, unsigned long lba)
+static void putchs(uint8_t *p, uint32_t lba)
 {
-    unsigned long c = lba / SECPERCYL;
-    unsigned long h = (lba / SPT) % HEADS;
-    unsigned long s = (lba % SPT) + 1;
+    uint32_t c = lba / SECPERCYL;
+    uint32_t h = (lba / SPT) % HEADS;
+    uint32_t s = (lba % SPT) + 1;
     if (c > 1023) { c = 1023; h = HEADS - 1; s = SPT; }
-    p[0] = (unsigned char)h;
-    p[1] = (unsigned char)(s | ((c >> 2) & 0xC0));
-    p[2] = (unsigned char)(c & 0xFF);
+    p[0] = (uint8_t)h;
+    p[1] = (uint8_t)(s | ((c >> 2) & 0xC0));
+    p[2] = (uint8_t)(c & 0xFF);
 }
 
-static void fat12_set(unsigned char *fat, int c, int v)
+static void fat12_set(uint8_t *fat, int c, int v)
 {
     int off = c + (c / 2);
     if (c & 1) {
-        fat[off]     = (unsigned char)((fat[off] & 0x0F) | ((v << 4) & 0xF0));
-        fat[off + 1] = (unsigned char)((v >> 4) & 0xFF);
+        fat[off]     = (uint8_t)((fat[off] & 0x0F) | ((v << 4) & 0xF0));
+        fat[off + 1] = (uint8_t)((v >> 4) & 0xFF);
     } else {
-        fat[off]     = (unsigned char)(v & 0xFF);
-        fat[off + 1] = (unsigned char)((fat[off + 1] & 0xF0) | ((v >> 8) & 0x0F));
+        fat[off]     = (uint8_t)(v & 0xFF);
+        fat[off + 1] = (uint8_t)((fat[off + 1] & 0xF0) | ((v >> 8) & 0x0F));
     }
 }
 
-static void stamp(unsigned char *de)
+static void stamp(uint8_t *de)
 {
     put16(de + 22, (12 << 11) | (0 << 5) | 0);      /* 12:00:00 */
     put16(de + 24, ((2026 - 1980) << 9) | (8 << 5) | 9);
 }
 
-static void name83(const char *s, unsigned char *out)
+static void name83(const char *s, uint8_t *out)
 {
     int i = 0, j = 0;
     memset(out, ' ', 11);
-    while (s[i] && s[i] != '.' && j < 8) out[j++] = (unsigned char)s[i++];
+    while (s[i] && s[i] != '.' && j < 8) out[j++] = (uint8_t)s[i++];
     while (s[i] && s[i] != '.') i++;
     if (s[i] == '.') {
         i++; j = 8;
-        while (s[i] && j < 11) out[j++] = (unsigned char)s[i++];
+        while (s[i] && j < 11) out[j++] = (uint8_t)s[i++];
     }
 }
 
@@ -116,13 +117,14 @@ static void name83(const char *s, unsigned char *out)
  * mounts by, and building a test disk that disagrees with it would
  * test nothing.
  *-------------------------------------------------------------------*/
-static int format_volume(unsigned long start, unsigned long secs,
+static int format_volume(uint32_t start, uint32_t secs,
                          int fat12, const char *label, const char *fname,
                          const char *text)
 {
-    unsigned long spc, rsvd = 1, nfats = 2, rootent = 512, rootsecs;
-    unsigned long spf, nclus, rootlba, datalba, i;
-    unsigned char *vbr, *fatp, *de;
+    uint32_t spc, rsvd = 1, nfats = 2, rootent = 512, rootsecs;
+    uint32_t spf, nclus, rootlba, datalba;
+    unsigned long i;
+    uint8_t *vbr, *fatp, *de;
 
     rootsecs = rootent * 32 / SECSIZE;
 
@@ -152,18 +154,18 @@ static int format_volume(unsigned long start, unsigned long secs,
     vbr[0] = 0xEB; vbr[1] = 0xFE; vbr[2] = 0x90;    /* jmp $ */
     memcpy(vbr + 3, "PM-DOS  ", 8);
     put16(vbr + 0x0B, SECSIZE);
-    vbr[0x0D] = (unsigned char)spc;
-    put16(vbr + 0x0E, (unsigned)rsvd);
-    vbr[0x10] = (unsigned char)nfats;
-    put16(vbr + 0x11, (unsigned)rootent);
+    vbr[0x0D] = (uint8_t)spc;
+    put16(vbr + 0x0E, (uint16_t)rsvd);
+    vbr[0x10] = (uint8_t)nfats;
+    put16(vbr + 0x11, (uint16_t)rootent);
     /* TOTSEC16 only if it fits, exactly as DOS 3.31 specified: a
        volume over 65535 sectors MUST leave the 16-bit field zero and
        use the 32-bit one, and a reader that checks them the other way
        round sees a 33MB volume as a 512-byte one. */
-    if (secs < 0x10000) put16(vbr + 0x13, (unsigned)secs);
+    if (secs < 0x10000) put16(vbr + 0x13, (uint16_t)secs);
     else                put16(vbr + 0x13, 0);
     vbr[0x15] = 0xF8;                               /* fixed disk */
-    put16(vbr + 0x16, (unsigned)spf);
+    put16(vbr + 0x16, (uint16_t)spf);
     put16(vbr + 0x18, SPT);
     put16(vbr + 0x1A, HEADS);
     put32(vbr + 0x1C, start);                       /* hidden sectors */
@@ -207,7 +209,7 @@ static int format_volume(unsigned long start, unsigned long secs,
     de[11] = 0x20;                                  /* archive */
     stamp(de);
     put16(de + 26, 2);                              /* first cluster */
-    put32(de + 28, (unsigned long)strlen(text));
+    put32(de + 28, (uint32_t)strlen(text));
     memcpy(sec(datalba), text, strlen(text));
 
     printf("  %-11s %8lu sectors at %8lu  spc=%-2lu spf=%-4lu %lu clusters"
@@ -217,12 +219,12 @@ static int format_volume(unsigned long start, unsigned long secs,
 }
 
 /*--- one partition table entry ------------------------------------*/
-static void putpart(unsigned char *pe, int type, unsigned long start,
-                    unsigned long secs, int active)
+static void putpart(uint8_t *pe, int type, uint32_t start,
+                    uint32_t secs, int active)
 {
-    pe[0] = (unsigned char)(active ? 0x80 : 0x00);
+    pe[0] = (uint8_t)(active ? 0x80 : 0x00);
     putchs(pe + 1, start);
-    pe[4] = (unsigned char)type;
+    pe[4] = (uint8_t)type;
     putchs(pe + 5, start + secs - 1);
     put32(pe + 8, start);
     put32(pe + 12, secs);
@@ -231,9 +233,9 @@ static void putpart(unsigned char *pe, int type, unsigned long start,
 int main(int argc, char **argv)
 {
     const char *out = NULL, *mbrfile = NULL;
-    unsigned long total, p1s, p2s, p3s, extbase, extsecs;
-    unsigned long l1base, l1secs, l2base, l2secs, l3base, l3secs;
-    unsigned char *m, *pe;
+    uint32_t total, p1s, p2s, p3s, extbase, extsecs;
+    uint32_t l1base, l1secs, l2base, l2secs, l3base, l3secs;
+    uint8_t *m, *pe;
     FILE *f;
     int i;
 
@@ -263,7 +265,7 @@ int main(int argc, char **argv)
     total  += SECPERCYL - (total % SECPERCYL);
 
     img_secs = (long)total;
-    image = (unsigned char *)calloc(img_secs, SECSIZE);
+    image = (uint8_t *)calloc(img_secs, SECSIZE);
     if (!image) { fprintf(stderr, "out of memory\n"); return 1; }
 
     printf("mkmulti: %s, %lu sectors (%lu MB)\n", out, total, total / 2048);
@@ -272,7 +274,7 @@ int main(int argc, char **argv)
     m = sec(0);
     if (mbrfile) {
         FILE *mf = fopen(mbrfile, "rb");
-        unsigned char code[SECSIZE];
+        uint8_t code[SECSIZE];
         if (!mf) { fprintf(stderr, "cannot open %s\n", mbrfile); return 1; }
         if (fread(code, 1, SECSIZE, mf) != SECSIZE) {
             fprintf(stderr, "%s is not 512 bytes\n", mbrfile); return 1;

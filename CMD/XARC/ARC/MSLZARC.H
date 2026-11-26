@@ -28,19 +28,19 @@
 #include "szarc.h"      /* SzProgress, and the shared SZ_ERR_* result codes */
 
 typedef struct {
-    char   name[SZ_MAX_NAME];   /* the original file's name                 */
-    UInt32 size;                /* uncompressed size                        */
-    UInt32 packed;              /* compressed bytes after the header        */
-    UInt16 modDate, modTime;    /* MS-DOS packed: the compressed file's own */
-    UInt32 attrib;              /* always 0: nothing is recorded            */
-    int    isDir;               /* always 0                                 */
+    char     name[SZ_MAX_NAME];  /* the original file's name                */
+    uint32_t size;               /* uncompressed size                       */
+    uint32_t packed;             /* compressed bytes after the header       */
+    uint16_t modDate, modTime;   /* MS-DOS packed: the compressed file's own */
+    uint32_t attrib;             /* always 0: nothing is recorded           */
+    int      isDir;              /* always 0                                */
 } MslzEntry;
 
 typedef struct MslzArchive MslzArchive;
 
 /* Does this start like one of these files?  'sig' is the first 'len' bytes
  * (8 are needed).  Cheap, for ArcOpen's sniffing. */
-int  MslzProbe( const unsigned char *sig, int len );
+int  MslzProbe( const uint8_t *sig, int len );
 
 /* SZ_OK, SZ_ERR_SIG when it is neither format, SZ_ERR_UNSUPPORTED for a
  * method this does not know. */
@@ -66,7 +66,7 @@ int  MslzExtractItems( MslzArchive *arc, const int *indices, int count,
                        const char *destDir, SzProgress prog, void *user );
 
 /* Peak bytes one extraction needs; see ArcMemNeeded in ARCFILE.H. */
-UInt32 MslzMemNeeded( MslzArchive *arc );
+uint32_t MslzMemNeeded( MslzArchive *arc );
 
 void MslzClose( MslzArchive *arc );
 

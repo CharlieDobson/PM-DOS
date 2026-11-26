@@ -67,113 +67,113 @@
 
 /* the bits of a packet, least significant first */
 typedef struct {
-    const u8 *ptr, *end;
-    u32  bits;
-    int  have;                  /* bits held in "bits", 0 to 32 */
-    int  eop;                   /* a read went past the end */
+    const uint8_t *ptr, *end;
+    uint32_t bits;
+    int      have;              /* bits held in "bits", 0 to 32 */
+    int      eop;               /* a read went past the end */
 } BITS;
 
 typedef struct {
-    u32  entries, dims, used;
-    u8   lookup, seq, lbits, maxlen;
-    u32  lmask;
-    u32 *lut;                   /* 1 << lbits slots: (entry << 6) | length */
-    u32 *long_code;             /* the codes longer than lbits, left-aligned, ascending */
-    u32 *long_val;              /* their (entry << 6) | length */
-    u32  nlong;
-    s32 *vals;                  /* entries * dims values, "vq" fraction bits */
-    int  vq;
-    u16 *mult;                  /* the header's multiplicands, until vals is made */
-    u32  nmult, maxmult;
-    s32  min_m, delta_m;
-    int  min_e, delta_e;
-    u8   in_res, in_f0;         /* read as vectors by a residue, by a floor 0 */
+    uint32_t  entries, dims, used;
+    uint8_t   lookup, seq, lbits, maxlen;
+    uint32_t  lmask;
+    uint32_t *lut;              /* 1 << lbits slots: (entry << 6) | length */
+    uint32_t *long_code;        /* the codes longer than lbits, left-aligned, ascending */
+    uint32_t *long_val;         /* their (entry << 6) | length */
+    uint32_t  nlong;
+    int32_t  *vals;             /* entries * dims values, "vq" fraction bits */
+    int       vq;
+    uint16_t *mult;             /* the header's multiplicands, until vals is made */
+    uint32_t  nmult, maxmult;
+    int32_t   min_m, delta_m;
+    int       min_e, delta_e;
+    uint8_t   in_res, in_f0;    /* read as vectors by a residue, by a floor 0 */
 } BOOK;
 
 typedef struct {
-    u8   type;
+    uint8_t   type;
     /* floor 1 */
-    u8   parts, mult, nval;
-    u8   pclass[31];
-    u8   cdim[16], cbits[16];
-    s16  cmaster[16];
-    s16  subbook[16][8];
-    u16  x[F1_MAX];
-    u8   order[F1_MAX];         /* the points in ascending x */
-    u8   lo[F1_MAX], hi[F1_MAX];
+    uint8_t   parts, mult, nval;
+    uint8_t   pclass[31];
+    uint8_t   cdim[16], cbits[16];
+    int16_t   cmaster[16];
+    int16_t   subbook[16][8];
+    uint16_t  x[F1_MAX];
+    uint8_t   order[F1_MAX];    /* the points in ascending x */
+    uint8_t   lo[F1_MAX], hi[F1_MAX];
     /* floor 0 */
-    u8   order0, ampbits, ampoff, nbooks;
-    u16  rate, bark;
-    u8   books[16];
-    u16 *map[2];                /* the Bark map of each block size */
-    s32 *cosw;                  /* cos( pi k / bark ), Q30 */
+    uint8_t   order0, ampbits, ampoff, nbooks;
+    uint16_t  rate, bark;
+    uint8_t   books[16];
+    uint16_t *map[2];           /* the Bark map of each block size */
+    int32_t  *cosw;             /* cos( pi k / bark ), Q30 */
 } FLOOR;
 
 typedef struct {
-    u8   type, classes, classbook, passes;
-    u32  begin, end, psize, cdims;
-    s16  books[64][8];
-    u8  *ctab;                  /* each classbook entry's class numbers, cdims of them */
+    uint8_t  type, classes, classbook, passes;
+    uint32_t begin, end, psize, cdims;
+    int16_t  books[64][8];
+    uint8_t *ctab;              /* each classbook entry's class numbers, cdims of them */
 } RESID;
 
 typedef struct {
-    u8   submaps;
-    u16  steps;
-    u8   mag[MAX_COUPLE], ang[MAX_COUPLE];
-    u8   mux[VB_MAX_CH];
-    u8   floor[16], resid[16];
+    uint8_t  submaps;
+    uint16_t steps;
+    uint8_t  mag[MAX_COUPLE], ang[MAX_COUPLE];
+    uint8_t  mux[VB_MAX_CH];
+    uint8_t  floor[16], resid[16];
 } MAP;
 
 /* a number with its own exponent, for floor 0: m * 2^e, m from 2^31 up, or 0 */
 typedef struct {
-    u32  m;
-    int  e;
+    uint32_t m;
+    int      e;
 } VBF;
 
 struct VB {
-    VBID    id;
-    VBOPT   opt;
-    int     nch;
-    u32     n[2];               /* the block sizes */
-    int     nbooks, nfloors, nres, nmaps, nmodes, mode_bits;
-    BOOK   *books;
-    FLOOR  *floors;
-    RESID  *res;
-    MAP    *maps;
-    u8      mode_flag[64], mode_map[64];
-    int     qr;                 /* the residue's fraction bits */
-    u32     budget;             /* what is left of SETUP_WORK */
+    VBID      id;
+    VBOPT     opt;
+    int       nch;
+    uint32_t  n[2];             /* the block sizes */
+    int       nbooks, nfloors, nres, nmaps, nmodes, mode_bits;
+    BOOK     *books;
+    FLOOR    *floors;
+    RESID    *res;
+    MAP      *maps;
+    uint8_t   mode_flag[64], mode_map[64];
+    int       qr;               /* the residue's fraction bits */
+    uint32_t  budget;           /* what is left of SETUP_WORK */
     /* each channel's floor table, the channel's weight folded in */
-    u32    *fmant[VB_MAX_CH];
-    u8     *fshift[VB_MAX_CH];
-    s32     gain[VB_MAX_CH];    /* Q30 */
-    u8      side[VB_MAX_CH];    /* 1: output 0, 2: output 1, 3: both */
-    int     mixing;
+    uint32_t *fmant[VB_MAX_CH];
+    uint8_t  *fshift[VB_MAX_CH];
+    int32_t   gain[VB_MAX_CH];  /* Q30 */
+    uint8_t   side[VB_MAX_CH];  /* 1: output 0, 2: output 1, 3: both */
+    int       mixing;
     /* decoding */
-    s32    *vec[VB_MAX_CH];     /* the residue, then the channel's spectrum */
-    s32    *mixed[2];
-    s32    *work;
-    s32    *ubuf[2][2];
-    int     cur;
-    u32     prev_n;             /* the previous block's transform size, 0: none */
-    VBMDCT  md[2];
-    VBFFT   fft;
-    u8     *cls;                /* classifications: nch rows of cls_room */
-    u32     cls_room;
-    s32     fy[VB_MAX_CH][F1_MAX];
-    s32    *f0coef;             /* nch rows of F0_MAX, Q24 radians */
-    s32     f0amp[VB_MAX_CH];
-    u8      used[VB_MAX_CH];
-    s16    *pcm;
-    u32    *eqgain;
-    u16     eq_serial;
-    u8      eq_valid, use_eq;
+    int32_t  *vec[VB_MAX_CH];   /* the residue, then the channel's spectrum */
+    int32_t  *mixed[2];
+    int32_t  *work;
+    int32_t  *ubuf[2][2];
+    int       cur;
+    uint32_t  prev_n;           /* the previous block's transform size, 0: none */
+    VBMDCT    md[2];
+    VBFFT     fft;
+    uint8_t  *cls;              /* classifications: nch rows of cls_room */
+    uint32_t  cls_room;
+    int32_t   fy[VB_MAX_CH][F1_MAX];
+    int32_t  *f0coef;           /* nch rows of F0_MAX, Q24 radians */
+    int32_t   f0amp[VB_MAX_CH];
+    uint8_t   used[VB_MAX_CH];
+    int16_t  *pcm;
+    uint32_t *eqgain;
+    uint16_t  eq_serial;
+    uint8_t   eq_valid, use_eq;
 };
 
 /* ------------------------------------------------------------------ */
 /* bits                                                                */
 /* ------------------------------------------------------------------ */
-static void bits_init( BITS *br, const u8 *data, u32 len )
+static void bits_init( BITS *br, const uint8_t *data, unsigned int len )
 {
     br->ptr = data;
     br->end = data + len;
@@ -185,15 +185,15 @@ static void bits_init( BITS *br, const u8 *data, u32 len )
 static void bits_fill( BITS *br )
 {
     while ( br->have <= 24 && br->ptr < br->end ) {
-        br->bits |= (u32)*br->ptr++ << br->have;
+        br->bits |= (uint32_t)*br->ptr++ << br->have;
         br->have += 8;
     }
 }
 
 /* "count" bits, 0 to 24 */
-static u32 bits_small( BITS *br, int count )
+static uint32_t bits_small( BITS *br, int count )
 {
-    u32 val;
+    uint32_t val;
 
     if ( br->have < count ) {
         bits_fill( br );
@@ -211,9 +211,9 @@ static u32 bits_small( BITS *br, int count )
 }
 
 /* "count" bits, 0 to 32 */
-static u32 bits_get( BITS *br, int count )
+static uint32_t bits_get( BITS *br, int count )
 {
-    u32 low;
+    uint32_t low;
 
     if ( count <= 24 ) {
         return bits_small( br, count );
@@ -223,21 +223,21 @@ static u32 bits_get( BITS *br, int count )
 }
 
 /* the position of the highest bit set, 1 up; 0 for 0 */
-static int ilog( u32 val )
+static int ilog( uint32_t val )
 {
     return val == 0 ? 0 : fx_topbit( val ) + 1;
 }
 
-static u32 rev32( u32 val )
+static uint32_t rev32( uint32_t val )
 {
-    return ((u32)vb_rev8[val & 255] << 24) | ((u32)vb_rev8[(val >> 8) & 255] << 16)
-           | ((u32)vb_rev8[(val >> 16) & 255] << 8) | vb_rev8[val >> 24];
+    return ((uint32_t)vb_rev8[val & 255] << 24) | ((uint32_t)vb_rev8[(val >> 8) & 255] << 16)
+           | ((uint32_t)vb_rev8[(val >> 16) & 255] << 8) | vb_rev8[val >> 24];
 }
 
 /* ------------------------------------------------------------------ */
 /* Huffman decoding                                                    */
 /* ------------------------------------------------------------------ */
-static s32 book_fail( BITS *br )
+static int32_t book_fail( BITS *br )
 {
     br->eop = 1;
     br->have = 0;
@@ -246,11 +246,13 @@ static s32 book_fail( BITS *br )
 }
 
 /* a codeword longer than the table, or one that runs past the end */
-static s32 book_long( const BOOK *bk, BITS *br, int len )
+static int32_t book_long( const BOOK *bk, BITS *br, int len )
 {
-    u32 win, code, lo, hi, mid, slot;
+    uint32_t win, code;
+    unsigned int lo, hi, mid;
+    uint32_t slot;
     int avail;
-    const u8 *at;
+    const uint8_t *at;
 
     if ( len != LONG_MARK || bk->nlong == 0 ) {
         return book_fail( br );
@@ -260,7 +262,7 @@ static s32 book_long( const BOOK *bk, BITS *br, int len )
     avail = br->have;
     at = br->ptr;
     while ( avail < 32 && at < br->end ) {
-        win |= (u32)*at++ << avail;
+        win |= (uint32_t)*at++ << avail;
         avail += 8;
     }
     if ( avail > 32 ) {
@@ -286,13 +288,13 @@ static s32 book_long( const BOOK *bk, BITS *br, int len )
         return book_fail( br );
     }
     bits_get( br, len );
-    return (s32)(slot >> 6);
+    return (int32_t)(slot >> 6);
 }
 
 /* an entry number, or -1 at the end of the packet */
-static s32 book_decode( const BOOK *bk, BITS *br )
+static int32_t book_decode( const BOOK *bk, BITS *br )
 {
-    u32 slot;
+    uint32_t slot;
     int len;
 
     if ( br->have < (int)bk->lbits ) {
@@ -303,7 +305,7 @@ static s32 book_decode( const BOOK *bk, BITS *br )
     if ( len != 0 && len != LONG_MARK && len <= br->have ) {
         br->bits >>= len;
         br->have -= len;
-        return (s32)(slot >> 6);
+        return (int32_t)(slot >> 6);
     }
     return book_long( bk, br, len );
 }
@@ -313,9 +315,10 @@ static s32 book_decode( const BOOK *bk, BITS *br )
 /* ------------------------------------------------------------------ */
 /* sort the long codes, codes and values together (heapsort: no
    recursion, n log n whatever the order) */
-static void sift( u32 *code, u32 *val, u32 root, u32 count )
+static void sift( uint32_t *code, uint32_t *val, unsigned int root, unsigned int count )
 {
-    u32 child, tc, tv;
+    unsigned int child;
+    uint32_t tc, tv;
 
     for ( ;; ) {
         child = 2 * root + 1;
@@ -338,9 +341,10 @@ static void sift( u32 *code, u32 *val, u32 root, u32 count )
     }
 }
 
-static void sort_codes( u32 *code, u32 *val, u32 count )
+static void sort_codes( uint32_t *code, uint32_t *val, unsigned int count )
 {
-    u32 i, tc, tv;
+    unsigned int i;
+    uint32_t tc, tv;
 
     if ( count < 2 ) {
         return;
@@ -364,10 +368,13 @@ static void sort_codes( u32 *code, u32 *val, u32 count )
    free node at each depth, the deeper ones to the left, so the deepest
    free node no deeper than the length is the lowest choice.  -> DE_OK
    or DE_FORMAT (overfull or unfinished) or DE_NOMEM */
-static int book_tree( BOOK *bk, const u8 *len )
+static int book_tree( BOOK *bk, const uint8_t *len )
 {
-    u32 avail[33], *codes = NULL, i, code, slot, step, idx, k, nlong = 0;
-    u8 have[33];
+    uint32_t avail[33], *codes = NULL;
+    unsigned int i;
+    uint32_t code, slot;
+    unsigned int step, idx, k, nlong = 0;
+    uint8_t have[33];
     int depth, length;
 
     bk->used = 0;
@@ -384,7 +391,7 @@ static int book_tree( BOOK *bk, const u8 *len )
         /* nothing, or the one entry, read as one bit of either value */
         bk->lbits = 1;
         bk->lmask = 1;
-        bk->lut = (u32 *)try_alloc( 2 * sizeof( u32 ) );
+        bk->lut = (uint32_t *)try_alloc( 2 * sizeof( uint32_t ) );
         if ( bk->lut == NULL ) {
             return DE_NOMEM;
         }
@@ -396,7 +403,7 @@ static int book_tree( BOOK *bk, const u8 *len )
         }
         return DE_OK;
     }
-    codes = (u32 *)try_alloc( bk->entries * sizeof( u32 ) );
+    codes = (uint32_t *)try_alloc( bk->entries * sizeof( uint32_t ) );
     if ( codes == NULL ) {
         return DE_NOMEM;
     }
@@ -417,7 +424,7 @@ static int book_tree( BOOK *bk, const u8 *len )
         }
         code = avail[depth];
         have[depth] = 0;
-        for ( k = (u32)depth + 1; k <= (u32)length; k++ ) {
+        for ( k = (unsigned int)depth + 1; k <= (unsigned int)length; k++ ) {
             avail[k] = code + (1UL << (32 - k));
             have[k] = 1;
         }
@@ -429,14 +436,14 @@ static int book_tree( BOOK *bk, const u8 *len )
             return DE_FORMAT;                   /* codewords missing */
         }
     }
-    bk->lbits = (u8)(bk->maxlen < LUT_BITS ? bk->maxlen : LUT_BITS);
+    bk->lbits = (uint8_t)(bk->maxlen < LUT_BITS ? bk->maxlen : LUT_BITS);
     bk->lmask = (1UL << bk->lbits) - 1;
-    bk->lut = (u32 *)try_alloc( (bk->lmask + 1) * sizeof( u32 ) );
+    bk->lut = (uint32_t *)try_alloc( (bk->lmask + 1) * sizeof( uint32_t ) );
     if ( bk->lut == NULL ) {
         xfree( codes );
         return DE_NOMEM;
     }
-    mem_set( bk->lut, 0, (bk->lmask + 1) * sizeof( u32 ) );
+    mem_set( bk->lut, 0, (bk->lmask + 1) * sizeof( uint32_t ) );
     for ( i = 0; i < bk->entries; i++ ) {
         length = len[i];
         if ( length == 0 ) {
@@ -444,7 +451,7 @@ static int book_tree( BOOK *bk, const u8 *len )
         }
         idx = rev32( codes[i] );
         if ( length <= bk->lbits ) {
-            slot = (i << 6) | (u32)length;
+            slot = (i << 6) | (uint32_t)length;
             step = 1UL << length;
             for ( ; idx <= bk->lmask; idx += step ) {
                 bk->lut[idx] = slot;
@@ -455,8 +462,8 @@ static int book_tree( BOOK *bk, const u8 *len )
         }
     }
     if ( nlong > 0 ) {
-        bk->long_code = (u32 *)try_alloc( nlong * sizeof( u32 ) );
-        bk->long_val = (u32 *)try_alloc( nlong * sizeof( u32 ) );
+        bk->long_code = (uint32_t *)try_alloc( nlong * sizeof( uint32_t ) );
+        bk->long_val = (uint32_t *)try_alloc( nlong * sizeof( uint32_t ) );
         if ( bk->long_code == NULL || bk->long_val == NULL ) {
             xfree( codes );
             return DE_NOMEM;
@@ -476,9 +483,9 @@ static int book_tree( BOOK *bk, const u8 *len )
 }
 
 /* the greatest r with r^dims <= entries */
-static int pow_le( u32 base, u32 dims, u32 limit )
+static int pow_le( uint32_t base, uint32_t dims, uint32_t limit )
 {
-    u32 acc = 1, i;
+    uint32_t acc = 1, i;
 
     for ( i = 0; i < dims; i++ ) {
         if ( acc > limit / base ) {
@@ -489,9 +496,9 @@ static int pow_le( u32 base, u32 dims, u32 limit )
     return 1;
 }
 
-static u32 lookup1_values( u32 entries, u32 dims )
+static uint32_t lookup1_values( uint32_t entries, uint32_t dims )
 {
-    u32 lo = 1, hi = entries, mid;
+    uint32_t lo = 1, hi = entries, mid;
 
     if ( dims == 1 ) {
         return entries;
@@ -510,9 +517,9 @@ static u32 lookup1_values( u32 entries, u32 dims )
     return lo;
 }
 
-static void float_unpack( u32 raw, s32 *mant, int *exp )
+static void float_unpack( uint32_t raw, int32_t *mant, int *exp )
 {
-    *mant = (s32)(raw & 0x1FFFFFUL);
+    *mant = (int32_t)(raw & 0x1FFFFFUL);
     if ( raw & 0x80000000UL ) {
         *mant = -*mant;
     }
@@ -522,7 +529,7 @@ static void float_unpack( u32 raw, s32 *mant, int *exp )
 /* Take "amount" from the setup's work: a header can ask for vast tables
    in a few bytes, and building them all would hold the player up for
    minutes on a 486 before memory ran out.  -> 0 when it is used up */
-static int setup_charge( u32 *work, u32 amount )
+static int setup_charge( uint32_t *work, uint32_t amount )
 {
     if ( amount > *work ) {
         *work = 0;
@@ -532,10 +539,11 @@ static int setup_charge( u32 *work, u32 amount )
     return 1;
 }
 
-static int book_read( BOOK *bk, BITS *br, u32 *work )
+static int book_read( BOOK *bk, BITS *br, uint32_t *work )
 {
-    u8 *len;
-    u32 i, cur, num, length, raw;
+    uint8_t *len;
+    unsigned int i, cur;
+    uint32_t num, length, raw;
     int rc, sparse;
 
     if ( bits_get( br, 24 ) != 0x564342UL ) {
@@ -549,7 +557,7 @@ static int book_read( BOOK *bk, BITS *br, u32 *work )
     if ( bk->entries > MAX_ENTRIES || !setup_charge( work, bk->entries ) ) {
         return DE_UNSUPPORTED;
     }
-    len = (u8 *)try_alloc( bk->entries );
+    len = (uint8_t *)try_alloc( bk->entries );
     if ( len == NULL ) {
         return DE_NOMEM;
     }
@@ -559,7 +567,7 @@ static int book_read( BOOK *bk, BITS *br, u32 *work )
             if ( sparse && !bits_get( br, 1 ) ) {
                 len[i] = 0;
             } else {
-                len[i] = (u8)(bits_get( br, 5 ) + 1);
+                len[i] = (uint8_t)(bits_get( br, 5 ) + 1);
             }
         }
     } else {
@@ -573,7 +581,7 @@ static int book_read( BOOK *bk, BITS *br, u32 *work )
                 return DE_FORMAT;
             }
             for ( i = 0; i < num; i++ ) {
-                len[cur + i] = (u8)length;
+                len[cur + i] = (uint8_t)length;
             }
             cur += num;
             if ( ++length > 33 && cur < bk->entries ) {
@@ -586,7 +594,7 @@ static int book_read( BOOK *bk, BITS *br, u32 *work )
         xfree( len );
         return DE_FORMAT;
     }
-    bk->lookup = (u8)bits_get( br, 4 );
+    bk->lookup = (uint8_t)bits_get( br, 4 );
     if ( bk->lookup > 2 ) {
         xfree( len );
         return DE_FORMAT;
@@ -597,7 +605,7 @@ static int book_read( BOOK *bk, BITS *br, u32 *work )
         raw = bits_get( br, 32 );
         float_unpack( raw, &bk->delta_m, &bk->delta_e );
         num = bits_get( br, 4 ) + 1;
-        bk->seq = (u8)bits_get( br, 1 );
+        bk->seq = (uint8_t)bits_get( br, 1 );
         if ( bk->dims == 0 || br->eop ) {
             xfree( len );
             return DE_FORMAT;
@@ -609,14 +617,14 @@ static int book_read( BOOK *bk, BITS *br, u32 *work )
         }
         bk->nmult = bk->lookup == 1 ? lookup1_values( bk->entries, bk->dims )
                                     : bk->entries * bk->dims;
-        bk->mult = (u16 *)try_alloc( bk->nmult * sizeof( u16 ) );
+        bk->mult = (uint16_t *)try_alloc( bk->nmult * sizeof( uint16_t ) );
         if ( bk->mult == NULL ) {
             xfree( len );
             return DE_NOMEM;
         }
         bk->maxmult = 0;
         for ( i = 0; i < bk->nmult && !br->eop; i++ ) {
-            bk->mult[i] = (u16)bits_get( br, (int)num );
+            bk->mult[i] = (uint16_t)bits_get( br, (int)num );
             if ( bk->mult[i] > bk->maxmult ) {
                 bk->maxmult = bk->mult[i];
             }
@@ -635,9 +643,9 @@ static int book_read( BOOK *bk, BITS *br, u32 *work )
 /* vector values in fixed point                                        */
 /* ------------------------------------------------------------------ */
 /* round( (hi:lo) * 2^shift ), a signed 64-bit number, cut to 32 bits */
-static s32 fix_scale( s32 hi, u32 lo, int shift )
+static int32_t fix_scale( int32_t hi, uint32_t lo, int shift )
 {
-    u32 uh = (u32)hi, ul = lo, val, add;
+    uint32_t uh = (uint32_t)hi, ul = lo, val, add;
     int neg = hi < 0, s;
 
     if ( neg ) {
@@ -680,12 +688,12 @@ static s32 fix_scale( s32 hi, u32 lo, int shift )
             }
         }
     }
-    return neg ? -(s32)val : (s32)val;
+    return neg ? -(int32_t)val : (int32_t)val;
 }
 
-static s32 sat_add( s32 a, s32 b )
+static int32_t sat_add( int32_t a, int32_t b )
 {
-    s32 sum = (s32)((u32)a + (u32)b);
+    int32_t sum = (int32_t)((uint32_t)a + (uint32_t)b);
 
     if ( a >= 0 && b >= 0 && sum < 0 ) {
         return 0x7FFFFFFFL;
@@ -697,26 +705,26 @@ static s32 sat_add( s32 a, s32 b )
 }
 
 /* multiplicand * delta + minimum, with "q" fraction bits */
-static s32 book_value( const BOOK *bk, u32 mult, int q )
+static int32_t book_value( const BOOK *bk, uint32_t mult, int q )
 {
-    s32 hi;
-    u32 lo;
+    int32_t hi;
+    uint32_t lo;
 
-    lo = vb_mul64( (s32)mult, bk->delta_m, &hi );
+    lo = vb_mul64( (int32_t)mult, bk->delta_m, &hi );
     return sat_add( fix_scale( hi, lo, bk->delta_e + q ),
-                    fix_scale( bk->min_m < 0 ? -1 : 0, (u32)bk->min_m, bk->min_e + q ) );
+                    fix_scale( bk->min_m < 0 ? -1 : 0, (uint32_t)bk->min_m, bk->min_e + q ) );
 }
 
 /* how many bits the book's values can need: |value| < 2^bits */
 static int book_bits( const BOOK *bk )
 {
-    s32 lo = book_value( bk, 0, 8 ), hi = book_value( bk, bk->maxmult, 8 );
-    u32 top;
+    int32_t lo = book_value( bk, 0, 8 ), hi = book_value( bk, bk->maxmult, 8 );
+    uint32_t top;
     int bits;
 
     lo = lo < 0 ? -lo : lo;
     hi = hi < 0 ? -hi : hi;
-    top = (u32)(lo > hi ? lo : hi);
+    top = (uint32_t)(lo > hi ? lo : hi);
     if ( top == 0 ) {
         return -8;
     }
@@ -729,10 +737,10 @@ static int book_bits( const BOOK *bk )
 
 static int book_values( BOOK *bk, int q )
 {
-    u32 e, i, idx, off, count = bk->entries * bk->dims;
-    s32 last, val, *row;
+    unsigned int e, i, idx, off, count = bk->entries * bk->dims;
+    int32_t last, val, *row;
 
-    bk->vals = (s32 *)try_alloc( count * sizeof( s32 ) );
+    bk->vals = (int32_t *)try_alloc( count * sizeof( int32_t ) );
     if ( bk->vals == NULL ) {
         return DE_NOMEM;
     }
@@ -763,43 +771,43 @@ static int book_values( BOOK *bk, int q )
 /* ------------------------------------------------------------------ */
 /* floors: setup                                                       */
 /* ------------------------------------------------------------------ */
-static const u16 f1_range[4] = { 256, 128, 86, 64 };
+static const uint16_t f1_range[4] = { 256, 128, 86, 64 };
 
 static int floor1_read( VB *vb, FLOOR *fl, BITS *br )
 {
     int i, j, k, maxclass = -1, count, rangebits;
-    u32 book;
+    uint32_t book;
 
-    fl->parts = (u8)bits_get( br, 5 );
+    fl->parts = (uint8_t)bits_get( br, 5 );
     for ( i = 0; i < fl->parts; i++ ) {
-        fl->pclass[i] = (u8)bits_get( br, 4 );
+        fl->pclass[i] = (uint8_t)bits_get( br, 4 );
         if ( fl->pclass[i] > maxclass ) {
             maxclass = fl->pclass[i];
         }
     }
     for ( i = 0; i <= maxclass; i++ ) {
-        fl->cdim[i] = (u8)(bits_get( br, 3 ) + 1);
-        fl->cbits[i] = (u8)bits_get( br, 2 );
+        fl->cdim[i] = (uint8_t)(bits_get( br, 3 ) + 1);
+        fl->cbits[i] = (uint8_t)bits_get( br, 2 );
         fl->cmaster[i] = -1;
         if ( fl->cbits[i] ) {
             book = bits_get( br, 8 );
-            if ( book >= (u32)vb->nbooks ) {
+            if ( book >= (uint32_t)vb->nbooks ) {
                 return DE_FORMAT;
             }
-            fl->cmaster[i] = (s16)book;
+            fl->cmaster[i] = (int16_t)book;
         }
         for ( j = 0; j < (1 << fl->cbits[i]); j++ ) {
             book = bits_get( br, 8 );
-            if ( book > (u32)vb->nbooks ) {
+            if ( book > (uint32_t)vb->nbooks ) {
                 return DE_FORMAT;
             }
-            fl->subbook[i][j] = (s16)book - 1;
+            fl->subbook[i][j] = (int16_t)book - 1;
         }
     }
-    fl->mult = (u8)(bits_get( br, 2 ) + 1);
+    fl->mult = (uint8_t)(bits_get( br, 2 ) + 1);
     rangebits = (int)bits_get( br, 4 );
     fl->x[0] = 0;
-    fl->x[1] = (u16)(1U << rangebits);
+    fl->x[1] = (uint16_t)(1U << rangebits);
     count = 2;
     for ( i = 0; i < fl->parts; i++ ) {
         k = fl->cdim[fl->pclass[i]];
@@ -807,19 +815,19 @@ static int floor1_read( VB *vb, FLOOR *fl, BITS *br )
             return DE_FORMAT;
         }
         for ( j = 0; j < k; j++ ) {
-            fl->x[count++] = (u16)bits_get( br, rangebits );
+            fl->x[count++] = (uint16_t)bits_get( br, rangebits );
         }
     }
     if ( br->eop ) {
         return DE_FORMAT;
     }
-    fl->nval = (u8)count;
+    fl->nval = (uint8_t)count;
     /* the points in ascending x (all different), and each one's neighbors */
     for ( i = 0; i < count; i++ ) {
         for ( j = i; j > 0 && fl->x[fl->order[j - 1]] > fl->x[i]; j-- ) {
             fl->order[j] = fl->order[j - 1];
         }
-        fl->order[j] = (u8)i;
+        fl->order[j] = (uint8_t)i;
     }
     for ( i = 1; i < count; i++ ) {
         if ( fl->x[fl->order[i]] == fl->x[fl->order[i - 1]] ) {
@@ -831,10 +839,10 @@ static int floor1_read( VB *vb, FLOOR *fl, BITS *br )
         fl->hi[i] = 1;
         for ( j = 0; j < i; j++ ) {
             if ( fl->x[j] < fl->x[i] && fl->x[j] > fl->x[fl->lo[i]] ) {
-                fl->lo[i] = (u8)j;
+                fl->lo[i] = (uint8_t)j;
             }
             if ( fl->x[j] > fl->x[i] && fl->x[j] < fl->x[fl->hi[i]] ) {
-                fl->hi[i] = (u8)j;
+                fl->hi[i] = (uint8_t)j;
             }
         }
     }
@@ -842,10 +850,10 @@ static int floor1_read( VB *vb, FLOOR *fl, BITS *br )
 }
 
 /* atan( y / 2^24 ) in radians, Q24, by CORDIC (y >= 0, under 2^29) */
-static u32 atan_q24( s32 y )
+static uint32_t atan_q24( int32_t y )
 {
-    s32 x = 1L << 24, nx;
-    u32 angle = 0;
+    int32_t x = 1L << 24, nx;
+    uint32_t angle = 0;
     int i;
 
     if ( y <= 0 ) {
@@ -863,33 +871,34 @@ static u32 atan_q24( s32 y )
         }
         x = nx;
     }
-    if ( (s32)angle <= 0 ) {
+    if ( (int32_t)angle <= 0 ) {
         return 0;                       /* a tiny angle that came out just under zero */
     }
-    return (u32)fx_mulhi( (s32)angle, 105414357L );    /* turns to radians */
+    return (uint32_t)fx_mulhi( (int32_t)angle, 105414357L ); /* turns to radians */
 }
 
 /* bark( rate * i / (2 half) ) in Q24:
    13.1 atan(.00074 x) + 2.24 atan(.0000000185 x^2) + .0001 x.  The map
    is the floor of this scaled, so it is worked to about 1e-7 */
-static u32 bark_q24( u32 rate, u32 i, u32 half )
+static uint32_t bark_q24( uint32_t rate, uint32_t i, uint32_t half )
 {
-    u32 ri = rate * i, xq12, t1, t2, lin;
+    uint32_t ri = rate * i, xq12, t1, t2, lin;
 
     t1 = fx_umuldiv( ri, 1241514UL, 200 * half );      /* .00074 x, Q24 */
     xq12 = fx_umuldiv( ri, 4096, 2 * half );
     t2 = fx_umuldiv( xq12, xq12, 54054054UL );         /* .0000000185 x^2, Q24 */
     lin = fx_umuldiv( ri, 1UL << 24, 20000 * half );   /* .0001 x, Q24 */
-    return fx_umuldiv( atan_q24( (s32)t1 ), 131, 10 ) + fx_umuldiv( atan_q24( (s32)t2 ), 224, 100 )
+    return fx_umuldiv( atan_q24( (int32_t)t1 ), 131, 10 ) + fx_umuldiv( atan_q24( (int32_t)t2 ), 224, 100 )
            + lin;
 }
 
-static int floor0_map( FLOOR *fl, int which, u32 half )
+static int floor0_map( FLOOR *fl, int which, unsigned int half )
 {
-    u16 *map;
-    u32 i, top, val;
+    uint16_t *map;
+    unsigned int i;
+    uint32_t top, val;
 
-    map = (u16 *)try_alloc( half * sizeof( u16 ) );
+    map = (uint16_t *)try_alloc( half * sizeof( uint16_t ) );
     if ( map == NULL ) {
         return DE_NOMEM;
     }
@@ -897,17 +906,17 @@ static int floor0_map( FLOOR *fl, int which, u32 half )
     top = bark_q24( fl->rate, half, half );
     for ( i = 0; i < half; i++ ) {
         val = top ? fx_umuldiv( bark_q24( fl->rate, i, half ), fl->bark, top ) : 0;
-        map[i] = (u16)(val < fl->bark ? val : fl->bark - 1U);
+        map[i] = (uint16_t)(val < fl->bark ? val : fl->bark - 1U);
     }
     return DE_OK;
 }
 
 static int floor0_cos( FLOOR *fl )
 {
-    u32 k;
-    s32 sinw;
+    unsigned int k;
+    int32_t sinw;
 
-    fl->cosw = (s32 *)try_alloc( (u32)fl->bark * sizeof( s32 ) );
+    fl->cosw = (int32_t *)try_alloc( (unsigned int)fl->bark * sizeof( int32_t ) );
     if ( fl->cosw == NULL ) {
         return DE_NOMEM;
     }
@@ -921,14 +930,14 @@ static int floor0_read( VB *vb, FLOOR *fl, BITS *br )
 {
     int i;
 
-    fl->order0 = (u8)bits_get( br, 8 );
-    fl->rate = (u16)bits_get( br, 16 );
-    fl->bark = (u16)bits_get( br, 16 );
-    fl->ampbits = (u8)bits_get( br, 6 );
-    fl->ampoff = (u8)bits_get( br, 8 );
-    fl->nbooks = (u8)(bits_get( br, 4 ) + 1);
+    fl->order0 = (uint8_t)bits_get( br, 8 );
+    fl->rate = (uint16_t)bits_get( br, 16 );
+    fl->bark = (uint16_t)bits_get( br, 16 );
+    fl->ampbits = (uint8_t)bits_get( br, 6 );
+    fl->ampoff = (uint8_t)bits_get( br, 8 );
+    fl->nbooks = (uint8_t)(bits_get( br, 4 ) + 1);
     for ( i = 0; i < fl->nbooks; i++ ) {
-        fl->books[i] = (u8)bits_get( br, 8 );
+        fl->books[i] = (uint8_t)bits_get( br, 8 );
         if ( fl->books[i] >= vb->nbooks || vb->books[fl->books[i]].lookup == 0 ) {
             return DE_FORMAT;
         }
@@ -949,13 +958,13 @@ static int floor0_read( VB *vb, FLOOR *fl, BITS *br )
 static int resid_read( VB *vb, RESID *rs, BITS *br )
 {
     int i, j;
-    u32 cascade[64], high, book;
+    uint32_t cascade[64], high, book;
 
     rs->begin = bits_get( br, 24 );
     rs->end = bits_get( br, 24 );
     rs->psize = bits_get( br, 24 ) + 1;
-    rs->classes = (u8)(bits_get( br, 6 ) + 1);
-    rs->classbook = (u8)bits_get( br, 8 );
+    rs->classes = (uint8_t)(bits_get( br, 6 ) + 1);
+    rs->classbook = (uint8_t)bits_get( br, 8 );
     if ( rs->classbook >= vb->nbooks ) {
         return DE_FORMAT;
     }
@@ -972,14 +981,14 @@ static int resid_read( VB *vb, RESID *rs, BITS *br )
             rs->books[i][j] = -1;
             if ( cascade[i] & (1U << j) ) {
                 book = bits_get( br, 8 );
-                if ( book >= (u32)vb->nbooks || vb->books[book].lookup == 0
+                if ( book >= (uint32_t)vb->nbooks || vb->books[book].lookup == 0
                      || rs->psize % vb->books[book].dims != 0 ) {
                     return DE_FORMAT;
                 }
-                rs->books[i][j] = (s16)book;
+                rs->books[i][j] = (int16_t)book;
                 vb->books[book].in_res = 1;
                 if ( j + 1 > rs->passes ) {
-                    rs->passes = (u8)(j + 1);
+                    rs->passes = (uint8_t)(j + 1);
                 }
             }
         }
@@ -991,7 +1000,7 @@ static int resid_read( VB *vb, RESID *rs, BITS *br )
 static int resid_classes( VB *vb, RESID *rs )
 {
     const BOOK *cb = &vb->books[rs->classbook];
-    u32 e, i, val;
+    unsigned int e, i, val;
 
     rs->cdims = cb->dims;
     if ( cb->dims == 0 || cb->dims > 64 || !pow_le( rs->classes, cb->dims, cb->entries ) ) {
@@ -1001,14 +1010,14 @@ static int resid_classes( VB *vb, RESID *rs )
          || !setup_charge( &vb->budget, cb->entries * cb->dims ) ) {
         return DE_UNSUPPORTED;          /* a table of classes bigger than any real stream needs */
     }
-    rs->ctab = (u8 *)try_alloc( cb->entries * cb->dims );
+    rs->ctab = (uint8_t *)try_alloc( cb->entries * cb->dims );
     if ( rs->ctab == NULL ) {
         return DE_NOMEM;
     }
     for ( e = 0; e < cb->entries; e++ ) {
         val = e;
         for ( i = cb->dims; i-- > 0; ) {
-            rs->ctab[e * cb->dims + i] = (u8)(val % rs->classes);
+            rs->ctab[e * cb->dims + i] = (uint8_t)(val % rs->classes);
             val /= rs->classes;
         }
     }
@@ -1017,18 +1026,18 @@ static int resid_classes( VB *vb, RESID *rs )
 
 static int map_read( VB *vb, MAP *mp, BITS *br )
 {
-    int i, bits = ilog( (u32)vb->nch - 1 );
+    int i, bits = ilog( (uint32_t)vb->nch - 1 );
 
     if ( bits_get( br, 16 ) != 0 ) {
         return DE_FORMAT;
     }
-    mp->submaps = (u8)(bits_get( br, 1 ) ? bits_get( br, 4 ) + 1 : 1);
+    mp->submaps = (uint8_t)(bits_get( br, 1 ) ? bits_get( br, 4 ) + 1 : 1);
     mp->steps = 0;
     if ( bits_get( br, 1 ) ) {
-        mp->steps = (u16)(bits_get( br, 8 ) + 1);
+        mp->steps = (uint16_t)(bits_get( br, 8 ) + 1);
         for ( i = 0; i < mp->steps; i++ ) {
-            mp->mag[i] = (u8)bits_get( br, bits );
-            mp->ang[i] = (u8)bits_get( br, bits );
+            mp->mag[i] = (uint8_t)bits_get( br, bits );
+            mp->ang[i] = (uint8_t)bits_get( br, bits );
             if ( mp->mag[i] == mp->ang[i] || mp->mag[i] >= vb->nch || mp->ang[i] >= vb->nch ) {
                 return DE_FORMAT;
             }
@@ -1040,7 +1049,7 @@ static int map_read( VB *vb, MAP *mp, BITS *br )
     for ( i = 0; i < vb->nch; i++ ) {
         mp->mux[i] = 0;
         if ( mp->submaps > 1 ) {
-            mp->mux[i] = (u8)bits_get( br, 4 );
+            mp->mux[i] = (uint8_t)bits_get( br, 4 );
             if ( mp->mux[i] >= mp->submaps ) {
                 return DE_FORMAT;
             }
@@ -1048,8 +1057,8 @@ static int map_read( VB *vb, MAP *mp, BITS *br )
     }
     for ( i = 0; i < mp->submaps; i++ ) {
         bits_get( br, 8 );
-        mp->floor[i] = (u8)bits_get( br, 8 );
-        mp->resid[i] = (u8)bits_get( br, 8 );
+        mp->floor[i] = (uint8_t)bits_get( br, 8 );
+        mp->resid[i] = (uint8_t)bits_get( br, 8 );
         if ( mp->floor[i] >= vb->nfloors || mp->resid[i] >= vb->nres ) {
             return DE_FORMAT;
         }
@@ -1060,12 +1069,12 @@ static int map_read( VB *vb, MAP *mp, BITS *br )
 /* ------------------------------------------------------------------ */
 /* the headers                                                         */
 /* ------------------------------------------------------------------ */
-static int is_header( const u8 *pkt, u32 len, int type )
+static int is_header( const uint8_t *pkt, unsigned int len, int type )
 {
     return len >= 7 && pkt[0] == type && mem_cmp( pkt + 1, "vorbis", 6 ) == 0;
 }
 
-int vb_ident( VBID *id, const u8 *pkt, u32 len )
+int vb_ident( VBID *id, const uint8_t *pkt, unsigned int len )
 {
     mem_set( id, 0, sizeof( VBID ) );
     if ( len < 30 || !is_header( pkt, len, 1 ) ) {
@@ -1073,9 +1082,9 @@ int vb_ident( VBID *id, const u8 *pkt, u32 len )
     }
     id->channels = pkt[11];
     id->rate = LE32( pkt + 12 );
-    id->br_max = (s32)LE32( pkt + 16 );
-    id->br_nom = (s32)LE32( pkt + 20 );
-    id->br_min = (s32)LE32( pkt + 24 );
+    id->br_max = (int32_t)LE32( pkt + 16 );
+    id->br_nom = (int32_t)LE32( pkt + 20 );
+    id->br_min = (int32_t)LE32( pkt + 24 );
     id->log0 = pkt[28] & 15;
     id->log1 = pkt[28] >> 4;
     if ( LE32( pkt + 7 ) != 0 || id->channels == 0 || id->rate == 0 || !(pkt[29] & 1)
@@ -1089,9 +1098,9 @@ int vb_ident( VBID *id, const u8 *pkt, u32 len )
 }
 
 /* "NAME=" at the start of a comment, any case: -> where the value starts, or 0 */
-static u32 tag_name( const u8 *field, u32 len, const char *name )
+static unsigned int tag_name( const uint8_t *field, unsigned int len, const char *name )
 {
-    u32 nl = str_len( name );
+    unsigned int nl = str_len( name );
 
     if ( len > nl && field[nl] == '=' && str_nicmp( (const char *)field, name, nl ) == 0 ) {
         return nl + 1;
@@ -1099,9 +1108,11 @@ static u32 tag_name( const u8 *field, u32 len, const char *name )
     return 0;
 }
 
-void vb_comment( const u8 *pkt, u32 len, DECINFO *info )
+void vb_comment( const uint8_t *pkt, unsigned int len, DECINFO *info )
 {
-    u32 at = 7, size, count, i, val;
+    unsigned int at = 7;
+    uint32_t size, count;
+    unsigned int i, val;
 
     if ( !is_header( pkt, len, 3 ) || len < at + 4 ) {
         return;
@@ -1190,11 +1201,11 @@ void vb_close( VB *vb )
 
 /* the weights for mixing a stream's channels to two, in halves: the
    channel orders of the specification's section 4.3.9 */
-static const u8 mix_left[9][8] = {
+static const uint8_t mix_left[9][8] = {
     { 0 }, { 2 }, { 2, 0 }, { 2, 1, 0 }, { 2, 0, 2, 0 }, { 2, 1, 0, 2, 0 },
     { 2, 1, 0, 2, 0, 1 }, { 2, 1, 0, 2, 0, 1, 1 }, { 2, 1, 0, 2, 0, 2, 0, 1 }
 };
-static const u8 mix_right[9][8] = {
+static const uint8_t mix_right[9][8] = {
     { 0 }, { 2 }, { 0, 2 }, { 0, 1, 2 }, { 0, 2, 0, 2 }, { 0, 1, 2, 0, 2 },
     { 0, 1, 2, 0, 2, 1 }, { 0, 1, 2, 0, 2, 1, 1 }, { 0, 1, 2, 0, 2, 0, 2, 1 }
 };
@@ -1202,13 +1213,13 @@ static const u8 mix_right[9][8] = {
 static void mix_setup( VB *vb )
 {
     int ch, nch = vb->nch;
-    u32 total = 0, wl, wr;
+    uint32_t total = 0, wl, wr;
 
     if ( nch == vb->opt.out_ch ) {
         vb->mixing = 0;
         for ( ch = 0; ch < nch; ch++ ) {
             vb->gain[ch] = 0x40000000L;
-            vb->side[ch] = (u8)(1 << ch);
+            vb->side[ch] = (uint8_t)(1 << ch);
         }
         return;
     }
@@ -1220,11 +1231,11 @@ static void mix_setup( VB *vb )
         wl = mix_left[nch][ch];
         wr = mix_right[nch][ch];
         if ( vb->opt.out_ch == 1 ) {
-            vb->gain[ch] = (s32)fx_umuldiv( wl + wr, 0x40000000UL, 2 * total );
+            vb->gain[ch] = (int32_t)fx_umuldiv( wl + wr, 0x40000000UL, 2 * total );
             vb->side[ch] = 1;
         } else {
-            vb->gain[ch] = (s32)fx_umuldiv( wl > wr ? wl : wr, 0x40000000UL, total );
-            vb->side[ch] = (u8)((wl ? 1 : 0) | (wr ? 2 : 0));
+            vb->gain[ch] = (int32_t)fx_umuldiv( wl > wr ? wl : wr, 0x40000000UL, total );
+            vb->side[ch] = (uint8_t)((wl ? 1 : 0) | (wr ? 2 : 0));
         }
     }
 }
@@ -1234,12 +1245,12 @@ static void mix_setup( VB *vb )
 static int floor_tables( VB *vb )
 {
     int ch, y;
-    u32 mant;
+    uint32_t mant;
     int exp, shift;
 
     for ( ch = 0; ch < vb->nch; ch++ ) {
-        vb->fmant[ch] = (u32 *)try_alloc( 256 * sizeof( u32 ) );
-        vb->fshift[ch] = (u8 *)try_alloc( 256 );
+        vb->fmant[ch] = (uint32_t *)try_alloc( 256 * sizeof( uint32_t ) );
+        vb->fshift[ch] = (uint8_t *)try_alloc( 256 );
         if ( vb->fmant[ch] == NULL || vb->fshift[ch] == NULL ) {
             return DE_NOMEM;
         }
@@ -1247,7 +1258,7 @@ static int floor_tables( VB *vb )
             mant = vb_floor1_mant[y];
             exp = vb_floor1_exp[y];
             if ( vb->gain[ch] != 0x40000000L ) {
-                mant = (u32)vb_mul30r( (s32)mant, vb->gain[ch] );
+                mant = (uint32_t)vb_mul30r( (int32_t)mant, vb->gain[ch] );
                 while ( mant != 0 && mant < 0x40000000UL ) {
                     mant <<= 1;
                     exp++;
@@ -1259,7 +1270,7 @@ static int floor_tables( VB *vb )
                 shift = 32;
             }
             vb->fmant[ch][y] = mant;
-            vb->fshift[ch][y] = (u8)shift;
+            vb->fshift[ch][y] = (uint8_t)shift;
         }
     }
     return DE_OK;
@@ -1287,7 +1298,7 @@ static int choose_qr( VB *vb )
                 }
             }
             if ( count > 0 ) {
-                bits = top + ilog( (u32)count - 1 );
+                bits = top + ilog( (uint32_t)count - 1 );
                 if ( bits > most ) {
                     most = bits;
                 }
@@ -1301,7 +1312,7 @@ static int choose_qr( VB *vb )
 static int setup_read( VB *vb, BITS *br )
 {
     int i, rc, type;
-    u32 count;
+    uint32_t count;
 
     vb->nbooks = (int)bits_get( br, 8 ) + 1;
     vb->books = (BOOK *)try_alloc( vb->nbooks * sizeof( BOOK ) );
@@ -1331,7 +1342,7 @@ static int setup_read( VB *vb, BITS *br )
     mem_set( vb->floors, 0, vb->nfloors * sizeof( FLOOR ) );
     for ( i = 0; i < vb->nfloors; i++ ) {
         type = (int)bits_get( br, 16 );
-        vb->floors[i].type = (u8)type;
+        vb->floors[i].type = (uint8_t)type;
         if ( type == 0 ) {
             rc = floor0_read( vb, &vb->floors[i], br );
         } else if ( type == 1 ) {
@@ -1352,7 +1363,7 @@ static int setup_read( VB *vb, BITS *br )
     mem_set( vb->res, 0, vb->nres * sizeof( RESID ) );
     for ( i = 0; i < vb->nres; i++ ) {
         type = (int)bits_get( br, 16 );
-        vb->res[i].type = (u8)type;
+        vb->res[i].type = (uint8_t)type;
         if ( type > 2 ) {
             return DE_FORMAT;
         }
@@ -1376,11 +1387,11 @@ static int setup_read( VB *vb, BITS *br )
     }
     vb->nmodes = (int)bits_get( br, 6 ) + 1;
     for ( i = 0; i < vb->nmodes; i++ ) {
-        vb->mode_flag[i] = (u8)bits_get( br, 1 );
+        vb->mode_flag[i] = (uint8_t)bits_get( br, 1 );
         if ( bits_get( br, 16 ) != 0 || bits_get( br, 16 ) != 0 ) {
             return DE_FORMAT;
         }
-        vb->mode_map[i] = (u8)bits_get( br, 8 );
+        vb->mode_map[i] = (uint8_t)bits_get( br, 8 );
         if ( vb->mode_map[i] >= vb->nmaps ) {
             return DE_FORMAT;
         }
@@ -1388,7 +1399,7 @@ static int setup_read( VB *vb, BITS *br )
     if ( !bits_get( br, 1 ) || br->eop ) {
         return DE_FORMAT;
     }
-    vb->mode_bits = ilog( (u32)vb->nmodes - 1 );
+    vb->mode_bits = ilog( (uint32_t)vb->nmodes - 1 );
     return DE_OK;
 }
 
@@ -1396,7 +1407,7 @@ static int setup_read( VB *vb, BITS *br )
 static int setup_build( VB *vb )
 {
     int i, b, rc, down = vb->opt.down, out = vb->opt.out_ch;
-    u32 lines = (vb->n[1] >> down) / 2, room, parts;
+    unsigned int lines = (vb->n[1] >> down) / 2, room, parts;
     const RESID *rs;
 
     vb->qr = choose_qr( vb );
@@ -1417,13 +1428,13 @@ static int setup_build( VB *vb )
             return rc;
         }
         rs = &vb->res[i];
-        parts = (rs->type == 2 ? (vb->n[1] / 2) * (u32)vb->nch : vb->n[1] / 2) / rs->psize;
+        parts = (rs->type == 2 ? (vb->n[1] / 2) * (unsigned int)vb->nch : vb->n[1] / 2) / rs->psize;
         if ( parts > room ) {
             room = parts;
         }
     }
     vb->cls_room = room;
-    vb->cls = (u8 *)try_alloc( room * (u32)vb->nch );
+    vb->cls = (uint8_t *)try_alloc( room * (unsigned int)vb->nch );
     if ( vb->cls == NULL ) {
         return DE_NOMEM;
     }
@@ -1440,7 +1451,7 @@ static int setup_build( VB *vb )
                 return rc;
             }
             if ( vb->f0coef == NULL ) {
-                vb->f0coef = (s32 *)try_alloc( (u32)vb->nch * F0_MAX * sizeof( s32 ) );
+                vb->f0coef = (int32_t *)try_alloc( (unsigned int)vb->nch * F0_MAX * sizeof( int32_t ) );
                 if ( vb->f0coef == NULL ) {
                     return DE_NOMEM;
                 }
@@ -1453,24 +1464,24 @@ static int setup_build( VB *vb )
         return rc;
     }
     for ( i = 0; i < vb->nch; i++ ) {
-        vb->vec[i] = (s32 *)try_alloc( lines * sizeof( s32 ) );
+        vb->vec[i] = (int32_t *)try_alloc( lines * sizeof( int32_t ) );
         if ( vb->vec[i] == NULL ) {
             return DE_NOMEM;
         }
     }
     for ( i = 0; i < out; i++ ) {
         if ( vb->mixing ) {
-            vb->mixed[i] = (s32 *)try_alloc( lines * sizeof( s32 ) );
+            vb->mixed[i] = (int32_t *)try_alloc( lines * sizeof( int32_t ) );
         }
-        vb->ubuf[i][0] = (s32 *)try_alloc( lines * sizeof( s32 ) );
-        vb->ubuf[i][1] = (s32 *)try_alloc( lines * sizeof( s32 ) );
+        vb->ubuf[i][0] = (int32_t *)try_alloc( lines * sizeof( int32_t ) );
+        vb->ubuf[i][1] = (int32_t *)try_alloc( lines * sizeof( int32_t ) );
         if ( (vb->mixing && vb->mixed[i] == NULL) || vb->ubuf[i][0] == NULL
              || vb->ubuf[i][1] == NULL ) {
             return DE_NOMEM;
         }
     }
-    vb->work = (s32 *)try_alloc( lines * sizeof( s32 ) );
-    vb->pcm = (s16 *)try_alloc( lines * (u32)out * sizeof( s16 ) );
+    vb->work = (int32_t *)try_alloc( lines * sizeof( int32_t ) );
+    vb->pcm = (int16_t *)try_alloc( lines * (unsigned int)out * sizeof( int16_t ) );
     if ( vb->work == NULL || vb->pcm == NULL ) {
         return DE_NOMEM;
     }
@@ -1482,7 +1493,7 @@ static int setup_build( VB *vb )
     return DE_OK;
 }
 
-int vb_open( VB **vbp, const VBID *id, const u8 *pkt, u32 len, const VBOPT *opt )
+int vb_open( VB **vbp, const VBID *id, const uint8_t *pkt, unsigned int len, const VBOPT *opt )
 {
     VB *vb;
     BITS br;
@@ -1525,17 +1536,17 @@ void vb_restart( VB *vb )
 /* floor 1 in a packet                                                 */
 /* ------------------------------------------------------------------ */
 /* -> 1 with the points in y, or 0: the channel is silent */
-static int floor1_decode( const VB *vb, const FLOOR *fl, BITS *br, s32 *y )
+static int floor1_decode( const VB *vb, const FLOOR *fl, BITS *br, int32_t *y )
 {
     int rbits = ilog( f1_range[fl->mult - 1] - 1U ), i, j, off = 2, cls, cbits, book;
-    u32 cval, csub;
-    s32 e;
+    uint32_t cval, csub;
+    int32_t e;
 
     if ( !bits_small( br, 1 ) ) {
         return 0;
     }
-    y[0] = (s32)bits_small( br, rbits );
-    y[1] = (s32)bits_small( br, rbits );
+    y[0] = (int32_t)bits_small( br, rbits );
+    y[1] = (int32_t)bits_small( br, rbits );
     for ( i = 0; i < fl->parts; i++ ) {
         cls = fl->pclass[i];
         cbits = fl->cbits[cls];
@@ -1546,7 +1557,7 @@ static int floor1_decode( const VB *vb, const FLOOR *fl, BITS *br, s32 *y )
             if ( e < 0 ) {
                 return 0;
             }
-            cval = (u32)e;
+            cval = (uint32_t)e;
         }
         for ( j = 0; j < fl->cdim[cls]; j++ ) {
             book = fl->subbook[cls][cval & csub];
@@ -1567,9 +1578,9 @@ static int floor1_decode( const VB *vb, const FLOOR *fl, BITS *br, s32 *y )
 }
 
 /* the point on the line from (x0, y0) to (x1, y1) at x */
-static s32 render_point( s32 x0, s32 y0, s32 x1, s32 y1, s32 x )
+static int32_t render_point( int32_t x0, int32_t y0, int32_t x1, int32_t y1, int32_t x )
 {
-    s32 dy = y1 - y0, ady = dy < 0 ? -dy : dy, off;
+    int32_t dy = y1 - y0, ady = dy < 0 ? -dy : dy, off;
 
     off = ady * (x - x0) / (x1 - x0);
     return dy < 0 ? y0 - off : y0 + off;
@@ -1577,9 +1588,9 @@ static s32 render_point( s32 x0, s32 y0, s32 x1, s32 y1, s32 x )
 
 /* step 1: the points' final values, each kept in [0, range) as it is
    made (a valid stream never leaves it) */
-static void floor1_final( const FLOOR *fl, s32 *y, u8 *flag )
+static void floor1_final( const FLOOR *fl, int32_t *y, uint8_t *flag )
 {
-    s32 range = f1_range[fl->mult - 1], pred, val, high, low, room;
+    int32_t range = f1_range[fl->mult - 1], pred, val, high, low, room;
     int i, lo, hi;
 
     flag[0] = flag[1] = 1;
@@ -1615,24 +1626,25 @@ static void floor1_final( const FLOOR *fl, s32 *y, u8 *flag )
 
 /* residue times floor value, back in Q24: rounded at the last place */
 #define FMUL( res, mant, shift ) \
-    ((shift) <= 32 ? (fx_mulsh( (s32)(mant), (res), (shift) - 1 ) + 1) >> 1 \
-                   : ((fx_mulhi( (s32)(mant), (res) ) >> ((shift) - 33)) + 1) >> 1)
+    ((shift) <= 32 ? (fx_mulsh( (int32_t)(mant), (res), (shift) - 1 ) + 1) >> 1 \
+                   : ((fx_mulhi( (int32_t)(mant), (res) ) >> ((shift) - 33)) + 1) >> 1)
 
 /* one of the specification's integer lines, from x0 up to x1 (not
    included), each point multiplying the residue line under it */
-static void floor1_line( s32 *vec, u32 x0, s32 y0, u32 x1, s32 y1, u32 limit,
-                         const u32 *mant, const u8 *shift )
+static void floor1_line( int32_t *vec, unsigned int x0, int32_t y0, unsigned int x1, int32_t y1,
+                         unsigned int limit, const uint32_t *mant, const uint8_t *shift )
 {
-    s32 dy = y1 - y0, base, step, y = y0, res;
-    u32 adx = x1 - x0, ady, err = 0, x, end;
+    int32_t dy = y1 - y0, base, step, y = y0, res;
+    uint32_t adx = x1 - x0, ady, err = 0;
+    unsigned int x, end;
     int sh;
 
     if ( x0 >= limit || x1 <= x0 ) {
         return;
     }
-    ady = (u32)(dy < 0 ? -dy : dy);
-    base = (s32)(ady / adx);
-    ady -= (u32)base * adx;
+    ady = (uint32_t)(dy < 0 ? -dy : dy);
+    base = (int32_t)(ady / adx);
+    ady -= (uint32_t)base * adx;
     if ( dy < 0 ) {
         base = -base;
         step = base - 1;
@@ -1660,14 +1672,14 @@ static void floor1_line( s32 *vec, u32 x0, s32 y0, u32 x1, s32 y1, u32 limit,
 }
 
 /* step 2: the curve through the points that count, into the residue */
-static void floor1_apply( const VB *vb, const FLOOR *fl, int ch, u32 half, u32 limit )
+static void floor1_apply( const VB *vb, const FLOOR *fl, int ch, unsigned int half, unsigned int limit )
 {
-    s32 y[F1_MAX];
-    u8 flag[F1_MAX];
-    s32 lx = 0, ly, hx = 0, hy;
+    int32_t y[F1_MAX];
+    uint8_t flag[F1_MAX];
+    int32_t lx = 0, ly, hx = 0, hy;
     int k, i;
 
-    mem_cpy( y, vb->fy[ch], fl->nval * sizeof( s32 ) );
+    mem_cpy( y, vb->fy[ch], fl->nval * sizeof( int32_t ) );
     floor1_final( fl, y, flag );
     ly = y[fl->order[0]] * fl->mult;
     hy = ly;
@@ -1676,29 +1688,30 @@ static void floor1_apply( const VB *vb, const FLOOR *fl, int ch, u32 half, u32 l
         if ( flag[i] ) {
             hx = fl->x[i];
             hy = y[i] * fl->mult;
-            floor1_line( vb->vec[ch], (u32)lx, ly, (u32)hx, hy, limit, vb->fmant[ch],
+            floor1_line( vb->vec[ch], (unsigned int)lx, ly, (unsigned int)hx, hy, limit, vb->fmant[ch],
                          vb->fshift[ch] );
             lx = hx;
             ly = hy;
         }
     }
-    if ( (u32)hx < half ) {
-        floor1_line( vb->vec[ch], (u32)hx, hy, half, hy, limit, vb->fmant[ch], vb->fshift[ch] );
+    if ( (unsigned int)hx < half ) {
+        floor1_line( vb->vec[ch], (unsigned int)hx, hy, half, hy, limit, vb->fmant[ch], vb->fshift[ch] );
     }
 }
 
 /* ------------------------------------------------------------------ */
 /* floor 0 in a packet                                                 */
 /* ------------------------------------------------------------------ */
-static int floor0_decode( const VB *vb, const FLOOR *fl, BITS *br, s32 *amp, s32 *coef )
+static int floor0_decode( const VB *vb, const FLOOR *fl, BITS *br, int32_t *amp, int32_t *coef )
 {
-    u32 bn, count, j;
+    uint32_t bn;
+    unsigned int count, j;
     const BOOK *bk;
-    const s32 *row;
-    s32 e, last = 0, val;
+    const int32_t *row;
+    int32_t e, last = 0, val;
     int up;
 
-    *amp = (s32)bits_get( br, fl->ampbits );
+    *amp = (int32_t)bits_get( br, fl->ampbits );
     if ( *amp <= 0 || br->eop ) {
         return 0;
     }
@@ -1714,7 +1727,7 @@ static int floor0_decode( const VB *vb, const FLOOR *fl, BITS *br, s32 *amp, s32
         if ( e < 0 ) {
             return 0;
         }
-        row = bk->vals + (u32)e * bk->dims;
+        row = bk->vals + (unsigned int)e * bk->dims;
         for ( j = 0; j < bk->dims; j++ ) {
             val = sat_add( up > 0 ? row[j] << up : row[j], last );
             if ( count + j < fl->order0 ) {
@@ -1729,7 +1742,7 @@ static int floor0_decode( const VB *vb, const FLOOR *fl, BITS *br, s32 *amp, s32
     return 1;
 }
 
-static void vbf_set( VBF *f, u32 hi, u32 lo, int e )
+static void vbf_set( VBF *f, uint32_t hi, uint32_t lo, int e )
 {
     int top;
 
@@ -1749,7 +1762,7 @@ static void vbf_set( VBF *f, u32 hi, u32 lo, int e )
 
 static void vbf_mul( VBF *f, const VBF *g )
 {
-    u32 hi, lo;
+    uint32_t hi, lo;
 
     if ( f->m == 0 || g->m == 0 ) {
         f->m = 0;
@@ -1763,7 +1776,7 @@ static void vbf_mul( VBF *f, const VBF *g )
 static void vbf_add( VBF *f, const VBF *g )
 {
     VBF big = *f, small = *g;
-    u32 sum, part;
+    uint32_t sum, part;
     int diff;
 
     if ( g->m == 0 ) {
@@ -1791,26 +1804,27 @@ static void vbf_add( VBF *f, const VBF *g )
 
 /* log2 in Q16, from the table: the eight bits under the leading one
    pick a step, the next sixteen say how far into it */
-static s32 vbf_log2( const VBF *f )
+static int32_t vbf_log2( const VBF *f )
 {
-    u32 idx = (f->m >> 23) & 255, part = (f->m >> 7) & 0xFFFF, frac;
+    uint32_t idx = (f->m >> 23) & 255, part = (f->m >> 7) & 0xFFFF, frac;
 
     frac = vb_log2_tab[idx] + (((vb_log2_tab[idx + 1] - vb_log2_tab[idx]) * part) >> 16);
-    return (s32)(((s32)f->e + 31) * 65536L + (s32)frac);
+    return (int32_t)(((int32_t)f->e + 31) * 65536L + (int32_t)frac);
 }
 
 /* The product of |cos c - cos w| over every other coefficient from
    "first" on: one multiply a coefficient, kept normalized.  The square
    and the fours are put on afterwards. */
-static void lsp_product( const s32 *cosc, u32 first, u32 order, s32 cosw, VBF *out )
+static void lsp_product( const int32_t *cosc, unsigned int first, unsigned int order, int32_t cosw, VBF *out )
 {
-    u32 k, m = 0x80000000UL, hi, d;
+    unsigned int k;
+    uint32_t m = 0x80000000UL, hi, d;
     int e = -31, top;
-    s32 diff;
+    int32_t diff;
 
     for ( k = first; k < order; k += 2 ) {
         diff = (cosc[k] >> 1) - (cosw >> 1);            /* Q29 */
-        d = (u32)(diff < 0 ? -diff : diff);
+        d = (uint32_t)(diff < 0 ? -diff : diff);
         hi = vb_umulhi( m, d );                         /* m 2^e d 2^-29 = hi 2^(e + 3) */
         if ( hi == 0 ) {
             out->m = 0;
@@ -1826,9 +1840,9 @@ static void lsp_product( const s32 *cosc, u32 first, u32 order, s32 cosw, VBF *o
 }
 
 /* 2^(f / 65536) for f in [0, 65536), Q30 */
-static u32 exp2_q30( u32 frac )
+static uint32_t exp2_q30( uint32_t frac )
 {
-    u32 idx = frac >> 8, part = frac & 255;
+    uint32_t idx = frac >> 8, part = frac & 255;
 
     return vb_exp2_tab[idx] + (((vb_exp2_tab[idx + 1] - vb_exp2_tab[idx]) * part) >> 8);
 }
@@ -1836,38 +1850,38 @@ static u32 exp2_q30( u32 frac )
 /* The curve at one Bark position as a mantissa and the FMUL shift, the
    channel's weight included:
    exp( .11512925 ( A / sqrt(p + q) - offset ) ), A = amp * offset / (2^bits - 1) */
-static void floor0_value( const VB *vb, const FLOOR *fl, int ch, s32 amp, const VBF *sum,
-                          u32 *mant_out, int *shift_out )
+static void floor0_value( const VB *vb, const FLOOR *fl, int ch, int32_t amp, const VBF *sum,
+                          uint32_t *mant_out, int *shift_out )
 {
-    s32 a16, half, neg, ip, term, diff, z;
-    u32 m;
+    int32_t a16, half, neg, ip, term, diff, z;
+    uint32_t m;
     int exp, shift;
 
-    a16 = (s32)fx_umuldiv( (u32)amp, (u32)fl->ampoff << 16, (1UL << fl->ampbits) - 1 );
+    a16 = (int32_t)fx_umuldiv( (uint32_t)amp, (uint32_t)fl->ampoff << 16, (1UL << fl->ampbits) - 1 );
     if ( sum->m == 0 ) {
         term = 0x7FFFFFFFL;
     } else {
         half = vbf_log2( sum ) >> 1;
         neg = -half;
         ip = neg >> 16;
-        term = fx_mul30( a16, (s32)exp2_q30( (u32)neg & 0xFFFF ) );
+        term = fx_mul30( a16, (int32_t)exp2_q30( (uint32_t)neg & 0xFFFF ) );
         if ( ip >= 0 ) {
             term = ip >= 15 || term > (0x7FFFFFFFL >> ip) ? 0x7FFFFFFFL : term << ip;
         } else {
             term = -ip >= 31 ? 0 : term >> -ip;
         }
     }
-    diff = term - ((s32)fl->ampoff << 16);
+    diff = term - ((int32_t)fl->ampoff << 16);
     z = fx_mulhi( diff, 713378626L );                   /* log2(10) / 20 */
     if ( z > 4 * 65536L ) {
         z = 4 * 65536L;
     } else if ( z < -60 * 65536L ) {
         z = -60 * 65536L;
     }
-    m = exp2_q30( (u32)z & 0xFFFF );
+    m = exp2_q30( (uint32_t)z & 0xFFFF );
     exp = -(int)(z >> 16);
     if ( vb->gain[ch] != 0x40000000L ) {
-        m = (u32)vb_mul30r( (s32)m, vb->gain[ch] );
+        m = (uint32_t)vb_mul30r( (int32_t)m, vb->gain[ch] );
         while ( m != 0 && m < 0x40000000UL ) {
             m <<= 1;
             exp++;
@@ -1886,19 +1900,21 @@ static void floor0_value( const VB *vb, const FLOOR *fl, int ch, s32 amp, const 
 
 /* the curve times the residue.  Runs of lines on one Bark position
    share a value, and a run whose residue is all zero needs none. */
-static void floor0_apply( VB *vb, const FLOOR *fl, int ch, int which, u32 limit )
+static void floor0_apply( VB *vb, const FLOOR *fl, int ch, int which, unsigned int limit )
 {
-    const u16 *map = fl->map[which];
-    const s32 *coef = vb->f0coef + ch * F0_MAX;
-    s32 cosc[F0_MAX], cosw, sinw, res, any;
+    const uint16_t *map = fl->map[which];
+    const int32_t *coef = vb->f0coef + ch * F0_MAX;
+    int32_t cosc[F0_MAX], cosw, sinw, res, any;
     VBF p, q, pre;
-    u32 i, k, run, mv, mant, order = fl->order0;
+    unsigned int i, k, run, mv;
+    uint32_t mant;
+    unsigned int order = fl->order0;
     int shift;
-    s32 *vec = vb->vec[ch];
+    int32_t *vec = vb->vec[ch];
 
     for ( k = 0; k < order; k++ ) {
         /* radians (Q24) to turns: times 2^8 / (2 pi) */
-        vb_sincos( (u32)fx_mul16( coef[k], 2670177L ), &cosc[k], &sinw );
+        vb_sincos( (uint32_t)fx_mul16( coef[k], 2670177L ), &cosc[k], &sinw );
     }
     for ( i = 0; i < limit; ) {
         mv = map[i];
@@ -1919,15 +1935,15 @@ static void floor0_apply( VB *vb, const FLOOR *fl, int ch, int which, u32 limit 
         q.e += 2 * (int)((order + 1) / 2);
         if ( order & 1 ) {
             /* p times 1 - cos^2 = sin^2, q times 1/4 */
-            vbf_set( &pre, 0, (u32)(0x40000000L - vb_mul30r( cosw, cosw )), -30 );
+            vbf_set( &pre, 0, (uint32_t)(0x40000000L - vb_mul30r( cosw, cosw )), -30 );
             vbf_mul( &p, &pre );
             q.e -= 2;
         } else {
             /* p times (1 - cos) / 2, q times (1 + cos) / 2, made from
                halves so that cos = 1 cannot overflow */
-            vbf_set( &pre, 0, (u32)(0x20000000L - (cosw >> 1)), -30 );
+            vbf_set( &pre, 0, (uint32_t)(0x20000000L - (cosw >> 1)), -30 );
             vbf_mul( &p, &pre );
-            vbf_set( &pre, 0, (u32)(0x20000000L + (cosw >> 1)), -30 );
+            vbf_set( &pre, 0, (uint32_t)(0x20000000L + (cosw >> 1)), -30 );
             vbf_mul( &q, &pre );
         }
         vbf_add( &p, &q );
@@ -1945,12 +1961,12 @@ static void floor0_apply( VB *vb, const FLOOR *fl, int ch, int which, u32 limit 
 /* residue in a packet                                                 */
 /* ------------------------------------------------------------------ */
 /* one partition of format 0 or 1, "len" lines from "at" */
-static int part_decode( const BOOK *bk, BITS *br, s32 *vec, u32 at, u32 len, u32 limit,
-                        int type )
+static int part_decode( const BOOK *bk, BITS *br, int32_t *vec, unsigned int at, unsigned int len,
+                        unsigned int limit, int type )
 {
-    u32 dims = bk->dims, i, j, step, pos;
-    const s32 *row;
-    s32 e;
+    unsigned int dims = bk->dims, i, j, step, pos;
+    const int32_t *row;
+    int32_t e;
 
     if ( type == 0 ) {
         step = len / dims;
@@ -1959,7 +1975,7 @@ static int part_decode( const BOOK *bk, BITS *br, s32 *vec, u32 at, u32 len, u32
             if ( e < 0 ) {
                 return -1;
             }
-            row = bk->vals + (u32)e * dims;
+            row = bk->vals + (unsigned int)e * dims;
             for ( j = 0, pos = at + i; j < dims; j++, pos += step ) {
                 if ( pos < limit ) {
                     vec[pos] += row[j];
@@ -1975,12 +1991,12 @@ static int part_decode( const BOOK *bk, BITS *br, s32 *vec, u32 at, u32 len, u32
         }
         pos = at + i;
         if ( pos + dims <= limit ) {
-            row = bk->vals + (u32)e * dims;
+            row = bk->vals + (unsigned int)e * dims;
             for ( j = 0; j < dims; j++ ) {
                 vec[pos + j] += row[j];
             }
         } else if ( pos < limit ) {
-            row = bk->vals + (u32)e * dims;
+            row = bk->vals + (unsigned int)e * dims;
             for ( j = 0; j < dims && pos + j < limit; j++ ) {
                 vec[pos + j] += row[j];
             }
@@ -1990,13 +2006,13 @@ static int part_decode( const BOOK *bk, BITS *br, s32 *vec, u32 at, u32 len, u32
 }
 
 /* one partition of format 2: the channels' lines interleaved */
-static int part_decode2( const BOOK *bk, BITS *br, s32 **vecs, u32 count, u32 at, u32 len,
-                         u32 limit )
+static int part_decode2( const BOOK *bk, BITS *br, int32_t **vecs, unsigned int count, unsigned int at,
+                         unsigned int len, unsigned int limit )
 {
-    u32 dims = bk->dims, i, j, ch, line;
-    const s32 *row;
-    s32 *vec0, *vec1;
-    s32 e;
+    unsigned int dims = bk->dims, i, j, ch, line;
+    const int32_t *row;
+    int32_t *vec0, *vec1;
+    int32_t e;
 
     if ( count == 2 && (at & 1) == 0 && (dims & 1) == 0 ) {
         /* stereo, the usual case: pairs of lines */
@@ -2008,7 +2024,7 @@ static int part_decode2( const BOOK *bk, BITS *br, s32 **vecs, u32 count, u32 at
             if ( e < 0 ) {
                 return -1;
             }
-            row = bk->vals + (u32)e * dims;
+            row = bk->vals + (unsigned int)e * dims;
             if ( line + dims / 2 <= limit ) {
                 for ( j = 0; j < dims; j += 2 ) {
                     vec0[line] += row[j];
@@ -2034,7 +2050,7 @@ static int part_decode2( const BOOK *bk, BITS *br, s32 **vecs, u32 count, u32 at
         if ( e < 0 ) {
             return -1;
         }
-        row = bk->vals + (u32)e * dims;
+        row = bk->vals + (unsigned int)e * dims;
         for ( j = 0; j < dims; j++ ) {
             if ( line < limit ) {
                 vecs[ch][line] += row[j];
@@ -2048,16 +2064,16 @@ static int part_decode2( const BOOK *bk, BITS *br, s32 **vecs, u32 count, u32 at
     return 0;
 }
 
-static void resid_decode( VB *vb, const RESID *rs, s32 **vecs, const u8 *skip, u32 count,
-                          u32 half, u32 limit, BITS *br )
+static void resid_decode( VB *vb, const RESID *rs, int32_t **vecs, const uint8_t *skip, unsigned int count,
+                          unsigned int half, unsigned int limit, BITS *br )
 {
-    u32 actual = rs->type == 2 ? half * count : half, begin, end, parts, pc, pass, i, ch;
-    u32 rows = rs->type == 2 ? 1 : count, room = vb->cls_room, cdims = rs->cdims, at;
+    unsigned int actual = rs->type == 2 ? half * count : half, begin, end, parts, pc, pass, i, ch;
+    unsigned int rows = rs->type == 2 ? 1 : count, room = vb->cls_room, cdims = rs->cdims, at;
     const BOOK *cb = &vb->books[rs->classbook];
-    const u8 *cl;
-    u8 none = 0, *dst;
+    const uint8_t *cl;
+    uint8_t none = 0, *dst;
     int book;
-    s32 e;
+    int32_t e;
 
     if ( rs->type == 2 ) {
         for ( ch = 0; ch < count && skip[ch]; ch++ ) {
@@ -2087,7 +2103,7 @@ static void resid_decode( VB *vb, const RESID *rs, s32 **vecs, const u8 *skip, u
                     if ( e < 0 ) {
                         return;
                     }
-                    cl = rs->ctab + (u32)e * cdims;
+                    cl = rs->ctab + (unsigned int)e * cdims;
                     dst = vb->cls + ch * room + pc;
                     for ( i = 0; i < cdims && pc + i < parts; i++ ) {
                         dst[i] = cl[i];
@@ -2125,13 +2141,13 @@ static void resid_decode( VB *vb, const RESID *rs, s32 **vecs, const u8 *skip, u
 /* the mode of an audio packet, or -1 */
 static int packet_mode( const VB *vb, BITS *br )
 {
-    u32 mode;
+    uint32_t mode;
 
     if ( bits_small( br, 1 ) != 0 ) {
         return -1;
     }
     mode = bits_small( br, vb->mode_bits );
-    if ( br->eop || mode >= (u32)vb->nmodes ) {
+    if ( br->eop || mode >= (uint32_t)vb->nmodes ) {
         return -1;
     }
     if ( vb->mode_flag[mode] ) {
@@ -2143,7 +2159,7 @@ static int packet_mode( const VB *vb, BITS *br )
     return (int)mode;
 }
 
-u32 vb_block( const VB *vb, const u8 *pkt, u32 len )
+unsigned int vb_block( const VB *vb, const uint8_t *pkt, unsigned int len )
 {
     BITS br;
     int mode;
@@ -2160,7 +2176,7 @@ static void eq_update( VB *vb )
 {
     const EQSET *eq = vb->opt.eq;
     int b, flat;
-    u32 i, half;
+    unsigned int i, half;
 
     if ( eq == NULL ) {
         vb->use_eq = 0;
@@ -2176,7 +2192,7 @@ static void eq_update( VB *vb )
         return;
     }
     if ( vb->eqgain == NULL ) {
-        vb->eqgain = (u32 *)try_alloc( (vb->n[1] / 2) * sizeof( u32 ) );
+        vb->eqgain = (uint32_t *)try_alloc( (vb->n[1] / 2) * sizeof( uint32_t ) );
         if ( vb->eqgain == NULL ) {
             return;
         }
@@ -2194,19 +2210,19 @@ static void eq_update( VB *vb )
             return;
         }
     }
-    vb->use_eq = (u8)!flat;
+    vb->use_eq = (uint8_t)!flat;
 }
 
-u32 vb_decode( VB *vb, const u8 *pkt, u32 len, const s16 **pcm )
+unsigned int vb_decode( VB *vb, const uint8_t *pkt, unsigned int len, const int16_t **pcm )
 {
     BITS br;
     int mode, ch, j, sub, small, which, oc, out = vb->opt.out_ch, nch = vb->nch, silent;
     const MAP *mp;
     const FLOOR *fl;
-    u8 noresidue[VB_MAX_CH], skip[VB_MAX_CH];
-    s32 *bundle[VB_MAX_CH], *m, *a, *dst, *src, mv, av, sv, sneg, apos;
-    u32 half, limit, n, i, count, frames = 0;
-    s32 *u, *spec;
+    uint8_t noresidue[VB_MAX_CH], skip[VB_MAX_CH];
+    int32_t *bundle[VB_MAX_CH], *m, *a, *dst, *src, mv, av, sv, sneg, apos;
+    unsigned int half, limit, n, i, count, frames = 0;
+    int32_t *u, *spec;
 
     *pcm = vb->pcm;
     if ( len == 0 ) {
@@ -2227,12 +2243,12 @@ u32 vb_decode( VB *vb, const u8 *pkt, u32 len, const s16 **pcm )
     for ( ch = 0; ch < nch; ch++ ) {
         fl = &vb->floors[mp->floor[mp->mux[ch]]];
         if ( fl->type == 1 ) {
-            vb->used[ch] = (u8)floor1_decode( vb, fl, &br, vb->fy[ch] );
+            vb->used[ch] = (uint8_t)floor1_decode( vb, fl, &br, vb->fy[ch] );
         } else {
-            vb->used[ch] = (u8)floor0_decode( vb, fl, &br, &vb->f0amp[ch],
-                                              vb->f0coef + ch * F0_MAX );
+            vb->used[ch] = (uint8_t)floor0_decode( vb, fl, &br, &vb->f0amp[ch],
+                                                   vb->f0coef + ch * F0_MAX );
         }
-        noresidue[ch] = (u8)!vb->used[ch];
+        noresidue[ch] = (uint8_t)!vb->used[ch];
     }
     for ( i = 0; i < mp->steps; i++ ) {
         if ( !noresidue[mp->mag[i]] || !noresidue[mp->ang[i]] ) {
@@ -2240,7 +2256,7 @@ u32 vb_decode( VB *vb, const u8 *pkt, u32 len, const s16 **pcm )
         }
     }
     for ( ch = 0; ch < nch; ch++ ) {
-        mem_set( vb->vec[ch], 0, limit * sizeof( s32 ) );
+        mem_set( vb->vec[ch], 0, limit * sizeof( int32_t ) );
     }
 
     /* the residues, by submap */
@@ -2268,7 +2284,7 @@ u32 vb_decode( VB *vb, const u8 *pkt, u32 len, const s16 **pcm )
         for ( i = 0; i < limit; i++ ) {
             mv = m[i];
             av = a[i];
-            sneg = (mv - 1) >> 31;          /* -1 when mv <= 0 (mv is far from the s32 limit) */
+            sneg = (mv - 1) >> 31;          /* -1 when mv <= 0 (mv is far from the int32_t limit) */
             apos = (-av) >> 31;             /* -1 when av > 0 */
             sv = (av ^ sneg) - sneg;
             m[i] = mv + (sv & ~apos);
@@ -2280,7 +2296,7 @@ u32 vb_decode( VB *vb, const u8 *pkt, u32 len, const s16 **pcm )
     for ( ch = 0; ch < nch; ch++ ) {
         if ( !vb->used[ch] ) {
             if ( !vb->mixing ) {
-                mem_set( vb->vec[ch], 0, limit * sizeof( s32 ) );
+                mem_set( vb->vec[ch], 0, limit * sizeof( int32_t ) );
             }
             continue;
         }
@@ -2297,7 +2313,7 @@ u32 vb_decode( VB *vb, const u8 *pkt, u32 len, const s16 **pcm )
         silent = 1;
         if ( vb->mixing ) {
             spec = vb->mixed[oc];
-            mem_set( spec, 0, limit * sizeof( s32 ) );
+            mem_set( spec, 0, limit * sizeof( int32_t ) );
             for ( ch = 0; ch < nch; ch++ ) {
                 if ( vb->used[ch] && (vb->side[ch] & (1 << oc)) ) {
                     src = vb->vec[ch];
@@ -2314,7 +2330,7 @@ u32 vb_decode( VB *vb, const u8 *pkt, u32 len, const s16 **pcm )
         }
         u = vb->ubuf[oc][vb->cur ^ 1];
         if ( silent ) {
-            mem_set( u, 0, limit * sizeof( s32 ) );
+            mem_set( u, 0, limit * sizeof( int32_t ) );
         } else {
             vb_imdct( &vb->md[which], &vb->fft, spec, vb->work, u, vb->opt.fast, vb->use_eq );
         }

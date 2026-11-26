@@ -11,17 +11,17 @@
 #include "scandisk.h"
 
 typedef struct {
-    DIRBUF *dir;
-    u32     idx;
-    LFNRUN  run;
-    char    lname[LFN_MAX + 1];         /* long name, or "" */
-    char    sname[13];                  /* 8.3 name */
+    DIRBUF      *dir;
+    unsigned int idx;
+    LFNRUN       run;
+    char         lname[LFN_MAX + 1];    /* long name, or "" */
+    char         sname[13];             /* 8.3 name */
 } DITER;
 
 /* next 8.3 entry of a directory, with its long name if it has one */
-static u8 *dir_next( DITER *it )
+static uint8_t *dir_next( DITER *it )
 {
-    u8 *ent;
+    uint8_t *ent;
 
     while ( it->idx < it->dir->nent ) {
         ent = it->dir->data + it->idx * DE_LEN;
@@ -64,12 +64,12 @@ static void iter_init( DITER *it, DIRBUF *dir )
  * Step from directory *cur into component name.  *path grows by the
  * name as stored on disk.  Returns 0 on success.
  */
-static int step( u32 *cur, char **path, const char *name, DITER *it )
+static int step( uint32_t *cur, char **path, const char *name, DITER *it )
 {
     DIRBUF dir;
-    u8 *ent;
+    uint8_t *ent;
     char *np;
-    u32 clus;
+    uint32_t clus;
     int found = 0;
 
     if ( str_icmp( name, "." ) == 0 ) {
@@ -120,7 +120,7 @@ static int step( u32 *cur, char **path, const char *name, DITER *it )
 }
 
 /* walk a "\"-separated list of components; 0 = all found */
-static int walk( u32 *cur, char **path, const char *src, DITER *it )
+static int walk( uint32_t *cur, char **path, const char *src, DITER *it )
 {
     char comp[LFN_MAX + 1];
     int len;
@@ -141,9 +141,10 @@ static int walk( u32 *cur, char **path, const char *src, DITER *it )
     return 0;
 }
 
-static u32 pieces( u32 clus )
+static unsigned int pieces( uint32_t clus )
 {
-    u32 count = 1, steps = 0, next;
+    unsigned int count = 1, steps = 0;
+    uint32_t     next;
 
     if ( !CLUS_OK( clus ) ) {
         return 0;
@@ -167,10 +168,11 @@ int frag_report( int drive, const char *spec )
     const char *slash = NULL, *pat;
     char *dirpart, *path, *full;
     char cwd[LFN_MAX + 1], line[LFN_MAX + 80];
-    u32 cur = 0, len, count;
+    uint32_t     cur = 0;
+    unsigned int len, count;
     int found = 0, fragmented = 0;
     DIRBUF dir;
-    u8 *ent;
+    uint8_t *ent;
 
     if ( vol_open( drive ) != 0 || fat_load( vol.mirror ? 0 : vol.active_fat ) != 0 ) {
         say( "Invalid drive specification\r\n" );
@@ -182,7 +184,7 @@ int frag_report( int drive, const char *spec )
             slash = pat;
         }
     }
-    len = slash ? (u32)(slash - spec) + 1 : 0;
+    len = slash ? (unsigned int)(slash - spec) + 1 : 0;
     dirpart = (char *)xalloc( len + 1 );
     mem_cpy( dirpart, spec, len );
     dirpart[len] = 0;

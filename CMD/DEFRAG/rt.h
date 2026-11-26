@@ -6,40 +6,40 @@
  * Open Watcom compiles 64-bit add, subtract and compare inline, but
  * calls library helpers for multiply, divide and shifts.  Nothing is
  * linked from the C library, so code uses mul32() and div64() below
- * instead of those operators on u64 values.
+ * instead of those operators on uint64_t values.
  */
 #ifndef RT_H
 #define RT_H
 
 #include "types.h"
 
-void  mem_set( void *dst, int val, u32 len );
-void  mem_cpy( void *dst, const void *src, u32 len );
-int   mem_cmp( const void *lhs, const void *rhs, u32 len );
+void  mem_set( void *dst, int val, unsigned int len );
+void  mem_cpy( void *dst, const void *src, unsigned int len );
+int   mem_cmp( const void *lhs, const void *rhs, unsigned int len );
 
-u32   str_len( const char *str );
-char *str_cpy( char *dst, const char *src );
-int   str_cpyn( char *dst, const char *src, u32 max );    /* 0 = it did not fit */
-int   str_catn( char *dst, const char *src, u32 max );    /* 0 = it did not fit */
-int   str_icmp( const char *lhs, const char *rhs );
-int   str_nicmp( const char *lhs, const char *rhs, u32 len );
-int   ch_upper( int ch );
-char *str_chr( const char *str, int ch );
-char *str_dup( const char *str );
-char *path_join( const char *dir, const char *name );
+unsigned int str_len( const char *str );
+char        *str_cpy( char *dst, const char *src );
+int          str_cpyn( char *dst, const char *src, unsigned int max );  /* 0 = it did not fit */
+int          str_catn( char *dst, const char *src, unsigned int max );  /* 0 = it did not fit */
+int          str_icmp( const char *lhs, const char *rhs );
+int          str_nicmp( const char *lhs, const char *rhs, unsigned int len );
+int          ch_upper( int ch );
+char        *str_chr( const char *str, int ch );
+char        *str_dup( const char *str );
+char        *path_join( const char *dir, const char *name );
 
-void *try_alloc( u32 size );     /* NULL when out of memory            */
-void *xalloc( u32 size );        /* never returns NULL (exits instead) */
-void *xzalloc( u32 size );       /* xalloc + zero fill                 */
+void *try_alloc( unsigned int size );  /* NULL when out of memory          */
+void *xalloc( unsigned int size );     /* never returns NULL (exits instead) */
+void *xzalloc( unsigned int size );    /* xalloc + zero fill               */
 void  xfree( void *ptr );
 
-/* growable list of u32 (cluster lists) */
+/* growable list of uint32_t (cluster lists) */
 typedef struct {
-    u32 *items;
-    u32  count;
-    u32  cap;
+    uint32_t    *items;
+    unsigned int count;
+    unsigned int cap;
 } U32LIST;
-void  list_add( U32LIST *list, u32 val );
+void  list_add( U32LIST *list, uint32_t val );
 void  list_free( U32LIST *list );
 
 /* lines of text: a box, a page of help */
@@ -56,15 +56,15 @@ void  __cdecl tx_addf( TEXT *text, const char *fmt, ... );
 void  tx_wrap( TEXT *text, const char *para, int width );
 
 typedef union {
-    u64 whole;
-    struct { u32 lo, hi; } parts;
+    uint64_t whole;
+    struct { uint32_t lo, hi; } parts;
 } U64;
 
-u64   mul32( u32 lhs, u32 rhs );       /* full 32x32 -> 64 product */
-u32   div64( u64 *num, u32 divisor );  /* *num /= divisor, returns the
-                                          remainder; divisor < 65536 */
-u32   lo32( u64 val );
-u32   hi32( u64 val );
+uint64_t mul32( uint32_t lhs, uint32_t rhs );       /* full 32x32 -> 64 product */
+uint32_t div64( uint64_t *num, uint32_t divisor );  /* *num /= divisor, returns the
+                                                       remainder; divisor < 65536 */
+uint32_t lo32( uint64_t val );
+uint32_t hi32( uint64_t val );
 
 /*
  * sfmt - printf into "buf", never more than "max" bytes with the NUL.
@@ -78,10 +78,10 @@ u32   hi32( u64 val );
  *
  * Returns the length written.
  */
-int   __cdecl sfmt( char *buf, u32 max, const char *fmt, ... );
-int   vfmt( char *buf, u32 max, const char *fmt, char *args );
+int   __cdecl sfmt( char *buf, unsigned int max, const char *fmt, ... );
+int   vfmt( char *buf, unsigned int max, const char *fmt, char *args );
 void  fmt_group_set( int ch );
-char *fmt_bytes( u64 val, char *buf );  /* a 64-bit count, grouped */
+char *fmt_bytes( uint64_t val, char *buf ); /* a 64-bit count, grouped */
 
 /* supplied by MAIN.C: "Insufficient memory" and exit */
 void  out_of_memory( void );
@@ -93,7 +93,7 @@ void  out_of_memory( void );
 
 /* JMP.ASM: the way out of a run from wherever it has got to */
 typedef struct {
-    u32 reg[6];                 /* EBX ESI EDI EBP ESP EIP */
+    uint32_t reg[6];            /* EBX ESI EDI EBP ESP EIP */
 } JMPBUF;
 int  __cdecl rt_setjmp( JMPBUF *buf );
 void __cdecl rt_longjmp( JMPBUF *buf, int val );

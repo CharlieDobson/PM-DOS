@@ -25,27 +25,27 @@
 #define DATE_NEWER  2           /* /D - newer than the copy already there */
 
 typedef struct {
-    int archive_only;           /* /A */
-    int archive_reset;          /* /M */
-    int date_mode;              /* /D, /D:date */
-    u16 date;
-    int prompt;                 /* /P */
-    int subdirs;                /* /S */
-    int empty;                  /* /E */
-    int verify;                 /* /V */
-    int wait;                   /* /W */
-    int cont;                   /* /C */
-    int assume_dir;             /* /I */
-    int quiet;                  /* /Q */
-    int full;                   /* /F */
-    int list;                   /* /L */
-    int hidden;                 /* /H */
-    int readonly;               /* /R */
-    int tree;                   /* /T */
-    int update;                 /* /U */
-    int keep_attr;              /* /K */
-    int short_names;            /* /N */
-    int overwrite;              /* /Y (1) or /-Y (0) */
+    int      archive_only;      /* /A */
+    int      archive_reset;     /* /M */
+    int      date_mode;         /* /D, /D:date */
+    uint16_t date;
+    int      prompt;            /* /P */
+    int      subdirs;           /* /S */
+    int      empty;             /* /E */
+    int      verify;            /* /V */
+    int      wait;              /* /W */
+    int      cont;              /* /C */
+    int      assume_dir;        /* /I */
+    int      quiet;             /* /Q */
+    int      full;              /* /F */
+    int      list;              /* /L */
+    int      hidden;            /* /H */
+    int      readonly;          /* /R */
+    int      tree;              /* /T */
+    int      update;            /* /U */
+    int      keep_attr;         /* /K */
+    int      short_names;       /* /N */
+    int      overwrite;         /* /Y (1) or /-Y (0) */
 } OPTIONS;
 
 typedef struct {

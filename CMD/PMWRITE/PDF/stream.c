@@ -11,12 +11,12 @@
 #define FILE_BUF    4096
 
 typedef struct {
-    u32 next;                   /* the offset of the next read */
-    u32 left;                   /* bytes this IN may still read */
-    u8  buf[FILE_BUF];
+    uint32_t next;              /* the offset of the next read */
+    uint32_t left;              /* bytes this IN may still read */
+    uint8_t  buf[FILE_BUF];
 } FILEIN;
 
-static u32 file_at = 0xFFFFFFFFUL;      /* where the handle is: a seek saved */
+static uint32_t file_at = 0xFFFFFFFFUL; /* where the handle is: a seek saved */
 
 int in_more( IN *in )
 {
@@ -45,19 +45,19 @@ int in_peek( IN *in )
     return ch;
 }
 
-u32 in_read( IN *in, u8 *buf, u32 len )
+uint32_t in_read( IN *in, uint8_t *buf, uint32_t len )
 {
-    u32 done = 0, have;
+    uint32_t done = 0, have;
     int ch;
 
     while ( done < len ) {
-        have = (u32)(in->end - in->cur);
+        have = (uint32_t)(in->end - in->cur);
         if ( have == 0 ) {
             ch = in_more( in );
             if ( ch < 0 ) {
                 break;
             }
-            buf[done++] = (u8)ch;
+            buf[done++] = (uint8_t)ch;
             continue;
         }
         if ( have > len - done ) {
@@ -70,12 +70,12 @@ u32 in_read( IN *in, u8 *buf, u32 len )
     return done;
 }
 
-u32 in_skip( IN *in, u32 count )
+uint32_t in_skip( IN *in, uint32_t count )
 {
-    u32 done = 0, have;
+    uint32_t done = 0, have;
 
     while ( done < count ) {
-        have = (u32)(in->end - in->cur);
+        have = (uint32_t)(in->end - in->cur);
         if ( have == 0 ) {
             if ( in_more( in ) < 0 ) {
                 break;
@@ -106,13 +106,13 @@ void in_close( IN *in )
     }
 }
 
-IN *in_new( u32 extra, int (*fill)( IN * ), IN *src )
+IN *in_new( unsigned int extra, int (*fill)( IN * ), IN *src )
 {
     IN *in = (IN *)pool_big( doc.page_pool, sizeof( IN ) + extra );
 
     in->fill = fill;
     in->src = src;
-    in->cur = in->end = (u8 *)(in + 1);
+    in->cur = in->end = (uint8_t *)(in + 1);
     return in;
 }
 
@@ -123,7 +123,7 @@ IN *in_new( u32 extra, int (*fill)( IN * ), IN *src )
 static int file_fill( IN *in )
 {
     FILEIN *state = IN_STATE( in, FILEIN );
-    u32 want = state->left < FILE_BUF ? state->left : FILE_BUF, done = 0;
+    uint32_t want = state->left < FILE_BUF ? state->left : FILE_BUF, done = 0;
 
     if ( want == 0 ) {
         return 0;
@@ -155,7 +155,7 @@ static int file_fill( IN *in )
     return 1;
 }
 
-IN *in_file( u32 pos, u32 len )
+IN *in_file( uint32_t pos, uint32_t len )
 {
     IN *in = in_new( sizeof( FILEIN ), file_fill, NULL );
     FILEIN *state = IN_STATE( in, FILEIN );
@@ -179,9 +179,9 @@ void in_file_reset( void )
     file_at = 0xFFFFFFFFUL;
 }
 
-u32 in_tell( IN *in )
+uint32_t in_tell( IN *in )
 {
-    return in->pos - (u32)(in->end - in->cur);
+    return in->pos - (uint32_t)(in->end - in->cur);
 }
 
 /* ------------------------------------------------------------------ */
@@ -194,12 +194,12 @@ static int mem_fill( IN *in )
     return 0;
 }
 
-IN *in_mem( const u8 *data, u32 len )
+IN *in_mem( const uint8_t *data, uint32_t len )
 {
     IN *in = in_new( 0, mem_fill, NULL );
 
-    in->cur = (u8 *)data;
-    in->end = (u8 *)data + len;
+    in->cur = (uint8_t *)data;
+    in->end = (uint8_t *)data + len;
     return in;
 }
 
@@ -216,20 +216,20 @@ IN *in_mem( const u8 *data, u32 len )
  * given back, and the lexer carries on from there.
  */
 typedef struct {
-    IN  *parent;
-    u32  left;
+    IN      *parent;
+    uint32_t left;
 } BORROW;
 
 static int borrow_fill( IN *in )
 {
     BORROW *st = IN_STATE( in, BORROW );
     IN *parent = st->parent;
-    u32 have;
+    uint32_t have;
 
     if ( st->left == 0 || in_peek( parent ) < 0 ) {
         return 0;
     }
-    have = (u32)(parent->end - parent->cur);
+    have = (uint32_t)(parent->end - parent->cur);
     if ( have > st->left ) {
         have = st->left;
     }
@@ -244,10 +244,10 @@ static void borrow_done( IN *in )
 {
     BORROW *st = IN_STATE( in, BORROW );
 
-    st->parent->cur -= (u32)(in->end - in->cur);
+    st->parent->cur -= (uint32_t)(in->end - in->cur);
 }
 
-IN *in_borrow( IN *parent, u32 limit )
+IN *in_borrow( IN *parent, uint32_t limit )
 {
     IN *in = in_new( sizeof( BORROW ), borrow_fill, NULL );
     BORROW *st = IN_STATE( in, BORROW );

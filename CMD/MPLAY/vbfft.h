@@ -7,7 +7,7 @@
  * the same arithmetic with the twiddles cut to 16 bits and passed as
  * the multiplier.  The includer defines:
  *
- *   TW_TYPE            s32 or s16, the type of a twiddle
+ *   TW_TYPE            int32_t or int16_t, the type of a twiddle
  *   TW_FIELD           tw or tw16, where the tables are
  *   TW_MUL( tw, x )    a twiddle times a sample, back in the sample's format
  *   PRE_NAME FFT_NAME POST_NAME    the names of the three functions
@@ -18,12 +18,12 @@
  */
 
 /* z[m] = (X[2m] - j X[M-1-2m]) * e^(j 2 pi (m + 1/8) / n), for m < n/4 */
-static void PRE_NAME( const VBMDCT *md, const s32 *spec, s32 *work )
+static void PRE_NAME( const VBMDCT *md, const int32_t *spec, int32_t *work )
 {
-    u32 count = md->n >> 2, m;
+    unsigned int count = md->n >> 2, m;
     const TW_TYPE *tw = md->TW_FIELD;
-    const s32 *top = spec + (md->n >> 1) - 1;
-    s32 a, b, t, c, s;
+    const int32_t *top = spec + (md->n >> 1) - 1;
+    int32_t a, b, t, c, s;
 
     for ( m = 0; m < count; m++ ) {
         a = spec[0];
@@ -44,12 +44,12 @@ static void PRE_NAME( const VBMDCT *md, const s32 *spec, s32 *work )
    at least 4), by radix-2^2 decimation in frequency: two radix-2 stages
    at a time, with three twiddle products per four values.  The result
    is in bit-reversed order. */
-static void FFT_NAME( s32 *data, u32 count, const VBFFT *fft )
+static void FFT_NAME( int32_t *data, unsigned int count, const VBFFT *fft )
 {
-    u32 span, quarter, group, i, step;
+    unsigned int span, quarter, group, i, step;
     const TW_TYPE *tw1, *tw2, *tw3;
-    s32 *p0, *p1, *p2, *p3;
-    s32 ar, ai, br, bi, cr, ci, dr, di, xr, xi, t, c, s;
+    int32_t *p0, *p1, *p2, *p3;
+    int32_t ar, ai, br, bi, cr, ci, dr, di, xr, xi, t, c, s;
 
     for ( span = count; span >= 4; span >>= 2 ) {
         quarter = span >> 2;
@@ -138,17 +138,17 @@ static void FFT_NAME( s32 *data, u32 count, const VBFFT *fft )
 }
 
 /* C[q] = Z[q] * e^(j 2 pi (q + 1/8) / n); u[2q] = Re C, u[M-1-2q] = Im C */
-static void POST_NAME( const VBMDCT *md, const s32 *work, s32 *u )
+static void POST_NAME( const VBMDCT *md, const int32_t *work, int32_t *u )
 {
-    u32 count = md->n >> 2, q;
+    unsigned int count = md->n >> 2, q;
     const TW_TYPE *tw = md->TW_FIELD;
-    const u16 *rev = md->rev;
-    s32 *top = u + (md->n >> 1) - 1;
-    const s32 *z;
-    s32 zr, zi, t, c, s;
+    const uint16_t *rev = md->rev;
+    int32_t *top = u + (md->n >> 1) - 1;
+    const int32_t *z;
+    int32_t zr, zi, t, c, s;
 
     for ( q = 0; q < count; q++ ) {
-        z = work + 2 * (u32)rev[q];
+        z = work + 2 * (unsigned int)rev[q];
         zr = z[0];
         zi = z[1];
         c = tw[0];

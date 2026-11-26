@@ -24,7 +24,7 @@ unsigned plat_caps = 0;
 
 static const char *self_path = "";
 static char tail[130];
-static u16 far *video;
+static uint16_t far *video;
 static int dos_major, dos_minor;
 
 int main( int argc, char **argv )
@@ -53,7 +53,7 @@ static void __interrupt __far no_break( void )
 
 int plat_init( void )
 {
-    u8 far *psp = (u8 far *)MK_FP( _psp, 0 );
+    uint8_t far *psp = (uint8_t far *)MK_FP( _psp, 0 );
     int len = psp[0x80], i;
     union REGS r;
 
@@ -105,7 +105,7 @@ void plat_exit( int code )
     intdos( &r, &r );
 }
 
-void *plat_alloc( u32 size )
+void *plat_alloc( uint32_t size )
 {
     if ( size > 0xFFF0ul ) {
         return NULL;
@@ -133,7 +133,7 @@ void plat_line( const char *text )
 
 int plat_stdin_byte( void )
 {
-    u8 ch;
+    uint8_t ch;
     unsigned done;
 
     if ( _dos_read( 0, (void far *)&ch, 1, &done ) || done == 0 ) {
@@ -220,7 +220,7 @@ int plat_country_code( void )
 {
     union REGS r;
     struct SREGS s;
-    static u8 buf[48];
+    static uint8_t buf[48];
 
     segread( &s );
     r.x.ax = 0x3800;
@@ -257,8 +257,8 @@ int plat_set_date( int year, int month, int day )
 
     r.h.ah = 0x2B;
     r.x.cx = (unsigned)year;
-    r.h.dh = (u8)month;
-    r.h.dl = (u8)day;
+    r.h.dh = (uint8_t)month;
+    r.h.dl = (uint8_t)day;
     intdos( &r, &r );
     return r.h.al != 0;
 }
@@ -268,8 +268,8 @@ int plat_set_time( int hour, int minute )
     union REGS r;
 
     r.h.ah = 0x2D;
-    r.h.ch = (u8)hour;
-    r.h.cl = (u8)minute;
+    r.h.ch = (uint8_t)hour;
+    r.h.cl = (uint8_t)minute;
     r.x.dx = 0;
     intdos( &r, &r );
     return r.h.al != 0;
@@ -290,21 +290,21 @@ void plat_screen_open( void )
         int86( 0x10, &r, &r );
         r.h.al = 3;
     }
-    video = (u16 far *)MK_FP( r.h.al == 7 ? 0xB000 : 0xB800, 0 );
+    video = (uint16_t far *)MK_FP( r.h.al == 7 ? 0xB000 : 0xB800, 0 );
 }
 
-void plat_screen_put( int pos, const u16 *cells, int count )
+void plat_screen_put( int pos, const uint16_t *cells, int count )
 {
-    u16 far *out = video + pos;
+    uint16_t far *out = video + pos;
 
     while ( count-- > 0 ) {
         *out++ = *cells++;
     }
 }
 
-void plat_screen_get( int pos, u16 *cells, int count )
+void plat_screen_get( int pos, uint16_t *cells, int count )
 {
-    u16 far *in = video + pos;
+    uint16_t far *in = video + pos;
 
     while ( count-- > 0 ) {
         *cells++ = *in++;
@@ -318,8 +318,8 @@ void plat_cursor( int row, int col, int shown )
     if ( shown ) {
         r.h.ah = 0x02;
         r.h.bh = 0;
-        r.h.dh = (u8)row;
-        r.h.dl = (u8)col;
+        r.h.dh = (uint8_t)row;
+        r.h.dl = (uint8_t)col;
         int86( 0x10, &r, &r );
         r.h.ah = 0x01;
         r.x.cx = 0x0607;                /* 6.22's underline */
@@ -380,51 +380,51 @@ void plat_idle( void )
 /* files                                                               */
 /* ------------------------------------------------------------------ */
 
-int plat_open( const char *path, int write, u16 *handle )
+int plat_open( const char *path, int write, uint16_t *handle )
 {
     int h;
     unsigned rc = _dos_open( path, write ? 2 : 0, &h );
 
-    *handle = (u16)h;
+    *handle = (uint16_t)h;
     return (int)rc;
 }
 
-int plat_create( const char *path, u16 *handle )
+int plat_create( const char *path, uint16_t *handle )
 {
     int h;
     unsigned rc = _dos_creat( path, _A_NORMAL, &h );
 
-    *handle = (u16)h;
+    *handle = (uint16_t)h;
     return (int)rc;
 }
 
-int plat_read( u16 handle, void *buf, u16 len, u16 *done )
+int plat_read( uint16_t handle, void *buf, uint16_t len, uint16_t *done )
 {
     unsigned got = 0, rc = _dos_read( handle, buf, len, &got );
 
-    *done = (u16)got;
+    *done = (uint16_t)got;
     return (int)rc;
 }
 
-int plat_write( u16 handle, const void *buf, u16 len, u16 *done )
+int plat_write( uint16_t handle, const void *buf, uint16_t len, uint16_t *done )
 {
     unsigned put = 0, rc = _dos_write( handle, (void far *)buf, len, &put );
 
-    *done = (u16)put;
+    *done = (uint16_t)put;
     return (int)rc;
 }
 
-int plat_close( u16 handle )
+int plat_close( uint16_t handle )
 {
     return (int)_dos_close( handle );
 }
 
-static int seek_to( u16 handle, u32 pos, int how, u32 *at )
+static int seek_to( uint16_t handle, uint32_t pos, int how, uint32_t *at )
 {
     union REGS r;
 
     r.h.ah = 0x42;
-    r.h.al = (u8)how;
+    r.h.al = (uint8_t)how;
     r.x.bx = handle;
     r.x.cx = (unsigned)(pos >> 16);
     r.x.dx = (unsigned)pos;
@@ -433,38 +433,38 @@ static int seek_to( u16 handle, u32 pos, int how, u32 *at )
         return r.x.ax;
     }
     if ( at ) {
-        *at = ((u32)r.x.dx << 16) | r.x.ax;
+        *at = ((uint32_t)r.x.dx << 16) | r.x.ax;
     }
     return 0;
 }
 
-int plat_seek( u16 handle, u32 pos )
+int plat_seek( uint16_t handle, uint32_t pos )
 {
     return seek_to( handle, pos, 0, NULL );
 }
 
-int plat_size( u16 handle, u32 *size )
+int plat_size( uint16_t handle, uint32_t *size )
 {
     int rc = seek_to( handle, 0, 2, size );
 
     return rc ? rc : seek_to( handle, 0, 0, NULL );
 }
 
-int plat_get_ftime( u16 handle, u16 *date, u16 *time )
+int plat_get_ftime( uint16_t handle, uint16_t *date, uint16_t *time )
 {
     unsigned d, t, rc = _dos_getftime( handle, &d, &t );
 
-    *date = (u16)d;
-    *time = (u16)t;
+    *date = (uint16_t)d;
+    *time = (uint16_t)t;
     return (int)rc;
 }
 
-int plat_set_ftime( u16 handle, u16 date, u16 time )
+int plat_set_ftime( uint16_t handle, uint16_t date, uint16_t time )
 {
     return (int)_dos_setftime( handle, date, time );
 }
 
-static int path_call( u8 func, const char *path, const char *other, u16 cx )
+static int path_call( uint8_t func, const char *path, const char *other, uint16_t cx )
 {
     union REGS r;
     struct SREGS s;
@@ -503,15 +503,15 @@ int plat_rmdir( const char *path )
     return path_call( 0x3A, path, NULL, 0 );
 }
 
-int plat_get_attr( const char *path, u16 *attr )
+int plat_get_attr( const char *path, uint16_t *attr )
 {
     unsigned a = 0, rc = _dos_getfileattr( path, &a );
 
-    *attr = (u16)a;
+    *attr = (uint16_t)a;
     return (int)rc;
 }
 
-int plat_set_attr( const char *path, u16 attr )
+int plat_set_attr( const char *path, uint16_t attr )
 {
     return (int)_dos_setfileattr( path, attr );
 }
@@ -529,7 +529,7 @@ static void find_fill( FINDDATA *fd, struct find_t *ft )
     str_cpyn( fd->name, ft->name, sizeof( fd->name ) );
 }
 
-int plat_find_first( const char *spec, u16 attr, FINDDATA *fd )
+int plat_find_first( const char *spec, uint16_t attr, FINDDATA *fd )
 {
     struct find_t *ft = (struct find_t *)fd->reserved;
     unsigned rc = _dos_findfirst( spec, attr, ft );
@@ -551,16 +551,16 @@ int plat_find_next( FINDDATA *fd )
     return (int)rc;
 }
 
-int plat_disk_free( int drive, u32 *free_kb, u32 *cluster_bytes )
+int plat_disk_free( int drive, uint32_t *free_kb, uint32_t *cluster_bytes )
 {
     struct diskfree_t df;
 
     if ( _dos_getdiskfree( drive + 1, &df ) ) {
         return 15;
     }
-    *cluster_bytes = (u32)df.sectors_per_cluster * df.bytes_per_sector;
-    *free_kb = *cluster_bytes >= 1024 ? (u32)df.avail_clusters * (*cluster_bytes / 1024)
-                                 : (u32)df.avail_clusters / 2;
+    *cluster_bytes = (uint32_t)df.sectors_per_cluster * df.bytes_per_sector;
+    *free_kb = *cluster_bytes >= 1024 ? (uint32_t)df.avail_clusters * (*cluster_bytes / 1024)
+                                 : (uint32_t)df.avail_clusters / 2;
     return 0;
 }
 
@@ -621,7 +621,7 @@ int plat_drive( int drive, DRIVEINFO *di )
     mem_set( di, 0, sizeof( *di ) );
     di->bios = -1;
     r.x.ax = 0x4409;                    /* remote? and is there a drive */
-    r.h.bl = (u8)(drive + 1);
+    r.h.bl = (uint8_t)(drive + 1);
     intdos( &r, &r );
     if ( r.x.cflag ) {
         return 1;
@@ -636,7 +636,7 @@ int plat_drive( int drive, DRIVEINFO *di )
         return 0;
     }
     r.x.ax = 0x4408;                    /* removable? */
-    r.h.bl = (u8)(drive + 1);
+    r.h.bl = (uint8_t)(drive + 1);
     intdos( &r, &r );
     if ( !r.x.cflag && r.x.ax == 0 ) {
         if ( drive < 2 ) {
@@ -652,14 +652,14 @@ int plat_drive( int drive, DRIVEINFO *di )
 }
 
 /* the BIOS's geometry of a disk (INT 13h AH=08h) */
-static int geometry( int bios, u16 *spt, u16 *heads, u16 *cyls )
+static int geometry( int bios, uint16_t *spt, uint16_t *heads, uint16_t *cyls )
 {
     union REGS r;
     struct SREGS s;
 
     segread( &s );
     r.h.ah = 0x08;
-    r.h.dl = (u8)bios;
+    r.h.dl = (uint8_t)bios;
     r.x.di = 0;
     s.es = 0;
     int86x( 0x13, &r, &r, &s );
@@ -667,44 +667,45 @@ static int geometry( int bios, u16 *spt, u16 *heads, u16 *cyls )
         return 1;
     }
     *spt = r.h.cl & 0x3F;
-    *heads = (u16)r.h.dh + 1;
-    *cyls = (u16)(((r.h.cl & 0xC0) << 2) | r.h.ch) + 1;
+    *heads = (uint16_t)r.h.dh + 1;
+    *cyls = (uint16_t)(((r.h.cl & 0xC0) << 2) | r.h.ch) + 1;
     return 0;
 }
 
 int plat_disk( int bios, DISKINFO *dk )
 {
-    u16 cyls;
+    uint16_t cyls;
 
     mem_set( dk, 0, sizeof( *dk ) );
     if ( geometry( bios, &dk->spt, &dk->heads, &cyls ) ) {
         return 1;
     }
     dk->present = 1;
-    dk->total = (u32)cyls * dk->heads * dk->spt;
+    dk->total = (uint32_t)cyls * dk->heads * dk->spt;
     return 0;
 }
 
-static int bios_io( u8 func, int bios, u32 lba, u16 count, void far *buf )
+static int bios_io( uint8_t func, int bios, uint32_t lba, uint16_t count, void far *buf )
 {
     union REGS r;
     struct SREGS s;
-    u16 spt, heads, cyls, cyl, tries;
-    u8 far *at = (u8 far *)buf;
+    uint16_t spt, heads, cyls, cyl;
+    unsigned int tries;
+    uint8_t far *at = (uint8_t far *)buf;
 
     if ( geometry( bios, &spt, &heads, &cyls ) ) {
         return 21;
     }
     while ( count-- ) {
-        cyl = (u16)(lba / ((u32)spt * heads));
+        cyl = (uint16_t)(lba / ((uint32_t)spt * heads));
         for ( tries = 0; tries < 3; tries++ ) {
             segread( &s );
             r.h.ah = func;
             r.h.al = 1;
-            r.h.ch = (u8)cyl;
-            r.h.cl = (u8)((lba % spt) + 1) | (u8)((cyl >> 2) & 0xC0);
-            r.h.dh = (u8)((lba / spt) % heads);
-            r.h.dl = (u8)bios;
+            r.h.ch = (uint8_t)cyl;
+            r.h.cl = (uint8_t)((lba % spt) + 1) | (uint8_t)((cyl >> 2) & 0xC0);
+            r.h.dh = (uint8_t)((lba / spt) % heads);
+            r.h.dl = (uint8_t)bios;
             r.x.bx = FP_OFF( at );
             s.es = FP_SEG( at );
             int86x( 0x13, &r, &r, &s );
@@ -712,7 +713,7 @@ static int bios_io( u8 func, int bios, u32 lba, u16 count, void far *buf )
                 break;
             }
             r.h.ah = 0;
-            r.h.dl = (u8)bios;
+            r.h.dl = (uint8_t)bios;
             int86( 0x13, &r, &r );
         }
         if ( tries == 3 ) {
@@ -724,19 +725,19 @@ static int bios_io( u8 func, int bios, u32 lba, u16 count, void far *buf )
     return 0;
 }
 
-int plat_disk_read( int bios, u32 lba, u16 count, void *buf )
+int plat_disk_read( int bios, uint32_t lba, uint16_t count, void *buf )
 {
     return bios_io( 0x02, bios, lba, count, buf );
 }
 
-int plat_disk_write( int bios, u32 lba, u16 count, const void *buf )
+int plat_disk_write( int bios, uint32_t lba, uint16_t count, const void *buf )
 {
     return bios_io( 0x03, bios, lba, count, (void far *)buf );
 }
 
 /* INT 25h and 26h leave the flags on the stack; nonzero = an error,
    AH the BIOS's status (03h: write-protected) */
-extern unsigned abs_rd( u8 drive, void far *packet );
+extern unsigned abs_rd( uint8_t drive, void far *packet );
 #pragma aux abs_rd =        \
     "push bp"               \
     "push ds"               \
@@ -752,7 +753,7 @@ extern unsigned abs_rd( u8 drive, void far *packet );
     "pop bp"                \
     parm [al] [dx bx] value [ax] modify [bx cx dx si di es];
 
-extern unsigned abs_wr( u8 drive, void far *packet );
+extern unsigned abs_wr( uint8_t drive, void far *packet );
 #pragma aux abs_wr =        \
     "push bp"               \
     "push ds"               \
@@ -769,7 +770,7 @@ extern unsigned abs_wr( u8 drive, void far *packet );
     parm [al] [dx bx] value [ax] modify [bx cx dx si di es];
 
 /* before DOS 4: sector in DX, count in CX, DS:BX the buffer */
-extern unsigned old_rd( u8 drive, unsigned count, unsigned sector, void far *buf );
+extern unsigned old_rd( uint8_t drive, unsigned count, unsigned sector, void far *buf );
 #pragma aux old_rd =        \
     "push bp"               \
     "push ds"               \
@@ -784,7 +785,7 @@ extern unsigned old_rd( u8 drive, unsigned count, unsigned sector, void far *buf
     "pop bp"                \
     parm [al] [cx] [dx] [si bx] value [ax] modify [bx cx dx si di es];
 
-extern unsigned old_wr( u8 drive, unsigned count, unsigned sector, void far *buf );
+extern unsigned old_wr( uint8_t drive, unsigned count, unsigned sector, void far *buf );
 #pragma aux old_wr =        \
     "push bp"               \
     "push ds"               \
@@ -799,21 +800,21 @@ extern unsigned old_wr( u8 drive, unsigned count, unsigned sector, void far *buf
     "pop bp"                \
     parm [al] [cx] [dx] [si bx] value [ax] modify [bx cx dx si di es];
 
-static int vol_io( int drive, u32 sector, u16 count, void far *buf, int write )
+static int vol_io( int drive, uint32_t sector, uint16_t count, void far *buf, int write )
 {
-    static u8 packet[10];
+    static uint8_t packet[10];
     unsigned rc;
 
     if ( dos_major < 4 ) {
-        rc = write ? old_wr( (u8)drive, count, (unsigned)sector, buf )
-                   : old_rd( (u8)drive, count, (unsigned)sector, buf );
+        rc = write ? old_wr( (uint8_t)drive, count, (unsigned)sector, buf )
+                   : old_rd( (uint8_t)drive, count, (unsigned)sector, buf );
     } else {
         WR32( packet, sector );
         WR16( packet + 4, count );
         WR16( packet + 6, FP_OFF( buf ) );
         WR16( packet + 8, FP_SEG( buf ) );
-        rc = write ? abs_wr( (u8)drive, (void far *)packet )
-                   : abs_rd( (u8)drive, (void far *)packet );
+        rc = write ? abs_wr( (uint8_t)drive, (void far *)packet )
+                   : abs_rd( (uint8_t)drive, (void far *)packet );
     }
     if ( rc == 0 ) {
         return 0;
@@ -821,12 +822,12 @@ static int vol_io( int drive, u32 sector, u16 count, void far *buf, int write )
     return (rc >> 8) == 0x03 ? 19 : 31;
 }
 
-int plat_vol_read( int drive, u32 sector, u16 count, void *buf )
+int plat_vol_read( int drive, uint32_t sector, uint16_t count, void *buf )
 {
     return vol_io( drive, sector, count, buf, 0 );
 }
 
-int plat_vol_write( int drive, u32 sector, u16 count, const void *buf )
+int plat_vol_write( int drive, uint32_t sector, uint16_t count, const void *buf )
 {
     return vol_io( drive, sector, count, (void far *)buf, 1 );
 }
@@ -837,7 +838,7 @@ static void dpb_forget( int drive )
 {
     union REGS r;
     struct SREGS s;
-    u8 far *dpb;
+    uint8_t far *dpb;
     int steps;
 
     if ( dos_major < 4 ) {
@@ -846,13 +847,13 @@ static void dpb_forget( int drive )
     segread( &s );
     r.h.ah = 0x52;
     intdosx( &r, &r, &s );
-    dpb = *(u8 far * far *)MK_FP( s.es, r.x.bx );
+    dpb = *(uint8_t far * far *)MK_FP( s.es, r.x.bx );
     for ( steps = 0; steps < 32 && FP_OFF( dpb ) != 0xFFFF; steps++ ) {
         if ( dpb[0] == drive ) {
             dpb[0x18] = 0xFF;           /* DPB_FIRST_ACCESS */
             return;
         }
-        dpb = *(u8 far * far *)(dpb + 0x19);
+        dpb = *(uint8_t far * far *)(dpb + 0x19);
     }
 }
 
@@ -886,7 +887,7 @@ int plat_fd_type( int drive )
 
     segread( &s );
     r.h.ah = 0x08;
-    r.h.dl = (u8)drive;
+    r.h.dl = (uint8_t)drive;
     r.x.di = 0;
     s.es = 0;
     int86x( 0x13, &r, &r, &s );
@@ -896,8 +897,8 @@ int plat_fd_type( int drive )
     return r.h.bl == 6 ? FDT_2880 : r.h.bl;
 }
 
-static u8 params[0x26 + 2 + 36 * 4];    /* the device parameters      */
-static u8 saved[sizeof( params )];
+static uint8_t params[0x26 + 2 + 36 * 4]; /* the device parameters    */
+static uint8_t saved[sizeof( params )];
 static int have_saved;
 
 static int ioctl( int drive, unsigned cx, void far *block )
@@ -907,7 +908,7 @@ static int ioctl( int drive, unsigned cx, void far *block )
 
     segread( &s );
     r.x.ax = 0x440D;
-    r.h.bl = (u8)(drive + 1);
+    r.h.bl = (uint8_t)(drive + 1);
     r.x.cx = cx;
     r.x.dx = FP_OFF( block );
     s.ds = FP_SEG( block );
@@ -915,10 +916,10 @@ static int ioctl( int drive, unsigned cx, void far *block )
     return r.x.cflag ? (int)r.x.ax : 0;
 }
 
-int plat_fd_begin( int drive, int spt, int cyls, int heads, u16 total )
+int plat_fd_begin( int drive, int spt, int cyls, int heads, uint16_t total )
 {
     int i, rootents = spt >= 15 ? 224 : 112;
-    u8 *bpb = params + 7;
+    uint8_t *bpb = params + 7;
 
     mem_set( saved, 0, sizeof( saved ) );
     have_saved = ioctl( drive, 0x0860, (void far *)saved ) == 0;
@@ -932,12 +933,12 @@ int plat_fd_begin( int drive, int spt, int cyls, int heads, u16 total )
     }
     WR16( params + 4, cyls );
     WR16( bpb + 0, 512 );
-    bpb[2] = (u8)(spt >= 15 ? 1 : 2);
+    bpb[2] = (uint8_t)(spt >= 15 ? 1 : 2);
     WR16( bpb + 3, 1 );
     bpb[5] = 2;
     WR16( bpb + 6, rootents );
     WR16( bpb + 8, total );
-    bpb[10] = (u8)(spt == 9 ? 0xF9 : spt == 15 ? 0xF9 : 0xF0);
+    bpb[10] = (uint8_t)(spt == 9 ? 0xF9 : spt == 15 ? 0xF9 : 0xF0);
     WR16( bpb + 11, spt == 9 ? 3 : spt == 15 ? 7 : 9 );
     WR16( bpb + 13, spt );
     WR16( bpb + 15, heads );
@@ -951,7 +952,7 @@ int plat_fd_begin( int drive, int spt, int cyls, int heads, u16 total )
 
 int plat_fd_track( int drive, int cyl, int head, int spt )
 {
-    static u8 block[7];
+    static uint8_t block[7];
     int rc;
 
     (void)spt;
@@ -966,7 +967,7 @@ int plat_fd_track( int drive, int cyl, int head, int spt )
     return rc == 0x13 ? 3 : 1;          /* 13h: write-protected */
 }
 
-void plat_fd_end( int drive, int spt, int heads, u16 total )
+void plat_fd_end( int drive, int spt, int heads, uint16_t total )
 {
     (void)spt;
     (void)heads;
@@ -986,6 +987,6 @@ void plat_restart( void )
 
     r.h.ah = 0x0D;
     intdos( &r, &r );
-    *(u16 far *)MK_FP( 0x40, 0x72 ) = 0x1234;
+    *(uint16_t far *)MK_FP( 0x40, 0x72 ) = 0x1234;
     reset();
 }

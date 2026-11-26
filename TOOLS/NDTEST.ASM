@@ -21,7 +21,9 @@
 ;           and with the one thing only a relocated driver can answer:
 ;           the address of its table as a dword the linker wrote,
 ;           against the address the code finds itself at.  If the
-;           loader applied the table, the two agree.
+;           loader applied the table, the two agree.  Or, asked for
+;           NDC_FAULT, takes a general protection fault in ring 0: a
+;           kernel fault on demand, for NDRVTEST /F.
 ;
 ; Linked with:  wlink form raw bin option offset=0x0, and again with
 ;               offset=0x10000000; D32DRV makes NDTEST.SYS of the two
@@ -208,6 +210,8 @@ nd_halt:
 ;=====================================================================
 nd_call:
         inc     dword ptr [calls]
+        cmp     ebx,NDC_FAULT
+        je      ndc_gp                  ; (not ndc_fault: wasm folds case)
         cmp     ebx,NDC_REPORT
         jne     ndc_what
         cmp     ecx,NDTR_LEN
@@ -267,6 +271,17 @@ ndc_short:
         ret
 ndc_what:
         mov     eax,ERR_FUNC
+        stc
+        ret
+
+;--- NDC_FAULT - a selector past the end of the GDT, loaded into FS: a
+;--- #GP in ring 0, in the kernel's own exception handler and its
+;--- recovery (dos_fault), which ends the program that asked.  FS
+;--- because nothing here uses it.  Still here: there was no fault.
+ndc_gp:
+        mov     ax,0FFF8h
+        mov     fs,ax
+        mov     eax,ERR_GENERAL
         stc
         ret
 
